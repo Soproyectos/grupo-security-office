@@ -5,56 +5,66 @@ const prisma = new PrismaClient();
 
 // Matriz de permisos por rol (fuente de verdad del negocio).
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  'Super Admin': [
-    'products:read', 'products:write', 'products:delete',
-    'categories:read', 'categories:write',
-    'brands:read', 'brands:write',
-    'prices:read', 'prices:write',
-    'users:read', 'users:write', 'users:manage',
-    'audit:read',
-    // RBAC híbrido (BE-RBAC-001): permisos granulares canónicos.
-    'listas:create', 'listas:update', 'listas:duplicate', 'listas:import',
-    'listas:archive', 'listas:delete', 'listas:publish',
-    'products:publish',
-    'assignments:manage',
-    // Legacy: se mantiene por compatibilidad temporal con el guard.
-    // La excepción Super Admin del PermissionsGuard no depende de esta lista.
-    'publish:manage',
-  ],
-  'Supervisor': [
-    'products:read',
-    'audit:read',
-    'listas:publish',
-    'products:publish',
-    'publish:manage',
-  ],
-  'Admin Comercial': [
-    'products:read', 'products:write', 'products:delete',
-    'categories:read', 'categories:write',
-    'brands:read', 'brands:write',
-    'prices:read', 'prices:write',
-    'users:read',
-    'audit:read',
-    // RBAC híbrido (BE-RBAC-001): Admin Comercial administra listas y accesos.
-    'listas:create', 'listas:update', 'listas:duplicate', 'listas:import',
-    'listas:archive', 'listas:delete', 'listas:publish',
-    'products:publish',
-    'assignments:manage',
-    'publish:manage',
-  ],
-  'Operador': [
-    'products:read',
-    'categories:read',
-    'brands:read',
-    'prices:read',
-  ],
-  'Consulta': [
-    'products:read',
-    'categories:read',
-    'brands:read',
-    'prices:read',
-  ],
-};
+   'Super Admin': [
+     'products:read', 'products:write', 'products:delete',
+     'categories:read', 'categories:write',
+     'brands:read', 'brands:write',
+     'prices:read', 'prices:write',
+     'users:read', 'users:write', 'users:manage',
+     'audit:read',
+     // RBAC híbrido (BE-RBAC-001): permisos granulares canónicos.
+     'listas:create', 'listas:update', 'listas:duplicate', 'listas:import',
+     'listas:archive', 'listas:delete', 'listas:publish',
+     'products:publish',
+     'assignments:manage',
+     // Legacy: se mantiene por compatibilidad temporal con el guard.
+     // La excepción Super Admin del PermissionsGuard no depende de esta lista.
+     'publish:manage',
+     // SalesOrder permissions
+     'sales-order:create', 'sales-order:read', 'sales-order:update', 'sales-order:delete',
+   ],
+   'Supervisor': [
+     'products:read',
+     'audit:read',
+     'listas:publish',
+     'products:publish',
+     'publish:manage',
+     // SalesOrder permissions
+     'sales-order:read',
+   ],
+   'Admin Comercial': [
+     'products:read', 'products:write', 'products:delete',
+     'categories:read', 'categories:write',
+     'brands:read', 'brands:write',
+     'prices:read', 'prices:write',
+     'users:read',
+     'audit:read',
+     // RBAC híbrido (BE-RBAC-001): Admin Comercial administra listas y accesos.
+     'listas:create', 'listas:update', 'listas:duplicate', 'listas:import',
+     'listas:archive', 'listas:delete', 'listas:publish',
+     'products:publish',
+     'assignments:manage',
+     'publish:manage',
+     // SalesOrder permissions
+     'sales-order:create', 'sales-order:read', 'sales-order:update', 'sales-order:delete',
+   ],
+   'Operador': [
+     'products:read',
+     'categories:read',
+     'brands:read',
+     'prices:read',
+     // SalesOrder permissions
+     'sales-order:read',
+   ],
+   'Consulta': [
+     'products:read',
+     'categories:read',
+     'brands:read',
+     'prices:read',
+     // SalesOrder permissions
+     'sales-order:read',
+   ],
+ };
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   'Super Admin': 'Acceso total al sistema y gestión de usuarios y auditoría',
