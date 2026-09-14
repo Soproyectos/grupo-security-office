@@ -5,7 +5,9 @@
 
 ## Idioma
 
-- **Documentación, reportes, commits, PRs, issues**: Español.
+- **Comunicación directa con el usuario humano (coordinador)**: Español — chat, preguntas, bloqueos, resúmenes conversacionales.
+- **Reportes técnicos entre agentes** (bloque "Response format"/"Delivery format" de cada perfil en `.opencode/agents/`, entradas de `work-log.md`, contratos de delegación, cuerpo técnico de commits/PRs/issues de GitHub): **Inglés** — reduce tokens y es consistente con código/identificadores, que ya son en inglés. (Esto alinea con `docs/agent-coordination/README.md`, que ya exigía "imperative English summary" en commits.)
+- **Documentación de referencia dirigida a humanos** (este archivo, ADRs, docs que lee el coordinador): Español, salvo que el documento ya esté establecido en inglés.
 - **Código, nombres técnicos, APIs, variables, tablas, enums**: Inglés consistente (snake_case BD, camelCase TS/JS, PascalCase tipos, UPPER_SNAKE_CONSTANTS).
 
 ## Autoridad de coordinación
