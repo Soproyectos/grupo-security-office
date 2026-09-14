@@ -368,29 +368,44 @@ export class QuotesService {
     // `ganada`, si el cliente estaba en LEAD se convierte a CLIENTE con
     // convertedAt (la conversión automática que el issue de Customer dejó
     // pendiente para este momento).
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const q = await tx.quote.update({
-        where: { id },
-        data: {
-          status: dto.status,
-          closedAt: isWin || dto.status === 'perdida' ? now : undefined,
-          issuedAt: dto.status === 'enviada' ? (quote.issuedAt ?? now) : undefined,
-          lostReason: dto.status === 'perdida' ? dto.lostReason : undefined,
-        },
-      });
-      if (isWin) {
-        const customer = await tx.customer.findUnique({
-          where: { id: quote.customerId },
+const updated = await this.prisma.$transaction(async (tx) => {
+        const q = await tx.quote.update({
+          where: { id },
+          data: {
+            status: dto.status,
+            closedAt: isWin || dto.status === 'perdida' ? now : undefined,
+            issuedAt: dto.status === 'enviada' ? (quote.issuedAt ?? now) : undefined,
+            lostReason: dto.status === 'perdida' ? dto.lostReason : undefined,
+          },
         });
-        if (customer?.status === 'LEAD') {
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { status: 'CLIENTE', convertedAt: now },
+        if (isWin) {
+          const customer = await tx.customer.findUnique({
+            where: { id: quote.customerId },
           });
+          if (customer?.status === 'LEAD') {
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: { status: 'CLIENTE', convertedAt: now },
+            });
+          }
+// Create SalesOrder
+           await tx.salesOrder.create({
+             data: {
+               code: await this.generateSalesOrderCode(),
+               quote: { connect: { id: quote.id } },
+               customer: { connect: { id: quote.customerId } },
+               owner: { connect: { id: quote.ownerId } },
+               total: quote.total,
+               currency: quote.currency,
+               externalInvoiceNumber: null,
+               externalInvoiceDate: null,
+               externalSystem: null,
+               notes: null,
+             },
+           });
         }
-      }
-      return q;
-    });
+        return q;
+      });
 
     await this.audit.log({
       userId: ctx.userId,
@@ -463,32 +478,57 @@ export class QuotesService {
       orderBy: { position: 'desc' },
       select: { position: true },
     });
-    return (last?.position ?? 0) + 1;
-  }
+return (last?.position ?? 0) + 1;
+   }
 
-  /**
-   * Código secuencial COT-0001, COT-0002, ... (mismo patrón que Customer y el
-   * generador de PO del módulo suppliers eliminado). Reintenta ante carrera.
-   */
-  private async generateCode(attempt = 0): Promise<string> {
-    if (attempt >= 5) {
-      return `COT-${Date.now().toString(36).toUpperCase()}`;
-    }
+   /**
+    * Código secuencial COT-0001, COT-0002, ... (mismo patrón que Customer y el
+    * generador de PO del módulo suppliers eliminado). Reintenta ante carrera.
+    */
+   private async generateCode(attempt = 0): Promise<string> {
+     if (attempt >= 5) {
+       return `COT-${Date.now().toString(36).toUpperCase()}`;
+     }
 
-    const last = await this.prisma.quote.findFirst({
-      where: { code: { startsWith: 'COT-' } },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    const lastNum = last?.code ? parseInt(last.code.slice(4), 10) : 0;
-    const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
-    const candidate = `COT-${String(next).padStart(4, '0')}`;
+     const last = await this.prisma.quote.findFirst({
+       where: { code: { startsWith: 'COT-' } },
+       orderBy: { code: 'desc' },
+       select: { code: true },
+     });
+     const lastNum = last?.code ? parseInt(last.code.slice(4), 10) : 0;
+     const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
+     const candidate = `COT-${String(next).padStart(4, '0')}`;
 
-    const exists = await this.prisma.quote.findUnique({
-      where: { code: candidate },
-      select: { id: true },
-    });
-    if (exists) return this.generateCode(attempt + 1);
-    return candidate;
-  }
-}
+     const exists = await this.prisma.quote.findUnique({
+       where: { code: candidate },
+       select: { id: true },
+     });
+     if (exists) return this.generateCode(attempt + 1);
+     return candidate;
+   }
+
+   /**
+    * Código secuencial SO-0001, SO-0002, ... 
+    */
+   private async generateSalesOrderCode(attempt = 0): Promise<string> {
+     if (attempt >= 5) {
+       return `SO-${Date.now().toString(36).toUpperCase()}`;
+     }
+
+     const last = await this.prisma.salesOrder.findFirst({
+       where: { code: { startsWith: 'SO-' } },
+       orderBy: { code: 'desc' },
+       select: { code: true },
+     });
+     const lastNum = last?.code ? parseInt(last.code.slice(3), 10) : 0;
+     const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
+     const candidate = `SO-${String(next).padStart(4, '0')}`;
+
+     const exists = await this.prisma.salesOrder.findUnique({
+       where: { code: candidate },
+       select: { id: true },
+     });
+     if (exists) return this.generateSalesOrderCode(attempt + 1);
+     return candidate;
+   }
+ }

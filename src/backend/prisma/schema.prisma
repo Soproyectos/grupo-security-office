@@ -36,6 +36,7 @@ model User {
   ownedCustomers          Customer[]           @relation("CustomerOwner")
   createdCustomers        Customer[]           @relation("CustomerCreator")
   ownedQuotes             Quote[]              @relation("QuoteOwner")
+  ownedSalesOrders        SalesOrder[]         @relation("SalesOrderOwner")
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
 
@@ -373,6 +374,7 @@ model Customer {
   owner     User? @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   createdBy User? @relation("CustomerCreator", fields: [createdById], references: [id], onDelete: SetNull)
   quotes    Quote[]
+  salesOrders SalesOrder[] @relation("SalesOrderCustomer")
 
   @@unique([documentType, documentId])
   @@index([ownerId, status])
@@ -427,6 +429,7 @@ model Quote {
   lista     Lista      @relation("QuoteLista", fields: [listaId], references: [id], onDelete: Restrict)
   priceList PriceList? @relation("QuotePriceList", fields: [priceListId], references: [id], onDelete: SetNull)
   items     QuoteItem[]
+  salesOrder SalesOrder? @relation("QuoteSalesOrder")
 
   @@index([ownerId, status])
   @@index([ownerId, closedAt])
@@ -434,6 +437,30 @@ model Quote {
   @@index([status])
   @@index([listaId])
   @@map("quotes")
+}
+
+model SalesOrder {
+  id                  String      @id @default(uuid())
+  code                String      @unique
+  quoteId             String      @unique
+  customerId          String
+  ownerId             String
+  total               Decimal     @db.Decimal(14, 2)
+  currency            String      @default("COP")
+  externalInvoiceNumber String?
+  externalInvoiceDate DateTime?
+  externalSystem      String?     @default("YEMINUS")
+  notes               String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  quote   Quote     @relation("QuoteSalesOrder", fields: [quoteId], references: [id], onDelete: Restrict)
+  customer Customer  @relation("SalesOrderCustomer", fields: [customerId], references: [id])
+  owner   User      @relation("SalesOrderOwner", fields: [ownerId], references: [id])
+
+  @@index([ownerId, createdAt])
+  @@index([customerId])
+  @@map("sales_orders")
 }
 
 /// Línea de cotización con snapshot de precio. `productId`/`priceId` son solo
