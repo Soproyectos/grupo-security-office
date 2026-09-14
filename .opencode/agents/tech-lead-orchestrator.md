@@ -1,7 +1,7 @@
 ---
 description: Agente coordinador y gobernador técnico de Grupo Security Office. Coordina ejecución real por fases, delega órdenes atómicas y destraba agentes sin reauditar innecesariamente.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/nvidia/nemotron-3.5-lightning-30b-a3b
 permission:
   edit: deny
   read: allow

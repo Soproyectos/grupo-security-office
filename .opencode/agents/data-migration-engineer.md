@@ -6,7 +6,7 @@ permission:
   edit:
     "*": deny
     "data/**": allow
-    "src/backend/prisma/**": ask
+    "src/backend/prisma/**": allow
   read: allow
   glob: allow
   grep: allow
