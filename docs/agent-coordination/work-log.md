@@ -634,3 +634,20 @@
   - **Validación de ciclos es síncrona pero costosa**: cada `assertCanSetSupervisor` hace una query recursiva. En escenarios de jerarquía muy profunda (50+ niveles), el depth=10 en `WITH RECURSIVE` truncaría la detección. No es un bloqueador práctico (las jerarquías reales rara vez superan 5-6 niveles).
 - `Blockers`: NONE
 
+
+---
+
+## [FIX-LISTAS-DTO-CORP-001] — Corregir 400 "name must be a UUID" en listas + CORP cross-origin en /api/files (issue #42)
+
+- `Executor`: OpenCode
+- `Agent`: backend-engineer (worktree Orca Mesa-de-trabajo-Backend)
+- `Status`: `COMMITTED` (PR draft abierto, pendiente review/merge del coordinador)
+- `Branch`: agent/opencode/issue-42-fix-listas-dto-corp
+- `Requirement source`: Issue #42 (regresión del PR #15 — decoradores huérfanos de `supplierId` quedaron aplicando a `name`/`validFrom`; Helmet 7 bloquea con CORP same-origin las imágenes cross-origin).
+- `Files modified`: src/backend/src/modules/listas/dto/create-lista.dto.ts, src/backend/src/modules/listas/dto/update-lista.dto.ts, src/backend/src/modules/files/files.controller.ts
+- `Files created`: src/backend/src/modules/listas/dto/create-lista.dto.spec.ts, src/backend/src/modules/files/files.controller.spec.ts, docs/agent-coordination/work-log.md (entrada)
+- `Implementation summary`: Eliminados los bloques huérfanos `@ApiPropertyOptional + @IsUUID + @IsOptional` (restos de `supplierId`) que por orden de aplicación de decoradores caían sobre `name` (create) y `validFrom` (update). Grep global confirma que no queda ningún otro bloque huérfano `@IsUUID() @IsOptional()` sin propiedad. Añadido `Cross-Origin-Resource-Policy: cross-origin` SOLO en `FilesController.serve()` (opción A aprobada; `main.ts`/helmet global intactos). Tests de regresión: DTO acepta `name` texto normal y rechaza corto; `UpdateListaDto` acepta/rechaza `validFrom` ISO 8601; `FilesController` expone los 3 headers esperados y 404.
+- `Validation results`: `npx tsc --noEmit` 0 errores; `npm run lint` 0 errores; `npm run build` OK; `npx jest src/modules/listas src/modules/files` 93/94 (1 fallo = preexistente `listas.service.spec.ts` ACL ordering); `npx jest` completo 665/675 — exactamente el baseline documentado de 10 fallos preexistentes (9 transition.service.spec.ts + 1 listas.service.spec.ts), sin regresiones. `git status --short` limpio de archivos fuera de alcance.
+- `Commit hash`: (ver commit en rama)
+- `Handoff to`: Coordinador revisa/mergea el PR draft; despliegue a api-dev (zip manual) es del coordinador, fuera de alcance. NOTA: el archivo canónico `docs/agent-coordination/issues/fix-listas-dto-corp-001.md` no existe en el repo (solo se referencia en el body del issue); no se pudo actualizar su status/result_summary.
+- `Blockers`: NONE

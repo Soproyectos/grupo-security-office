@@ -27,13 +27,6 @@ export class CreateListaDto {
   @IsOptional()
   codigo?: string;
 
-  @ApiPropertyOptional({
-    example: 'b1a2c3d4-...',
-    description: 'Proveedor asociado a la Lista (UUID, nullable)',
-  })
-  @IsUUID()
-  @IsOptional()
-
   @ApiProperty({ example: 'Lista Hikvision Video' })
   @IsString()
   @MinLength(2)
