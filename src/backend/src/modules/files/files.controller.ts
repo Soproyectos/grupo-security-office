@@ -22,6 +22,8 @@ export class FilesController {
       'Content-Type': file.mimeType,
       // Contenido inmutable por id (cada subida genera un id nuevo).
       'Cache-Control': 'public, max-age=31536000, immutable',
+      // Assets públicos e inmutables; se embeben desde un origen distinto (dev.* -> api-dev.*).
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     });
     res.send(file.data);
   }

@@ -62,13 +62,6 @@ export class UpdateListaDto extends PartialType(CreateListaDto) {
   codigo?: string;
 
   @ApiPropertyOptional({
-    example: 'b1a2c3d4-...',
-    description: 'Proveedor asociado a la Lista (UUID). null para limpiar.',
-  })
-  @IsUUID()
-  @IsOptional()
-
-  @ApiPropertyOptional({
     example: '2026-01-01T00:00:00Z',
     description: 'Inicio de vigencia (ISO 8601). null para limpiar.',
   })
