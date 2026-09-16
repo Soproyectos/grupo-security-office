@@ -33,7 +33,17 @@ describe('DashboardService', () => {
     prisma.auditLog.count.mockResolvedValue(3);
     prisma.auditLog.findMany.mockResolvedValue([]);
     prisma.assignment.findMany.mockResolvedValue([]);
+    // Bloque comercial (issue #26): valores vacios por defecto.
+    prisma.salesTarget.findUnique.mockResolvedValue(null);
+    prisma.salesOrder.findMany.mockResolvedValue([]);
+    prisma.quote.findMany.mockResolvedValue([]);
+    prisma.customer.groupBy.mockResolvedValue([]);
+    prisma.quote.groupBy.mockResolvedValue([]);
   });
+
+  const assignedScope = () => {
+    jest.spyOn(acl, 'getAllowedListaIds').mockResolvedValue(['lista-1']);
+  };
 
   describe('getMyWorkspace', () => {
     it('scope GLOBAL para admin de Listas y sin filtro por id', async () => {
@@ -197,6 +207,82 @@ describe('DashboardService', () => {
       expect(prisma.lista.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 3 }),
       );
+    });
+  });
+
+  describe('commercial block (issue #26)', () => {
+    it('mes CON meta: calcula target, invoiced y remaining', async () => {
+      assignedScope();
+      prisma.salesTarget.findUnique.mockResolvedValue({
+        amount: '1000000',
+        currency: 'COP',
+      });
+      prisma.salesOrder.findMany.mockResolvedValue([
+        { total: '400000', currency: 'COP' },
+        { total: '100000', currency: 'COP' },
+      ]);
+
+      const res = await service.getMyWorkspace(COMERCIAL);
+
+      expect(res.commercial).toBeDefined();
+      expect(res.commercial!.target).toEqual({
+        amount: '1000000',
+        currency: 'COP',
+      });
+      expect(res.commercial!.invoiced).toEqual({
+        amount: '500000.00',
+        currency: 'COP',
+        mixedCurrency: false,
+      });
+      expect(res.commercial!.remaining).toEqual({
+        amount: '500000.00',
+        currency: 'COP',
+      });
+    });
+
+    it('mes SIN meta: target null y remaining null, invoiced igualmente calculado', async () => {
+      assignedScope();
+      prisma.salesOrder.findMany.mockResolvedValue([
+        { total: '250000', currency: 'COP' },
+      ]);
+
+      const res = await service.getMyWorkspace(COMERCIAL);
+
+      expect(res.commercial).toBeDefined();
+      expect(res.commercial!.target).toBeNull();
+      expect(res.commercial!.remaining).toBeNull();
+      expect(res.commercial!.invoiced.amount).toBe('250000.00');
+    });
+
+    it('pedidos en monedas distintas marcan mixedCurrency y no se suman', async () => {
+      assignedScope();
+      prisma.salesTarget.findUnique.mockResolvedValue({
+        amount: '1000000',
+        currency: 'COP',
+      });
+      prisma.salesOrder.findMany.mockResolvedValue([
+        { total: '400000', currency: 'COP' },
+        { total: '700', currency: 'USD' },
+      ]);
+
+      const res = await service.getMyWorkspace(COMERCIAL);
+
+      expect(res.commercial!.invoiced).toEqual({
+        amount: '400000.00',
+        currency: 'COP',
+        mixedCurrency: true,
+      });
+      // remaining sigue calculado solo sobre montos en la moneda de la meta.
+      expect(res.commercial!.remaining!.amount).toBe('600000.00');
+    });
+
+    it('admin GLOBAL (Super Admin/Admin Comercial) NO recibe el bloque comercial', async () => {
+      const res = await service.getMyWorkspace(ADMIN);
+
+      expect(res.scope).toBe('GLOBAL');
+      expect(res.commercial).toBeUndefined();
+      expect(prisma.salesTarget.findUnique).not.toHaveBeenCalled();
+      expect(prisma.salesOrder.findMany).not.toHaveBeenCalled();
     });
   });
 });
