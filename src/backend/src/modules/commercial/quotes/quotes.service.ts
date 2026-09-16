@@ -388,6 +388,24 @@ export class QuotesService {
             data: { status: 'CLIENTE', convertedAt: now },
           });
         }
+        // Creación automática del pedido de venta (SalesOrder) en la misma
+        // transacción: snapshot 1:1 de la quote ganada (issue #24).
+        try {
+          await tx.salesOrder.create({
+            data: {
+              code: await this.generateSalesOrderCode(tx),
+              quote: { connect: { id } },
+              customer: { connect: { id: quote.customerId } },
+              owner: { connect: { id: quote.ownerId } },
+              total: quote.total,
+              currency: quote.currency,
+            },
+          });
+        } catch (error) {
+          // Lanzar dentro del $transaction revierte también el cambio de
+          // estado de la quote y la conversión del cliente (atomicidad).
+          this.throwOnSalesOrderConflict(error);
+        }
       }
       return q;
     });
@@ -490,5 +508,55 @@ export class QuotesService {
     });
     if (exists) return this.generateCode(attempt + 1);
     return candidate;
+  }
+
+  /**
+   * Código secuencial SO-0001, SO-0002, ... (mismo patrón que Quote y
+   * Customer). Recibe el cliente transaccional para correr dentro de la
+   * misma transacción que crea el SalesOrder (issue #24).
+   */
+  private async generateSalesOrderCode(
+    tx: Prisma.TransactionClient,
+    attempt = 0,
+  ): Promise<string> {
+    if (attempt >= 5) {
+      // Sin fallback no-secuencial: un código de pedido debe ser siempre
+      // SO-NNNN. Tras reintentos acotados se aborta con error de dominio.
+      throw new ConflictException(
+        'No fue posible generar un código de pedido único; reintente',
+      );
+    }
+
+    const last = await tx.salesOrder.findFirst({
+      where: { code: { startsWith: 'SO-' } },
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+    const lastNum = last?.code ? parseInt(last.code.slice(4), 10) : 0;
+    const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
+    const candidate = `SO-${String(next).padStart(4, '0')}`;
+
+    const exists = await tx.salesOrder.findUnique({
+      where: { code: candidate },
+      select: { id: true },
+    });
+    if (exists) return this.generateSalesOrderCode(tx, attempt + 1);
+    return candidate;
+  }
+
+  /**
+   * Traduce la colisión de unicidad de SalesOrder (`quoteId` único, p.ej. dos
+   * transiciones a `ganada` concurrentes) a un error de dominio controlado,
+   * sin exponer el error crudo de Prisma. Cualquier otro error se re-lanza
+   * intacto. Mismo patrón que `throwOnUniqueViolation` de CustomersService.
+   */
+  private throwOnSalesOrderConflict(error: unknown): never {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictException('Ya existe un pedido para esta cotización');
+    }
+    throw error;
   }
 }

@@ -40,6 +40,7 @@ model User {
   updatedAt               DateTime             @updatedAt
 
   @@index([supervisorId])
+  salesOrders             SalesOrder[]         @relation("SalesOrderOwner")
   @@map("users")
 }
 
@@ -378,6 +379,7 @@ model Customer {
   @@index([ownerId, status])
   @@index([status])
   @@index([createdAt])
+  salesOrders SalesOrder[] @relation("CustomerSalesOrder")
   @@map("customers")
 }
 
@@ -433,7 +435,35 @@ model Quote {
   @@index([customerId])
   @@index([status])
   @@index([listaId])
+  salesOrder SalesOrder? @relation("QuoteSalesOrder")
   @@map("quotes")
+}
+
+/// Pedido de venta. Se crea automáticamente 1:1 cuando una Quote pasa a
+/// `ganada` (los ítems/precios quedan referenciables vía la quote). El envío
+/// de la factura al ERP Yéminus es manual: aquí solo se registra el número y
+/// la fecha de la factura externa (`externalInvoiceNumber`/`externalInvoiceDate`).
+model SalesOrder {
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  quote                 Quote    @relation("QuoteSalesOrder", fields: [quoteId], references: [id], onDelete: Restrict)
+  quoteId               String   @unique
+  customer              Customer @relation("CustomerSalesOrder", fields: [customerId], references: [id], onDelete: Restrict)
+  customerId            String
+  owner                 User     @relation("SalesOrderOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  ownerId               String
+  total                 Decimal  @db.Decimal(14, 2)
+  currency              String   @default("COP")
+  externalInvoiceNumber String?
+  externalInvoiceDate   DateTime?
+  externalSystem        String   @default("YEMINUS")
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([ownerId, createdAt])
+  @@index([customerId])
+  @@map("sales_orders")
 }
 
 /// Línea de cotización con snapshot de precio. `productId`/`priceId` son solo
@@ -465,4 +495,3 @@ model QuoteItem {
   @@index([productId])
   @@map("quote_items")
 }
-
