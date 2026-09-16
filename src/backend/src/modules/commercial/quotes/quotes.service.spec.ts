@@ -307,6 +307,84 @@ describe('QuotesService', () => {
     );
   });
 
+  it('transición a ganada crea SalesOrder 1:1 con código secuencial SO (issue #24)', async () => {
+    prisma.quote.findUnique
+      .mockResolvedValueOnce({
+        ...baseQuote,
+        status: 'enviada',
+        validUntil: null,
+        total: 1234.56,
+      }) // findOne del updateStatus
+      .mockResolvedValueOnce({ ...baseQuote, status: 'ganada', closedAt: new Date() }); // findOne final
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+    prisma.quote.update.mockResolvedValue({});
+    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', status: 'CLIENTE' });
+    prisma.salesOrder.findFirst.mockResolvedValue({ code: 'SO-0007' });
+    prisma.salesOrder.findUnique.mockResolvedValue(null);
+    prisma.salesOrder.create.mockResolvedValue({ id: 'so-1', code: 'SO-0008' });
+
+    await service.updateStatus('q1', { status: 'ganada' }, adminCtx);
+
+    expect(prisma.salesOrder.create).toHaveBeenCalledWith({
+      data: {
+        code: 'SO-0008',
+        quote: { connect: { id: 'q1' } },
+        customer: { connect: { id: 'cust-1' } },
+        owner: { connect: { id: 'op-1' } },
+        total: 1234.56,
+        currency: 'COP',
+      },
+    });
+  });
+
+  it('NO crea SalesOrder cuando la transición no es a ganada', async () => {
+    prisma.quote.findUnique
+      .mockResolvedValueOnce({ ...baseQuote, status: 'enviada', validUntil: null })
+      .mockResolvedValueOnce({ ...baseQuote, status: 'perdida', closedAt: new Date() });
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+    prisma.quote.update.mockResolvedValue({});
+
+    await service.updateStatus(
+      'q1',
+      { status: 'perdida', lostReason: 'precio' },
+      adminCtx,
+    );
+
+    expect(prisma.salesOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('409 controlado cuando SalesOrder.create choca con P2002 (quoteId único, carrera a ganada)', async () => {
+    prisma.quote.findUnique.mockResolvedValueOnce({
+      ...baseQuote,
+      status: 'enviada',
+      validUntil: null,
+    }); // findOne del updateStatus (el throw ocurre antes del findOne final)
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+    prisma.quote.update.mockResolvedValue({});
+    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', status: 'CLIENTE' });
+
+    const p2002 = new (await import('@prisma/client')).Prisma
+      .PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.22.0',
+        meta: { target: ['quoteId'] },
+      } as any);
+    prisma.salesOrder.create.mockRejectedValue(p2002);
+
+    const error = await service
+      .updateStatus('q1', { status: 'ganada' }, adminCtx)
+      .then(() => {
+        throw new Error('expected updateStatus to throw');
+      })
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.message).toBe('Ya existe un pedido para esta cotización');
+    // El error crudo de Prisma no debe filtrarse ni en mensaje ni en identidad.
+    expect(error).not.toBe(p2002);
+    expect(error.message).not.toMatch(/Unique constraint|Prisma/i);
+  });
+
   it('no permite transición inválida (borrador → ganada)', async () => {
     prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'borrador' });
     await expect(

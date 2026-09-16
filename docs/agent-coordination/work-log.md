@@ -651,3 +651,40 @@
 - `Commit hash`: (ver commit en rama)
 - `Handoff to`: Coordinador revisa/mergea el PR draft; despliegue a api-dev (zip manual) es del coordinador, fuera de alcance. NOTA: el archivo canónico `docs/agent-coordination/issues/fix-listas-dto-corp-001.md` no existe en el repo (solo se referencia en el body del issue); no se pudo actualizar su status/result_summary.
 - `Blockers`: NONE
+
+---
+
+## [GS-IMP-24-SALES-ORDER-001] - Implement issue #24: SalesOrder model, auto-creation on Quote ganada, scoped read endpoints, manual Yeminus invoice registration
+
+- `Executor`: OpenCode
+- `Agent`: backend-engineer
+- `Status`: `COMMITTED` (on feature branch agent/opencode/GS-IMP-24-SALES-ORDER-001; awaiting independent review, PR creation and merge)
+- `Branch`: agent/opencode/GS-IMP-24-SALES-ORDER-001
+- `Base commit`: cd222b27dd61d4f560eef21ad09ec3940fa573fd
+- `Started at`: 2026-09-15T00:00:00Z
+- `Completed at`: 2026-09-15T00:00:00Z (commit 7ebba95 on feature branch)
+- `Requirement source`: GitHub issue #24 (commercial module plan, E4 backend)
+- `Files opened`: prisma/schema.prisma, quotes.service.ts, quotes.service.spec.ts, quotes.controller.ts, quotes.module.ts, customers module files (pattern reference), app.module.ts, prisma.mock.ts
+- `Files modified`: src/backend/prisma/schema.prisma (SalesOrder model; back-relations on User/Customer/Quote); src/backend/src/modules/commercial/quotes/quotes.service.ts (auto-create SalesOrder inside the ganada transaction; generateSalesOrderCode; P2002 to ConflictException via throwOnSalesOrderConflict); src/backend/src/modules/commercial/quotes/quotes.service.spec.ts (+3 tests); src/backend/src/app.module.ts (register SalesOrdersModule); src/backend/src/__test__/mocks/prisma.mock.ts (salesOrder delegate); sales-orders module files (module/service/controller/DTOs)
+- `Files created`: src/backend/prisma/migrations/add_sales_orders/migration.sql (adjusted id to TEXT per repo convention); sales-orders/dto/sales-order-query.dto.ts; sales-orders/dto/update-sales-order-invoice.dto.ts; sales-orders/sales-orders.module.ts; sales-orders/sales-orders.service.ts; sales-orders/sales-orders.controller.ts; sales-orders/sales-orders.service.spec.ts (7 tests)
+- `Files reserved`: see file-ownership.md (reservation active; NOT released)
+- `Dependencies`: E1 hierarchy (#18), E2 customers, E3 quotes (all merged)
+- `Implementation summary`:
+  1. Model: SalesOrder - unique sequential code SO-0001..., quote 1:1 (quoteId unique), customer and owner (FK Restrict), total/currency snapshot, externalInvoiceNumber/externalInvoiceDate/externalSystem YEMINUS/notes. No lista/priceList relations (scope kept to issue #24).
+  2. Auto-creation: QuotesService.updateStatus creates the SalesOrder inside the same Prisma transaction as the status change to ganada and the LEAD to CLIENTE conversion; code comes from generateSalesOrderCode with bounded retries.
+  3. Concurrency: Prisma P2002 on quoteId inside the transaction is caught and translated to ConflictException(Ya existe un pedido para esta cotización) via throwOnSalesOrderConflict; throwing inside the transaction callback rolls the whole transaction back (atomicity preserved). Code generation has no non-sequential fallback: after 5 retries it throws ConflictException(No fue posible generar un código de pedido único; reintente).
+  4. Endpoints (api/commercial/sales-orders): GET / list (paginated, search by code, filters customerId/ownerId; hierarchy scope: Listas admins unrestricted, others see own plus subordinates); GET /:id detail (customer/owner/quote plus items; 404 instead of 403 outside scope); PATCH /:id/invoice (manual Yeminus invoice number/date; roles Super Admin / Admin Comercial / Supervisor, the same set that can mark a quote ganada). No POST/PUT/DELETE exist; SalesOrders are created only through the Quote to ganada transition.
+  5. Invoice DTO: externalInvoiceDate is an ISO-8601 string validated with @IsDateString() (established pattern, same as UpdateCustomerDto.lastContactAt); string to Date conversion happens in the service; the PATCH endpoint persists only externalInvoiceNumber and externalInvoiceDate.
+  6. Audit: updateInvoice logs action update, entity SalesOrder with old/new invoice fields through the existing AuditService pattern (same as CustomersService.update); AuditModule is imported in SalesOrdersModule.
+  7. Package state: src/backend/package-lock.json is NOT modified relative to HEAD.
+- `Validation commands`: npx prisma validate; npx prisma generate; npx tsc --noEmit; npm run lint; npm run build; npx jest src/modules/commercial/sales-orders; npx jest src/modules/commercial/quotes/quotes.service.spec.ts; npx jest (full suite); git diff --check
+- `Validation results`: prisma validate PASS; tsc 0 errors; lint 0 errors; build OK; focused suites PASS (sales-orders 7/7; quotes.service.spec 14/14 including the P2002 409 test); full suite 675 passed / 685 total - exactly the documented pre-existing 10-failure baseline (9 transition.service.spec.ts + 1 listas.service.spec.ts), no regressions; git diff --check PASS
+- `Documentation updated`: agent-status.md, file-ownership.md, work-log.md
+- `Commit hash`: 7ebba95
+- `Commit contents (12 files)`: src/backend/prisma/schema.prisma, src/backend/prisma/migrations/add_sales_orders/migration.sql, src/backend/src/__test__/mocks/prisma.mock.ts, src/backend/src/app.module.ts, src/backend/src/modules/commercial/quotes/quotes.service.ts, src/backend/src/modules/commercial/quotes/quotes.service.spec.ts, src/backend/src/modules/commercial/sales-orders/dto/sales-order-query.dto.ts, src/backend/src/modules/commercial/sales-orders/dto/update-sales-order-invoice.dto.ts, src/backend/src/modules/commercial/sales-orders/sales-orders.controller.ts, src/backend/src/modules/commercial/sales-orders/sales-orders.module.ts, src/backend/src/modules/commercial/sales-orders/sales-orders.service.ts, src/backend/src/modules/commercial/sales-orders/sales-orders.service.spec.ts
+- `Migration state`: add_sales_orders generated locally; NOT applied to Neon DEV, production, or any remote database
+- `Handoff to`: Coordinator reviews and authorizes the one atomic commit on branch agent/opencode/GS-IMP-24-SALES-ORDER-001; after merge, applies migration add_sales_orders to Neon DEV; unblocks the E4 frontend issue when ready
+- `Known risks`:
+  - Migration generated but intentionally not applied to any database (coordinator applies it post-merge).
+  - total is a snapshot at win time; ganada is terminal in the quote status flow, so the snapshot cannot diverge afterwards.
+- `Blockers`: NONE - Next action: independent review of 7ebba95, then push/PR/merge only with explicit coordinator approval.
