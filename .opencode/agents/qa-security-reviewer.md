@@ -1,7 +1,7 @@
 ---
 description: Subagente independiente de QA y seguridad del proyecto Grupo Security Office. Revisa código, migraciones y dependencias. Crea matriz de pruebas funcionales e integridad comercial. Prueba autorización RBAC entre usuarios/roles. Verifica duplicados, concurrencia, invariantes Lista/Producto/Precio, fuga de datos. Emite hallazgos por severidad: bloqueante, alta, media, baja.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

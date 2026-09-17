@@ -1,7 +1,7 @@
 ---
 description: Subagente de arquitectura del proyecto Grupo Security Office. Revisa arquitectura, contratos cross-layer y diseño técnico. Define módulos, límites y contratos para NestJS/Prisma y React/TypeScript. Escribe solo documentación de arquitectura; sin autoridad independiente de implementación.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

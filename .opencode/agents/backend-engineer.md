@@ -1,7 +1,7 @@
 ---
 description: Subagente de backend NestJS + TypeScript + Prisma para el proyecto Grupo Security Office. Implementa módulos de productos, listas, precios, usuarios, roles y auditoría. Autenticación, autorización RBAC, idempotencia y transacciones Prisma.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

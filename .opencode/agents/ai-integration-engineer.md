@@ -1,7 +1,7 @@
 ---
 description: Subagente de integración IA opcional del proyecto Grupo Security Office. Análisis/implementación de OCR/IA/catálogo asistido. No define reglas financieras ni es dueño del esquema de datos primario.
 mode: primary
-model: 
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

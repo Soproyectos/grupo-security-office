@@ -1,7 +1,7 @@
 ---
 description: Subagente de frontend React + TypeScript + Tailwind + PWA para el proyecto Grupo Security Office. Panel admin + catálogo, mobile-first, accesibilidad WCAG AA y PWA.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

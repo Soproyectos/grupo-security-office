@@ -1,4 +1,5 @@
 ---
+model: nvidia/moonshotai/kimi-k3
 description: Implementa únicamente la utilidad Python definida por el contrato de mapeo aprobado (excel-mapping-architect) para el proyecto Grupo Security Office. No decide política de mapeo.
 mode: subagent
 permission:

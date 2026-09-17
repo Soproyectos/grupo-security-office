@@ -1,4 +1,5 @@
 ---
+model: nvidia/moonshotai/kimi-k3
 description: Define el mapeo canónico Excel/CSV, las reglas de validación, el reporte de filas rechazadas y el contrato de mapeo para el proyecto Grupo Security Office. No implementa.
 mode: subagent
 permission:

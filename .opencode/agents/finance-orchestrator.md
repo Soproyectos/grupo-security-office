@@ -1,7 +1,7 @@
 ---
 description: Perfil histórico INACTIVO. No tiene autoridad, ownership ni rol de coordinación en este repositorio.
 mode: primary
-model: nvidia/nemotron-3-super-120b-a12b:free
+model: nvidia/moonshotai/kimi-k3
 permission:
   read: allow
 ---

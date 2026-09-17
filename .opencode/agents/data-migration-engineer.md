@@ -1,7 +1,7 @@
 ---
 description: Subagente de datos/import/migración del proyecto Grupo Security Office. Análisis import/export y planificación de migración para PostgreSQL/Prisma. Revisión de riesgo de datos. Sin Alembic ni SQLAlchemy. No toca producción.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny

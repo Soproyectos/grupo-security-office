@@ -1,7 +1,7 @@
 ---
 description: Subagente de DevOps y release del proyecto Grupo Security Office. Infra local y reversible, Docker, CI, health checks. No despliega a producción ni cambia credenciales sin aprobación humana.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: nvidia/moonshotai/kimi-k3
 permission:
   edit:
     "*": deny
