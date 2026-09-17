@@ -23,6 +23,7 @@ import { HierarchyModule } from './common/hierarchy/hierarchy.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-orders.module';
+import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-targets.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-order
     CustomersModule,
     QuotesModule,
     SalesOrdersModule,
+    SalesTargetsModule,
   ],
   providers: [
     {
