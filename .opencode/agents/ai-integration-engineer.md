@@ -1,7 +1,7 @@
 ---
 description: Subagente de integración IA opcional del proyecto Grupo Security Office. Análisis/implementación de OCR/IA/catálogo asistido. No define reglas financieras ni es dueño del esquema de datos primario.
 mode: primary
-model: nvidia/nvidia/nemotron-3-super-120b-a12b
+model: 
 permission:
   edit:
     "*": deny
