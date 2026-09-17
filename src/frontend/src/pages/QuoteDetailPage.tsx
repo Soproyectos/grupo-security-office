@@ -4,6 +4,7 @@ import { Button, Card, Input, Modal } from '../components/ui'
 import QuoteStatusBadge from '../features/quotes/components/QuoteStatusBadge'
 import QuoteItemsTable from '../features/quotes/components/QuoteItemsTable'
 import AddQuoteItemModal from '../features/quotes/components/AddQuoteItemModal'
+import SalesOrderSection from '../features/quotes/components/SalesOrderSection'
 import { useQuote } from '../features/quotes/hooks/useQuotes'
 import {
   extractBackendMessage,
@@ -258,6 +259,13 @@ export default function QuoteDetailPage() {
           </div>
         </dl>
       </Card>
+
+      {/* Pedido (solo cuando la cotización está ganada) */}
+      <SalesOrderSection
+        quoteId={quote.id}
+        customerId={quote.customerId}
+        quoteStatus={quote.status}
+      />
 
       {/* Modal de motivo de pérdida (transición perdida requiere lostReason). */}
       <Modal
