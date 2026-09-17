@@ -4,6 +4,7 @@ const COMMERCIAL_TABS = [
   { to: '/commercial/products', label: 'Productos', end: true },
   { to: '/commercial/lists', label: 'Listas', end: false },
   { to: '/commercial/customers', label: 'Clientes', end: false },
+  { to: '/commercial/quotes', label: 'Cotizaciones', end: false },
   { to: '/commercial/settings', label: 'Configuraci\u00f3n', end: false },
 ]
 
