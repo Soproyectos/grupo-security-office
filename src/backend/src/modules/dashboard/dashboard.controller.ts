@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -34,5 +34,27 @@ export class DashboardController {
     return this.dashboardService.getMyWorkspace(this.ctx(user), {
       take: safeTake,
     });
+  }
+
+  /**
+   * Drill-down del bloque team (issue #27): devuelve el bloque `commercial`
+   * EXACTO que el usuario consultado vería en su propio getMyWorkspace.
+   * Acceso restringido por la jerarquía (assertCanViewUser: el propio
+   * usuario, un ancestro directo/indirecto, o Super Admin; resto → 403).
+   */
+  @Get('team/:userId')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @ApiOperation({
+    summary:
+      'Bloque comercial individual de un miembro del equipo (solo ancestros/self)',
+  })
+  getTeamMember(
+    @CurrentUser() user: any,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.dashboardService.getTeamMemberCommercial(
+      this.ctx(user),
+      targetUserId,
+    );
   }
 }

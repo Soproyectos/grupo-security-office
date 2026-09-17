@@ -12,6 +12,7 @@ import {
   ROLE_ASSIGNMENT_PREFIX,
   normalizeLevel,
 } from '../../common/acl/acl.service';
+import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 
 export const MY_LISTAS_DEFAULT_TAKE = 12;
 export const RECENT_ACTIVITY_TAKE = 10;
@@ -61,6 +62,25 @@ export interface MyCommercialWorkspace {
   };
 }
 
+export interface TeamMemberSummary {
+  userId: string;
+  name: string;
+  target: MoneyAmount | null;
+  invoiced: MoneyAmount & { mixedCurrency: boolean };
+  remaining: MoneyAmount | null;
+  pipeline: { amount: string; count: number };
+  customers: { total: number; leads: number; clientes: number };
+  quotesByStatus: Record<string, number>;
+}
+
+export interface MyTeamBlock {
+  members: TeamMemberSummary[];
+  totals: {
+    target: MoneyAmount & { mixedCurrency: boolean };
+    invoiced: MoneyAmount & { mixedCurrency: boolean };
+  };
+}
+
 export interface MyWorkspace {
   scope: 'GLOBAL' | 'ASSIGNED';
   kpis: {
@@ -77,6 +97,15 @@ export interface MyWorkspace {
    * tienen su dashboard GLOBAL y no reciben este bloque.
    */
   commercial?: MyCommercialWorkspace;
+  /**
+   * Bloque de equipo del supervisor (issue #27): solo presente cuando el
+   * usuario tiene al menos un subordinado (directo o indirecto) en
+   * User.supervisorId — independiente del rol o del scope. Cada miembro se
+   * resume con EXACTAMENTE las mismas fórmulas del bloque `commercial`, pero
+   * agregadas con groupBy/In-arrays sobre todos los subordinados a la vez
+   * (sin N+1: getSubordinateIds se resuelve UNA vez por request).
+   */
+  team?: MyTeamBlock;
 }
 
 @Injectable()
@@ -84,6 +113,7 @@ export class DashboardService {
   constructor(
     private prisma: PrismaService,
     private acl: AclService,
+    private hierarchy: HierarchyService,
   ) {}
 
   /**
@@ -125,11 +155,12 @@ export class DashboardService {
     // la actividad del usuario sigue siendo suya: se omiten solo las queries de
     // Listas/productos y se devuelve el resto coherente.
     if (allowedListaIds !== null && allowedListaIds.length === 0) {
-      const [recentActivityCount, recentActivity, commercial] =
+      const [recentActivityCount, recentActivity, commercial, team] =
         await Promise.all([
           this.getRecentActivityCount(userId, since),
           this.getRecentActivity(userId),
           this.getCommercialBlock(userId, scope),
+          this.getTeamBlock(userId),
         ]);
       return {
         scope,
@@ -142,6 +173,7 @@ export class DashboardService {
         listas: [],
         recentActivity,
         ...(commercial ? { commercial } : {}),
+        ...(team ? { team } : {}),
       };
     }
 
@@ -153,6 +185,7 @@ export class DashboardService {
       recentActivityCount,
       recentActivity,
       commercial,
+      team,
     ] = await Promise.all([
       this.prisma.lista.count({ where: listaWhere }),
       this.prisma.lista.findMany({
@@ -175,6 +208,7 @@ export class DashboardService {
       this.getRecentActivityCount(userId, since),
       this.getRecentActivity(userId),
       this.getCommercialBlock(userId, scope),
+      this.getTeamBlock(userId),
     ]);
 
     const listaIds = listas.map((l) => l.id);
@@ -214,6 +248,7 @@ export class DashboardService {
       })),
       recentActivity,
       ...(commercial ? { commercial } : {}),
+      ...(team ? { team } : {}),
     };
   }
 
@@ -267,6 +302,34 @@ export class DashboardService {
           _count: { _all: true },
         }),
       ]);
+
+    return this.summarizeCommercial({
+      target,
+      invoicedOrders,
+      openQuotes,
+      customersByStatus,
+      quotesByStatus,
+    });
+  }
+
+  /**
+   * Cálculo puro del bloque commercial a partir de las filas ya traídas de la
+   * BD. Lo comparten getCommercialBlock (1 usuario) y getTeamBlock (N
+   * subordinados, mismo algoritmo agregado por ownerId) para que el número por
+   * miembro del team sea idéntico al que ese comercial vería por su cuenta.
+   */
+  private summarizeCommercial(rows: {
+    target: { amount: { toString(): string }; currency: string } | null;
+    invoicedOrders: Array<{
+      total: { toString(): string };
+      currency: string;
+    }>;
+    openQuotes: Array<{ total: { toString(): string }; currency: string }>;
+    customersByStatus: Array<{ status: string; _count: { _all: number } }>;
+    quotesByStatus: Array<{ status: string; _count: { _all: number } }>;
+  }): MyCommercialWorkspace {
+    const { target, invoicedOrders, openQuotes, customersByStatus, quotesByStatus } =
+      rows;
 
     // Moneda de referencia: la de la meta; si no hay meta, la primera moneda
     // facturada; si no hay nada, COP.
@@ -343,6 +406,217 @@ export class DashboardService {
       myCustomers: customerCounts,
       myQuotes: emptyQuotes,
     };
+  }
+
+  /**
+   * Bloque team del supervisor (issue #27): resumen agregado de TODOS los
+   * subordinados (directos e indirectos, vía User.supervisorId) del usuario,
+   * calculando por miembro EXACTAMENTE las mismas fórmulas del bloque
+   * `commercial` (reuso de summarizeCommercial).
+   *
+   * Sin N+1: `getSubordinateIds` se resuelve UNA sola vez por request y todas
+   * las consultas operan sobre el conjunto completo con `ownerId: { in: ids }`
+   * / `groupBy(['ownerId', ...])` — número FIJO de queries (7) sin importar
+   * cuántos subordinados haya. Mismo patrón que getLevelsForListas.
+   *
+   * Devuelve undefined cuando el usuario no tiene subordinados: el bloque
+   * team simplemente no existe para un comercial sin gente a cargo (los
+   * tests fijan este comportamiento).
+   */
+  private async getTeamBlock(
+    userId: string | undefined,
+  ): Promise<MyTeamBlock | undefined> {
+    if (!userId) return undefined;
+
+    const subordinateIds = await this.hierarchy.getSubordinateIds(userId);
+    if (subordinateIds.length === 0) return undefined;
+
+    const range = currentMonthRangeBogota();
+    const { year, month } = bogotaYearMonth();
+    const currentPeriod = periodStartFromString(
+      `${year}-${String(month).padStart(2, '0')}`,
+    );
+
+    // 7 queries fijas — ninguna por miembro.
+    const [users, targets, invoicedOrders, openQuotes, customersByStatus, quotesByStatus] =
+      await Promise.all([
+        this.prisma.user.findMany({
+          where: { id: { in: subordinateIds } },
+          select: { id: true, name: true },
+        }),
+        this.prisma.salesTarget.findMany({
+          where: { userId: { in: subordinateIds }, period: currentPeriod },
+          select: { userId: true, amount: true, currency: true },
+        }),
+        this.prisma.salesOrder.findMany({
+          where: {
+            ownerId: { in: subordinateIds },
+            externalInvoiceNumber: { not: null },
+            externalInvoiceDate: { gte: range.start, lt: range.end },
+          },
+          select: { ownerId: true, total: true, currency: true },
+        }),
+        this.prisma.quote.findMany({
+          where: {
+            ownerId: { in: subordinateIds },
+            status: { in: ['enviada', 'negociacion'] },
+          },
+          select: { ownerId: true, total: true, currency: true },
+        }),
+        this.prisma.customer.groupBy({
+          by: ['ownerId', 'status'],
+          where: { ownerId: { in: subordinateIds } },
+          _count: { _all: true },
+        }),
+        this.prisma.quote.groupBy({
+          by: ['ownerId', 'status'],
+          where: { ownerId: { in: subordinateIds } },
+          _count: { _all: true },
+        }),
+      ]);
+
+    // Índices en memoria por miembro (reagrupación de las filas traídas).
+    const nameByUserId = new Map(users.map((u) => [u.id, u.name]));
+    const targetByUserId = new Map(targets.map((t) => [t.userId, t]));
+
+    const invoicedByUserId = new Map<string, typeof invoicedOrders>();
+    for (const order of invoicedOrders) {
+      const list = invoicedByUserId.get(order.ownerId) ?? [];
+      list.push(order);
+      invoicedByUserId.set(order.ownerId, list);
+    }
+    const pipelineByUserId = new Map<string, typeof openQuotes>();
+    for (const quote of openQuotes) {
+      const list = pipelineByUserId.get(quote.ownerId) ?? [];
+      list.push(quote);
+      pipelineByUserId.set(quote.ownerId, list);
+    }
+    const customersByUserId = new Map<string, typeof customersByStatus>();
+    for (const row of customersByStatus) {
+      const list = customersByUserId.get(row.ownerId) ?? [];
+      list.push(row);
+      customersByUserId.set(row.ownerId, list);
+    }
+    const quotesByUserId = new Map<string, typeof quotesByStatus>();
+    for (const row of quotesByStatus) {
+      const list = quotesByUserId.get(row.ownerId) ?? [];
+      list.push(row);
+      quotesByUserId.set(row.ownerId, list);
+    }
+
+    const computed = new Map<string, MyCommercialWorkspace>();
+    const members: TeamMemberSummary[] = [];
+    for (const memberId of subordinateIds) {
+      const summary = this.summarizeCommercial({
+        target: targetByUserId.get(memberId) ?? null,
+        invoicedOrders: invoicedByUserId.get(memberId) ?? [],
+        openQuotes: pipelineByUserId.get(memberId) ?? [],
+        customersByStatus: customersByUserId.get(memberId) ?? [],
+        quotesByStatus: quotesByUserId.get(memberId) ?? [],
+      });
+      computed.set(memberId, summary);
+
+      const quotesByStatusRecord: Record<string, number> = {};
+      for (const row of quotesByUserId.get(memberId) ?? []) {
+        quotesByStatusRecord[row.status] = row._count._all;
+      }
+
+      members.push({
+        userId: memberId,
+        name: nameByUserId.get(memberId) ?? '',
+        target: summary.target,
+        invoiced: summary.invoiced,
+        remaining: summary.remaining,
+        pipeline: summary.pipeline,
+        customers: summary.myCustomers,
+        quotesByStatus: quotesByStatusRecord,
+      });
+    }
+
+    // Totales: suma sobre la moneda de referencia del conjunto (la moneda de
+    // meta más frecuente; fallback 'COP'), MISMA regla anti cross-currency del
+    // bloque commercial: lo que no está en la moneda de referencia NO se suma
+    // y se reporta con mixedCurrency: true.
+    const currencyCount = new Map<string, number>();
+    for (const summary of computed.values()) {
+      if (summary.target) {
+        currencyCount.set(
+          summary.target.currency,
+          (currencyCount.get(summary.target.currency) ?? 0) + 1,
+        );
+      }
+    }
+    let totalsCurrency = 'COP';
+    let best = -1;
+    for (const [currency, n] of currencyCount) {
+      if (n > best) {
+        best = n;
+        totalsCurrency = currency;
+      }
+    }
+
+    let targetTotal = 0;
+    let invoicedTotal = 0;
+    let targetMixed = false;
+    let invoicedMixed = false;
+    for (const summary of computed.values()) {
+      if (summary.target) {
+        if (summary.target.currency === totalsCurrency) {
+          targetTotal += Number(summary.target.amount);
+        } else {
+          targetMixed = true;
+        }
+      }
+      if (summary.invoiced.currency === totalsCurrency) {
+        invoicedTotal += Number(summary.invoiced.amount);
+      } else {
+        invoicedMixed = true;
+      }
+    }
+
+    const fmt = (n: number): string => n.toFixed(2);
+
+    return {
+      members,
+      totals: {
+        target: {
+          amount: fmt(targetTotal),
+          currency: totalsCurrency,
+          mixedCurrency: targetMixed,
+        },
+        invoiced: {
+          amount: fmt(invoicedTotal),
+          currency: totalsCurrency,
+          mixedCurrency: invoicedMixed,
+        },
+      },
+    };
+  }
+
+  /**
+   * Drill-down (issue #27, punto 2 — opción endpoint): el bloque `commercial`
+   * EXACTO que el usuario consultado vería en su propio dashboard, accesible
+   * solo si la jerarquía lo permite (Super Admin, el propio usuario, o un
+   * ancestro directo/indirecto vía assertCanViewUser — 403/404 por el helper).
+   * Los member summaries del bloque team quedan resumidos a propósito; el
+   * detalle completo por comercial vive solo aquí.
+   */
+  async getTeamMemberCommercial(
+    ctx: AccessContext,
+    targetUserId: string,
+  ): Promise<MyCommercialWorkspace> {
+    await this.hierarchy.assertCanViewUser(ctx, targetUserId);
+    // El scope ASSIGNED es una propiedad del caller, no del objetivo: aquí
+    // pedimos el bloque del USUARIO OBJETIVO sin importar el scope del viewer.
+    const block = await this.getCommercialBlock(targetUserId, 'ASSIGNED');
+    if (!block) {
+      // Inalcanzable en la práctica (ASSIGNED + userId siempre construyen el
+      // bloque), pero el tipo lo exige.
+      throw new Error(
+        `No se pudo construir el bloque comercial del usuario ${targetUserId}`,
+      );
+    }
+    return block;
   }
 
   private async getRecentActivityCount(
