@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  bogotaYearMonth,
+  currentMonthRangeBogota,
+  periodStartFromString,
+} from '../../common/date/month-range-bogota';
+import {
   AclService,
   AccessContext,
   LEVEL_RANK,
@@ -32,6 +37,30 @@ export interface MyActivityEntry {
   createdAt: Date;
 }
 
+export interface MoneyAmount {
+  amount: string;
+  currency: string;
+}
+
+export interface MyCommercialWorkspace {
+  /** Meta del mes actual (Bogotá); null si el usuario no tiene meta fijada. */
+  target: MoneyAmount | null;
+  /** Facturado del mes: pedidos con externalInvoiceNumber registrado este mes. */
+  invoiced: MoneyAmount & { mixedCurrency: boolean };
+  /** target - invoiced; null cuando no hay meta. */
+  remaining: MoneyAmount | null;
+  /** Quotes abiertas (enviada/negociacion) en la moneda de referencia. */
+  pipeline: { amount: string; count: number };
+  myCustomers: { total: number; leads: number; clientes: number };
+  myQuotes: {
+    borrador: number;
+    enviada: number;
+    negociacion: number;
+    ganada: number;
+    perdida: number;
+  };
+}
+
 export interface MyWorkspace {
   scope: 'GLOBAL' | 'ASSIGNED';
   kpis: {
@@ -42,6 +71,12 @@ export interface MyWorkspace {
   };
   listas: MyListaSummary[];
   recentActivity: MyActivityEntry[];
+  /**
+   * Bloque comercial operativo: solo presente para usuarios en scope ASSIGNED
+   * (Supervisor/Operador/Consulta). Los admins (Super Admin/Admin Comercial)
+   * tienen su dashboard GLOBAL y no reciben este bloque.
+   */
+  commercial?: MyCommercialWorkspace;
 }
 
 @Injectable()
@@ -90,10 +125,12 @@ export class DashboardService {
     // la actividad del usuario sigue siendo suya: se omiten solo las queries de
     // Listas/productos y se devuelve el resto coherente.
     if (allowedListaIds !== null && allowedListaIds.length === 0) {
-      const [recentActivityCount, recentActivity] = await Promise.all([
-        this.getRecentActivityCount(userId, since),
-        this.getRecentActivity(userId),
-      ]);
+      const [recentActivityCount, recentActivity, commercial] =
+        await Promise.all([
+          this.getRecentActivityCount(userId, since),
+          this.getRecentActivity(userId),
+          this.getCommercialBlock(userId, scope),
+        ]);
       return {
         scope,
         kpis: {
@@ -104,6 +141,7 @@ export class DashboardService {
         },
         listas: [],
         recentActivity,
+        ...(commercial ? { commercial } : {}),
       };
     }
 
@@ -114,6 +152,7 @@ export class DashboardService {
       pendingPublication,
       recentActivityCount,
       recentActivity,
+      commercial,
     ] = await Promise.all([
       this.prisma.lista.count({ where: listaWhere }),
       this.prisma.lista.findMany({
@@ -135,6 +174,7 @@ export class DashboardService {
       }),
       this.getRecentActivityCount(userId, since),
       this.getRecentActivity(userId),
+      this.getCommercialBlock(userId, scope),
     ]);
 
     const listaIds = listas.map((l) => l.id);
@@ -173,6 +213,135 @@ export class DashboardService {
         updatedAt: l.updatedAt,
       })),
       recentActivity,
+      ...(commercial ? { commercial } : {}),
+    };
+  }
+
+  /**
+   * Bloque comercial del espacio personal (issue #26): meta del mes, facturado,
+   * faltante, pipeline abierto y cartera del usuario. Solo para scope ASSIGNED
+   * (roles operativos comerciales) — los admins tienen su dashboard GLOBAL y
+   * no reciben este bloque.
+   *
+   * Sin N+1: una query por dimensión (meta, pedidos del mes, quotes abiertas,
+   * groupBy de customers, groupBy de quotes), todo en un solo Promise.all.
+   */
+  private async getCommercialBlock(
+    userId: string | undefined,
+    scope: 'GLOBAL' | 'ASSIGNED',
+  ): Promise<MyCommercialWorkspace | undefined> {
+    if (scope !== 'ASSIGNED' || !userId) return undefined;
+
+    const range = currentMonthRangeBogota();
+    const { year, month } = bogotaYearMonth();
+    const currentPeriod = periodStartFromString(
+      `${year}-${String(month).padStart(2, '0')}`,
+    );
+
+    const [target, invoicedOrders, openQuotes, customersByStatus, quotesByStatus] =
+      await Promise.all([
+        this.prisma.salesTarget.findUnique({
+          where: { userId_period: { userId, period: currentPeriod } },
+          select: { amount: true, currency: true },
+        }),
+        this.prisma.salesOrder.findMany({
+          where: {
+            ownerId: userId,
+            externalInvoiceNumber: { not: null },
+            externalInvoiceDate: { gte: range.start, lt: range.end },
+          },
+          select: { total: true, currency: true },
+        }),
+        this.prisma.quote.findMany({
+          where: { ownerId: userId, status: { in: ['enviada', 'negociacion'] } },
+          select: { total: true, currency: true },
+        }),
+        this.prisma.customer.groupBy({
+          by: ['status'],
+          where: { ownerId: userId },
+          _count: { _all: true },
+        }),
+        this.prisma.quote.groupBy({
+          by: ['status'],
+          where: { ownerId: userId },
+          _count: { _all: true },
+        }),
+      ]);
+
+    // Moneda de referencia: la de la meta; si no hay meta, la primera moneda
+    // facturada; si no hay nada, COP.
+    const refCurrency =
+      target?.currency ??
+      invoicedOrders[0]?.currency ??
+      'COP';
+
+    // JAMÁS sumar monedas distintas: solo se suman montos en la moneda de
+    // referencia; si aparece otra, se marca mixedCurrency (decisión issue #26).
+    let invoicedTotal = 0;
+    let mixedCurrency = false;
+    for (const order of invoicedOrders) {
+      if (order.currency === refCurrency) {
+        invoicedTotal += Number(order.total);
+      } else {
+        mixedCurrency = true;
+      }
+    }
+
+    let pipelineAmount = 0;
+    let pipelineCount = 0;
+    for (const quote of openQuotes) {
+      if (quote.currency === refCurrency) {
+        pipelineAmount += Number(quote.total);
+        pipelineCount += 1;
+      }
+    }
+
+    const customerCounts = { total: 0, leads: 0, clientes: 0 };
+    for (const row of customersByStatus) {
+      const n = row._count._all;
+      customerCounts.total += n;
+      if (row.status === 'LEAD') customerCounts.leads = n;
+      else if (row.status === 'CLIENTE') customerCounts.clientes = n;
+    }
+
+    const emptyQuotes = {
+      borrador: 0,
+      enviada: 0,
+      negociacion: 0,
+      ganada: 0,
+      perdida: 0,
+    };
+    for (const row of quotesByStatus) {
+      if (row.status in emptyQuotes) {
+        emptyQuotes[row.status as keyof typeof emptyQuotes] = row._count._all;
+      }
+    }
+
+    const fmt = (n: number): string => n.toFixed(2);
+
+    const invoiced: MyCommercialWorkspace['invoiced'] = {
+      amount: fmt(invoicedTotal),
+      currency: refCurrency,
+      mixedCurrency,
+    };
+    const targetBlock: MoneyAmount | null = target
+      ? { amount: target.amount.toString(), currency: target.currency }
+      : null;
+
+    return {
+      target: targetBlock,
+      invoiced,
+      // remaining null sin meta (mes sin meta fijada); con moneda mixta se
+      // sigue calculando sobre los montos en la moneda de la meta.
+      remaining: target
+        ? {
+            amount: fmt(Number(target.amount) - invoicedTotal),
+            currency: target.currency,
+          }
+        : null,
+      pipeline: { amount: fmt(pipelineAmount), count: pipelineCount },
+      myCustomers: customerCounts,
+      myQuotes: emptyQuotes,
     };
   }
 

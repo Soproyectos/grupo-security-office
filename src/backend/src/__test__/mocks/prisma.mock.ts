@@ -136,6 +136,7 @@ export const createPrismaMock = () => ({
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+    groupBy: jest.fn(),
   },
   quote: {
     findUnique: jest.fn(),
@@ -146,6 +147,7 @@ export const createPrismaMock = () => ({
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+    groupBy: jest.fn(),
   },
   quoteItem: {
     findUnique: jest.fn(),
@@ -165,6 +167,16 @@ export const createPrismaMock = () => ({
     findUnique: jest.fn(),
     create: jest.fn(),
     delete: jest.fn(),
+  },
+  salesTarget: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
   },
   salesOrder: {
     findUnique: jest.fn(),

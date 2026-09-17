@@ -41,6 +41,8 @@ model User {
 
   @@index([supervisorId])
   salesOrders             SalesOrder[]         @relation("SalesOrderOwner")
+  salesTargetsOwned       SalesTarget[]        @relation("TargetOwner")
+  salesTargetsSet         SalesTarget[]        @relation("TargetSetter")
   @@map("users")
 }
 
@@ -464,6 +466,30 @@ model SalesOrder {
   @@index([ownerId, createdAt])
   @@index([customerId])
   @@map("sales_orders")
+}
+
+/// Meta comercial mensual de un usuario. `period` siempre guarda el día 1 del
+/// mes (en America/Bogota) como DATE, lo que permite rangos multi-mes con un
+/// solo índice. La fija un ancestro jerárquico o un admin comercial (upsert por
+/// (userId, period)); el "logrado" NO vive aquí — se calcula desde SalesOrder
+/// con factura externa registrada (ver dashboard.service.ts).
+model SalesTarget {
+  id        String   @id @default(uuid())
+  userId    String
+  period    DateTime @db.Date
+  amount    Decimal  @db.Decimal(14, 2)
+  currency  String   @default("COP")
+  setById   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation("TargetOwner", fields: [userId], references: [id], onDelete: Cascade)
+  setBy User? @relation("TargetSetter", fields: [setById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, period])
+  @@index([period])
+  @@map("sales_targets")
 }
 
 /// Línea de cotización con snapshot de precio. `productId`/`priceId` son solo
