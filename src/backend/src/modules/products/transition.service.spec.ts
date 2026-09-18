@@ -623,9 +623,13 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
   describe('bulkTransition(ids, dto, ctx)', () => {
     it('aplica a los válidos y rechaza los inválidos (applied/rejected)', async () => {
       mockPublishChecklistOk();
-      mockPrisma.product.findUnique
-        .mockResolvedValueOnce(mkProduct('DRAFT', { id: 'prod-ok' }))
-        .mockResolvedValueOnce(mkProduct('ARCHIVED', { id: 'prod-bad' }));
+      // transition()/doTransition() consultan el producto más de una vez cada uno;
+      // se responde por id en lugar de encadenar mockResolvedValueOnce.
+      mockPrisma.product.findUnique.mockImplementation(({ where }: any) =>
+        where.id === 'prod-ok'
+          ? Promise.resolve(mkProduct('DRAFT', { id: 'prod-ok' }))
+          : Promise.resolve(mkProduct('ARCHIVED', { id: 'prod-bad' })),
+      );
       mockPrisma.product.update.mockResolvedValue(mkProduct('PUBLISHED', { id: 'prod-ok' }));
 
       const result = await service.bulkTransition(['prod-ok', 'prod-bad'], { event: 'PUBLISH' });
@@ -638,9 +642,12 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
 
     it('producto inexistente va a rejected sin romper el lote', async () => {
       mockPublishChecklistOk();
-      mockPrisma.product.findUnique
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(mkProduct('DRAFT', { id: 'prod-ok' }));
+      // Igual que arriba: resolver por id. 'no-existe' siempre devuelve null.
+      mockPrisma.product.findUnique.mockImplementation(({ where }: any) =>
+        where.id === 'no-existe'
+          ? Promise.resolve(null)
+          : Promise.resolve(mkProduct('DRAFT', { id: 'prod-ok' })),
+      );
       mockPrisma.product.update.mockResolvedValue(mkProduct('PUBLISHED', { id: 'prod-ok' }));
 
       const result = await service.bulkTransition(['no-existe', 'prod-ok'], { event: 'PUBLISH' });

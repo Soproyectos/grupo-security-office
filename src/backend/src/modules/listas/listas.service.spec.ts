@@ -503,8 +503,13 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
   });
 
   it('update con codigo duplicado â†’ 409', async () => {
-    mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista); // fetch en update
-    mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista); // fetch interno del ACL
+    mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista); // isBlockedByDeletion
+    mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista); // fetch principal en update
+    mockPrisma.lista.findUnique.mockResolvedValueOnce({
+      id: LISTA_ID,
+      isActive: true,
+      archivedAt: null,
+    }); // fetch interno del ACL (necesita isActive/archivedAt)
     mockPrisma.lista.findUnique.mockResolvedValueOnce({ id: 'otra' }); // check de codigo
     await expect(
       service.update(LISTA_ID, { codigo: 'DUP-2026' }, EDITER),

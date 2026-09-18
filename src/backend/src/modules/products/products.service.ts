@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   ConflictException,
   NotFoundException,
@@ -45,7 +45,7 @@ const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8 MB
 /** Reporte de un tick del scheduler P6 (cron cada minuto). */
 export interface SchedulerTickReport {
   runAt: Date;
-  /** true si el tick se descartÃ³ porque el anterior aÃºn corrÃ­a (lock en memoria). */
+  /** true si el tick se descartó porque el anterior aún corría (lock en memoria). */
   skipped: boolean;
   publishOk: number;
   publishFailed: Array<{ id: string; reasons: string }>;
@@ -80,13 +80,13 @@ export class ProductsService {
 
   /**
    * Lock en memoria del tick del scheduler (P6): impide que dos ticks del cron
-   * se solapen en el mismo proceso. Los ticks estÃ¡n espaciados 1 minuto, pero
-   * si una ejecuciÃ³n se alarga mÃ¡s de 60s este booleano descarta el siguiente.
+   * se solapen en el mismo proceso. Los ticks están espaciados 1 minuto, pero
+   * si una ejecución se alarga más de 60s este booleano descarta el siguiente.
    */
   private lifecycleTickRunning = false;
 
   private trendingCache: Map<string, { data: any; meta: { total: number; take?: number }; timestamp: number }> = new Map();
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos de expiraciÃ³n de cachÃ©
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos de expiración de caché
 
   /**
    * Cachea productos tendencia por 5 minutos
@@ -123,7 +123,7 @@ export class ProductsService {
   }
 
   /**
-   * Valida un array de SpecFieldDto segÃºn las reglas de tipo:
+   * Valida un array de SpecFieldDto según las reglas de tipo:
    * - TEXT: value debe ser string
    * - NUMBER: value debe ser number
    * - BOOLEAN: value debe ser boolean
@@ -140,7 +140,7 @@ export class ProductsService {
         throw new BadRequestException(`El campo "${spec.key}" en ${fieldName} es obligatorio`);
       }
 
-      // Validar segÃºn type
+      // Validar según type
       switch (spec.type) {
         case SpecType.TEXT:
           if (spec.value !== undefined && spec.value !== null && typeof spec.value !== 'string') {
@@ -163,7 +163,7 @@ export class ProductsService {
               throw new BadRequestException(`El campo "${spec.key}" en ${fieldName} debe ser de tipo SELECT (string)`);
             }
             if (spec.options && spec.options.length > 0 && !spec.options.includes(spec.value)) {
-              throw new BadRequestException(`El valor "${spec.value}" para "${spec.key}" en ${fieldName} no estÃ¡ en las opciones permitidas: ${spec.options.join(', ')}`);
+              throw new BadRequestException(`El valor "${spec.value}" para "${spec.key}" en ${fieldName} no está en las opciones permitidas: ${spec.options.join(', ')}`);
             }
           }
           break;
@@ -212,8 +212,8 @@ export class ProductsService {
   /**
    * Estado calculado de stock para un conjunto de productos (checklist 42):
    * 'in_stock' (availableQty > 0), 'out_of_stock' (availableQty 0), 'no_stock_data'
-   * (sin registro de stock). No oculta productos automÃ¡ticamente: la regla de
-   * negocio para ocultar por falta de stock queda pendiente de decisiÃ³n.
+   * (sin registro de stock). No oculta productos automáticamente: la regla de
+   * negocio para ocultar por falta de stock queda pendiente de decisión.
    */
   private async getStockStatusMap(
     productIds: string[],
@@ -230,7 +230,7 @@ export class ProductsService {
   }
 
   /**
-   * Obtiene productos tendencia (Ãºltimos 30 dÃ­as visibles y activos)
+   * Obtiene productos tendencia (últimos 30 días visibles y activos)
    */
   async findTrending(params?: {
     take?: number;
@@ -317,7 +317,7 @@ export class ProductsService {
           meta: { total, take },
         });
       } else {
-        // Fallback: bÃºsqueda por contains insensible
+        // Fallback: búsqueda por contains insensible
         const where: Prisma.ProductWhereInput = {
           isVisible: true,
           isActive: true,
@@ -390,7 +390,7 @@ export class ProductsService {
       // Fuzzy search usando pg_trgm similarity
       const searchTerm = search.trim();
       const listaFilter = allowedListaIds !== null
-        ? (allowedListaIds.length > 0 ? `AND "listaId" IN (${allowedListaIds.map(id => `'${id}'`).join(',')})` : `AND 1=0`) // â† Cambio aquÃ­: 1=0 fuerza 0 resultados
+        ? (allowedListaIds.length > 0 ? `AND "listaId" IN (${allowedListaIds.map(id => `'${id}'`).join(',')})` : `AND 1=0`) // ← Cambio aquí: 1=0 fuerza 0 resultados
         : '';
       const categoryFilter = categoryId ? `AND "categoryId" = '${categoryId}'` : '';
       const brandFilter = brandId ? `AND "brandId" = '${brandId}'` : '';
@@ -463,7 +463,7 @@ export class ProductsService {
         _similarity: undefined, // remove internal field
       }));
     } else {
-      // Fallback: bÃºsqueda por contains insensible (search â‰¤ 2 chars o sin search)
+      // Fallback: búsqueda por contains insensible (search ≤ 2 chars o sin search)
       const where: Prisma.ProductWhereInput = {
         ...(allowedListaIds !== null && { listaId: { in: allowedListaIds.length ? allowedListaIds : ['no-existe-este-id'] } }),
         ...(search && {
@@ -501,8 +501,8 @@ export class ProductsService {
       total = count;
     }
 
-    // Filtrado por restricciÃ³n explÃ­cita de assignment PRODUCT (checklist 17/31).
-    // Si el usuario tiene assignment PRODUCT con isActive=false sobre algÃºn producto,
+    // Filtrado por restricción explícita de assignment PRODUCT (checklist 17/31).
+    // Si el usuario tiene assignment PRODUCT con isActive=false sobre algún producto,
     // ese producto debe ser denegado (403) en findOne y excluido en findAll.
     // Si el usuario tiene assignment PRODUCT activo con nivel suficiente, se permite.
     let productAssignmentsCache: { resourceId: string; level: string; isActive: boolean }[] = [];
@@ -528,7 +528,7 @@ export class ProductsService {
     }
 
     const filteredProducts = products.filter((p) => {
-      // Si el producto estÃ¡ en la lista de denegaciÃ³n por isActive=false, excluirlo
+      // Si el producto está en la lista de denegación por isActive=false, excluirlo
       if (deniedProductIds.has(p.id)) return false;
       // Si el usuario tiene assignment PRODUCT activo, verificar nivel
       if (activeAssignmentsByProduct.has(p.id)) {
@@ -568,9 +568,9 @@ export class ProductsService {
 
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Deny-by-default con restricciÃ³n explÃ­cita por producto (checklist 17/31):
-    // assertProductAccess evalÃºa assignments PRODUCT (deny prevalece) y cae a la
-    // Lista dueÃ±a si no hay excepciÃ³n por producto.
+    // Deny-by-default con restricción explícita por producto (checklist 17/31):
+    // assertProductAccess evalúa assignments PRODUCT (deny prevalece) y cae a la
+    // Lista dueña si no hay excepción por producto.
     if (ctx) {
       if (!product.listaId) throw new NotFoundException('Producto no encontrado');
       await this.acl.assertProductAccess(id, ctx, 'view');
@@ -590,7 +590,7 @@ export class ProductsService {
     if (existingSku) throw new ConflictException('Ya existe un producto con ese SKU');
 
     const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
-    if (!category) throw new NotFoundException('CategorÃ­a no encontrada');
+    if (!category) throw new NotFoundException('Categoría no encontrada');
 
     const brand = await this.prisma.brand.findUnique({ where: { id: dto.brandId } });
     if (!brand) throw new NotFoundException('Marca no encontrada');
@@ -605,21 +605,21 @@ export class ProductsService {
     this.validateSpecs(specs, 'specs');
     this.validateSpecs(extraSpecs, 'extraSpecs');
 
-    // Compatibilidad: toda creaciÃ³n de producto debe quedar asociada a una Lista.
-    // Si se envÃ­a listaId se valida su existencia; si falta, se asigna LISTA-GENERAL
-    // (fallback explÃ­cito y documentado para registros legados).  [decisiones 8/14]
-    // La Lista tambiÃ©n expone defaultVisibility: si no viene dto.isVisible explÃ­cito,
+    // Compatibilidad: toda creación de producto debe quedar asociada a una Lista.
+    // Si se envía listaId se valida su existencia; si falta, se asigna LISTA-GENERAL
+    // (fallback explícito y documentado para registros legados).  [decisiones 8/14]
+    // La Lista también expone defaultVisibility: si no viene dto.isVisible explícito,
     // el producto nuevo hereda la visibilidad por defecto de su Lista.
     const lista = await this.resolveLista(dto.listaId);
 
     // ACL: crear producto exige `edit_products` sobre la Lista destino (checklist 29/30).
     if (ctx) await this.acl.assertListaAccess(lista.id, ctx, 'edit_products');
 
-    // Bloqueo: si la Lista estÃ¡ pendiente de eliminaciÃ³n, no permitir crear producto
+    // Bloqueo: si la Lista está pendiente de eliminación, no permitir crear producto
         if (await this.isListaPendingDeletion(lista.id)) {
       throw new ConflictException({
         code: 'LISTA_PENDIENTE_ELIMINACION',
-        message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+        message: 'La Lista está pendiente de eliminación y no permite cambios.',
       });
     }
 
@@ -637,7 +637,7 @@ export class ProductsService {
         lifecycleStatus: 'DRAFT',
         // Un producto nuevo SIEMPRE nace en DRAFT (isActive=false, isVisible=false).
         // Los campos legacy isActive/isVisible/publishStatus/publishAt/unpublishAt se
-        // ignoran/normalizan para conservar el estado inicial canÃ³nico (no generan legacy).
+        // ignoran/normalizan para conservar el estado inicial canónico (no generan legacy).
         isActive: false,
         isVisible: false,
       },
@@ -655,27 +655,27 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto, ctx?: AccessContext) {
-    // El estado del producto se gestiona vÃ­a FSM (POST /api/products/:id/transition).
-    // Esta guarda explÃ­cita cubre llamadas directas al servicio (sin DTO whitelist).
+    // El estado del producto se gestiona vía FSM (POST /api/products/:id/transition).
+    // Esta guarda explícita cubre llamadas directas al servicio (sin DTO whitelist).
     const stateKeys = ['isActive', 'isVisible', 'publishStatus', 'publishAt', 'unpublishAt'];
     if (stateKeys.some((key) => (dto as any)[key] !== undefined)) {
-      throw new BadRequestException('El estado del producto se gestiona vÃ­a POST /transition');
+      throw new BadRequestException('El estado del producto se gestiona vía POST /transition');
     }
 
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     // ACL: editar producto exige `edit_products` sobre el producto/Lista (checklist 29/30).
-    // assertProductAccess evalÃºa restricciÃ³n explÃ­cita por producto + Lista dueÃ±a.
+    // assertProductAccess evalúa restricción explícita por producto + Lista dueña.
     if (ctx && product.listaId) {
       await this.acl.assertProductAccess(id, ctx, 'edit_products');
     }
-    // Bloqueo: si la Lista del producto estÃ¡ pendiente de eliminaciÃ³n, no permitir actualizar
+    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir actualizar
     if (product.listaId) {
             if (await this.isListaPendingDeletion(product.listaId)) {
         throw new ConflictException({
           code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+          message: 'La Lista está pendiente de eliminación y no permite cambios.',
         });
       }
       // Permiso Super Admin bypass
@@ -684,7 +684,7 @@ export class ProductsService {
       }
     }
 
-    // Si se reasigna listaId, se autoriza ademÃ¡s sobre la nueva Lista.
+    // Si se reasigna listaId, se autoriza además sobre la nueva Lista.
     let listaId: string | null = product.listaId ?? null;
     if (dto.listaId !== undefined) {
       const newLista = await this.resolveLista(dto.listaId);
@@ -701,7 +701,7 @@ export class ProductsService {
 
     if (dto.categoryId) {
       const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
-      if (!category) throw new NotFoundException('CategorÃ­a no encontrada');
+      if (!category) throw new NotFoundException('Categoría no encontrada');
     }
 
     if (dto.brandId) {
@@ -754,19 +754,19 @@ export class ProductsService {
   }
 
   /**
-   * Despublica un producto (endpoint legacy delegado a la FSM): UNPUBLISH â†’ DRAFT
-   * con razÃ³n obligatoria (audit 'unpublish').
+   * Despublica un producto (endpoint legacy delegado a la FSM): UNPUBLISH → DRAFT
+   * con razón obligatoria (audit 'unpublish').
    */
   async unpublish(id: string, dto: UnpublishProductDto, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Bloqueo: si la Lista del producto estÃ¡ pendiente de eliminaciÃ³n, no permitir despublicar
+    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir despublicar
     if (product.listaId) {
             if (await this.isListaPendingDeletion(product.listaId)) {
         throw new ConflictException({
           code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+          message: 'La Lista está pendiente de eliminación y no permite cambios.',
         });
       }
       // Permiso Super Admin bypass
@@ -779,7 +779,7 @@ export class ProductsService {
   }
 
   /**
-   * Adaptador legacy: alterna visibilidad traduciendo al contrato canÃ³nico.
+   * Adaptador legacy: alterna visibilidad traduciendo al contrato canónico.
    */
   async toggleVisibility(id: string, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({ where: { id } });
@@ -798,13 +798,13 @@ export class ProductsService {
   }
 
   /**
-   * Checklist previo a publicaciÃ³n (documentado):
+   * Checklist previo a publicación (documentado):
    *  (a) Lista destino activa y no archivada.
    *  (b) Producto activo (isActive).
    *  (c) Al menos 1 precio vigente (validFrom nulo o <= now y validUntil nulo o futuro) en la Lista.
    *  (d) Al menos 1 imagen.
    *  (e) Stock: si existe registro de stock, exige availableQty > 0.
-   *      Si NO existe registro de stock, NO se bloquea (decisiÃ³n documentada).
+   *      Si NO existe registro de stock, NO se bloquea (decisión documentada).
    * Devuelve la lista de TODOS los requisitos fallidos (mensaje 400 detallado).
    */
   private async validatePublishRequirements(product: {
@@ -821,16 +821,16 @@ export class ProductsService {
       lista = await this.prisma.lista.findUnique({ where: { id: product.listaId } });
     }
     if (!lista || !lista.isActive || lista.archivedAt) {
-      failures.push('La lista destino no estÃ¡ activa o estÃ¡ archivada');
+      failures.push('La lista destino no está activa o está archivada');
     }
 
     // (c) Al menos 1 precio vigente en la Lista.
-    // Los precios importados se crean con `listaId: null` y se vinculan vÃ­a
-    // `priceListId` (PriceList no tiene relaciÃ³n FK con Lista). Si no hay precio
+    // Los precios importados se crean con `listaId: null` y se vinculan vía
+    // `priceListId` (PriceList no tiene relación FK con Lista). Si no hay precio
     // con el listaId de la lista, se hace fallback al precio vigente global del
-    // producto para que la publicaciÃ³n no se bloquee por este artefacto.
+    // producto para que la publicación no se bloquee por este artefacto.
     // Se mantiene la regla de fondo: el precio debe existir y ser vigente
-    // (validFrom <= hoy <= validUntil, lÃ­mites abiertos con null).
+    // (validFrom <= hoy <= validUntil, límites abiertos con null).
     const vigenciaFilter = {
       AND: [
         { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
@@ -872,11 +872,11 @@ export class ProductsService {
   }
 
   /**
-   * Adaptador legacy de publicaciÃ³n/programaciÃ³n (obsoleto, se conserva transitoriamente):
+   * Adaptador legacy de publicación/programación (obsoleto, se conserva transitoriamente):
    * - Si `publishAt` es futura: el producto permanece en DRAFT y solo se persiste `publishAt`
-   *   (el scheduler aplicarÃ¡ PUBLISH al vencer la fecha).
-   * - Si no hay `publishAt` futura: ejecuta la transiciÃ³n canÃ³nica PUBLISH (DRAFT â†’ PUBLISHED).
-   * - `unpublishAt` se ignora (no existe auto-despublicaciÃ³n).
+   *   (el scheduler aplicará PUBLISH al vencer la fecha).
+   * - Si no hay `publishAt` futura: ejecuta la transición canónica PUBLISH (DRAFT → PUBLISHED).
+   * - `unpublishAt` se ignora (no existe auto-despublicación).
    */
   async publish(id: string, dto: PublishProductDto, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({ where: { id } });
@@ -884,16 +884,16 @@ export class ProductsService {
 
     const status = this.effectiveLifecycleStatus(product);
 
-    // CancelaciÃ³n explÃ­cita de una publicaciÃ³n programada.
-    // Solo vÃ¡lida en DRAFT con publishAt futura activa. No ejecuta transiciones
-    // canÃ³nicas ni scheduler; conserva el contrato de Borrador.
+    // Cancelación explícita de una publicación programada.
+    // Solo válida en DRAFT con publishAt futura activa. No ejecuta transiciones
+    // canónicas ni scheduler; conserva el contrato de Borrador.
     if (dto.publishAt === null) {
       if (status !== 'DRAFT') {
-        throw new ConflictException('Solo se puede cancelar una programaciÃ³n en un producto en Borrador.');
+        throw new ConflictException('Solo se puede cancelar una programación en un producto en Borrador.');
       }
       const currentPublishAt = product.publishAt ? new Date(product.publishAt) : null;
       if (!currentPublishAt || currentPublishAt <= new Date()) {
-        throw new ConflictException('El producto no tiene una publicaciÃ³n programada activa.');
+        throw new ConflictException('El producto no tiene una publicación programada activa.');
       }
 
       const updated = await this.prisma.product.update({
@@ -922,18 +922,18 @@ export class ProductsService {
     }
 
     if (status === 'PUBLISHED') {
-      throw new ConflictException('El producto ya estÃ¡ publicado');
+      throw new ConflictException('El producto ya está publicado');
     }
     if (status === 'ARCHIVED') {
       throw new BadRequestException('No se puede publicar un producto archivado');
     }
 
-    // Bloqueo: si la Lista del producto estÃ¡ pendiente de eliminaciÃ³n, no permitir publicar
+    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir publicar
     if (product.listaId) {
             if (await this.isListaPendingDeletion(product.listaId)) {
         throw new ConflictException({
           code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+          message: 'La Lista está pendiente de eliminación y no permite cambios.',
         });
       }
       // Permiso Super Admin bypass
@@ -949,7 +949,7 @@ export class ProductsService {
       return this.transition(id, { event: 'PUBLISH' }, ctx);
     }
 
-    // ProgramaciÃ³n sobre DRAFT: persiste estado canÃ³nico DRAFT completo con publishAt.
+    // Programación sobre DRAFT: persiste estado canónico DRAFT completo con publishAt.
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -997,7 +997,7 @@ export class ProductsService {
     return this.mapLegacyToLifecycle(product);
   }
 
-  /** Normaliza estados legacy almacenados (sin migraciÃ³n de datos) al canÃ³nico. */
+  /** Normaliza estados legacy almacenados (sin migración de datos) al canónico. */
   private normalizeLegacyStored(status: string): LifecycleStatus | null {
     switch (status.toUpperCase()) {
       case 'READY':
@@ -1018,11 +1018,11 @@ export class ProductsService {
     const ps = product.publishStatus;
     if (ps === 'archivado') return 'ARCHIVED';
     if (ps === 'publicado') return 'PUBLISHED';
-    // 'listo' (READY/SCHEDULED) y 'borrador' â†’ DRAFT.
+    // 'listo' (READY/SCHEDULED) y 'borrador' → DRAFT.
     return 'DRAFT';
   }
 
-  /** Snapshot de las columnas de estado (lifecycle + espejo legacy) para auditorÃ­a. */
+  /** Snapshot de las columnas de estado (lifecycle + espejo legacy) para auditoría. */
   private lifecycleSnapshot(product: {
     lifecycleStatus?: string | null;
     isActive?: boolean;
@@ -1058,11 +1058,11 @@ export class ProductsService {
 
   /**
    * Dual-write: calcula los campos legacy que espejan el estado destino de la FSM.
-   * Mapa espejo (contrato fijado para los 3 estados canÃ³nicos):
-   *  PUBLISH â†’ isActive=true, isVisible=true, publishStatus='publicado', publishedAt=now
-   *  UNPUBLISH â†’ isActive=false, isVisible=false, publishStatus='borrador'
-   *  ARCHIVE â†’ isActive=false, isVisible=false, publishStatus='archivado'
-   *  RESTORE â†’ isActive=false, isVisible=false, publishStatus='borrador'
+   * Mapa espejo (contrato fijado para los 3 estados canónicos):
+   *  PUBLISH → isActive=true, isVisible=true, publishStatus='publicado', publishedAt=now
+   *  UNPUBLISH → isActive=false, isVisible=false, publishStatus='borrador'
+   *  ARCHIVE → isActive=false, isVisible=false, publishStatus='archivado'
+   *  RESTORE → isActive=false, isVisible=false, publishStatus='borrador'
    */
   private buildTransitionData(
     event: LifecycleEvent,
@@ -1073,7 +1073,7 @@ export class ProductsService {
     const now = new Date();
 
     switch (event) {
-      case 'PUBLISH': // DRAFT â†’ PUBLISHED
+      case 'PUBLISH': // DRAFT → PUBLISHED
         return {
           lifecycleStatus: 'PUBLISHED',
           isActive: true,
@@ -1085,7 +1085,7 @@ export class ProductsService {
           unpublishReason: null,
           publishedById: ctx?.userId ?? null,
         };
-      case 'UNPUBLISH': // PUBLISHED â†’ DRAFT (elimina programaciÃ³n futura; reason como auditorÃ­a)
+      case 'UNPUBLISH': // PUBLISHED → DRAFT (elimina programación futura; reason como auditoría)
         return {
           lifecycleStatus: 'DRAFT',
           isActive: false,
@@ -1096,7 +1096,7 @@ export class ProductsService {
           unpublishAt: null,
           unpublishReason: dto.reason?.trim() ? dto.reason : null,
         };
-      case 'ARCHIVE': // DRAFT|PUBLISHED â†’ ARCHIVED (elimina publishAt; motivo+confirm obligatorios)
+      case 'ARCHIVE': // DRAFT|PUBLISHED → ARCHIVED (elimina publishAt; motivo+confirm obligatorios)
         return {
           lifecycleStatus: 'ARCHIVED',
           isActive: false,
@@ -1107,7 +1107,7 @@ export class ProductsService {
           unpublishAt: null,
           unpublishReason: dto.reason?.trim() ? dto.reason : null,
         };
-      case 'RESTORE': // ARCHIVED â†’ DRAFT (nunca publica automÃ¡ticamente)
+      case 'RESTORE': // ARCHIVED → DRAFT (nunca publica automáticamente)
         return {
           lifecycleStatus: 'DRAFT',
           isActive: false,
@@ -1123,7 +1123,7 @@ export class ProductsService {
     }
   }
 
-  /** Â¿El contexto tiene nivel ACL suficiente sobre el producto? (sin lanzar errores). */
+  /** ¿El contexto tiene nivel ACL suficiente sobre el producto? (sin lanzar errores). */
   private async hasAclLevel(productId: string, ctx: AccessContext, level: string): Promise<boolean> {
     if (this.acl.isListasAdmin(ctx.roles)) return true;
     try {
@@ -1145,16 +1145,16 @@ export class ProductsService {
         if (await this.isListaPendingDeletion(product.listaId)) {
       throw new ConflictException({
         code: 'LISTA_PENDIENTE_ELIMINACION',
-        message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+        message: 'La Lista está pendiente de eliminación y no permite cambios.',
       });
     }
     return false;
   }
 
   /**
-   * Acciones FSM permitidas para un producto segÃºn su estado actual, RBAC del
+   * Acciones FSM permitidas para un producto según su estado actual, RBAC del
    * usuario (roles) y nivel ACL efectivo. No lanza errores: es informativo
-   * para que la UI muestre solo acciones vÃ¡lidas.
+   * para que la UI muestre solo acciones válidas.
    */
   async allowedActions(
     product: { id: string; lifecycleStatus?: string | null; publishStatus?: string | null; isActive?: boolean; isVisible?: boolean; publishAt?: Date | null },
@@ -1176,20 +1176,20 @@ export class ProductsService {
   }
 
   /**
-   * Ejecuta un evento de la FSM sobre un producto. Fuente Ãºnica de verdad para
-   * el ciclo de vida. Guardas en orden: RBAC â†’ ACL â†’ reason/confirm/publishAt â†’
-   * transiciÃ³n vÃ¡lida â†’ checklist (PUBLISH) â†’ dual-write + auditorÃ­a.
+   * Ejecuta un evento de la FSM sobre un producto. Fuente única de verdad para
+   * el ciclo de vida. Guardas en orden: RBAC → ACL → reason/confirm/publishAt →
+   * transición válida → checklist (PUBLISH) → dual-write + auditoría.
    */
   async transition(id: string, dto: TransitionProductDto, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Bloqueo: si la Lista del producto estÃ¡ pendiente de eliminaciÃ³n, no permitir transitar
+    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir transitar
     if (product.listaId) {
             if (await this.isListaPendingDeletion(product.listaId)) {
         throw new ConflictException({
           code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+          message: 'La Lista está pendiente de eliminación y no permite cambios.',
         });
       }
       // Permiso Super Admin bypass
@@ -1202,19 +1202,19 @@ export class ProductsService {
   }
 
   /**
-   * Scheduler P6 â€” tick del cron cada minuto.
-   * Publica los productos en DRAFT cuyo publishAt ya venciÃ³, aplicando
-   * internamente la transiciÃ³n canÃ³nica PUBLISH (re-valida el checklist).
+   * Scheduler P6 — tick del cron cada minuto.
+   * Publica los productos en DRAFT cuyo publishAt ya venció, aplicando
+   * internamente la transición canónica PUBLISH (re-valida el checklist).
    * Idempotencia: la query candidata es condicional (lifecycleStatus + fecha) y
-   * cada transiciÃ³n re-chequea el estado actual antes de escribir (doTransition â†’
+   * cada transición re-chequea el estado actual antes de escribir (doTransition →
    * rule.from). El lock en memoria descarta ticks solapados. NO existe
-   * auto-despublicaciÃ³n (unpublishAt se conserva como columna sin uso).
+   * auto-despublicación (unpublishAt se conserva como columna sin uso).
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async handleLifecycleTick(): Promise<SchedulerTickReport> {
     const runAt = new Date();
     if (this.lifecycleTickRunning) {
-      this.logger.warn('[scheduler] tick anterior aÃºn en curso; se descarta este tick');
+      this.logger.warn('[scheduler] tick anterior aún en curso; se descarta este tick');
       return { runAt, skipped: true, publishOk: 0, publishFailed: [] };
     }
     this.lifecycleTickRunning = true;
@@ -1228,7 +1228,7 @@ export class ProductsService {
 
   /**
    * Publica los productos programados (DRAFT con publishAt vencido) aplicando
-   * la transiciÃ³n canÃ³nica PUBLISH. `doTransition` re-valida el checklist: si
+   * la transición canónica PUBLISH. `doTransition` re-valida el checklist: si
    * falla, NO cambia estado y se cuenta en el reporte con los motivos.
    */
   async processScheduledPublishes(): Promise<{
@@ -1252,7 +1252,7 @@ export class ProductsService {
         const reasons = error instanceof Error ? error.message : 'Error interno';
         publishFailed.push({ id: product.id, reasons });
         this.logger.warn(
-          `[scheduler] publicaciÃ³n programada de "${product.name}" (${product.sku}): ${reasons}`,
+          `[scheduler] publicación programada de "${product.name}" (${product.sku}): ${reasons}`,
         );
       }
     }
@@ -1273,13 +1273,13 @@ export class ProductsService {
     const rule = TRANSITION_RULES[event];
 
     if (!rule) {
-      throw new BadRequestException(`Evento FSM invÃ¡lido: ${event}`);
+      throw new BadRequestException(`Evento FSM inválido: ${event}`);
     }
 
     const status = this.effectiveLifecycleStatus(product);
 
     // Guarda RBAC (roles con el permiso del evento).
-    // Se omite cuando el scheduler o proceso interno invoca la transiciÃ³n
+    // Se omite cuando el scheduler o proceso interno invoca la transición
     // sin contexto de usuario humano (skipHumanAccessChecks=true).
     if (!skipHumanAccessChecks && ctx && !rule.guard.roles.some((r) => ctx.roles.includes(r))) {
       throw new ForbiddenException(`No tienes permisos para ejecutar el evento ${event}`);
@@ -1296,16 +1296,16 @@ export class ProductsService {
       throw new BadRequestException(`El evento ${event} requiere un motivo (reason)`);
     }
     if (rule.guard.confirmRequired && dto.confirm !== true) {
-      throw new BadRequestException(`El evento ${event} requiere confirmaciÃ³n (confirm: true)`);
+      throw new BadRequestException(`El evento ${event} requiere confirmación (confirm: true)`);
     }
 
-    // TransiciÃ³n vÃ¡lida segÃºn estado actual.
+    // Transición válida según estado actual.
     if (!rule.from.includes(status)) {
       throw new BadRequestException(
         `No se puede pasar de ${status} a ${rule.to} con el evento ${event}`,
       );
     }
-    // Checklist de publicaciÃ³n (P5): solo PUBLISH valida requisitos comerciales.
+    // Checklist de publicación (P5): solo PUBLISH valida requisitos comerciales.
     if (event === 'PUBLISH') {
       const failures = await this.validatePublishRequirements(product);
       if (failures.length > 0) {
@@ -1448,7 +1448,7 @@ export class ProductsService {
     });
   }
   /**
-   * Bulk de transiciones: procesa producto a producto (sin transacciÃ³n global).
+   * Bulk de transiciones: procesa producto a producto (sin transacción global).
    * Los fallos de un producto NO bloquean el resto. Devuelve
    * { applied, rejected } (el interceptor global lo envuelve en { data }).
    */
@@ -1473,7 +1473,7 @@ export class ProductsService {
 
   /**
    * Lista productos programados (publishStatus 'listo') con publishAt en el rango
-   * [from, to]. Si no vienen from/to, usa [now, now+7 dÃ­as]. TambiÃ©n aplica lazy unpublish.
+   * [from, to]. Si no vienen from/to, usa [now, now+7 días]. También aplica lazy unpublish.
    */
   async findPublishScheduled(from?: string, to?: string) {
     const now = new Date();
@@ -1499,18 +1499,18 @@ export class ProductsService {
   }
 
   /**
-   * Borrado fÃ­sico (P4): roles `products:write` (Super Admin / Admin Comercial),
-   * ACL `manage` sobre el producto/Lista, confirmaciÃ³n explÃ­cita (confirm: true)
+   * Borrado físico (P4): roles `products:write` (Super Admin / Admin Comercial),
+   * ACL `manage` sobre el producto/Lista, confirmación explícita (confirm: true)
    * y clave maestra OBLIGATORIA si el producto tiene datos asociados (precios,
-   * imÃ¡genes, stock, auditorÃ­a u Ã³rdenes de compra que lo referencien).
-   * El evento DELETE es vÃ¡lido desde cualquier estado FSM (comportamiento actual
-   * conservado). Se audita 'delete' con oldValues ANTES del borrado fÃ­sico.
+   * imágenes, stock, auditoría u órdenes de compra que lo referencien).
+   * El evento DELETE es válido desde cualquier estado FSM (comportamiento actual
+   * conservado). Se audita 'delete' con oldValues ANTES del borrado físico.
    */
   async remove(id: string, dto?: DeleteProductDto, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Guarda RBAC: borrado fÃ­sico exige `products:write` (Super Admin/Admin Comercial).
+    // Guarda RBAC: borrado físico exige `products:write` (Super Admin/Admin Comercial).
     if (ctx && !ctx.roles?.some((r) => PRODUCTS_WRITE_ROLES.includes(r))) {
       throw new ForbiddenException('No tienes permisos para eliminar productos');
     }
@@ -1520,12 +1520,12 @@ export class ProductsService {
       await this.acl.assertProductAccess(id, ctx, 'manage');
     }
 
-    // Bloqueo: si la Lista del producto estÃ¡ pendiente de eliminaciÃ³n, no permitir borrar
+    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir borrar
     if (product.listaId) {
             if (await this.isListaPendingDeletion(product.listaId)) {
         throw new ConflictException({
           code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista estÃ¡ pendiente de eliminaciÃ³n y no permite cambios.',
+          message: 'La Lista está pendiente de eliminación y no permite cambios.',
         });
       }
       // Permiso Super Admin bypass
@@ -1534,12 +1534,12 @@ export class ProductsService {
       }
     }
 
-    // Guarda de confirmaciÃ³n: el borrado fÃ­sico es destructivo e irreversible.
+    // Guarda de confirmación: el borrado físico es destructivo e irreversible.
     if (dto?.confirm !== true) {
-      throw new BadRequestException('Debes confirmar el borrado fÃ­sico con confirm: true');
+      throw new BadRequestException('Debes confirmar el borrado físico con confirm: true');
     }
 
-    // Datos asociados â†’ exige la clave maestra (patrÃ³n Listas/removeLista).
+    // Datos asociados → exige la clave maestra (patrón Listas/removeLista).
     const [priceCount, imageCount, stock, auditCount] = await Promise.all([
       this.prisma.price.count({ where: { productId: id } }),
       this.prisma.productImage.count({ where: { productId: id } }),
@@ -1547,7 +1547,7 @@ export class ProductsService {
       this.prisma.auditLog.count({ where: { entity: 'Product', entityId: id } }),
     ]);
 
-    // AuditorÃ­a ANTES del borrado fÃ­sico: deja constancia del producto eliminado.
+    // Auditoría ANTES del borrado físico: deja constancia del producto eliminado.
     await this.audit.log({
       userId: ctx?.userId,
       action: 'delete',
@@ -1579,7 +1579,7 @@ export class ProductsService {
 
   /**
    * Sube una imagen para un producto y registra la fila ProductImage.
-   * Valida tipo (jpeg/png/webp/gif) y tamaÃ±o mÃ¡ximo (8 MB).
+   * Valida tipo (jpeg/png/webp/gif) y tamaño máximo (8 MB).
    */
   async uploadImage(
     productId: string,
@@ -1604,7 +1604,7 @@ export class ProductsService {
     }
 
     if (file.size > MAX_IMAGE_SIZE) {
-      throw new BadRequestException('El archivo excede el tamaÃ±o mÃ¡ximo de 8MB');
+      throw new BadRequestException('El archivo excede el tamaño máximo de 8MB');
     }
 
     const { url } = await this.files.store(file.buffer, file.mimetype);
@@ -1634,7 +1634,7 @@ export class ProductsService {
     const image = await this.prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
-    // Eliminar imagen exige `edit_products` sobre el producto dueÃ±o (checklist 29/30).
+    // Eliminar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
     if (ctx && image.productId) {
       await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
     }
@@ -1648,7 +1648,7 @@ export class ProductsService {
   /**
    * Actualiza metadatos de una imagen (alt y/o isPrimary).
    * Si isPrimary: true, desmarca primero cualquier otra imagen principal del
-   * mismo producto (updateMany isPrimary=false) y marca esta (transacciÃ³n).
+   * mismo producto (updateMany isPrimary=false) y marca esta (transacción).
    * 404 si la imagen no existe. Audita con entity 'ProductImage', action 'update'.
    */
   async updateImage(
@@ -1659,7 +1659,7 @@ export class ProductsService {
     const image = await this.prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
-    // Actualizar imagen exige `edit_products` sobre el producto dueÃ±o (checklist 29/30).
+    // Actualizar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
     if (ctx) {
       await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
     }
@@ -1707,8 +1707,8 @@ export class ProductsService {
 
   /**
    * Resuelve la Lista a la que pertenece un producto.
-   * Si se envÃ­a listaId, valida su existencia; si falta, asigna LISTA-GENERAL (fallback documentado).
-   * Retorna tambiÃ©n defaultVisibility para propagarla al crear productos sin isVisible explÃ­cito.
+   * Si se envía listaId, valida su existencia; si falta, asigna LISTA-GENERAL (fallback documentado).
+   * Retorna también defaultVisibility para propagarla al crear productos sin isVisible explícito.
    * [decisiones 8/14]
    */
   private async resolveLista(listaId?: string): Promise<{ id: string; defaultVisibility: boolean }> {
@@ -1751,7 +1751,7 @@ export class ProductsService {
   }
 
   /**
-   * Upsert individual por (productId, priceListId) dentro de una transacciÃ³n.
+   * Upsert individual por (productId, priceListId) dentro de una transacción.
    * No borra precios no enviados para no perder datos.
    * Asocia el precio a la misma Lista del producto (invariante Price.listaId == Product.listaId).
    */
@@ -1789,12 +1789,12 @@ export class ProductsService {
   }
 
   /**
-   * Genera un nombre breve y determinÃ­stico a partir de una descripciÃ³n tÃ©cnica.
-   * Se usa SOLO cuando no hay un `name` explÃ­cito en la fila de importaciÃ³n.
-   * FunciÃ³n pura: no consulta la BD, no usa I/O ni servicios externos.
-   * - No aÃ±ade el SKU/referencia al resultado.
-   * - No inventa atributos: solo resume texto presente en la descripciÃ³n.
-   * - Corta antes de frases de ficha tÃ©cnica secundaria; nunca parte palabras;
+   * Genera un nombre breve y determinístico a partir de una descripción técnica.
+   * Se usa SOLO cuando no hay un `name` explícito en la fila de importación.
+   * Función pura: no consulta la BD, no usa I/O ni servicios externos.
+   * - No añade el SKU/referencia al resultado.
+   * - No inventa atributos: solo resume texto presente en la descripción.
+   * - Corta antes de frases de ficha técnica secundaria; nunca parte palabras;
    *   nunca supera los 120 caracteres.
    */
   private deriveNameFromDescription(description: string): string | null {
@@ -1803,19 +1803,19 @@ export class ProductsService {
       'Compatible',
       'Admite',
       'Soporta',
-      'ClasificaciÃ³n',
-      'CompresiÃ³n',
+      'Clasificación',
+      'Compresión',
       'Entradas',
       'Capacidad',
-      'TecnologÃ­a',
-      'ProtecciÃ³n',
-      'GrabaciÃ³n',
+      'Tecnología',
+      'Protección',
+      'Grabación',
     ];
     const MIN_USEFUL_BEFORE = 12;
     const MAX_LENGTH = 120;
 
-    // 1-2. Normalizar espacios, tabs y saltos de lÃ­nea a un Ãºnico espacio;
-    // preserva el contenido tÃ©cnico (SKU, unidades, resoluciones, tecnologÃ­as).
+    // 1-2. Normalizar espacios, tabs y saltos de línea a un único espacio;
+    // preserva el contenido técnico (SKU, unidades, resoluciones, tecnologías).
     const normalized = normalizeText(description);
     if (!normalized) return null;
 
@@ -1828,12 +1828,12 @@ export class ProductsService {
         .trim();
     }
 
-    // 4. Rechazar si tras la limpieza queda vacÃ­o o sin letras/nÃºmeros.
+    // 4. Rechazar si tras la limpieza queda vacío o sin letras/números.
     if (!candidate || !/[a-zA-Z0-9]/.test(candidate)) return null;
 
-    // 5. Primer fragmento comercial Ãºtil: cortar antes de la primera frase de
-    // ficha tÃ©cnica (case-insensitive). Solo se usa el corte si deja un
-    // fragmento descriptivo Ãºtil (>= 12 caracteres).
+    // 5. Primer fragmento comercial útil: cortar antes de la primera frase de
+    // ficha técnica (case-insensitive). Solo se usa el corte si deja un
+    // fragmento descriptivo útil (>= 12 caracteres).
     const lower = candidate.toLowerCase();
     let cutIndex = -1;
     for (const phrase of CUT_PHRASES) {
@@ -1858,10 +1858,10 @@ export class ProductsService {
       nameCandidate = lastBreak > 0 ? slice.slice(0, lastBreak) : slice;
     }
 
-    // 7. trim final y limpiar puntuaciÃ³n/conectores incompletos al final.
-    nameCandidate = nameCandidate.trim().replace(/[\s,;.\-â€“â€”]+$/, '').trim();
+    // 7. trim final y limpiar puntuación/conectores incompletos al final.
+    nameCandidate = nameCandidate.trim().replace(/[\s,;.\-–—]+$/, '').trim();
 
-    // 8. null si quedÃ³ vacÃ­o o invÃ¡lido.
+    // 8. null si quedó vacío o inválido.
     if (!nameCandidate || !/[a-zA-Z0-9]/.test(nameCandidate)) return null;
     return nameCandidate;
   }
@@ -1873,10 +1873,10 @@ export class ProductsService {
 
   async importFromExcel(file: Buffer) {
     if (!file) {
-      throw new BadRequestException('No se proporcionÃ³ archivo');
+      throw new BadRequestException('No se proporcionó archivo');
     }
 
-    // MitigaciÃ³n ReDoS xlsx (GHSA-5pgg-2g8v-p4x9): lÃ­mite 10MB ya en excel-adapter; aquÃ­ tambiÃ©n
+    // Mitigación ReDoS xlsx (GHSA-5pgg-2g8v-p4x9): límite 10MB ya en excel-adapter; aquí también
     if (file.length > 10 * 1024 * 1024) {
       throw new BadRequestException('Archivo excede 10MB');
     }
@@ -1885,7 +1885,7 @@ export class ProductsService {
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     let rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
-    // MitigaciÃ³n Prototype Pollution (GHSA-4r6h-8v6p-xvw6): sanitizar keys peligrosas
+    // Mitigación Prototype Pollution (GHSA-4r6h-8v6p-xvw6): sanitizar keys peligrosas
     rows = rows.map((r) => {
       const clean = Object.create(null) as Record<string, unknown>;
       for (const [k, v] of Object.entries(r as Record<string, unknown>)) {
@@ -1896,7 +1896,7 @@ export class ProductsService {
     });
 
     if (rows.length === 0) {
-      throw new BadRequestException('El archivo estÃ¡ vacÃ­o');
+      throw new BadRequestException('El archivo está vacío');
     }
 
     const results = {
@@ -1910,7 +1910,7 @@ export class ProductsService {
     const categories = await this.prisma.category.findMany();
     const brands = await this.prisma.brand.findMany();
 
-    // Fallback explÃ­cito documentado: LISTA-GENERAL (lista semilla) para productos importados.
+    // Fallback explícito documentado: LISTA-GENERAL (lista semilla) para productos importados.
     const defaultLista = await this.prisma.lista.findUnique({
       where: { code: 'LISTA-GENERAL' },
       select: { id: true },
@@ -1926,18 +1926,18 @@ export class ProductsService {
 
       try {
         // Map Excel columns to product fields
-        // Expected columns: SKU, Nombre, DescripciÃ³n, CategorÃ­a, Marca.
+        // Expected columns: SKU, Nombre, Descripción, Categoría, Marca.
         // REFERENCIA/SKU se persiste SOLO como `sku`; nunca se concatena a `name`.
-        const sku = String(row['SKU'] || row['sku'] || row['CÃ³digo'] || row['codigo'] || '').trim();
+        const sku = String(row['SKU'] || row['sku'] || row['Código'] || row['codigo'] || '').trim();
 
-        // rawName: SOLO la columna de nombre explÃ­cita. Si estÃ¡ vacÃ­a, no se usa.
+        // rawName: SOLO la columna de nombre explícita. Si está vacía, no se usa.
         const rawName = String(row['Nombre'] || row['nombre'] || row['Name'] || row['name'] || '').trim();
 
-        // rawDescription: columna de descripciÃ³n (fuente Ã­ntegra de `description`).
-        const rawDescription = String(row['DescripciÃ³n'] || row['descripcion'] || row['Description'] || row['description'] || '').trim();
+        // rawDescription: columna de descripción (fuente íntegra de `description`).
+        const rawDescription = String(row['Descripción'] || row['descripcion'] || row['Description'] || row['description'] || '').trim();
 
-        // name: prevalece el nombre explÃ­cito (solo se normalizan espacios). Si no
-        // existe un nombre Ãºtil, se deriva un nombre breve desde la descripciÃ³n.
+        // name: prevalece el nombre explícito (solo se normalizan espacios). Si no
+        // existe un nombre útil, se deriva un nombre breve desde la descripción.
         // El SKU/referencia NUNCA se concatena al nombre.
         const name = rawName
           ? normalizeText(rawName)
@@ -1948,18 +1948,18 @@ export class ProductsService {
         // description: se conserva completa, normalizando espacios; NO se reemplaza
         // por el nombre generado ni por el SKU.
         const description = rawDescription ? normalizeText(rawDescription) : '';
-        const categoryName = String(row['CategorÃ­a'] || row['categoria'] || row['Category'] || row['category'] || '').trim();
+        const categoryName = String(row['Categoría'] || row['categoria'] || row['Category'] || row['category'] || '').trim();
         const brandName = String(row['Marca'] || row['marca'] || row['Brand'] || row['brand'] || '').trim();
 
         // Validate required fields
         if (!sku) {
-          results.errors.push({ row: rowNum, sku: 'N/A', error: 'SKU vacÃ­o' });
+          results.errors.push({ row: rowNum, sku: 'N/A', error: 'SKU vacío' });
           results.skipped++;
           continue;
         }
 
         if (!name) {
-          results.errors.push({ row: rowNum, sku, error: 'Nombre vacÃ­o' });
+          results.errors.push({ row: rowNum, sku, error: 'Nombre vacío' });
           results.skipped++;
           continue;
         }
@@ -1979,7 +1979,7 @@ export class ProductsService {
         }
 
         if (!categoryId) {
-          results.errors.push({ row: rowNum, sku, error: 'CategorÃ­a no especificada' });
+          results.errors.push({ row: rowNum, sku, error: 'Categoría no especificada' });
           results.skipped++;
           continue;
         }

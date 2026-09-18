@@ -688,3 +688,31 @@
   - Migration generated but intentionally not applied to any database (coordinator applies it post-merge).
   - total is a snapshot at win time; ganada is terminal in the quote status flow, so the snapshot cannot diverge afterwards.
 - `Blockers`: NONE - Next action: independent review of 7ebba95, then push/PR/merge only with explicit coordinator approval.
+
+---
+
+## [FIX-MOJIBAKE-BASELINE-001] — Repair mojibake encoding in service messages/specs; eliminate broken-test baseline
+
+- `Executor`: OpenCode
+- `Agent`: backend-engineer
+- `Status`: `COMMITTED`
+- `Branch`: main
+- `Started at`: 2026-09-18T00:00:00Z
+- `Completed at`: 2026-09-18T00:00:00Z
+- `Requirement source`: Coordinator-authorized closure of the mojibake/broken-test-baseline fix; diff verified by coordinator, ONE atomic commit authorized (no push).
+- `Files opened`: src/backend/src/modules/products/products.service.ts, src/backend/src/modules/products/products.service.spec.ts, src/backend/src/modules/products/transition.service.spec.ts, src/backend/src/modules/listas/listas.service.spec.ts
+- `Files modified`: the same 4 files, plus docs/agent-coordination/{work-log,agent-status,file-ownership}.md
+- `Files reserved`: (see file-ownership.md — released reservations)
+- `Dependencies`: NONE
+- `Implementation summary`:
+  1. `products.service.ts` (153+/153-): mechanical mojibake repair (cp1252→UTF-8) of user-facing Spanish error messages and comments (~140 sequences: `confirmacion`, `estÃ¡`→`está`, `publicaciÃ³n`→`publicación`, etc.), plus UTF-8 BOM removal, plus ONE real behavior change: regex `replace(/[\s,;.\-â€“â€”]+$/,'')` → `replace(/[\s,;.\-–—]+$/,'')` restores the intended trimming of trailing en/em dashes when deriving import names (previously the char class contained mojibake bytes that never matched).
+  2. `products.service.spec.ts` (114+/114-): mechanical mojibake repair of expected strings/test names/comments (143 sequences); no assertion weakening.
+  3. `transition.service.spec.ts`: bulkTransition 2 tests fixed spec-side — `transition()`/`doTransition()` each call `product.findUnique` per product, so `mockResolvedValueOnce` chains were desynchronized; mocks replaced with `mockImplementation` keyed by `where.id`; assertions untouched.
+  4. `listas.service.spec.ts`: 'update con codigo duplicado -> 409' fixed spec-side — `update()` performs 4 `lista.findUnique` calls (isBlockedByDeletion, main fetch, ACL assertListaAccess fetch needing `{isActive:true, archivedAt:null}`, codigo duplicate check) but the spec queued only 3 values; added the missing ACL-shape mock; business-rule assertion unchanged.
+- `Validation commands`: `npx tsc --noEmit`, `npm run lint`, `npx jest` (full suite, from src/backend)
+- `Validation results`: tsc 0 errors; lint 0 errors; full jest suite 719 passed / 719 total (41/41 suites, 0 failures) — previously 709/719 with a 10-failure pre-existing baseline (9 transition.service.spec.ts + 1 listas.service.spec.ts); that baseline is now ELIMINATED.
+- `Documentation updated`: work-log.md, agent-status.md, file-ownership.md
+- `Commit hash`: (see commit for this entry)
+- `Handoff to`: Coordinator/user for optional push and next task.
+- `Known risks`: The regex char-class change in `products.service.ts` is a real (intended) behavior change: import-name derivation now trims trailing en/em dashes as originally designed — any downstream expectation built on the previously-broken behavior would observe slightly different derived names.
+- `Blockers`: NONE
