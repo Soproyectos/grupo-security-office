@@ -17,6 +17,8 @@ import CommercialWorkspace, {
 import { canViewDashboardSection, DASHBOARD_SECTIONS } from '../lib/roles'
 import type { Product } from '../features/products/types/product.types'
 import { CAROUSEL_INTERVAL, TRENDING_PRODUCTS_LIMIT } from '../constants'
+import { fetchListas } from '../services/listas.service'
+import type { Lista } from '../services/listas.service'
 
 interface BannerItem {
   title: string
@@ -140,6 +142,31 @@ function ProductCard({ product }: { product: Product }) {
   )
 }
 
+/** Insignia de vigencia de una Lista, a partir de los campos ya calculados por el backend. */
+function listaVigenciaBadge(lista: Lista): { variant: 'success' | 'warning' | 'error' | 'neutral'; label: string } {
+  if (lista.archivedAt) return { variant: 'neutral', label: 'Archivada' }
+  if (lista.isExpired) return { variant: 'error', label: 'Vencida' }
+  if (lista.isExpiringSoon) {
+    return {
+      variant: 'warning',
+      label: typeof lista.daysUntilExpiry === 'number' ? `Vence en ${lista.daysUntilExpiry} días` : 'Por vencer',
+    }
+  }
+  if (!lista.isActive) return { variant: 'neutral', label: 'Inactiva' }
+  return { variant: 'success', label: 'Vigente' }
+}
+
+/** Prioriza lo que necesita atención primero: vencidas, luego por vencer, luego el resto; archivadas al final. */
+function sortListasForGovernance(listas: Lista[]): Lista[] {
+  const priority = (lista: Lista) => {
+    if (lista.archivedAt) return 3
+    if (lista.isExpired) return 0
+    if (lista.isExpiringSoon) return 1
+    return 2
+  }
+  return [...listas].sort((a, b) => priority(a) - priority(b))
+}
+
 /**
  * Panel global: catalogo completo, usuarios y auditoria. Se renderiza para quien
  * administra todas las Listas (scope GLOBAL resuelto por el backend).
@@ -192,6 +219,12 @@ function AdminDashboard() {
     queryFn: () => fetchAuditEventsTotal(),
     enabled: canViewKpis && canViewAudit,
   })
+
+  const listasQuery = useQuery({
+    queryKey: ['dashboard', 'listas-governance'],
+    queryFn: () => fetchListas(),
+  })
+  const governanceListas = sortListasForGovernance(listasQuery.data ?? []).slice(0, 6)
 
   const trendingProducts: Product[] = trendingData
   const banners = defaultBanners
@@ -381,6 +414,67 @@ function AdminDashboard() {
           </div>
         </section>
       )}
+
+      {/* Gestión de Listas */}
+      <section aria-label="Gestión de Listas">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Gestión de Listas</h2>
+          <Link to="/commercial/lists" className="text-sm text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium">
+            Ver todas →
+          </Link>
+        </div>
+        {listasQuery.error ? (
+          <div className="p-4 bg-[var(--color-error-bg-subtle)] text-[var(--color-error)] rounded-xl border border-[var(--color-error)]/20" role="alert">
+            <p>Error al cargar las Listas. Intente más tarde.</p>
+          </div>
+        ) : listasQuery.isLoading ? (
+          <Card padding="none">
+            <ul className="divide-y divide-[var(--color-border)]">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <li key={i} className="flex items-center justify-between gap-4 p-4 animate-pulse">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3 bg-[var(--color-border)] rounded w-1/3"></div>
+                    <div className="h-3 bg-[var(--color-border)] rounded w-2/3"></div>
+                  </div>
+                  <div className="h-6 w-24 bg-[var(--color-border)] rounded-full"></div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : governanceListas.length === 0 ? (
+          <Card padding="md">
+            <p className="text-sm text-[var(--color-text-secondary)]">No hay Listas registradas todavía.</p>
+          </Card>
+        ) : (
+          <Card padding="none">
+            <ul className="divide-y divide-[var(--color-border)]">
+              {governanceListas.map((lista) => {
+                const badge = listaVigenciaBadge(lista)
+                return (
+                  <li key={lista.id}>
+                    <Link
+                      to={`/commercial/lists/${lista.id}`}
+                      className="flex items-center justify-between gap-4 p-4 hover:bg-[var(--color-bg-surface-hover)] transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-mono text-[var(--color-text-tertiary)]">{lista.code}</p>
+                        <p className="text-sm text-[var(--color-text-primary)] truncate">{lista.name}</p>
+                        <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                          {formatNumber(lista.productCount ?? 0)} {lista.productCount === 1 ? 'producto' : 'productos'}
+                          {!lista.responsibleId && ' · sin responsable'}
+                        </p>
+                      </div>
+                      <Badge variant={badge.variant} className="shrink-0">
+                        {badge.label}
+                      </Badge>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </Card>
+        )}
+      </section>
 
       {/* Carousel */}
       <div

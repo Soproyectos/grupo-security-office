@@ -1,5 +1,14 @@
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Card, Badge } from '../../../components/ui'
+import { useAuthStore } from '../../../stores/auth.store'
+import { fetchQuotes } from '../../../services/quotes.service'
+import { QUOTE_STATUS_LABELS } from '../../../features/quotes/types/quote.types'
+import type {
+  QuoteStatus,
+  QuoteEffectiveStatus,
+  QuoteListItem,
+} from '../../../features/quotes/types/quote.types'
 import type {
   MyWorkspace,
   MyListaSummary,
@@ -65,6 +74,51 @@ const ENTITY_LABEL: Record<string, string> = {
   User: 'usuario',
   Brand: 'marca',
   Category: 'categoría',
+}
+
+/**
+ * Etapas del embudo de cotizaciones propio (borrador → enviada → negociación),
+ * en el orden real del ciclo de vida definido en quote.types.ts. 'ganada',
+ * 'perdida' y 'cancelada' son estados de cierre y se muestran aparte.
+ * 'vencida' es un estado calculado por el backend al leer y no es filtrable
+ * por status en GET /commercial/quotes, así que no entra en este conteo.
+ */
+const FUNNEL_STATUSES: QuoteStatus[] = ['borrador', 'enviada', 'negociacion']
+const CLOSED_STATUSES: QuoteStatus[] = ['ganada', 'perdida', 'cancelada']
+const ALL_COUNTED_STATUSES: QuoteStatus[] = [...FUNNEL_STATUSES, ...CLOSED_STATUSES]
+
+/** Rampa ordinal de una sola familia de color (la del brand), no de estado. */
+const FUNNEL_STAGE_COLOR: Record<string, string> = {
+  borrador: 'bg-security-300',
+  enviada: 'bg-security-400',
+  negociacion: 'bg-security-500',
+}
+
+const QUOTE_STATUS_VARIANT: Record<QuoteEffectiveStatus, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
+  borrador: 'neutral',
+  enviada: 'info',
+  negociacion: 'warning',
+  ganada: 'success',
+  perdida: 'error',
+  cancelada: 'neutral',
+  vencida: 'error',
+}
+
+const moneyFormatter = new Intl.NumberFormat('es-CO', {
+  style: 'currency',
+  currency: 'COP',
+  maximumFractionDigits: 0,
+})
+/** El monto llega como string (Decimal serializado); nunca se hace aritmética con él, solo formato. */
+function formatMoney(value: string, currency = 'COP'): string {
+  const amount = Number(value)
+  if (Number.isNaN(amount)) return '—'
+  if (currency === 'COP') return moneyFormatter.format(amount)
+  try {
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
+  } catch {
+    return `${numberFormatter.format(Math.round(amount))} ${currency}`
+  }
 }
 
 function KpiTile({
@@ -181,6 +235,31 @@ export default function CommercialWorkspace({
 }) {
   const { kpis, listas, recentActivity } = workspace
   const hasListas = listas.length > 0
+  const user = useAuthStore((state) => state.user)
+
+  const quoteCountsQuery = useQuery({
+    queryKey: ['dashboard', 'quotes-counts', user?.id],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        ALL_COUNTED_STATUSES.map(async (status) => {
+          const res = await fetchQuotes({ ownerId: user!.id, status }, 1, 1)
+          return [status, res.meta.total] as const
+        })
+      )
+      const counts = {} as Record<QuoteStatus, number>
+      entries.forEach(([status, total]) => {
+        counts[status] = total
+      })
+      return counts
+    },
+    enabled: !!user?.id,
+  })
+
+  const recentQuotesQuery = useQuery({
+    queryKey: ['dashboard', 'quotes-recent', user?.id],
+    queryFn: () => fetchQuotes({ ownerId: user!.id }, 1, 5),
+    enabled: !!user?.id,
+  })
 
   return (
     <div className="space-y-6">
@@ -239,6 +318,118 @@ export default function CommercialWorkspace({
               <ListaTile key={lista.id} lista={lista} />
             ))}
           </div>
+        )}
+      </section>
+
+      <section aria-label="Mis cotizaciones por estado">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+            Mis cotizaciones por estado
+          </h2>
+          <Link
+            to="/commercial/quotes"
+            className="text-sm text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium"
+          >
+            Ver todas →
+          </Link>
+        </div>
+        {quoteCountsQuery.error ? (
+          <div className="p-4 bg-[var(--color-error-bg-subtle)] text-[var(--color-error)] rounded-xl border border-[var(--color-error)]/20" role="alert">
+            <p>Error al cargar tus cotizaciones. Intente más tarde.</p>
+          </div>
+        ) : (
+          <Card padding="md">
+            <div className="grid grid-cols-3 gap-3">
+              {FUNNEL_STATUSES.map((status) => (
+                <div key={status} className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${FUNNEL_STAGE_COLOR[status]}`}
+                    aria-hidden="true"
+                  ></span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                      {QUOTE_STATUS_LABELS[status]}
+                    </p>
+                    <p className="text-lg font-bold font-condensed text-[var(--color-text-primary)]">
+                      {quoteCountsQuery.isLoading ? '—' : formatNumber(quoteCountsQuery.data?.[status] ?? 0)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-[var(--color-border)] flex flex-wrap items-center gap-2">
+              {CLOSED_STATUSES.map((status) => (
+                <Badge key={status} variant={QUOTE_STATUS_VARIANT[status]}>
+                  {QUOTE_STATUS_LABELS[status]}: {quoteCountsQuery.isLoading ? '—' : formatNumber(quoteCountsQuery.data?.[status] ?? 0)}
+                </Badge>
+              ))}
+            </div>
+          </Card>
+        )}
+      </section>
+
+      <section aria-label="Mis cotizaciones recientes">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+            Mis cotizaciones recientes
+          </h2>
+          <Link
+            to="/commercial/quotes"
+            className="text-sm text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium"
+          >
+            Ver todas →
+          </Link>
+        </div>
+        {recentQuotesQuery.error ? (
+          <div className="p-4 bg-[var(--color-error-bg-subtle)] text-[var(--color-error)] rounded-xl border border-[var(--color-error)]/20" role="alert">
+            <p>Error al cargar tus cotizaciones recientes. Intente más tarde.</p>
+          </div>
+        ) : recentQuotesQuery.isLoading ? (
+          <Card padding="none">
+            <ul className="divide-y divide-[var(--color-border)]">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <li key={i} className="flex items-center justify-between gap-4 p-4 animate-pulse">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3 bg-[var(--color-border)] rounded w-1/3"></div>
+                    <div className="h-3 bg-[var(--color-border)] rounded w-2/3"></div>
+                  </div>
+                  <div className="h-6 w-20 bg-[var(--color-border)] rounded-full"></div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : !recentQuotesQuery.data || recentQuotesQuery.data.data.length === 0 ? (
+          <Card padding="md">
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              Todavía no tienes cotizaciones. Créala desde el catálogo o desde una Lista.
+            </p>
+          </Card>
+        ) : (
+          <Card padding="none">
+            <ul className="divide-y divide-[var(--color-border)]">
+              {recentQuotesQuery.data.data.map((quote: QuoteListItem) => (
+                <li key={quote.id}>
+                  <Link
+                    to={`/commercial/quotes/${quote.id}`}
+                    className="flex items-center justify-between gap-4 p-4 hover:bg-[var(--color-bg-surface-hover)] transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-mono text-[var(--color-text-tertiary)]">{quote.code}</p>
+                      <p className="text-sm text-[var(--color-text-primary)] truncate">
+                        {quote.customer?.name ?? 'Cliente sin nombre'}
+                      </p>
+                      <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                        {formatMoney(quote.total, quote.currency)}
+                      </p>
+                    </div>
+                    <Badge variant={QUOTE_STATUS_VARIANT[quote.status]} className="shrink-0">
+                      {QUOTE_STATUS_LABELS[quote.status]}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
       </section>
 
