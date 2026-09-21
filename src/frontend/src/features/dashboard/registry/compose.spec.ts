@@ -129,16 +129,28 @@ describe('composeDashboard', () => {
   /**
    * "Vacío" se juzga sobre lo permitido, no sobre lo implementado: a quien no
    * se le concedió nada hay que explicárselo, mientras que un bloque sin
-   * componente es un hueco temporal del desarrollo, no un problema de permisos.
+   * componente sería un hueco temporal del desarrollo, no un problema de
+   * permisos. Hoy no queda ninguno, y el siguiente test lo vigila.
    */
-  it('no marca vacío si hay bloques permitidos aún sin implementar', () => {
+  it('un paquete concedido produce un dashboard no vacío', () => {
     const result = composeDashboard({
       roles: [],
       permissions: [packPermission('ventas')],
     })
 
     expect(result.isEmpty).toBe(false)
-    expect(result.pendingBlocks.length).toBeGreaterThan(0)
+    expect(result.kpis.length + result.panels.length).toBeGreaterThan(0)
+  })
+
+  /**
+   * Todo bloque del catálogo tiene componente. Declarar uno y olvidarse de
+   * implementarlo lo haría desaparecer en silencio: el compositor lo omite sin
+   * avisar, y el usuario no vería nada donde debería haber algo.
+   */
+  it('no queda ningún bloque declarado sin componente', () => {
+    const result = composeDashboard({ roles: ['Super Admin'], permissions: [] })
+
+    expect(result.pendingBlocks.map((b) => b.id)).toEqual([])
   })
 
   it('separa KPIs de paneles', () => {
@@ -151,13 +163,15 @@ describe('composeDashboard', () => {
   })
 
   it('devuelve los bloques ordenados por `order`', () => {
-    const { pendingBlocks } = composeDashboard({
+    const { kpis, panels } = composeDashboard({
       roles: ['Super Admin'],
       permissions: [],
     })
 
-    const orders = pendingBlocks.map((b) => b.order)
-    expect([...orders].sort((a, b) => a - b)).toEqual(orders)
+    for (const grupo of [kpis, panels]) {
+      const orders = grupo.map((b) => b.order)
+      expect([...orders].sort((a, b) => a - b)).toEqual(orders)
+    }
   })
 })
 

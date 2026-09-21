@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { AccountLockoutService } from '../../common/security/account-lockout.service';
 import { MfaService } from '../../common/security/mfa.service';
 import { SessionService } from '../../common/security/session.service';
+import { UserPermissionsService } from '../../common/security/user-permissions.service';
 
 /**
  * Mensaje único para credenciales incorrectas, usuario inexistente y cuenta
@@ -52,6 +53,7 @@ export class AuthService {
     private lockout: AccountLockoutService,
     private mfa: MfaService,
     private sessions: SessionService,
+    private userPermissions: UserPermissionsService,
   ) {}
 
   /** Duración de la sesión según privilegio: las cuentas potentes viven menos. */
@@ -61,24 +63,32 @@ export class AuthService {
       : this.config.get<number>('SESSION_HOURS', 8);
   }
 
-  private buildIdentity(user: {
+  /**
+   * Permisos efectivos = union(permisos de todos sus roles) + concesiones
+   * individuales (fase 5). Al ser un Set, un usuario multi-rol no acumula
+   * duplicados y la suma es idempotente.
+   *
+   * Las revocaciones (`effect: 'REVOKE'`) existen en el modelo pero no se
+   * aplican todavía: hoy el rol es un piso garantizado y sólo se suma.
+   */
+  private async buildIdentity(user: {
     id: string;
     email: string;
     name: string;
     roles: { role: { name: string; permissions: { permission: string }[] } }[];
-  }): AuthenticatedUser {
+  }): Promise<AuthenticatedUser> {
+    const fromRoles = user.roles.flatMap((ur) =>
+      ur.role.permissions.map((rp) => rp.permission),
+    );
+
+    const granted = await this.userPermissions.effectivePermissionsFor(user.id);
+
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       roles: user.roles.map((ur) => ur.role.name),
-      permissions: [
-        ...new Set(
-          user.roles.flatMap((ur) =>
-            ur.role.permissions.map((rp) => rp.permission),
-          ),
-        ),
-      ],
+      permissions: [...new Set([...fromRoles, ...granted])],
     };
   }
 
@@ -139,7 +149,7 @@ export class AuthService {
       throw new UnauthorizedException(GENERIC_AUTH_ERROR);
     }
 
-    const identity = this.buildIdentity(user);
+    const identity = await this.buildIdentity(user);
     const mfaState = await this.mfa.getState(user.id);
 
     if (mfaState.enabled) {
@@ -191,7 +201,7 @@ export class AuthService {
       throw new UnauthorizedException('Código de verificación inválido.');
     }
 
-    return this.issueSession(this.buildIdentity(user), meta);
+    return this.issueSession(await this.buildIdentity(user), meta);
   }
 
   /** Emite la cookie de sesión definitiva y registra el acceso. */
@@ -288,7 +298,7 @@ export class AuthService {
     }
 
     return {
-      result: await this.issueSession(this.buildIdentity(user), meta),
+      result: await this.issueSession(await this.buildIdentity(user), meta),
       backupCodes,
     };
   }

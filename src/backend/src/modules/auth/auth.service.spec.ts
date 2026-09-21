@@ -31,6 +31,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccountLockoutService } from '../../common/security/account-lockout.service';
 import { MfaService } from '../../common/security/mfa.service';
 import { SessionService } from '../../common/security/session.service';
+import { UserPermissionsService } from '../../common/security/user-permissions.service';
 import {
   buildActiveUser,
   buildInactiveUser,
@@ -82,6 +83,12 @@ const mockSessions = {
   revokeAllForUser: jest.fn(),
 };
 
+const mockUserPermissions = {
+  // Por defecto el usuario no tiene concesiones individuales: los permisos
+  // salen solo de sus roles.
+  effectivePermissionsFor: jest.fn().mockResolvedValue([]),
+};
+
 const mockConfig = {
   get: jest.fn((key: string, fallback?: unknown) => fallback),
 };
@@ -116,6 +123,7 @@ describe('AuthService', () => {
     mockMfa.getState.mockResolvedValue({ enabled: false, confirmedAt: null });
     mockMfa.isRequiredForRoles.mockReturnValue(false);
     mockSessions.create.mockResolvedValue('jti-mock');
+    mockUserPermissions.effectivePermissionsFor.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -126,6 +134,7 @@ describe('AuthService', () => {
         { provide: AccountLockoutService, useValue: mockLockout },
         { provide: MfaService, useValue: mockMfa },
         { provide: SessionService, useValue: mockSessions },
+        { provide: UserPermissionsService, useValue: mockUserPermissions },
       ],
     }).compile();
 
@@ -300,6 +309,42 @@ describe('AuthService', () => {
 
       const unique = new Set<string>(result.user.permissions);
       expect(result.user.permissions.length).toBe(unique.size);
+    });
+
+    /**
+     * Fase 5: el permiso concedido a un usuario concreto se suma a los de sus
+     * roles. El rol sigue siendo el piso; la concesión sólo añade.
+     */
+    it('suma las concesiones individuales a los permisos del rol', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles(['products:read']));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockUserPermissions.effectivePermissionsFor.mockResolvedValue([
+        'dashboard:pack:ventas',
+      ]);
+
+      const result = await authService.login('test@test.com', 'password123');
+
+      if (result.status !== 'COMPLETE') throw new Error('esperaba COMPLETE');
+
+      expect(result.user.permissions).toContain('products:read');
+      expect(result.user.permissions).toContain('dashboard:pack:ventas');
+    });
+
+    it('no duplica un permiso que ya venía del rol', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles(['dashboard:pack:ventas']));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockUserPermissions.effectivePermissionsFor.mockResolvedValue([
+        'dashboard:pack:ventas',
+      ]);
+
+      const result = await authService.login('test@test.com', 'password123');
+
+      if (result.status !== 'COMPLETE') throw new Error('esperaba COMPLETE');
+
+      const ocurrencias = result.user.permissions.filter(
+        (p) => p === 'dashboard:pack:ventas',
+      );
+      expect(ocurrencias).toHaveLength(1);
     });
 
     it('acorta la sesión para roles privilegiados', async () => {

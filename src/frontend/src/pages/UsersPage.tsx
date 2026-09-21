@@ -17,6 +17,8 @@ import {
   type Role,
   type RolePayload,
 } from '../services/roles.service'
+import { Modal } from '../components/ui'
+import DashboardGrants from '../features/users/components/DashboardGrants'
 
 interface User {
   id: string
@@ -72,6 +74,8 @@ function groupedPermissionLabels(permissions: string[]): string[] {
 }
 
 export default function UsersPage() {
+  // Panel de concesiones de dashboard (fase 5): sólo Super Admin.
+  const [grantsUser, setGrantsUser] = useState<User | null>(null)
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -296,12 +300,21 @@ export default function UsersPage() {
 
                   {hasRole(ROLES.SUPER_ADMIN) && (
                     <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
-                      <button
-                        onClick={() => setEditingUser(user)}
-                        className="text-xs text-security-600 hover:text-security-800 font-medium"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setEditingUser(user)}
+                          className="text-xs text-security-600 hover:text-security-800 font-medium"
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          onClick={() => setGrantsUser(user)}
+                          className="text-xs text-security-600 hover:text-security-800 font-medium"
+                        >
+                          Paneles
+                        </button>
+                      </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => toggleActive.mutate(user)}
@@ -339,6 +352,17 @@ export default function UsersPage() {
                 setShowCreateModal(false)
               }}
             />
+          )}
+
+          {grantsUser && (
+            <Modal
+              open
+              onClose={() => setGrantsUser(null)}
+              title={`Paneles de ${grantsUser.name}`}
+              size="lg"
+            >
+              <DashboardGrants userId={grantsUser.id} />
+            </Modal>
           )}
 
           {editingUser && (

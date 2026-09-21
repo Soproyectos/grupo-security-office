@@ -6,3 +6,10 @@ export { default as Table } from './Table'
 export { default as Card } from './Card'
 export { default as Badge } from './Badge'
 export { default as Alert } from './Alert'
+
+// --- Primitivas del diseño de dashboards (Fase 2) ---
+export { default as StatCard, StatCardSkeleton } from './StatCard'
+export { default as StatusPill, PRIORITY_TONES } from './StatusPill'
+export { default as DataGrid } from './DataGrid'
+export type { DataGridColumn } from './DataGrid'
+export type { PillTone } from './StatusPill'

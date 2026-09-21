@@ -372,7 +372,7 @@ resolución de alcance; usuario sin permisos (estado vacío, no pantalla rota).
 
 ---
 
-### Fase 2 — Base visual
+### Fase 2 — Base visual — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: las primitivas que se repiten en los 6 artboards.
 
@@ -393,7 +393,7 @@ Roboto y Roboto Condensed, todo presente en la config actual.
 
 ---
 
-### Fase 3 — Paneles Operador y Consulta
+### Fase 3 — Paneles Operador y Consulta — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: primer recorrido completo del motor con bloques reales.
 
@@ -406,7 +406,7 @@ explícito — **no se inventan cifras**.
 
 ---
 
-### Fase 4 — Panel Vendedor
+### Fase 4 — Panel Vendedor — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: el tablero más importante del diseño.
 
@@ -422,7 +422,7 @@ propias cotizaciones (scope propio, verificado contra otro vendedor).
 
 ---
 
-### Fase 5 — Concesiones por usuario
+### Fase 5 — Concesiones por usuario — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: el Super Admin asigna bloques extra a usuarios concretos.
 
@@ -462,7 +462,7 @@ en auditoría.
 
 ---
 
-### Fase 6 — Paneles Super Admin, Supervisor y Admin Comercial
+### Fase 6 — Paneles Super Admin, Supervisor y Admin Comercial — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: cerrar el diseño.
 
@@ -506,3 +506,78 @@ sobre una cuenta de Super Admin protegida sólo por contraseña.
 
 Las fases 1 a 4 entregan un dashboard funcional y verificable. La 5 agrega la
 administración de excepciones. La 6 es la más cara y puede diferirse.
+
+---
+
+## 9. Cierre — 2026-09-21
+
+**Las 7 fases están completas.** Los 48 bloques del catálogo tienen componente y
+se alimentan de datos reales; ninguno muestra cifras inventadas.
+
+### Backend añadido
+
+| Pieza | Función |
+|---|---|
+| `DashboardInsightsService` | Agregados que `getMyWorkspace` no cubría: catálogo, usuarios, mejores clientes y ventas por categoría |
+| 4 endpoints bajo `/api/dashboard/insights/*` | Sirven esos agregados. Van aparte de `/dashboard/me` para no cobrar sus consultas a quien no ve esos bloques |
+| `UserPermission` + `UserPermissionsService` | Concesiones por usuario, con auditoría |
+| `GET/PUT /api/users/:id/dashboard-permissions` | Administración de concesiones (sólo Super Admin) |
+| `POST /api/users/:id/unlock` | Desbloqueo de cuentas, pendiente de la Fase S |
+
+Decisión de seguridad en los agregados: **el alcance lo resuelve el servidor**,
+no el cliente. `resolveCommercialScope` decide si una consulta devuelve la
+cartera propia o el consolidado de la empresa a partir del rol; aceptar el
+alcance como parámetro permitiría a un vendedor pedir los datos de todos.
+
+Los permisos concedibles están restringidos por prefijo a `dashboard:pack:*` y
+`dashboard:block:*`. La pantalla reparte **visibilidad**, no capacidades:
+permitir conceder `users:manage` por esa vía convertiría un control de paneles
+en una puerta trasera de escalada de privilegios.
+
+### Frontend añadido
+
+- Tokens del diseño en `tailwind.config.js`: escala `surface`/`ink` (slate),
+  tamaños intermedios con nombre (`eyebrow`, `micro`, `caption`, `metric`…) y
+  radios 10/14/16px. `neutral` no se tocó.
+- Primitivas: `StatCard`, `DataGrid`, `StatusPill`, más `BlockShell` como marco
+  común de los paneles.
+- 48 bloques en `features/dashboard/blocks/`, repartidos en cuatro archivos por
+  dominio (KPIs, catálogo, ventas, gobernanza).
+- `DashboardGrants`: casilla de tres estados por paquete, con desplegable de
+  bloques. Marcar el paquete guarda el paquete; tocar una pieza lo degrada a
+  piezas sueltas, que quedan congeladas.
+
+Los gráficos (barra de meta, embudo, ranking, ventas por categoría, usuarios por
+rol) se resolvieron con **CSS puro**. No se añadió librería de gráficos: son
+barras proporcionales, y ~500 KB de dependencia no se justifican. Cada barra
+lleva su valor en texto y `role="progressbar"` con `aria-valuenow`, porque una
+barra sola no es legible para un lector de pantalla.
+
+### Verificación
+
+| Comprobación | Resultado |
+|---|---|
+| `tsc --noEmit` backend | limpio |
+| `tsc -b` frontend | limpio |
+| Tests backend | **770/770** (45 suites) |
+| Tests del motor | **23/23** |
+| Build del frontend | OK |
+| E2E de concesiones | 5/5 contra el servidor real |
+| E2E de MFA | 10/10 contra el servidor real |
+| E2E de bloqueo | verificado (HTTP 403 con hora de desbloqueo) |
+
+E2E de concesiones, el escenario que motivó el diseño: un usuario con rol
+**Consulta** (paquetes `catalogo`, `listas`) recibe `dashboard:pack:ventas`,
+vuelve a entrar y lo ve — **sin cambio de rol**. Retirarlo lo quita. Un permiso
+que ya venía del rol no se duplica.
+
+### Pendiente (fuera del alcance de estas fases)
+
+- **Guard de step-up**: el modelo `StepUpGrant` existe; falta `@RequiresStepUp()`.
+- **Pantalla de sesiones activas** (el endpoint ya responde).
+- **Tarea programada** para `SessionService.pruneExpired()`.
+- **Revocaciones (`REVOKE`)**: columna preparada, lógica no implementada, por
+  decisión explícita.
+- **`LegacyDashboard`**: el panel anterior sigue en `Dashboard.tsx` como
+  respaldo para usuarios sin ningún bloque implementado. Puede retirarse cuando
+  se confirme que todos los roles tienen cobertura en producción.

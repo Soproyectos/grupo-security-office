@@ -47,6 +47,7 @@ model User {
   mfa                     UserMfa?
   sessions                Session[]
   stepUpGrants            StepUpGrant[]
+  extraPermissions        UserPermission[]
   passwordChangedAt       DateTime?
   @@map("users")
 }
@@ -373,6 +374,33 @@ model Session {
   @@index([userId, revokedAt])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+/// Concesión de permisos a un usuario concreto, por encima de los que le dan
+/// sus roles (fase 5 del plan de dashboards por permisos).
+///
+/// `permission` puede ser un paquete (`dashboard:pack:ventas`) o un bloque
+/// suelto (`dashboard:block:ranking-equipo`). La diferencia es intencional: un
+/// paquete crece solo cuando se añaden bloques nuevos al catálogo, mientras que
+/// una pieza suelta queda congelada — que es justo lo que expresa quien concede
+/// una u otra cosa.
+///
+/// `effect` admite REVOKE, pero la lógica aún no lo aplica: el modelo queda
+/// preparado para habilitarlo sin migración. Ver "Revocaciones" en el plan.
+model UserPermission {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  /// GRANT | REVOKE
+  effect     String   @default("GRANT")
+  grantedById String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, permission])
+  @@index([userId])
+  @@map("user_permissions")
 }
 
 /// Concesiones de re-autenticación (step-up). Una operación crítica exige haber

@@ -7,6 +7,8 @@ import { MfaCryptoService } from './mfa-crypto.service';
 import { MfaService } from './mfa.service';
 import { SessionService } from './session.service';
 import { PrivilegedAccountService } from './privileged-account.service';
+import { UserPermissionsService } from './user-permissions.service';
+import { AuditModule } from '../../modules/audit/audit.module';
 
 /**
  * Servicios transversales del hardening (Fase S).
@@ -17,7 +19,7 @@ import { PrivilegedAccountService } from './privileged-account.service';
  */
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  imports: [ConfigModule, PrismaModule, AuditModule],
   providers: [
     PasswordPolicyService,
     AccountLockoutService,
@@ -25,6 +27,7 @@ import { PrivilegedAccountService } from './privileged-account.service';
     MfaService,
     SessionService,
     PrivilegedAccountService,
+    UserPermissionsService,
   ],
   exports: [
     PasswordPolicyService,
@@ -33,6 +36,7 @@ import { PrivilegedAccountService } from './privileged-account.service';
     MfaService,
     SessionService,
     PrivilegedAccountService,
+    UserPermissionsService,
   ],
 })
 export class SecurityModule {}
