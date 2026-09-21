@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SessionService } from '../../common/security/session.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private prisma: PrismaService,
+    private sessions: SessionService,
     config: ConfigService,
   ) {
     const secret = config.get<string>('JWT_SECRET');
@@ -41,6 +43,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    // Un token de desafio (scope 'mfa' / 'mfa-enroll') NO es una sesion: sirve
+    // solo para completar el segundo paso del login. Sin esta comprobacion,
+    // bastaria la contrasena para acceder a la API saltandose el segundo factor.
+    if (payload.scope) {
+      throw new UnauthorizedException('Token de verificacion, no de sesion');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, isActive: true },
@@ -50,12 +59,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuario no encontrado o inactivo');
     }
 
+    // Sesion revocable (S.4): revocar una sesion la corta en la peticion
+    // siguiente, sin esperar a que el JWT expire.
+    if (!(await this.sessions.isActive(payload.jti))) {
+      throw new UnauthorizedException('Sesion finalizada. Inicie sesion de nuevo.');
+    }
+
     return {
       sub: payload.sub,
       email: payload.email,
       name: payload.name,
       roles: payload.roles,
       permissions: payload.permissions,
+      jti: payload.jti,
     };
   }
 }

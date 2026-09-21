@@ -43,6 +43,11 @@ model User {
   salesOrders             SalesOrder[]         @relation("SalesOrderOwner")
   salesTargetsOwned       SalesTarget[]        @relation("TargetOwner")
   salesTargetsSet         SalesTarget[]        @relation("TargetSetter")
+  // Seguridad (Fase S)
+  mfa                     UserMfa?
+  sessions                Session[]
+  stepUpGrants            StepUpGrant[]
+  passwordChangedAt       DateTime?
   @@map("users")
 }
 
@@ -292,6 +297,96 @@ model Price {
   @@index([priceListId])
   @@index([listaId])
   @@map("prices")
+}
+
+/// Segundo factor (TOTP) de un usuario. Relación 1:1 con User.
+/// `secret` se guarda cifrado con AES-256-GCM (ver MfaCryptoService); nunca en claro.
+/// `enabled` sólo pasa a true tras verificar un código válido: no se activa un
+/// segundo factor que el usuario no haya demostrado poder generar.
+model UserMfa {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret      String
+  enabled     Boolean   @default(false)
+  confirmedAt DateTime?
+  lastUsedAt  DateTime?
+  /// Último código consumido, para rechazar reenvíos dentro de la misma ventana.
+  lastCode    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  backupCodes MfaBackupCode[]
+
+  @@map("user_mfa")
+}
+
+/// Códigos de respaldo de un solo uso. Se guardan hasheados con bcrypt: si la
+/// base de datos se filtra, no sirven como credenciales.
+model MfaBackupCode {
+  id        String    @id @default(uuid())
+  mfaId     String
+  mfa       UserMfa   @relation(fields: [mfaId], references: [id], onDelete: Cascade)
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([mfaId])
+  @@map("mfa_backup_codes")
+}
+
+/// Registro de intentos de autenticación, exitosos y fallidos.
+/// Alimenta el bloqueo progresivo por cuenta y la auditoría de accesos.
+/// `email` se guarda aunque el usuario no exista: permite detectar sondeo de correos.
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  userId    String?
+  success   Boolean
+  reason    String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("login_attempts")
+}
+
+/// Sesión emitida. El JWT lleva su `jti`; `jwt.strategy` comprueba que siga viva
+/// en cada petición, de modo que revocar aquí corta el acceso de inmediato.
+/// No añade coste de red: la estrategia ya consultaba la BD para validar isActive.
+model Session {
+  id         String    @id @default(uuid())
+  jti        String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  /// Motivo de la revocación: LOGOUT | PASSWORD_CHANGE | ADMIN_REVOKE | ROTATED
+  revokeReason String?
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Concesiones de re-autenticación (step-up). Una operación crítica exige haber
+/// revalidado contraseña + TOTP recientemente; esta tabla guarda esa ventana.
+model StepUpGrant {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jti       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+  @@map("step_up_grants")
 }
 
 model AuditLog {

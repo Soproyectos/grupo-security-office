@@ -6,10 +6,30 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Prisma } from '@prisma/client';
 import { BCRYPT_ROUNDS } from '../../common/security/password.constants';
+import { PasswordPolicyService } from '../../common/security/password-policy.service';
+import { PrivilegedAccountService, SUPER_ADMIN_ROLE } from '../../common/security/privileged-account.service';
+import { SessionService } from '../../common/security/session.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private passwordPolicy: PasswordPolicyService,
+    private privileged: PrivilegedAccountService,
+    private sessions: SessionService,
+  ) {}
+
+  /** ¿Alguno de estos roles es privilegiado? Determina la exigencia de contraseña. */
+  private async rolesArePrivileged(roleIds?: string[]): Promise<boolean> {
+    if (!roleIds?.length) return false;
+
+    const count = await this.prisma.role.count({
+      where: { id: { in: roleIds }, name: SUPER_ADMIN_ROLE },
+    });
+
+    return count > 0;
+  }
 
   async findAll(params?: { skip?: number; take?: number; search?: string }) {
     const { skip = 0, take = 50, search } = params || {};
@@ -76,6 +96,12 @@ export class UsersService {
       throw new ConflictException('El email ya está registrado');
     }
 
+    // La politica se evalua ANTES de hashear: 'admin123' ya no pasa (S.1).
+    this.passwordPolicy.assert(dto.password, {
+      privileged: await this.rolesArePrivileged(dto.roleIds),
+      userInputs: [dto.email, dto.name],
+    });
+
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = await this.prisma.user.create({
@@ -126,6 +152,22 @@ export class UsersService {
       if (existing) throw new ConflictException('El email ya está registrado');
     }
 
+    // --- Salvaguardas de cuentas privilegiadas (S.5) ---
+    const changesPrivilege =
+      dto.roleIds !== undefined || dto.isActive !== undefined;
+
+    if (changesPrivilege && actorId) {
+      this.privileged.assertNotSelfPrivilegeChange(actorId, id);
+    }
+
+    if (dto.isActive === false) {
+      await this.privileged.assertBreakGlass(id, 'desactivar este usuario');
+    }
+
+    if (dto.roleIds && (await this.privileged.willRemoveSuperAdmin(id, dto.roleIds))) {
+      await this.privileged.assertBreakGlass(id, 'retirar el rol Super Admin');
+    }
+
     const data: Prisma.UserUpdateInput = {
       ...(dto.name && { name: dto.name }),
       ...(dto.email && { email: dto.email.toLowerCase() }),
@@ -133,7 +175,17 @@ export class UsersService {
     };
 
     if (dto.password) {
+      const targetIsPrivileged =
+        (await this.privileged.isSuperAdmin(id)) ||
+        (await this.rolesArePrivileged(dto.roleIds));
+
+      this.passwordPolicy.assert(dto.password, {
+        privileged: targetIsPrivileged,
+        userInputs: [dto.email ?? user.email, dto.name ?? user.name],
+      });
+
       data.password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+      data.passwordChangedAt = new Date();
     }
 
     if (dto.roleIds) {
@@ -150,6 +202,16 @@ export class UsersService {
         roles: { include: { role: true } },
       },
     });
+
+    // Un cambio de contrasena, de roles o una desactivacion invalidan las
+    // sesiones abiertas: de lo contrario el acceso anterior sobrevive hasta que
+    // expire el JWT, que es justo lo que se queria poder cortar.
+    if (dto.password || dto.roleIds || dto.isActive === false) {
+      await this.sessions.revokeAllForUser(
+        id,
+        dto.password ? 'PASSWORD_CHANGE' : 'ADMIN_REVOKE',
+      );
+    }
 
     await this.audit.log({
       userId: actorId,
@@ -179,6 +241,12 @@ export class UsersService {
   async remove(id: string, actorId?: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (actorId) {
+      this.privileged.assertNotSelfPrivilegeChange(actorId, id);
+    }
+
+    await this.privileged.assertBreakGlass(id, 'eliminar este usuario');
 
     await this.audit.log({
       userId: actorId,

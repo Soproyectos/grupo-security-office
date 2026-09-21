@@ -17,6 +17,9 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 import { BCRYPT_ROUNDS } from '../../common/security/password.constants';
+import { PasswordPolicyService } from '../../common/security/password-policy.service';
+import { PrivilegedAccountService } from '../../common/security/privileged-account.service';
+import { SessionService } from '../../common/security/session.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -60,6 +63,30 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditService, useValue: mockAudit },
+        // La politica real se prueba en su propio spec; aqui se neutraliza para
+        // que estos tests sigan cubriendo la logica de usuarios, no la de
+        // fuerza de contrasena.
+        {
+          provide: PasswordPolicyService,
+          useValue: {
+            assert: jest.fn(),
+            check: jest.fn().mockReturnValue({ valid: true, score: 4, feedback: [] }),
+          },
+        },
+        {
+          provide: PrivilegedAccountService,
+          useValue: {
+            isSuperAdmin: jest.fn().mockResolvedValue(false),
+            countActiveSuperAdmins: jest.fn().mockResolvedValue(5),
+            assertNotSelfPrivilegeChange: jest.fn(),
+            assertBreakGlass: jest.fn(),
+            willRemoveSuperAdmin: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: SessionService,
+          useValue: { revokeAllForUser: jest.fn().mockResolvedValue(0) },
+        },
       ],
     }).compile();
 

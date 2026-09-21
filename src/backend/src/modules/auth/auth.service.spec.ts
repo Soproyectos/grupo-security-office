@@ -23,32 +23,38 @@ jest.mock('../../prisma/prisma.service', () => ({
 // ---------------------------------------------------------------------------
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccountLockoutService } from '../../common/security/account-lockout.service';
+import { MfaService } from '../../common/security/mfa.service';
+import { SessionService } from '../../common/security/session.service';
 import {
   buildActiveUser,
   buildInactiveUser,
   buildAdminRole,
   buildOperatorRole,
   buildUserWithRoles,
-  buildExpectedUserData,
 } from '../../__test__/fixtures/auth.fixture';
 
 // ---------------------------------------------------------------------------
-// Escenarios cubiertos:
-// ✅ validateUser - usuario existe, activo y password correcto → datos del usuario
-// ✅ validateUser - email con mayúsculas → normalizado a lowercase
-// ✅ validateUser - usuario no existe → 401
-// ✅ validateUser - usuario inactivo → 401
-// ✅ validateUser - password incorrecto → 401
-// ✅ validateUser - roles múltiples y permisos → deduplicados correctamente
-// ✅ login - retorna JWT token + datos del usuario
-// ✅ login - error de firma JWT → propagado
-// ✅ getProfile - usuario válido → datos del usuario
-// ✅ getProfile - usuario no existe → 401
-// ⚠  getProfile - usuario inactivo → NO verifica isActive (riesgo documentado)
+// Escenarios cubiertos (Fase S — hardening):
+// ✅ login - credenciales válidas sin MFA → sesión emitida con jti
+// ✅ login - email con mayúsculas → normalizado a lowercase
+// ✅ login - usuario no existe → 401 y bcrypt SÍ se ejecuta (anti-enumeración)
+// ✅ login - usuario inactivo → 401 con el mismo mensaje genérico
+// ✅ login - password incorrecto → 401 y se registra el intento fallido
+// ✅ login - cuenta bloqueada → 403 sin consultar credenciales
+// ✅ login - usuario con MFA activo → MFA_REQUIRED, sin sesión
+// ✅ login - Super Admin sin MFA → MFA_ENROLLMENT_REQUIRED, sin sesión
+// ✅ login - roles múltiples → permisos deduplicados
+// ✅ login - duración de sesión reducida para rol privilegiado
+// ✅ verifyMfa - código válido → sesión emitida
+// ✅ verifyMfa - código inválido → 401 y se registra el fallo
+// ✅ consumeChallenge - scope incorrecto → 401
+// ✅ logout - revoca la sesión del jti
 // ---------------------------------------------------------------------------
 
 const mockJwtService = {
@@ -57,24 +63,69 @@ const mockJwtService = {
   decode: jest.fn(),
 };
 
+const mockLockout = {
+  getStatus: jest.fn(),
+  record: jest.fn(),
+  unlock: jest.fn(),
+};
+
+const mockMfa = {
+  getState: jest.fn(),
+  isRequiredForRoles: jest.fn(),
+  verify: jest.fn(),
+  confirmEnrollment: jest.fn(),
+};
+
+const mockSessions = {
+  create: jest.fn(),
+  revoke: jest.fn(),
+  revokeAllForUser: jest.fn(),
+};
+
+const mockConfig = {
+  get: jest.fn((key: string, fallback?: unknown) => fallback),
+};
+
+/**
+ * `buildActiveUser()` devuelve el User plano; `buildIdentity` necesita la forma
+ * con `roles` incluidos que entrega Prisma. Este helper la arma con un rol
+ * básico, que es lo que espera la mayoría de los casos.
+ */
+const activeUserWithRoles = (permissions: string[] = ['products:read']) =>
+  buildUserWithRoles(buildActiveUser(), [
+    { role: buildOperatorRole(), permissions },
+  ]);
+
+const inactiveUserWithRoles = () =>
+  buildUserWithRoles(buildInactiveUser(), [
+    { role: buildOperatorRole(), permissions: ['products:read'] },
+  ]);
+
 describe('AuthService', () => {
   let authService: AuthService;
 
   beforeEach(async () => {
-    // Limpiar mocks entre tests
     jest.clearAllMocks();
+
+    // Por defecto: cuenta sin bloqueo, sin MFA, rol no privilegiado.
+    mockLockout.getStatus.mockResolvedValue({
+      locked: false,
+      until: null,
+      recentFailures: 0,
+    });
+    mockMfa.getState.mockResolvedValue({ enabled: false, confirmedAt: null });
+    mockMfa.isRequiredForRoles.mockReturnValue(false);
+    mockSessions.create.mockResolvedValue('jti-mock');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        {
-          provide: PrismaService,
-          useValue: mockPrisma,
-        },
-        {
-          provide: JwtService,
-          useValue: mockJwtService,
-        },
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: JwtService, useValue: mockJwtService },
+        { provide: ConfigService, useValue: mockConfig },
+        { provide: AccountLockoutService, useValue: mockLockout },
+        { provide: MfaService, useValue: mockMfa },
+        { provide: SessionService, useValue: mockSessions },
       ],
     }).compile();
 
@@ -82,384 +133,285 @@ describe('AuthService', () => {
   });
 
   // -----------------------------------------------------------------------
-  //  validateUser
-  // -----------------------------------------------------------------------
-
-  describe('validateUser', () => {
-    /**
-     * HAPPY PATH: usuario activo con password válido.
-     * Riesgo: si este flujo se rompe, NADIE puede loguearse.
-     * El sistema queda completamente inoperable.
-     */
-    it('debe retornar datos del usuario cuando email y password son correctos', async () => {
-      const user = buildActiveUser();
-      const adminRole = buildAdminRole();
-      const permissions = [
-        'products:read',
-        'products:write',
-        'products:publish',
-        'categories:read',
-        'categories:write',
-        'brands:read',
-        'brands:write',
-        'users:read',
-        'users:write',
-        'roles:read',
-        'roles:write',
-        'prices:read',
-        'prices:write',
-        'audit:read',
-      ];
-
-      const userWithRoles = buildUserWithRoles(user, [{ role: adminRole, permissions }]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
-      const result = await authService.validateUser(
-        'admin@grupo-security.com',
-        'password123',
-      );
-
-      expect(result).toEqual(buildExpectedUserData());
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'admin@grupo-security.com' },
-        include: {
-          roles: {
-            include: {
-              role: {
-                include: {
-                  permissions: true,
-                },
-              },
-            },
-          },
-        },
-      });
-    });
-
-    /**
-     * HAPPY PATH / SEGURIDAD: email normalizado a lowercase.
-     * Riesgo: usuarios que escriben su email con mayúsculas
-     * (ej. "Admin@Grupo-Security.com") no podrían autenticarse
-     * si la query no normaliza.
-     */
-    it('debe normalizar email a lowercase antes de consultar', async () => {
-      const user = buildActiveUser();
-      const userWithRoles = buildUserWithRoles(user, [
-        { role: buildAdminRole(), permissions: [] },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
-      await authService.validateUser('ADMIN@GRUPO-SECURITY.COM', 'password123');
-
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'admin@grupo-security.com' },
-        include: expect.any(Object),
-      });
-    });
-
-    /**
-     * ERROR PATH: usuario no existe en BD.
-     * Riesgo de seguridad: el mensaje de error debe ser genérico
-     * ("Credenciales inválidas") para prevenir user enumeration.
-     */
-    it('debe lanzar 401 cuando el usuario no existe', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-
-      await expect(
-        authService.validateUser('no-existe@test.com', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
-
-      await expect(
-        authService.validateUser('no-existe@test.com', 'password123'),
-      ).rejects.toThrow('Credenciales inválidas');
-    });
-
-    /**
-     * ERROR PATH: usuario existe pero está desactivado.
-     * El mensaje debe ser idéntico al de "usuario no existe"
-     * para no filtrar información sobre usuarios inactivos.
-     */
-    it('debe lanzar 401 cuando el usuario está inactivo', async () => {
-      const inactiveUser = buildInactiveUser();
-      mockPrisma.user.findUnique.mockResolvedValue(inactiveUser);
-
-      await expect(
-        authService.validateUser('inactivo@grupo-security.com', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
-
-      await expect(
-        authService.validateUser('inactivo@grupo-security.com', 'password123'),
-      ).rejects.toThrow('Credenciales inválidas');
-    });
-
-    /**
-     * ERROR PATH: password incorrecto.
-     * Mismo error genérico — no revelar si el email existe.
-     */
-    it('debe lanzar 401 cuando el password es incorrecto', async () => {
-      const user = buildActiveUser();
-      const userWithRoles = buildUserWithRoles(user, [
-        { role: buildAdminRole(), permissions: [] },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      await expect(
-        authService.validateUser('admin@grupo-security.com', 'wrong-password'),
-      ).rejects.toThrow(UnauthorizedException);
-
-      await expect(
-        authService.validateUser('admin@grupo-security.com', 'wrong-password'),
-      ).rejects.toThrow('Credenciales inválidas');
-    });
-
-    /**
-     * PERMISOS: deduplicación con roles superpuestos.
-     * Riesgo: si dos roles comparten permisos (ej. Super Admin y Operador
-     * tienen ambos 'products:read'), el array final debe tener
-     * cada permiso una sola vez para evitar bugs en la UI.
-     */
-    it('debe deduplicar permisos cuando el usuario tiene múltiples roles', async () => {
-      const user = buildActiveUser();
-      const adminRole = buildAdminRole();
-      const operatorRole = buildOperatorRole();
-
-      const adminPermissions = ['products:read', 'products:write', 'products:publish'];
-      const operatorPermissions = ['products:read', 'categories:read'];
-
-      const userWithRoles = buildUserWithRoles(user, [
-        { role: adminRole, permissions: adminPermissions },
-        { role: operatorRole, permissions: operatorPermissions },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
-      const result = await authService.validateUser(
-        'admin@grupo-security.com',
-        'password123',
-      );
-
-      // 'products:read' debe aparecer una sola vez
-      expect(result.permissions).toEqual([
-        'products:read',
-        'products:write',
-        'products:publish',
-        'categories:read',
-      ]);
-    });
-
-    /**
-     * ERROR PATH: email null/undefined.
-     * El servicio no debe asumir que el DTO siempre envía strings.
-     * Aunque el ValidationPipe lo atrape en controller,
-     * proteger el servicio es defensivo.
-     */
-    it('debe lanzar error cuando email es null/undefined', async () => {
-      await expect(
-        authService.validateUser(null as any, 'password123'),
-      ).rejects.toThrow();
-
-      await expect(
-        authService.validateUser(undefined as any, 'password123'),
-      ).rejects.toThrow();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  //  login
+  //  login — paso 1 (credenciales)
   // -----------------------------------------------------------------------
 
   describe('login', () => {
-    /**
-     * HAPPY PATH: login retorna token JWT + datos del usuario.
-     * Verifica que el payload del JWT contiene TODOS los campos
-     * necesarios para autorización (sub, email, name, roles, permissions).
-     */
-    it('debe retornar token JWT y datos del usuario con payload completo', async () => {
-      const userData = buildExpectedUserData();
+    it('emite sesión cuando las credenciales son válidas y no hay MFA', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await authService.login(userData);
+      const result = await authService.login('test@test.com', 'password123');
 
-      expect(result).toHaveProperty('token');
-      expect(result).toHaveProperty('user');
-      expect(result.user).toEqual(userData);
+      expect(result.status).toBe('COMPLETE');
+
+      if (result.status !== 'COMPLETE') throw new Error('esperaba COMPLETE');
+
       expect(result.token).toBe('jwt-token-mock');
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith({
-        sub: userData.id,
-        email: userData.email,
-        name: userData.name,
-        roles: userData.roles,
-        permissions: userData.permissions,
-      });
+      expect(result.user.email).toBe(buildActiveUser().email);
+      expect(mockSessions.create).toHaveBeenCalledTimes(1);
     });
 
-    /**
-     * ERROR PATH: fallo en firma JWT (ej. secret no configurado).
-     * El error no debe ser capturado silenciosamente.
-     */
-    it('debe propagar error si JwtService.sign falla', async () => {
-      mockJwtService.sign.mockImplementationOnce(() => {
-        throw new Error('JWT signing failed');
-      });
+    it('incluye el jti de la sesión en el payload del JWT', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockSessions.create.mockResolvedValue('jti-especifico');
 
-      const userData = buildExpectedUserData();
+      await authService.login('test@test.com', 'password123');
 
-      await expect(authService.login(userData)).rejects.toThrow(
-        'JWT signing failed',
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ jti: 'jti-especifico' }),
+        expect.anything(),
       );
     });
-  });
 
-  // -----------------------------------------------------------------------
-  //  getProfile
-  // -----------------------------------------------------------------------
+    it('normaliza el email a minúsculas', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-  describe('getProfile', () => {
-    /**
-     * HAPPY PATH: usuario válido → retorna datos del perfil.
-     */
-    it('debe retornar perfil del usuario cuando existe', async () => {
-      const user = buildActiveUser();
-      const userWithRoles = buildUserWithRoles(user, [
-        {
-          role: buildAdminRole(),
-          permissions: ['products:read', 'products:write'],
-        },
-      ]);
+      await authService.login('TEST@TEST.COM', 'password123');
 
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-
-      const result = await authService.getProfile(user.id);
-
-      expect(result).toMatchObject({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        roles: ['Super Admin'],
-        permissions: ['products:read', 'products:write'],
-      });
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { email: 'test@test.com' } }),
+      );
     });
 
     /**
-     * ERROR PATH: usuario no encontrado (eliminado, ID inválido).
+     * Anti-enumeración: con un correo inexistente bcrypt debe ejecutarse igual
+     * contra un hash de descarte. Si se omitiera, la respuesta sería mucho más
+     * rápida y ese tiempo revelaría qué correos están registrados.
      */
-    it('debe lanzar 401 cuando el usuario no existe', async () => {
+    it('ejecuta bcrypt aunque el usuario no exista (tiempo constante)', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
-
-      await expect(
-        authService.getProfile('id-inexistente'),
-      ).rejects.toThrow(UnauthorizedException);
-
-      await expect(
-        authService.getProfile('id-inexistente'),
-      ).rejects.toThrow('Usuario no encontrado');
-    });
-
-    /**
-     * ⚠ RIESGO DOCUMENTADO: getProfile NO verifica isActive.
-     * Un usuario desactivado (isActive: false) con un JWT aún vivo
-     * puede obtener su perfil exitosamente. Esto no representa un
-     * riesgo de seguridad crítico porque JwtStrategy.validate sí
-     * verifica isActive, pero es una inconsistencia.
-     */
-    it('NO verifica isActive — RIESGO: usuario desactivado con token vivo aún accede a profile', async () => {
-      const inactiveUser = buildInactiveUser();
-      const userWithRoles = buildUserWithRoles(inactiveUser, [
-        { role: buildAdminRole(), permissions: [] },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
-
-      const result = await authService.getProfile(inactiveUser.id);
-
-      expect(result).toBeDefined();
-      expect(result.id).toBe(inactiveUser.id);
-      // ⚠ Riesgo: getProfile no lanza error aunque user.isActive === false
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  //  Cenarios de acceso real — escenarios de seguridad críticos
-  // -----------------------------------------------------------------------
-
-  describe('Cenarios de acceso real', () => {
-    it('debe rechazar login de usuario inactivo', async () => {
-      const inactiveUser = buildInactiveUser();
-      mockPrisma.user.findUnique.mockResolvedValue(inactiveUser);
-
-      await expect(
-        authService.validateUser('inactivo@grupo-security.com', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
-
-      await expect(
-        authService.validateUser('inactivo@grupo-security.com', 'password123'),
-      ).rejects.toThrow('Credenciales inválidas');
-    });
-
-    it('debe rechazar login con contraseña incorrecta', async () => {
-      const user = buildActiveUser();
-      const userWithRoles = buildUserWithRoles(user, [
-        { role: buildAdminRole(), permissions: [] },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
-        authService.validateUser('admin@grupo-security.com', 'wrong-password'),
+        authService.login('desconocido@test.com', 'password123'),
       ).rejects.toThrow(UnauthorizedException);
 
-      await expect(
-        authService.validateUser('admin@grupo-security.com', 'wrong-password'),
-      ).rejects.toThrow('Credenciales inválidas');
+      expect(bcrypt.compare).toHaveBeenCalledTimes(1);
     });
 
-    it('debe rechazar login de usuario inexistente', async () => {
+    it('usa el mismo mensaje para usuario inexistente e inactivo', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(
-        authService.validateUser('no-existe@test.com', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
+      const errorDesconocido = await authService
+        .login('nadie@test.com', 'x')
+        .catch((e) => e.message);
 
-      await expect(
-        authService.validateUser('no-existe@test.com', 'password123'),
-      ).rejects.toThrow('Credenciales inválidas');
-    });
-
-    it('debe retornar user con roles y permissions en login exitoso', async () => {
-      const user = buildActiveUser();
-      const adminRole = buildAdminRole();
-      const permissions = ['products:read', 'products:write', 'users:read'];
-
-      const userWithRoles = buildUserWithRoles(user, [
-        { role: adminRole, permissions },
-      ]);
-
-      mockPrisma.user.findUnique.mockResolvedValue(userWithRoles);
+      mockPrisma.user.findUnique.mockResolvedValue(inactiveUserWithRoles());
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await authService.validateUser(
-        'admin@grupo-security.com',
-        'password123',
-      );
+      const errorInactivo = await authService
+        .login('test@test.com', 'x')
+        .catch((e) => e.message);
 
-      expect(result).toHaveProperty('id');
-      expect(result).toHaveProperty('email');
-      expect(result).toHaveProperty('name');
-      expect(result).toHaveProperty('roles');
-      expect(result).toHaveProperty('permissions');
-      expect(result.id).toBe(user.id);
-      expect(result.email).toBe('admin@grupo-security.com');
-      expect(result.name).toBe('Admin Principal');
-      expect(result.roles).toEqual(['Super Admin']);
-      expect(result.permissions).toEqual(permissions);
+      expect(errorDesconocido).toBe(errorInactivo);
+    });
+
+    it('registra el intento fallido cuando la contraseña es incorrecta', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        authService.login('test@test.com', 'mala'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockLockout.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, reason: 'BAD_PASSWORD' }),
+      );
+    });
+
+    it('registra el acceso correcto', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await authService.login('test@test.com', 'password123');
+
+      expect(mockLockout.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+    });
+
+    /**
+     * Con la cuenta bloqueada no se llega a comprobar la contraseña: el bloqueo
+     * es la primera puerta, de lo contrario seguiría siendo un oráculo de
+     * credenciales durante el propio bloqueo.
+     */
+    it('rechaza con 403 si la cuenta está bloqueada, sin comprobar credenciales', async () => {
+      mockLockout.getStatus.mockResolvedValue({
+        locked: true,
+        until: new Date(Date.now() + 900_000),
+        recentFailures: 5,
+      });
+
+      await expect(
+        authService.login('test@test.com', 'password123'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+      expect(mockSessions.create).not.toHaveBeenCalled();
+    });
+
+    it('no emite sesión si el usuario tiene MFA activo', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockMfa.getState.mockResolvedValue({
+        enabled: true,
+        confirmedAt: new Date(),
+      });
+
+      const result = await authService.login('test@test.com', 'password123');
+
+      expect(result.status).toBe('MFA_REQUIRED');
+      expect(mockSessions.create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Un Super Admin sin segundo factor no obtiene sesión: sólo un token para
+     * enrolarlo. Sin esta regla, la obligatoriedad del MFA sería evitable
+     * simplemente no activándolo.
+     */
+    it('obliga a enrolar MFA a un rol privilegiado que no lo tiene', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockMfa.isRequiredForRoles.mockReturnValue(true);
+
+      const result = await authService.login('admin@test.com', 'password123');
+
+      expect(result.status).toBe('MFA_ENROLLMENT_REQUIRED');
+      expect(mockSessions.create).not.toHaveBeenCalled();
+    });
+
+    it('deduplica permisos entre varios roles', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(
+        buildUserWithRoles(buildActiveUser(), [
+          // 'products:read' aparece en ambos roles: debe salir una sola vez.
+          { role: buildAdminRole(), permissions: ['products:read', 'users:manage'] },
+          { role: buildOperatorRole(), permissions: ['products:read'] },
+        ]),
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await authService.login('test@test.com', 'password123');
+
+      if (result.status !== 'COMPLETE') throw new Error('esperaba COMPLETE');
+
+      const unique = new Set<string>(result.user.permissions);
+      expect(result.user.permissions.length).toBe(unique.size);
+    });
+
+    it('acorta la sesión para roles privilegiados', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockMfa.isRequiredForRoles.mockReturnValue(true);
+      mockMfa.getState.mockResolvedValue({
+        enabled: true,
+        confirmedAt: new Date(),
+      });
+      mockJwtService.verify.mockReturnValue({ sub: 'user-1', scope: 'mfa' });
+      mockMfa.verify.mockResolvedValue(true);
+
+      await authService.verifyMfa('challenge', '123456');
+
+      // SESSION_HOURS_PRIVILEGED por defecto = 2 h, frente a 8 h de una normal.
+      expect(mockConfig.get).toHaveBeenCalledWith('SESSION_HOURS_PRIVILEGED', 2);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  //  verifyMfa — paso 2 (segundo factor)
+  // -----------------------------------------------------------------------
+
+  describe('verifyMfa', () => {
+    beforeEach(() => {
+      mockJwtService.verify.mockReturnValue({ sub: 'user-1', scope: 'mfa' });
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+    });
+
+    it('emite sesión con un código válido', async () => {
+      mockMfa.verify.mockResolvedValue(true);
+
+      const result = await authService.verifyMfa('challenge', '123456');
+
+      expect(result.status).toBe('COMPLETE');
+      expect(mockSessions.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rechaza un código inválido y registra el fallo', async () => {
+      mockMfa.verify.mockResolvedValue(false);
+
+      await expect(
+        authService.verifyMfa('challenge', '000000'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockLockout.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, reason: 'BAD_MFA' }),
+      );
+      expect(mockSessions.create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Un token de enrolamiento no puede hacerse pasar por uno de verificación:
+     * de lo contrario se saltaría el segundo factor pidiendo el token "malo".
+     */
+    it('rechaza un token de desafío con scope incorrecto', async () => {
+      mockJwtService.verify.mockReturnValue({
+        sub: 'user-1',
+        scope: 'mfa-enroll',
+      });
+
+      await expect(
+        authService.verifyMfa('challenge', '123456'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rechaza un token de desafío expirado', async () => {
+      mockJwtService.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
+
+      await expect(
+        authService.verifyMfa('challenge', '123456'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  //  getProfile / logout
+  // -----------------------------------------------------------------------
+
+  describe('getProfile', () => {
+    it('devuelve los datos del usuario', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles());
+
+      const result = await authService.getProfile('user-1');
+
+      expect(result.email).toBe(buildActiveUser().email);
+      expect(result).not.toHaveProperty('password');
+    });
+
+    it('lanza 401 si el usuario no existe', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(authService.getProfile('inexistente')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('logout', () => {
+    it('revoca la sesión del jti', async () => {
+      await authService.logout('jti-abc');
+
+      expect(mockSessions.revoke).toHaveBeenCalledWith('jti-abc', 'LOGOUT');
+    });
+
+    it('no falla si el token no traía jti', async () => {
+      await expect(authService.logout(undefined)).resolves.toBeUndefined();
+
+      expect(mockSessions.revoke).not.toHaveBeenCalled();
     });
   });
 });

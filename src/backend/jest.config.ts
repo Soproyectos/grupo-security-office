@@ -9,6 +9,13 @@ const config: Config = {
       diagnostics: false,
     }],
   },
+  // otplib v13 y sus plugins (@otplib/*, @scure/*) se publican como ESM. Jest
+  // ignora node_modules al transformar, así que sin esta excepción los specs que
+  // alcanzan MfaService fallan al cargar con "Cannot use import statement
+  // outside a module".
+  transformIgnorePatterns: [
+    'node_modules/(?!(otplib|@otplib|@scure|@noble)/)',
+  ],
   collectCoverageFrom: [
     '**/*.service.ts',
     '**/*.controller.ts',

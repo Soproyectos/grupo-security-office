@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth.store'
 import api from '../services/api'
+import MfaChallenge, {
+  BackupCodes,
+  type MfaStage,
+} from '../features/auth/components/MfaChallenge'
 
 interface LoginForm {
   email: string
@@ -25,6 +29,14 @@ export default function Login() {
   const [submitError, setSubmitError] = useState<string>('')
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
+
+  // Segundo paso del login (Fase S). Mientras `challenge` no sea null, el
+  // usuario NO está autenticado: sólo demostró conocer la contraseña.
+  const [challenge, setChallenge] = useState<{
+    stage: MfaStage
+    token: string
+  } | null>(null)
+  const [pendingBackupCodes, setPendingBackupCodes] = useState<string[] | null>(null)
 
   // Validación en tiempo real con dominio corporativo
   const validateField = (name: string, value: string): string => {
@@ -75,7 +87,22 @@ export default function Login() {
     
     try {
       const response = await api.post('/auth/login', form)
-      const { user } = response.data
+      const { status, user, challengeToken } = response.data
+
+      // El backend responde con un resultado discriminado. Sólo 'COMPLETE'
+      // trae sesión: los otros dos estados exigen el segundo factor, y tratar
+      // su respuesta como un login exitoso marcaría al usuario como
+      // autenticado sin cookie de sesión.
+      if (status === 'MFA_REQUIRED') {
+        setChallenge({ stage: 'verify', token: challengeToken })
+        return
+      }
+
+      if (status === 'MFA_ENROLLMENT_REQUIRED') {
+        setChallenge({ stage: 'enroll', token: challengeToken })
+        return
+      }
+
       login(user)
       navigate('/', { replace: true })
     } catch (err: any) {
@@ -85,7 +112,11 @@ export default function Login() {
       // Consolidar manejo de errores similares
       if (!status) {
         setSubmitError('No fue posible conectar con el servidor. Verifica tu conexión a internet.')
-      } else if ([401, 403].includes(status)) {
+      } else if (status === 403) {
+        // Cuenta bloqueada por intentos fallidos: el backend explica cuánto
+        // falta, y ocultarlo dejaría al usuario reintentando a ciegas.
+        setSubmitError(msg || 'Cuenta bloqueada temporalmente. Intenta más tarde.')
+      } else if (status === 401) {
         setSubmitError('Credenciales inválidas. Verifica tu correo y contraseña.')
       } else if (status === 429) {
         setSubmitError('Demasiados intentos. Espera unos minutos antes de intentar nuevamente.')
@@ -128,6 +159,30 @@ export default function Login() {
               />
             </div>
 
+            {pendingBackupCodes ? (
+              <BackupCodes
+                codes={pendingBackupCodes}
+                onContinue={() => navigate('/', { replace: true })}
+              />
+            ) : challenge ? (
+              <MfaChallenge
+                stage={challenge.stage}
+                challengeToken={challenge.token}
+                onSuccess={(user, backupCodes) => {
+                  login(user as never)
+                  if (backupCodes?.length) {
+                    setPendingBackupCodes(backupCodes)
+                  } else {
+                    navigate('/', { replace: true })
+                  }
+                }}
+                onCancel={() => {
+                  setChallenge(null)
+                  setForm({ email: '', password: '' })
+                }}
+              />
+            ) : (
+            <>
             {/* Encabezado único */}
             <div className="mb-8">
               <h1 className="text-2xl font-semibold text-neutral-900 mb-1.5">
@@ -267,6 +322,8 @@ export default function Login() {
                 )}
               </button>
             </form>
+            </>
+            )}
 
             {/* Nota de seguridad */}
             <div className="mt-8 flex items-start gap-2">

@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { SecurityModule } from './common/security/security.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
@@ -47,6 +48,7 @@ import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-tar
     }),
     PrismaModule,
     HierarchyModule,
+    SecurityModule,
     AuthModule,
     UsersModule,
     RolesModule,

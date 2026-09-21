@@ -4,13 +4,18 @@ import { ConfigService } from '@nestjs/config';
 import * as request from 'supertest';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { MfaService } from '../../common/security/mfa.service';
+import { SessionService } from '../../common/security/session.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { buildExpectedUserData } from '../../__test__/fixtures/auth.fixture';
 
 const mockAuthService = {
-  validateUser: jest.fn(),
   login: jest.fn(),
+  verifyMfa: jest.fn(),
+  completeEnrollment: jest.fn(),
+  consumeChallenge: jest.fn(),
   getProfile: jest.fn(),
+  logout: jest.fn(),
 };
 
 const mockConfigService = {
@@ -53,6 +58,23 @@ describe('AuthController', () => {
           provide: ConfigService,
           useValue: mockConfigService,
         },
+        {
+          provide: MfaService,
+          useValue: {
+            getState: jest.fn().mockResolvedValue({ enabled: false, confirmedAt: null }),
+            isRequiredForRoles: jest.fn().mockReturnValue(false),
+            remainingBackupCodes: jest.fn().mockResolvedValue(0),
+            startEnrollment: jest.fn(),
+            disable: jest.fn(),
+          },
+        },
+        {
+          provide: SessionService,
+          useValue: {
+            listActive: jest.fn().mockResolvedValue([]),
+            revokeAllForUser: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -76,10 +98,11 @@ describe('AuthController', () => {
   describe('POST /api/auth/login', () => {
     it('debe retornar 200 y cookie access_token con credenciales válidas', async () => {
       const expectedUser = buildExpectedUserData();
-      mockAuthService.validateUser.mockResolvedValue(expectedUser);
       mockAuthService.login.mockResolvedValue({
+        status: 'COMPLETE',
         token: 'jwt-token-mock',
         user: expectedUser,
+        expiresAt: new Date(Date.now() + 3_600_000),
       });
 
       const res = await request(app.getHttpServer())
@@ -98,14 +121,15 @@ describe('AuthController', () => {
         ? res.headers['set-cookie']
         : [res.headers['set-cookie']];
       expect(cookies.some((c: string) => c.startsWith('access_token='))).toBe(true);
-      expect(mockAuthService.validateUser).toHaveBeenCalledWith(
+      expect(mockAuthService.login).toHaveBeenCalledWith(
         'admin@grupo-security.com',
         'password123',
+        expect.objectContaining({ ipAddress: expect.anything() }),
       );
     });
 
     it('debe retornar 401 con credenciales inválidas', async () => {
-      mockAuthService.validateUser.mockRejectedValue(
+      mockAuthService.login.mockRejectedValue(
         new UnauthorizedException('Credenciales inválidas'),
       );
 

@@ -119,7 +119,7 @@ Ejecutado:
 
 ---
 
-### Fase S — Hardening del Super Admin (PRIORITARIA)
+### Fase S — Hardening del Super Admin — ✅ BACKEND COMPLETADO 2026-09-21
 
 **Objetivo**: que comprometer una sola contraseña no entregue el control total.
 
@@ -134,15 +134,15 @@ sesiones de inmediato.
 |---|---|---|---|
 | 1 | El seed hacía `update: { password }` con `'admin123'`: **cada ejecución restablecía la contraseña del Super Admin** a un valor público, anulando cualquier cambio del titular | Crítico | ✅ Corregido (SEC-SEED-001) |
 | 2 | Coste de bcrypt inconsistente: 12 en el seed, 10 en `users.service` | Alto | ✅ Corregido — constante compartida |
-| 3 | Sin MFA: una sola contraseña separa a cualquiera del control total | Crítico | Pendiente |
-| 4 | Sin bloqueo de cuenta ni registro de intentos fallidos. El *throttle* es por IP: un ataque distribuido o lento no encuentra resistencia | Alto | Pendiente |
-| 5 | Política de contraseña = `@MinLength(8)`. `admin123` la cumple | Alto | Pendiente |
-| 6 | JWT de 8 h sin lista de revocación: no se puede cortar una sesión concreta ni cerrar sesión en otros dispositivos | Medio | Pendiente |
-| 7 | El JWT lleva `roles` y `permissions` embebidos → hasta 8 h de desfase tras cambiar permisos. **Afecta directo a la fase 5** | Medio | Pendiente |
-| 8 | `sameSite: 'lax'` en la cookie de sesión de un panel administrativo | Medio | Pendiente |
-| 9 | Sin re-autenticación (*step-up*) para operaciones críticas del Super Admin | Medio | Pendiente |
-| 10 | Nada impide que el único Super Admin se autodesactive o se quite el rol (*lockout* irreversible) | Medio | Pendiente |
-| 11 | El ejemplo de Swagger publica `admin123` como contraseña de referencia | Bajo | Pendiente |
+| 3 | Sin MFA: una sola contraseña separa a cualquiera del control total | Crítico | ✅ Corregido — TOTP obligatorio para Super Admin |
+| 4 | Sin bloqueo de cuenta ni registro de intentos fallidos. El *throttle* es por IP: un ataque distribuido o lento no encuentra resistencia | Alto | ✅ Corregido — bloqueo progresivo por cuenta |
+| 5 | Política de contraseña = `@MinLength(8)`. `admin123` la cumple | Alto | ✅ Corregido — zxcvbn con diccionario del negocio |
+| 6 | JWT de 8 h sin lista de revocación: no se puede cortar una sesión concreta ni cerrar sesión en otros dispositivos | Medio | ✅ Corregido — sesiones con `jti` revocable |
+| 7 | El JWT lleva `roles` y `permissions` embebidos → hasta 8 h de desfase tras cambiar permisos. **Afecta directo a la fase 5** | Medio | ✅ Mitigado — un cambio de roles revoca las sesiones del usuario |
+| 8 | `sameSite: 'lax'` en la cookie de sesión de un panel administrativo | Medio | ✅ Corregido — `sameSite: 'strict'` |
+| 9 | Sin re-autenticación (*step-up*) para operaciones críticas del Super Admin | Medio | Modelo `StepUpGrant` creado; guard pendiente |
+| 10 | Nada impide que el único Super Admin se autodesactive o se quite el rol (*lockout* irreversible) | Medio | ✅ Corregido — break-glass + no autoservicio |
+| 11 | El ejemplo de Swagger publica `admin123` como contraseña de referencia | Bajo | ✅ Corregido |
 
 #### Librerías instaladas
 
@@ -211,6 +211,73 @@ El frontend muestra el medidor en vivo; **la validación que manda es la del bac
 - Quitar `admin123` del ejemplo de Swagger.
 - `.env.example` documentando `SEED_SUPER_ADMIN_PASSWORD` y `SEED_COMPRAS_PASSWORD`.
 - Aviso en el primer ingreso si la contraseña se generó automáticamente.
+
+#### Lo ejecutado
+
+Migración `20260921152429_add_security_mfa_sessions_login_attempts`, aditiva
+(sin `DROP`), aplicada con `migrate deploy`. Modelos nuevos: `UserMfa`,
+`MfaBackupCode`, `LoginAttempt`, `Session`, `StepUpGrant`, más
+`User.passwordChangedAt`.
+
+Servicios en `src/common/security/` (módulo `@Global`):
+
+| Servicio | Responsabilidad |
+|---|---|
+| `PasswordPolicyService` | zxcvbn con diccionario español + términos del negocio |
+| `AccountLockoutService` | Registro de intentos y bloqueo progresivo por cuenta |
+| `MfaCryptoService` | AES-256-GCM para los secretos TOTP + comparación en tiempo constante |
+| `MfaService` | Enrolamiento, verificación y códigos de respaldo |
+| `SessionService` | Sesiones revocables por `jti` |
+| `PrivilegedAccountService` | Break-glass y prohibición de autoservicio |
+
+Login reescrito en dos pasos (`POST /api/auth/login` →
+`POST /api/auth/mfa/verify`), con enrolamiento obligatorio para Super Admin
+(`/api/auth/mfa/enroll/{start,confirm}`) y gestión de sesiones
+(`GET /api/auth/sessions`, `POST /api/auth/sessions/revoke-others`).
+
+Endurecimientos adicionales no previstos en la especificación inicial:
+
+- **Anti-enumeración de cuentas**: con un correo inexistente se ejecuta bcrypt
+  igualmente contra un hash de descarte, y el mensaje de error es idéntico al de
+  contraseña incorrecta y cuenta inactiva. Sin esto, el tiempo de respuesta
+  revelaba qué correos están registrados.
+- **Los tokens de desafío no son sesiones**: `jwt.strategy` rechaza cualquier
+  token con `scope`. Sin esa comprobación, el token intermedio emitido tras
+  validar la contraseña habría servido para usar la API saltándose el MFA.
+- **El bloqueo corre desde el fallo que lo disparó**, no desde "ahora": de lo
+  contrario un tercero podría mantener bloqueada la cuenta de otro reintentando
+  periódicamente (denegación de servicio contra el titular).
+- **Coste de bcrypt unificado** en `password.constants.ts`.
+
+**Verificado**: `tsc --noEmit` limpio · **768/768 tests en verde** (45 suites,
++49 tests nuevos) · el backend arranca y mapea las 9 rutas de `/api/auth` · E2E
+del bloqueo contra el servidor real.
+
+Medición real de la política (no estimada):
+
+| Contraseña | Score | Veredicto |
+|---|:-:|---|
+| `admin123` | 1 | Rechazada |
+| `compras123` | 1 | Rechazada |
+| `GrupoSecurity2026!` | 2 | Rechazada |
+| `gruposecurity` | 0 | Rechazada (era 3 sin el diccionario del negocio) |
+| `SeguridadGrupo1` | 3 | Aceptada para usuario normal, **rechazada** para Super Admin |
+| `correcto-caballo-bateria-grapa` | 4 | Aceptada |
+
+#### Pendiente de la Fase S
+
+- **Frontend**: pantalla de segundo paso del login, enrolamiento con QR,
+  medidor de fuerza de contraseña, pantalla de sesiones activas.
+- **Guard de step-up**: el modelo `StepUpGrant` existe; falta el decorador
+  `@RequiresStepUp()` y su guard para las operaciones críticas.
+- **Desbloqueo administrativo** de cuentas desde `UsersPage`.
+- **Tarea programada** que ejecute `SessionService.pruneExpired()`.
+
+> **Riesgo operativo**: `MFA_ENCRYPTION_KEY` es obligatoria y la aplicación
+> **no arranca sin ella**. Es deliberado: guardar los secretos TOTP en claro
+> anularía el segundo factor frente a una filtración de BD. Si la clave se
+> pierde o cambia, los secretos existentes dejan de descifrarse y los usuarios
+> deben reenrolarse con sus códigos de respaldo. Documentada en `.env.example`.
 
 **Aceptación**: un Super Admin no puede operar sin MFA confirmado; 15 intentos
 fallidos bloquean la cuenta y dejan rastro en auditoría; revocar una sesión la

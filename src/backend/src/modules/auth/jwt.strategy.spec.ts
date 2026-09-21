@@ -17,6 +17,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SessionService } from '../../common/security/session.service';
 
 const mockConfigService = {
   get: jest.fn().mockReturnValue('test-jwt-secret'),
@@ -38,6 +39,12 @@ describe('JwtStrategy', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: SessionService,
+          // Por defecto la sesion esta viva; los tests que prueben revocacion
+          // sobrescriben este mock.
+          useValue: { isActive: jest.fn().mockResolvedValue(true), touch: jest.fn() },
         },
       ],
     }).compile();
