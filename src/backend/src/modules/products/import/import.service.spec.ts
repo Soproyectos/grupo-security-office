@@ -255,6 +255,75 @@ describe('ImportService — Lista destino (listaId)', () => {
     });
   });
 
+  describe('execute — arranque en segundo plano (SEC-IMPORT-002)', () => {
+    it('responde de inmediato con status "processing", antes de que el batch termine', async () => {
+      // Promesa controlada a mano: mientras no se resuelva, el batch "sigue corriendo".
+      let resolveBatch!: (value: typeof executeResult) => void;
+      batchExecutor.execute.mockReturnValue(
+        new Promise((resolve) => {
+          resolveBatch = resolve;
+        }),
+      );
+
+      const preview = await runPreview();
+      const ack = await service.execute(preview.importId, { columnMappings: [] }, 'user-1');
+
+      expect(ack).toEqual({
+        importId: preview.importId,
+        status: 'processing',
+        message: expect.any(String),
+      });
+
+      // El batch se invocó (arrancó) pero aún no se resolvió — execute() no lo esperó.
+      expect(batchExecutor.execute).toHaveBeenCalled();
+
+      resolveBatch(executeResult);
+    });
+
+    it('getProgress refleja "completed" con el resumen real una vez que el batch en segundo plano termina', async () => {
+      const preview = await runPreview();
+      await service.execute(preview.importId, { columnMappings: [] }, 'user-1');
+
+      // El mock resuelve en microtask; una vuelta extra por el event loop basta
+      // para que runBatchInBackground termine de guardar el resultado.
+      await new Promise((r) => setImmediate(r));
+
+      const progress = await service.getProgress(preview.importId);
+
+      expect(progress.status).toBe('completed');
+      expect(progress.progress).toBe(100);
+      expect(progress.result?.summary).toEqual(
+        expect.objectContaining({ total: 1, created: 1, errors: 0 }),
+      );
+    });
+
+    it('getProgress refleja "failed" si el batch en segundo plano revienta con una excepción no controlada', async () => {
+      batchExecutor.execute.mockRejectedValueOnce(new Error('Conexión perdida con la BD'));
+
+      const preview = await runPreview();
+      await service.execute(preview.importId, { columnMappings: [] }, 'user-1');
+
+      await new Promise((r) => setImmediate(r));
+
+      const progress = await service.getProgress(preview.importId);
+
+      expect(progress.status).toBe('failed');
+      expect(progress.message).toBe('Conexión perdida con la BD');
+    });
+
+    it('getProgress sigue devolviendo el resultado completo en un segundo sondeo (no se borra el contexto)', async () => {
+      const preview = await runPreview();
+      await service.execute(preview.importId, { columnMappings: [] }, 'user-1');
+      await new Promise((r) => setImmediate(r));
+
+      await service.getProgress(preview.importId);
+      const secondPoll = await service.getProgress(preview.importId);
+
+      expect(secondPoll.status).toBe('completed');
+      expect(secondPoll.result?.summary.created).toBe(1);
+    });
+  });
+
   describe('getCurrentPriceBySku (wizard de precios)', () => {
     it('devuelve data null cuando no existe producto para el SKU', async () => {
       mockPrisma.product.findMany.mockResolvedValue([]);

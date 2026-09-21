@@ -28,6 +28,7 @@ interface ImportStore extends ImportWizardState {
   clearFile: () => void;
   setPreview: (preview: ImportPreviewResult) => void;
   setExecutionResult: (result: ImportExecutionResult) => void;
+  setExecutionProgress: (progress: { progress: number; message: string } | null) => void;
   setColumnMappings: (mappings: Array<{ sourceColumn: string; targetField: SystemField }>) => void;
   updateMapping: (sourceColumn: string, targetField: SystemField) => void;
   setFixedValue: (field: SystemField, value: string) => void;
@@ -64,6 +65,7 @@ const initialState: ImportWizardState = {
   fileName: '',
   preview: null,
   executionResult: null,
+  executionProgress: null,
   columnMappings: [],
   fixedValues: {},
   ivaMode: 'with_iva',
@@ -95,10 +97,11 @@ export const useImportStore = create<ImportStore>()(
       },
 
       setFile: (file, buffer) => set({ file, fileBuffer: buffer, fileName: file.name }),
-      clearFile: () => set({ file: null, fileBuffer: null, fileName: '', preview: null, executionResult: null, sections: [] }),
+      clearFile: () => set({ file: null, fileBuffer: null, fileName: '', preview: null, executionResult: null, executionProgress: null, sections: [] }),
 
       setPreview: (preview) => set({ preview }),
       setExecutionResult: (result) => set({ executionResult: result }),
+      setExecutionProgress: (progress) => set({ executionProgress: progress }),
 
       setColumnMappings: (mappings) => set({ columnMappings: mappings }),
       updateMapping: (sourceColumn, targetField) => {

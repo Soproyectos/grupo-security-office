@@ -111,6 +111,28 @@ export interface ImportExecutionResult {
 }
 
 /**
+ * Respuesta inmediata de `execute` (SEC-IMPORT-002).
+ *
+ * `execute` ya no espera a que termine el batch antes de responder: con
+ * archivos de varias listas de precio por fila, cada producto cuesta ~20
+ * idas y vueltas a la BD (Neon, remota) y el lote completo puede tardar
+ * varios minutos — más que el límite de una sola petición HTTP. El batch
+ * arranca en segundo plano al recibir esta respuesta; el cliente debe sondear
+ * `GET /products/import/progress/:importId` hasta ver `status: 'completed'`
+ * o `'failed'`, momento en el que trae el `result` con el resumen real.
+ */
+export interface ImportExecutionAck {
+  /** ID de la importación (el mismo que se sondea en /progress) */
+  importId: string;
+
+  /** Siempre 'processing': el batch acaba de arrancar en segundo plano */
+  status: 'processing';
+
+  /** Mensaje para mostrar mientras se sondea el progreso */
+  message: string;
+}
+
+/**
  * Resultado del endpoint de progreso de importación.
  */
 export interface ImportProgressResult {

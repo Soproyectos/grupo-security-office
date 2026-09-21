@@ -99,15 +99,18 @@ export class ImportController {
   }
 
   /**
-   * FASE 2: Execute — Ejecuta la importación real.
-   * Requiere que se haya ejecutado preview previamente.
+   * FASE 2: Execute — Valida y arranca la importación real en segundo plano.
+   * Requiere que se haya ejecutado preview previamente. No espera a que el
+   * batch termine (SEC-IMPORT-002): responde de inmediato con `status:
+   * 'processing'` y el cliente sondea `GET .../progress/:importId` hasta ver
+   * el resultado final.
    */
   @Post('execute')
   @Roles('Super Admin', 'Admin Comercial')
   @HttpCode(201)
-  @ApiOperation({ summary: 'Ejecutar importación (commit)' })
-  @ApiResponse({ status: 201, description: 'Importación ejecutada exitosamente' })
-  @ApiResponse({ status: 400, description: 'Importación no encontrada o error de ejecución' })
+  @ApiOperation({ summary: 'Iniciar ejecución de importación (arranca en segundo plano)' })
+  @ApiResponse({ status: 201, description: 'Importación iniciada. Sondear /progress/:importId para el resultado.' })
+  @ApiResponse({ status: 400, description: 'Importación no encontrada o mapping incompleto' })
   async execute(
     @Body() dto: ExecuteImportDto,
     @Req() req: any,

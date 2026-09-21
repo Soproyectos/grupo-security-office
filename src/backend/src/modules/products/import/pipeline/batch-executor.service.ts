@@ -23,8 +23,20 @@ interface BatchConfig {
   delayBetweenBatches: number;
 }
 
+/**
+ * `batchSize` en 50 con archivos de varias listas de precio por fila
+ * (SEC-IMPORT-002): cada precio de una fila cuesta 2 idas y vueltas a la BD
+ * (`price.findUnique` + create/update) más una tercera si la lista de precios
+ * es nueva — un archivo con ~10 columnas de precio son ~20-30 consultas
+ * secuenciales por fila. Con 50 filas por transacción eso supera el `timeout`
+ * de abajo antes de terminar el lote: Prisma cierra la transacción en el
+ * servidor y toda fila procesada después revienta con "Transaction not
+ * found", aunque sus datos fueran válidos (confirmado con
+ * LISTA HIKVISION TURBO GRUPO.xlsx: preview 211/211 válidas, execute con
+ * batchSize 50 → 200 de 211 en error por timeout de transacción).
+ */
 const DEFAULT_BATCH_CONFIG: BatchConfig = {
-  batchSize: 50,
+  batchSize: 15,
   maxRetries: 2,
   delayBetweenBatches: 100,
 };
@@ -322,7 +334,10 @@ export class BatchExecutorService {
 
         return batchResult;
       },
-      { timeout: 30000 },
+      // Margen de seguridad además del batchSize reducido: un lote con filas
+      // especialmente pesadas en columnas de precio no debe fallar por unos
+      // segundos de más.
+      { timeout: 90000 },
     );
   }
 

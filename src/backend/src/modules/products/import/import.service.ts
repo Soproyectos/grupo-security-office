@@ -19,6 +19,7 @@ import { RawRow } from './interfaces/import-source.adapter';
 import {
   ImportPreviewResult,
   ImportExecutionResult,
+  ImportExecutionAck,
   ImportProgressResult,
   CurrentPriceResult,
   ValidationRowError,
@@ -202,8 +203,19 @@ export class ImportService {
   }
 
   /**
-   * FASE 2: Execute — Ejecuta la importación real.
+   * FASE 2: Execute — Valida y arranca la importación real en segundo plano.
    * Modifica la base de datos dentro de transacciones.
+   *
+   * SEC-IMPORT-002: no espera a que el batch termine. Antes, esta llamada
+   * mantenía la petición HTTP abierta hasta procesar TODAS las filas — con
+   * archivos de varias listas de precio por producto (más idas y vueltas por
+   * fila a la BD remota), el total podía superar el límite de una sola
+   * petición HTTP y la conexión se cerraba a la fuerza a medio proceso,
+   * perdiendo el resultado aunque el archivo fuera válido (confirmado con
+   * LISTA HIKVISION TURBO GRUPO.xlsx: preview 211/211 válidas, execute
+   * síncrono cortado por conexión reiniciada). Ahora valida y re-normaliza
+   * (rápido, en memoria) y devuelve de inmediato; el batch corre aparte y el
+   * cliente sondea `getProgress` hasta ver el resultado final.
    */
   async execute(
     importId: string,
@@ -217,7 +229,7 @@ export class ImportService {
       fixedValues?: Partial<Record<SystemField, string>>;
     },
     userId: string,
-  ): Promise<ImportExecutionResult> {
+  ): Promise<ImportExecutionAck> {
     const ctx = await this.loadContext(importId);
     if (!ctx) {
       throw new BadRequestException(
@@ -298,49 +310,64 @@ export class ImportService {
     ctx.currentStage = 'batch_execution';
     ctx.userId = userId;
     // Refleja la etapa en BD para que getProgress() sea preciso si se consulta
-    // mientras el batch corre (execute puede tardar varios segundos en archivos
-    // grandes).
+    // mientras el batch corre (execute puede tardar varios minutos en archivos
+    // grandes con muchas listas de precio por fila).
     await this.saveContext(ctx);
 
-    // Ejecutar batch
-    const result = await this.batchExecutor.execute(
-      ctx.normalizedRows,
-      ctx,
-    );
-
-    ctx.executionResult = result;
-    ctx.currentStage = 'batch_execution';
-
-    // Guardar preset si se solicita
-    if (dto.presetName) {
-      await this.savePreset(
-        ctx.columnMapping,
-        dto.presetName,
-        userId,
-      );
-    }
-
-    // Limpiar contexto persistido
-    await this.deleteContext(importId);
+    // Arranca el batch sin esperarlo: la petición HTTP ya no lo necesita, y
+    // seguirá corriendo aunque el cliente se desconecte (el proceso de Node
+    // sigue vivo). Cualquier fallo se captura dentro — nunca debe salir como
+    // una promesa rechazada sin manejar.
+    void this.runBatchInBackground(importId, ctx, dto.presetName, userId);
 
     return {
       importId,
-      summary: {
-        total: result.total,
-        created: result.created,
-        updated: result.updated,
-        skipped: result.skipped,
-        errors: result.errors.length,
-        defaultsByMissingInference: result.defaultsByMissingInference ?? { category: 0, brand: 0 },
-      },
-      executionErrors: result.errors,
-      durationMs: result.durationMs,
-      completedAt: new Date().toISOString(),
+      status: 'processing',
+      message: `Importación iniciada (${ctx.normalizedRows.length} filas). Consulte el progreso con importId.`,
     };
   }
 
   /**
-   * Obtiene el progreso de una importación activa.
+   * Ejecuta el batch y persiste el resultado (éxito o fallo) para que
+   * `getProgress` lo entregue en el siguiente sondeo. No se llama con
+   * `await` desde `execute` — corre en segundo plano.
+   */
+  private async runBatchInBackground(
+    importId: string,
+    ctx: ImportContext,
+    presetName: string | undefined,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const result = await this.batchExecutor.execute(ctx.normalizedRows, ctx);
+
+      ctx.executionResult = result;
+      ctx.completedAt = new Date().toISOString();
+
+      if (presetName) {
+        await this.savePreset(ctx.columnMapping, presetName, userId);
+      }
+
+      await this.saveContext(ctx);
+    } catch (error) {
+      // Excepción no controlada del batch (no un error por fila — esos ya
+      // vienen dentro de `result.errors` y no llegan aquí). Se persiste como
+      // fallo en vez de dejar la importación sondeando para siempre.
+      this.logger.error(`Batch de importación ${importId} falló: ${error?.message}`, error?.stack);
+      ctx.executionError = error?.message || 'Error desconocido durante la importación';
+      ctx.completedAt = new Date().toISOString();
+      await this.saveContext(ctx).catch((saveError) =>
+        this.logger.error(`No se pudo persistir el fallo de ${importId}: ${saveError?.message}`),
+      );
+    }
+  }
+
+  /**
+   * Obtiene el progreso de una importación activa, o el resultado final si
+   * el batch en segundo plano ya terminó (`executionResult`/`executionError`
+   * en el contexto — ver `runBatchInBackground`). El contexto NO se borra al
+   * completarse: si se borrara en el primer sondeo que lo ve, un segundo
+   * sondeo (o una recarga de pantalla) perdería el resultado detallado.
    */
   async getProgress(importId: string): Promise<ImportProgressResult> {
     const ctx = await this.loadContext(importId);
@@ -352,6 +379,41 @@ export class ImportService {
         progress: 100,
         currentStage: 'batch_execution',
         message: 'Importación completada',
+      };
+    }
+
+    if (ctx.executionResult) {
+      const result = ctx.executionResult;
+      return {
+        importId,
+        status: 'completed',
+        progress: 100,
+        currentStage: 'batch_execution',
+        message: 'Importación completada',
+        result: {
+          importId,
+          summary: {
+            total: result.total,
+            created: result.created,
+            updated: result.updated,
+            skipped: result.skipped,
+            errors: result.errors.length,
+            defaultsByMissingInference: result.defaultsByMissingInference ?? { category: 0, brand: 0 },
+          },
+          executionErrors: result.errors,
+          durationMs: result.durationMs,
+          completedAt: ctx.completedAt ?? new Date().toISOString(),
+        },
+      };
+    }
+
+    if (ctx.executionError) {
+      return {
+        importId,
+        status: 'failed',
+        progress: 100,
+        currentStage: 'batch_execution',
+        message: ctx.executionError,
       };
     }
 

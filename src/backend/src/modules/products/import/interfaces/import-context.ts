@@ -62,8 +62,19 @@ export interface ImportContext {
   /** Filas normalizadas listas para insertar */
   normalizedRows: NormalizedRow[];
 
-  /** Resultado final de la ejecución en batch */
+  /** Resultado final de la ejecución en batch (marca la importación como completada) */
   executionResult?: BatchExecutionResult;
+
+  /**
+   * Mensaje de fallo si el batch en segundo plano revienta antes de producir
+   * un `executionResult` (excepción no controlada, no un error por fila —
+   * esos van dentro de `executionResult.errors`). Marca la importación como
+   * fallida para quien esté sondeando `getProgress`.
+   */
+  executionError?: string;
+
+  /** Timestamp ISO de cuándo terminó el batch (éxito o fallo) */
+  completedAt?: string;
 
   /** Errores acumulados del pipeline */
   pipelineErrors: PipelineError[];

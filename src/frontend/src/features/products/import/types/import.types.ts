@@ -61,6 +61,27 @@ export interface ImportExecutionResult {
   completedAt: string;
 }
 
+/**
+ * Respuesta inmediata de POST /products/import/execute (SEC-IMPORT-002).
+ * El batch arranca en segundo plano; hay que sondear /progress hasta ver
+ * `status: 'completed'` o `'failed'` — ver useImportExecution.
+ */
+export interface ImportExecutionAck {
+  importId: string;
+  status: 'processing';
+  message: string;
+}
+
+/** Respuesta de GET /products/import/progress/:importId. */
+export interface ImportProgressResult {
+  importId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  currentStage: string;
+  message: string;
+  result?: ImportExecutionResult;
+}
+
 /** Acción que el backend debe aplicar a un valor de categoría del archivo en el execute. */
 export type ImportSectionAction = 'create' | 'reuse' | 'skip';
 
@@ -125,6 +146,8 @@ export interface ImportWizardState {
   fileName: string;
   preview: ImportPreviewResult | null;
   executionResult: ImportExecutionResult | null;
+  /** Progreso en vivo del batch en segundo plano (sondeo de /progress). */
+  executionProgress: { progress: number; message: string } | null;
   columnMappings: Array<{ sourceColumn: string; targetField: SystemField }>;
   /** Valores fijos para campos sin columna en el archivo (ej: Marca="Hikvision", Categoría="CCTV"). */
   fixedValues: Partial<Record<SystemField, string>>;

@@ -17,6 +17,7 @@ export default function ImportStepExecution({ onComplete }: ImportStepExecutionP
   const setStep = useImportStore((s) => s.setStep);
   const nextStep = useImportStore((s) => s.nextStep);
   const setError = useImportStore((s) => s.setError);
+  const executionProgress = useImportStore((s) => s.executionProgress);
 
   const executionMutation = useImportExecution();
 
@@ -59,20 +60,31 @@ export default function ImportStepExecution({ onComplete }: ImportStepExecutionP
             Ejecutando importacion
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Procesando {preview?.totalRows || 0} filas. Esto puede tomar unos momentos.
+            {executionProgress?.message || `Procesando ${preview?.totalRows || 0} filas. Esto puede tomar unos momentos.`}
           </p>
         </div>
       </div>
 
       <div className="w-full max-w-md">
         <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-security-700 rounded-full animate-indeterminate" />
+          {executionProgress ? (
+            <div
+              className="h-full bg-security-700 rounded-full transition-all duration-500"
+              style={{ width: `${Math.max(5, executionProgress.progress)}%` }}
+            />
+          ) : (
+            <div className="h-full bg-security-700 rounded-full animate-indeterminate" />
+          )}
         </div>
+        {executionProgress && (
+          <p className="mt-1 text-right text-xs text-gray-400">{executionProgress.progress}%</p>
+        )}
       </div>
 
       {executionMutation.isPending && (
         <p className="text-xs text-gray-400">
-          No cierre esta ventana mientras se procesa la importacion.
+          No cierre esta ventana mientras se procesa la importacion. Los archivos con muchas
+          columnas de precio pueden tardar varios minutos.
         </p>
       )}
 
