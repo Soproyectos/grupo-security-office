@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useImportStore } from '../store/import.store';
+import { useBackgroundImportStore } from '../store/backgroundImport.store';
 import { Alert, Button } from '../../../../components/ui';
 import ImportStepper from './ImportStepper';
 import ImportStepSections from './ImportStepSections';
@@ -11,6 +12,7 @@ import ImportStepValidation from './ImportStepValidation';
 import ImportStepConfirm from './ImportStepConfirm';
 import ImportStepExecution from './ImportStepExecution';
 import ImportStepResult from './ImportStepResult';
+import ImportBackgroundJobView from './ImportBackgroundJobView';
 
 const STEP_LABELS: Record<string, string> = {
   upload: 'Carga de archivo',
@@ -40,6 +42,13 @@ export default function ImportWizard({ onClose, listaId }: ImportWizardProps) {
   const fileName = useImportStore((s) => s.fileName);
   const setListaId = useImportStore((s) => s.setListaId);
 
+  const backgroundJob = useBackgroundImportStore((s) => s.job);
+  const dismissBackgroundJob = useBackgroundImportStore((s) => s.dismissJob);
+  // Al elegir "iniciar una nueva importación" desde la vista de progreso,
+  // deja de tapar el wizard con ella para ESTA apertura del modal — el job
+  // de fondo sigue corriendo igual, solo deja de mostrarse aquí.
+  const [bypassBackgroundView, setBypassBackgroundView] = useState(false);
+
   useEffect(() => {
     setListaId(listaId ?? null);
   }, [listaId, setListaId]);
@@ -48,6 +57,23 @@ export default function ImportWizard({ onClose, listaId }: ImportWizardProps) {
     reset();
     onClose();
   };
+
+  const handleStartNew = () => {
+    // Solo se ofrece cuando el job de fondo ya no está 'processing' (ver
+    // ImportBackgroundJobView) — en ese punto su información ya no aporta,
+    // así que también se limpia de la tarjeta flotante para no dejar un
+    // resultado viejo compitiendo por atención con la importación nueva.
+    dismissBackgroundJob();
+    setBypassBackgroundView(true);
+  };
+
+  // Reabrir el wizard mientras ya hay una importación corriendo (o recién
+  // terminada, sin cerrar) mostraba el flujo de carga desde cero como si
+  // nada estuviera pasando. Solo se muestra en 'upload': si el usuario ya
+  // está a mitad de preparar UNA importación nueva distinta, no se le
+  // interrumpe con el progreso de la vieja.
+  const showBackgroundJob =
+    !!backgroundJob && currentStep === 'upload' && !bypassBackgroundView;
 
   const renderStep = () => {
     switch (currentStep) {
@@ -100,19 +126,23 @@ export default function ImportWizard({ onClose, listaId }: ImportWizardProps) {
           </div>
         </header>
 
-        <div className="px-6 py-4 border-b border-neutral-100 bg-neutral-50">
-          <ImportStepper currentStep={currentStep} />
-        </div>
+        {!showBackgroundJob && (
+          <div className="px-6 py-4 border-b border-neutral-100 bg-neutral-50">
+            <ImportStepper currentStep={currentStep} />
+          </div>
+        )}
 
-        <div className="mx-6 mt-4">
-          <Alert variant="info">
-            <strong>Importación automática:</strong> las categorías (secciones) y marcas que no
-            existan se crearán automáticamente durante la importación. Puedes gestionarlas desde la
-            pestaña "Configuración" de la Lista.
-          </Alert>
-        </div>
+        {!showBackgroundJob && (
+          <div className="mx-6 mt-4">
+            <Alert variant="info">
+              <strong>Importación automática:</strong> las categorías (secciones) y marcas que no
+              existan se crearán automáticamente durante la importación. Puedes gestionarlas desde la
+              pestaña "Configuración" de la Lista.
+            </Alert>
+          </div>
+        )}
 
-        {isRestored && currentStep !== 'upload' && (
+        {!showBackgroundJob && isRestored && currentStep !== 'upload' && (
           <div className="mx-6 mt-4 flex items-center justify-between p-3 bg-brand-primary-light border border-brand-primary-subtle rounded-lg">
             <p className="text-sm text-brand-primary">
               <strong>Sesión restaurada</strong>
@@ -132,10 +162,14 @@ export default function ImportWizard({ onClose, listaId }: ImportWizardProps) {
         )}
 
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          {renderStep()}
+          {showBackgroundJob ? (
+            <ImportBackgroundJobView onClose={handleClose} onStartNew={handleStartNew} />
+          ) : (
+            renderStep()
+          )}
         </div>
 
-        {currentStep !== 'execution' && currentStep !== 'result' && (
+        {!showBackgroundJob && currentStep !== 'execution' && currentStep !== 'result' && (
           <footer className="border-t border-neutral-200 px-6 py-4 flex items-center justify-between">
             <Button variant="secondary" onClick={prevStep} disabled={currentStep === 'upload'}>
               Anterior
