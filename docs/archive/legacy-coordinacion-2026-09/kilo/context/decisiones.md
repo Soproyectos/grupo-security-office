@@ -79,3 +79,9 @@
 | 2026-08-24 | Toggle endpoints (`toggleVisibility`/`toggleActive`) ahora aceptan cuerpo opcional `ToggleProductDto { clave? }` y la reenvían al FSM vía `doTransition`. UpdateProductDto / TransitionProductDto / DeleteProductDto extienden con `clave?: string`. | Los toggles modifican estado y deben exigir clave como cualquier write | Medio | Implementado | comercial-dev |
 
 
+
+## Cierre de etapa — Adopción de Gentle-AI (2026-09-21)
+
+| Fecha | Decisión técnica | Motivo | Impacto | Estado | Aprobado por |
+|---|---|---|---|---|---|
+| 2026-09-21 | ADOPT-GENTLE-AI-001: se adopta Gentle-AI (v3.4.0, telemetría OFF) como capa de flujo/memoria/review (ODD/SDD/RDD, Engram, skills, CodeGraph, personas) para claude-code, kilocode y opencode. Se archiva la gobernanza de coordinación multi-agente (docs/agent-coordination, .kilo/rules, .kilo/context, .opencode/agents, kilo.jsonc, CLAUDE.md pre-Gentle, graphify-out, WORKFLOW.md, AGENT_TEAM.md) en docs/archive/legacy-coordinacion-2026-09/ sin borrar historia. Fin de la orquestación automática (Orca); las sesiones pasan a ser dirigidas por humano. Issues GitHub #16-#27 de la cadena comercial siguen vigentes y se ejecutan por sesión directa. | El modelo de ejecutores autónomos con tablero/issues/Orca quedó obsoleto frente al nuevo flujo Gentle-AI; el archivo preserva toda la evidencia histórica | Alto | Implementado | usuario (coordinador) |
