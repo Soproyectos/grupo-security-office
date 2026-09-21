@@ -231,12 +231,24 @@ export class AuthService {
   }
 
   /**
-   * Token de desafío intermedio: vive 5 minutos y sólo sirve para completar el
-   * paso pendiente. Lleva `scope` para que un token de enrolamiento no pueda
-   * usarse como si ya se hubiera verificado el segundo factor.
+   * Token de desafío intermedio. Sólo sirve para completar el paso pendiente y
+   * lleva `scope`, de modo que un token de enrolamiento no pueda usarse como si
+   * ya se hubiera verificado el segundo factor.
+   *
+   * Las dos vidas son distintas a propósito:
+   *  - `mfa` (5 min): quien ya tiene la app sólo necesita leer un código.
+   *  - `mfa-enroll` (15 min): el primer enrolamiento puede exigir instalar la
+   *    aplicación de autenticación, crear una cuenta y volver. Con 5 minutos el
+   *    token expiraría a medias y habría que reiniciar el proceso.
+   *
+   * La ventana más larga no debilita nada relevante: el token ya exige conocer
+   * la contraseña, y por sí solo no da acceso a la API (`jwt.strategy` rechaza
+   * cualquier token con `scope`).
    */
   private signChallenge(userId: string, scope: 'mfa' | 'mfa-enroll'): string {
-    return this.jwtService.sign({ sub: userId, scope }, { expiresIn: '5m' });
+    const expiresIn = scope === 'mfa-enroll' ? '15m' : '5m';
+
+    return this.jwtService.sign({ sub: userId, scope }, { expiresIn });
   }
 
   consumeChallenge(token: string, expectedScope: 'mfa' | 'mfa-enroll'): string {

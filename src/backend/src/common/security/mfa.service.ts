@@ -68,11 +68,11 @@ export class MfaService {
   }
 
   /**
-   * Genera (o regenera) un secreto pendiente de confirmar y devuelve el QR.
+   * Devuelve el QR del enrolamiento pendiente, creándolo si no existía.
    *
-   * Regenerar mientras hay uno activo NO desactiva el vigente: hasta que se
-   * confirme el nuevo, el anterior sigue siendo válido. Así un enrolamiento a
-   * medias no deja la cuenta sin segundo factor.
+   * Es idempotente a propósito: pedirlo varias veces entrega siempre el mismo
+   * secreto mientras no se confirme (ver el comentario de abajo). Un segundo
+   * factor ya activo no se toca: hay que desactivarlo explícitamente.
    */
   async startEnrollment(userId: string, email: string): Promise<MfaEnrollment> {
     const existing = await this.prisma.userMfa.findUnique({ where: { userId } });
@@ -83,15 +83,33 @@ export class MfaService {
       );
     }
 
-    const secret = generateSecret();
-    const encrypted = this.crypto.encrypt(secret);
+    // Si hay un enrolamiento a medias, se REUTILIZA su secreto en vez de
+    // generar otro.
+    //
+    // Motivo: el frontend pide el QR automáticamente en cada intento de login.
+    // Generando uno nuevo cada vez, quien escaneara el código y luego recargara
+    // la página se encontraba con que la entrada guardada en su aplicación de
+    // autenticación ya no servía, sin ninguna explicación visible. Un secreto
+    // sin confirmar no otorga acceso, así que conservarlo no debilita nada.
+    if (existing) {
+      const secret = this.crypto.decrypt(existing.secret);
+      return this.buildEnrollment(secret, email);
+    }
 
-    await this.prisma.userMfa.upsert({
-      where: { userId },
-      update: { secret: encrypted, enabled: false, confirmedAt: null },
-      create: { userId, secret: encrypted, enabled: false },
+    const secret = generateSecret();
+
+    await this.prisma.userMfa.create({
+      data: { userId, secret: this.crypto.encrypt(secret), enabled: false },
     });
 
+    return this.buildEnrollment(secret, email);
+  }
+
+  /** Arma el `otpauth://` y su QR para un secreto dado. */
+  private async buildEnrollment(
+    secret: string,
+    email: string,
+  ): Promise<MfaEnrollment> {
     const otpauthUrl = generateURI({
       strategy: 'totp',
       issuer: this.issuer(),

@@ -120,9 +120,24 @@ export default function MfaChallenge({
 
       <p className="mt-2 text-sm text-neutral-600">
         {stage === 'enroll'
-          ? 'Tu rol requiere un segundo factor de autenticación. Escanea el código con Google Authenticator, Authy o similar.'
+          ? 'Tu rol requiere un segundo factor de autenticación.'
           : 'Ingresa el código de 6 dígitos de tu aplicación de autenticación.'}
       </p>
+
+      {stage === 'enroll' && (
+        <ol className="mt-4 space-y-1.5 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
+          <li>
+            <strong>1.</strong> Instala una app de autenticación en tu teléfono:
+            Google Authenticator, Microsoft Authenticator o Authy.
+          </li>
+          <li>
+            <strong>2.</strong> Ábrela y toca <strong>+</strong> → “Escanear código QR”.
+          </li>
+          <li>
+            <strong>3.</strong> Escribe abajo el código de 6 dígitos que aparezca.
+          </li>
+        </ol>
+      )}
 
       {stage === 'enroll' && (
         <div className="mt-6">
