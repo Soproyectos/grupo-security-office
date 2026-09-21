@@ -28,10 +28,10 @@ const READ_ROLES = [
   'Super Admin',
   'Supervisor',
   'Admin Comercial',
-  'Operador',
+  'Vendedor',
   'Consulta',
 ];
-const WRITE_ROLES = ['Super Admin', 'Supervisor', 'Admin Comercial', 'Operador'];
+const WRITE_ROLES = ['Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor'];
 
 @ApiTags('Commercial - Quotes')
 @ApiBearerAuth()

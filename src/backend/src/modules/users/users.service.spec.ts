@@ -16,6 +16,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
+import { BCRYPT_ROUNDS } from '../../common/security/password.constants';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -125,7 +126,7 @@ describe('UsersService', () => {
 
       expect(result.email).toBe('new@test.com');
       expect(result.password).toBeUndefined();
-      expect(bcrypt.hash).toHaveBeenCalledWith('SecurePass123', 10);
+      expect(bcrypt.hash).toHaveBeenCalledWith('SecurePass123', BCRYPT_ROUNDS);
     });
 
     it('debe rechazar email duplicado con ConflictException', async () => {
@@ -204,7 +205,7 @@ describe('UsersService', () => {
       const dto = { email: 'new@test.com', name: 'New User', password: 'PlainPassword123' };
       await service.create(dto);
 
-      expect(bcrypt.hash).toHaveBeenCalledWith('PlainPassword123', 10);
+      expect(bcrypt.hash).toHaveBeenCalledWith('PlainPassword123', BCRYPT_ROUNDS);
       expect(bcrypt.hash).toHaveBeenCalledTimes(1);
     });
 

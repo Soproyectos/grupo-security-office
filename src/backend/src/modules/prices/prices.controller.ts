@@ -22,14 +22,14 @@ export class PricesController {
   }
 
   @Get('lists')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Listar listas de precios (metadato de tarifa)' })
   findAllPriceLists() {
     return this.pricesService.findAllPriceLists();
   }
 
   @Get('lists/:id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener lista de precios por ID' })
   findOnePriceList(@Param('id') id: string, @CurrentUser() user: any) {
     return this.pricesService.findOnePriceList(id, this.ctx(user));
@@ -70,14 +70,14 @@ export class PricesController {
   }
 
   @Get('product/:productId')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener precios de un producto' })
   findPricesByProduct(@Param('productId') productId: string, @CurrentUser() user: any) {
     return this.pricesService.findPricesByProduct(productId, this.ctx(user));
   }
 
   @Get('list/:priceListId')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener precios de una lista' })
   findPricesByPriceList(@Param('priceListId') priceListId: string, @CurrentUser() user: any) {
     return this.pricesService.findPricesByPriceList(priceListId, this.ctx(user));

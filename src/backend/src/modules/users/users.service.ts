@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Prisma } from '@prisma/client';
+import { BCRYPT_ROUNDS } from '../../common/security/password.constants';
 
 @Injectable()
 export class UsersService {
@@ -75,7 +76,7 @@ export class UsersService {
       throw new ConflictException('El email ya está registrado');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = await this.prisma.user.create({
       data: {
@@ -132,7 +133,7 @@ export class UsersService {
     };
 
     if (dto.password) {
-      data.password = await bcrypt.hash(dto.password, 10);
+      data.password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     }
 
     if (dto.roleIds) {

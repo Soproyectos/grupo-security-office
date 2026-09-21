@@ -16,14 +16,14 @@ export class BrandsController {
   constructor(private readonly brandsService: BrandsService) {}
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Listar marcas' })
   findAll() {
     return this.brandsService.findAll();
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener marca por ID' })
   findOne(@Param('id') id: string) {
     return this.brandsService.findOne(id);

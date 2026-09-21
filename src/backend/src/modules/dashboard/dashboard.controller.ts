@@ -19,7 +19,7 @@ export class DashboardController {
   }
 
   @Get('me')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({
     summary:
       'Espacio de trabajo del usuario autenticado: KPIs, Listas accesibles y actividad reciente',
@@ -43,7 +43,7 @@ export class DashboardController {
    * usuario, un ancestro directo/indirecto, o Super Admin; resto → 403).
    */
   @Get('team/:userId')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({
     summary:
       'Bloque comercial individual de un miembro del equipo (solo ancestros/self)',

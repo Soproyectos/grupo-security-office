@@ -37,11 +37,11 @@ const QUOTE_TRANSITIONS: Record<string, string[]> = {
  * escritura puede transicionar SI está en scope (dueño o su jerarquía).
  */
 const QUOTE_STATUS_ROLES: Record<string, string[]> = {
-  enviada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Operador'],
-  negociacion: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Operador'],
+  enviada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
+  negociacion: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
   ganada: ['Super Admin', 'Admin Comercial', 'Supervisor'],
-  perdida: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Operador'],
-  cancelada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Operador'],
+  perdida: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
+  cancelada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
 };
 
 /** Estados en los que los ítems todavía se pueden agregar/editar/quitar. */

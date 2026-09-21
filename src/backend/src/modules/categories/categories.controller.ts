@@ -15,21 +15,21 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Listar categorías' })
   findAll() {
     return this.categoriesService.findAll();
   }
 
   @Get('tree')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener árbol de categorías' })
   findTree() {
     return this.categoriesService.findTree();
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener categoría por ID' })
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);

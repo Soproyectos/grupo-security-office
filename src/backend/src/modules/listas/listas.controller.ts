@@ -35,7 +35,7 @@ export class ListasController {
   }
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Listar Listas autorizadas (deny-by-default)' })
   findAll(@CurrentUser() user: any, @Query('isActive') isActive?: string) {
     return this.listasService.findAll(this.ctx(user), {
@@ -44,7 +44,7 @@ export class ListasController {
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Obtener una Lista por ID' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
@@ -52,7 +52,7 @@ export class ListasController {
   }
 
   @Get(':id/products')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Productos de una Lista (scope ACL)' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
@@ -66,7 +66,7 @@ export class ListasController {
   }
 
   @Get(':id/prices')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Precios de productos de una Lista (scope ACL)' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
   findPrices(@Param('id') id: string, @CurrentUser() user: any) {
@@ -74,7 +74,7 @@ export class ListasController {
   }
 
   @Get(':id/prices/expiring')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
   @ApiOperation({ summary: 'Precios próximos a vencer de una Lista (scope ACL)' })
   @ApiQuery({ name: 'days', required: false, description: 'Ventana en días (default 30)' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })

@@ -17,7 +17,7 @@ const ALL_ROLES = [
   'Super Admin',
   'Supervisor',
   'Admin Comercial',
-  'Operador',
+  'Vendedor',
   'Consulta',
 ];
 

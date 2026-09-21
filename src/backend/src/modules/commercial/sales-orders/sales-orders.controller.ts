@@ -21,7 +21,7 @@ const READ_ROLES = [
   'Super Admin',
   'Supervisor',
   'Admin Comercial',
-  'Operador',
+  'Vendedor',
   'Consulta',
 ];
 // Registro de factura externa: mismos roles que marcan una quote como ganada.
