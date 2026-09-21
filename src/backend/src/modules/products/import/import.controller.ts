@@ -25,6 +25,7 @@ import {
 import { ImportService } from './import.service';
 import { PreviewImportDto, ExecuteImportDto } from './dto/preview-import.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 
@@ -148,7 +149,7 @@ export class ImportController {
    * Se declara ANTES de cualquier ruta con segmento dinámico.
    */
   @Get('current-price')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Precio vigente por SKU (wizard de importación)' })
   @ApiQuery({ name: 'sku', required: true, description: 'SKU exacto (case-insensitive)' })
   @ApiQuery({ name: 'listaId', required: false, description: 'Lista destino de la importación' })
@@ -171,7 +172,7 @@ export class ImportController {
    * cascada) y tumban el paso siguiente de la importación.
    */
   @Post('current-prices')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @HttpCode(200)
   @ApiOperation({ summary: 'Precio vigente por SKU, en lote (wizard de importación)' })
   @ApiResponse({

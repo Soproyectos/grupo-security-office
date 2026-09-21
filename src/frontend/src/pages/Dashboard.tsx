@@ -14,6 +14,7 @@ import {
 import CommercialWorkspace, {
   CommercialWorkspaceSkeleton,
 } from '../features/dashboard/components/CommercialWorkspace'
+import DashboardComposer from '../features/dashboard/components/DashboardComposer'
 import { canViewDashboardSection, DASHBOARD_SECTIONS } from '../lib/roles'
 import type { Product } from '../features/products/types/product.types'
 import { CAROUSEL_INTERVAL, TRENDING_PRODUCTS_LIMIT } from '../constants'
@@ -687,7 +688,27 @@ function AdminDashboard() {
  * (AclService.isListasAdmin) y no una lista de roles duplicada en el cliente,
  * para que ambos lados no puedan divergir.
  */
+/**
+ * Punto de entrada del panel.
+ *
+ * La visibilidad la decide `DashboardComposer` a partir del catálogo de bloques
+ * y de los permisos del usuario (fase 1 del plan de dashboards por permisos).
+ *
+ * Mientras las fases 3, 4 y 6 van implementando los componentes del catálogo,
+ * el compositor cae en el panel anterior — que sigue siendo el que ve todo el
+ * mundo hoy — para no dejar a nadie con una pantalla vacía durante la
+ * transición. El paso a los bloques nuevos es progresivo: en cuanto un bloque
+ * tiene componente, el compositor empieza a servirlo.
+ */
 export default function Dashboard() {
+  return <DashboardComposer fallback={<LegacyDashboard />} />
+}
+
+/**
+ * Panel anterior, basado en `DASHBOARD_SECTION_ROLES`. Se retirará cuando el
+ * catálogo cubra sus secciones (fases 3, 4 y 6).
+ */
+function LegacyDashboard() {
   const user = useAuthStore((state) => state.user)
 
   const workspaceQuery = useQuery({

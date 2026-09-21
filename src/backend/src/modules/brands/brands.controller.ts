@@ -5,6 +5,7 @@ import { BrandsService } from './brands.service';
 import { CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -16,14 +17,14 @@ export class BrandsController {
   constructor(private readonly brandsService: BrandsService) {}
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar marcas' })
   findAll() {
     return this.brandsService.findAll();
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener marca por ID' })
   findOne(@Param('id') id: string) {
     return this.brandsService.findOne(id);

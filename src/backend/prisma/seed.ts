@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { BCRYPT_ROUNDS } from '../src/common/security/password.constants';
+import { dashboardPermissionsForRole } from '../src/common/security/dashboard-permissions';
 
 const prisma = new PrismaClient();
 
@@ -175,9 +176,17 @@ async function upsertRole(name: string) {
 
   // Reemplaza permisos para que el estado final coincida exactamente con la matriz
   // (idempotente: re-ejecutar deja el mismo resultado).
+  //
+  // Los permisos de dashboard (`dashboard:pack:*`) se derivan de
+  // ROLE_DASHBOARD_PACKS en vez de escribirse a mano en cada rol: asi el mapeo
+  // paquete -> rol tiene una sola fuente de verdad.
+  const permissions = [
+    ...new Set([...ROLE_PERMISSIONS[name], ...dashboardPermissionsForRole(name)]),
+  ];
+
   await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
   await prisma.rolePermission.createMany({
-    data: ROLE_PERMISSIONS[name].map((permission) => ({
+    data: permissions.map((permission) => ({
       roleId: role.id,
       permission,
     })),

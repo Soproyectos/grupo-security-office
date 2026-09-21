@@ -4,6 +4,7 @@ import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -15,21 +16,21 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar categorías' })
   findAll() {
     return this.categoriesService.findAll();
   }
 
   @Get('tree')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener árbol de categorías' })
   findTree() {
     return this.categoriesService.findTree();
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener categoría por ID' })
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);

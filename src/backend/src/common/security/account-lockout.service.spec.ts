@@ -101,8 +101,13 @@ describe('AccountLockoutService', () => {
      * pero siguen en la tabla como rastro de auditoría.
      */
     it('reinicia el contador tras un acceso correcto', async () => {
+      // Fecha FIJA, no relativa a Date.now(): construir el valor esperado en
+      // una linea distinta a la del mock produce dos Date con milisegundos
+      // distintos, y el test falla de forma intermitente.
+      const ultimoAcceso = new Date('2026-09-21T10:00:00.000Z');
+
       mockPrisma.loginAttempt.findFirst.mockResolvedValue({
-        createdAt: new Date(Date.now() - 60_000),
+        createdAt: ultimoAcceso,
       });
       mockPrisma.loginAttempt.findMany.mockResolvedValue([]);
 
@@ -112,7 +117,7 @@ describe('AccountLockoutService', () => {
 
       // Sólo se cuentan los fallos posteriores al último acceso correcto.
       const where = mockPrisma.loginAttempt.findMany.mock.calls[0][0].where;
-      expect(where.createdAt.gt).toEqual(new Date(Date.now() - 60_000));
+      expect(where.createdAt.gt).toEqual(ultimoAcceso);
     });
 
     it('normaliza el email a minúsculas', async () => {

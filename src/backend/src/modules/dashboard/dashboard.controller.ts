@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,7 +20,7 @@ export class DashboardController {
   }
 
   @Get('me')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({
     summary:
       'Espacio de trabajo del usuario autenticado: KPIs, Listas accesibles y actividad reciente',
@@ -43,7 +44,7 @@ export class DashboardController {
    * usuario, un ancestro directo/indirecto, o Super Admin; resto → 403).
    */
   @Get('team/:userId')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({
     summary:
       'Bloque comercial individual de un miembro del equipo (solo ancestros/self)',

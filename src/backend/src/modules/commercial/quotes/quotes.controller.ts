@@ -23,15 +23,10 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { AccessContext } from '../../../common/acl/acl.service';
+import { COMMERCIAL_READ_ROLES, COMMERCIAL_WRITE_ROLES } from '../../../common/rbac/roles.constants';
 
-const READ_ROLES = [
-  'Super Admin',
-  'Supervisor',
-  'Admin Comercial',
-  'Vendedor',
-  'Consulta',
-];
-const WRITE_ROLES = ['Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor'];
+const READ_ROLES = COMMERCIAL_READ_ROLES;
+const WRITE_ROLES = COMMERCIAL_WRITE_ROLES;
 
 @ApiTags('Commercial - Quotes')
 @ApiBearerAuth()

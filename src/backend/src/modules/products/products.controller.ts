@@ -14,6 +14,7 @@ import { DeleteProductDto } from './dto/delete-product.dto';
 import { BulkSchedulePublicationDto } from './dto/bulk-schedule-publication.dto';
 import { SchedulePublicationDto } from './dto/schedule-publication.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
@@ -44,7 +45,7 @@ export class ProductsController {
   }
 
   @Get('publish-scheduled')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar productos programados para publicaciÃ³n' })
   @ApiQuery({ name: 'from', required: false, type: String, description: 'Inicio del rango (ISO). Default: ahora.' })
   @ApiQuery({ name: 'to', required: false, type: String, description: 'Fin del rango (ISO). Default: ahora + 7 dÃ­as.' })
@@ -56,7 +57,7 @@ export class ProductsController {
   }
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar productos' })
   @ApiQuery({ name: 'skip', required: false, type: Number })
   @ApiQuery({ name: 'take', required: false, type: Number })
@@ -84,7 +85,7 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener producto por ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productsService.findOne(id, this.ctx(user));
@@ -147,7 +148,7 @@ export class ProductsController {
   }
 
   @Post(':id/transition')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'TransiciÃ³n canÃ³nica de ciclo de vida de un producto (PUBLISH, UNPUBLISH, ARCHIVE, RESTORE)' })
   @ApiResponse({ status: 200, description: 'TransiciÃ³n aplicada. Devuelve el producto con allowedActions.' })
   @ApiResponse({ status: 400, description: 'TransiciÃ³n invÃ¡lida, motivo/confirm/publishAt faltante o checklist de publicaciÃ³n incumplido.' })
@@ -161,7 +162,7 @@ export class ProductsController {
   }
 
   @Post('bulk-transition')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Aplicar un evento FSM a varios productos (1..500). Procesa producto a producto; devuelve applied y rejected.' })
   @ApiResponse({ status: 201, description: 'Procesado. Respuesta: { data: { applied, rejected } }.' })
   bulkTransition(

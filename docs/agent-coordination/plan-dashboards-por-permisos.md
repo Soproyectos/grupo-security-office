@@ -286,7 +286,7 @@ Admin; `admin123` es rechazada por la política.
 
 ---
 
-### Fase 1 — Catálogo de bloques y motor de composición
+### Fase 1 — Catálogo de bloques y motor de composición — ✅ COMPLETADA 2026-09-21
 
 **Objetivo**: el dashboard se arma desde datos, no desde `if` por rol.
 
@@ -302,8 +302,72 @@ Admin; `admin123` es rechazada por la política.
 - Backend: `dashboard.controller.ts` usa hoy `@Roles(...)` con los 5 roles
   escritos a mano (`:22`, `:46`). Migrar a `@Permissions(...)`.
 
-**Aceptación**: tests unitarios del motor cubriendo — usuario mono-rol; usuario
-Supervisor + Admin Comercial (verifica deduplicación: 11 KPIs en bruto → 9 únicos);
+#### Lo ejecutado
+
+`src/features/dashboard/registry/`:
+
+| Archivo | Contenido |
+|---|---|
+| `types.ts` | Tipos, alcances (`own < team < commercial < global`) y formato de los permisos |
+| `blocks.ts` | **48 bloques** en 9 paquetes — el catálogo completo del diseño |
+| `compose.ts` | Motor puro: expansión de permisos, deduplicación, resolución de alcance y orden |
+| `compose.spec.ts` | 22 tests |
+
+`DashboardComposer.tsx` arma el panel desde el catálogo, sin una sola decisión
+por rol. `Dashboard.tsx` queda en **6 líneas efectivas** y delega en él; el panel
+anterior sobrevive como `LegacyDashboard` y se sirve como respaldo mientras las
+fases 3, 4 y 6 rellenan los componentes, de modo que nadie ve una pantalla en
+blanco durante la transición.
+
+Backend: `dashboard-permissions.ts` define los 9 paquetes y qué rol trae cada
+uno; el seed los deriva de ahí en vez de escribirlos a mano en cada rol.
+
+Distribución real, ya en base de datos:
+
+| Rol | Paquetes | Bloques visibles |
+|---|:-:|:-:|
+| Super Admin | 9 | 48 |
+| Supervisor | 5 | 27 |
+| Admin Comercial | 5 | 25 |
+| Vendedor | 4 | 25 |
+| Operador | 2 | 14 |
+| Consulta | 2 | 13 |
+
+**Deduplicación multi-rol verificada con datos reales** (Supervisor + Admin
+Comercial): 27 + 25 = **52 bloques en bruto → 42 únicos**, con 10 compartidos
+que se muestran una sola vez.
+
+#### Desviación respecto a lo planificado
+
+El plan decía migrar `dashboard.controller` a `@Permissions`. **No se hizo, y
+es correcto no hacerlo**: esos endpoints devuelven el espacio de trabajo propio
+del usuario (ya acotado en el servidor) y enumeraban los 6 roles, es decir,
+equivalen a "cualquier usuario autenticado". Además `PermissionsGuard` evalúa
+con semántica AND, así que no puede expresar "alguno de estos paquetes".
+
+En su lugar se atacó el problema real, detectado al crear el rol Vendedor:
+**21 endpoints enumeraban los roles como literales sueltos**, repartidos en 7
+archivos. Olvidar uno no rompe nada visible — ese rol recibe un 403 en un sitio
+concreto, que es la clase de fallo que aparece tarde y en producción.
+`common/rbac/roles.constants.ts` centraliza `ALL_ROLES`,
+`COMMERCIAL_READ_ROLES` y `COMMERCIAL_WRITE_ROLES`, y los 21 endpoints más los
+4 controladores comerciales ya los usan. Un rol nuevo entra en un solo sitio.
+
+De paso se detectó que los 2 endpoints de consulta de precio por SKU
+(`import.controller`) se habían quedado sin Vendedor: exactamente el fallo que
+la constante previene.
+
+**Verificado**: `tsc` limpio en backend y frontend · 768/768 tests backend
+(estable en 3 corridas consecutivas) · 22/22 tests del motor · build del
+frontend OK · permisos confirmados en base de datos.
+
+#### Pendiente
+
+Se instaló **vitest** en el frontend (no existía, pese a estar en el stack
+aprobado) con los scripts `test` y `test:watch`.
+
+**Aceptación**: ✅ tests unitarios del motor cubriendo — usuario mono-rol; usuario
+Supervisor + Admin Comercial (deduplicación verificada: 52 en bruto → 42 únicos);
 resolución de alcance; usuario sin permisos (estado vacío, no pantalla rota).
 
 ---

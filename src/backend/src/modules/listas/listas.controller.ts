@@ -16,6 +16,7 @@ import { ListasService } from './listas.service';
 import { CreateListaDto } from './dto/create-lista.dto';
 import { UpdateListaDto } from './dto/update-lista.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -35,7 +36,7 @@ export class ListasController {
   }
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar Listas autorizadas (deny-by-default)' })
   findAll(@CurrentUser() user: any, @Query('isActive') isActive?: string) {
     return this.listasService.findAll(this.ctx(user), {
@@ -44,7 +45,7 @@ export class ListasController {
   }
 
   @Get(':id')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener una Lista por ID' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
@@ -52,7 +53,7 @@ export class ListasController {
   }
 
   @Get(':id/products')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Productos de una Lista (scope ACL)' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
@@ -66,7 +67,7 @@ export class ListasController {
   }
 
   @Get(':id/prices')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Precios de productos de una Lista (scope ACL)' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
   findPrices(@Param('id') id: string, @CurrentUser() user: any) {
@@ -74,7 +75,7 @@ export class ListasController {
   }
 
   @Get(':id/prices/expiring')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Precios próximos a vencer de una Lista (scope ACL)' })
   @ApiQuery({ name: 'days', required: false, description: 'Ventana en días (default 30)' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
