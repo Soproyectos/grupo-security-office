@@ -27,6 +27,7 @@ El modelo de gobernanza anterior — coordinación multi-agente con tablero de i
 | `agent-coordination/` | `docs/agent-coordination/` — work-log, agent-status, file-ownership, issues, docs de Orca |
 | `kilo/rules/` | `.kilo/rules/` — reglas de contexto cerrado y estándares (los estándares de código siguen aplicando como criterio de calidad) |
 | `kilo/context/` | `.kilo/context/` — reportes, planes e `decisiones.md` (la última entrada registra esta migración) |
+| `kilo/agents/` | `.kilo/agents/` — gatekeepers y ejecutores del modelo viejo (archivados el mismo día con aprobación del coordinador) |
 | `opencode/agents/` | `.opencode/agents/` — perfiles de ejecutores autónomos |
 | `kilo.jsonc` | raíz del repo |
 | `CLAUDE.md` | raíz del repo (versión pre-Gentle) |
@@ -43,8 +44,8 @@ Los issues **#16–#27** de la cadena comercial siguen **vigentes**. No forman p
 ## Notas para la primera sesión post-migración
 
 1. Leer este documento antes de trabajar; **no confundir material archivado con vigente**. Documentos vigentes: `docs/00-INDEX.md`, `docs/PROJECT_STATUS.md`, `docs/adr/`, arquitectura técnica y docs de producto.
-2. `.kilo/agents/` y `.kilo/plans/` quedaron fuera del archivo por no estar en el alcance del contrato; el modelo de gatekeepers ya no aplica — el coordinador decide su destino en una sesión futura.
-3. RDD está **off por defecto** (switch del usuario: `gentle-ai review mode enable|disable|status`). No activarlo sin pedido explícito.
+2. `.kilo/` quedó reducido a un `.gitignore` inerte tras archivar rules/, context/ y agents/ (aprobado por el coordinador el 2026-09-21).
+3. RDD está **ON** desde el 2026-09-21 (switch del usuario: `gentle-ai review mode enable|disable|status`, scope global). Las revisiones nacen de commits de trabajo (`review assess` post-commit); apagarlo es un solo comando.
 4. Telemetría deshabilitada a nivel estado (`gentle-ai telemetry disable`) y con `DO_NOT_TRACK=1` en `~/.bashrc`.
 5. Los warnings de `gentle-ai doctor` por binarios duplicados (claude/kilo/opencode en PATH) son condición preexistente del servidor; los binarios de `/usr/bin` los usa el runtime Orca archivado.
 6. Piloto ODD verificado (2026-09-21): tarea real (enlaces muertos en `docs/00-INDEX.md`), Explore → cambio → Check, memoria escrita en Engram y **recuperada por un agente nuevo en sesión fresca sin indicarle el contenido**. Hallazgo: la búsqueda de Engram es sensible al vocabulario literal del registro — escribir memorias con los términos clave del proyecto (`grupo security`, `decision`, nombres de feature) mejora la recuperación.
