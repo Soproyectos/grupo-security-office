@@ -5,10 +5,8 @@
 ## Estado y coordinación
 
 - [Estado actual del proyecto](./PROJECT_STATUS.md)
-- [Flujo de trabajo](./WORKFLOW.md)
-- [Equipo de agentes](./AGENT_TEAM.md)
-- [Coordinación de ejecución](./agent-coordination/README.md)
-- [Procedimiento Issue → PR → Merge → Handoff](./agent-coordination/worktree-issue-pr-procedure.md)
+- [Migración a Gentle-AI (2026-09-21)](./MIGRACION-GENTLE-AI.md)
+- [Gobernanza archivada (legacy coordinación)](./archive/legacy-coordinacion-2026-09/)
 - [Handoff actual](./handoffs/HANDOFF_ACTUAL.md)
 
 ## Arquitectura
