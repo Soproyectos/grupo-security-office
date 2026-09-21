@@ -398,9 +398,13 @@ export default function ListasPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async ({ ids, masterKey }: { ids: string[]; masterKey?: string }) => {
+    // El backend exige `confirm: true` para el borrado físico (igual que un
+    // producto individual); esta mutación solo se dispara después de que el
+    // usuario marcó la casilla de confirmación en el modal, así que siempre
+    // se envía en true.
+    mutationFn: async ({ ids }: { ids: string[] }) => {
       const results = await Promise.allSettled(
-        ids.map((id) => api.delete(`/listas/${id}`, { data: { masterKey } }))
+        ids.map((id) => api.delete(`/listas/${id}`, { data: { confirm: true } }))
       )
       let deleted = 0
       let blocked = 0
@@ -412,12 +416,9 @@ export default function ListasPage() {
           continue
         }
         const status = (r.reason as { response?: { status?: number } })?.response?.status
-        if (status === 403 || status === 409) {
+        if (status === 400 || status === 403 || status === 409) {
           blocked += 1
-          deleteBlockedMessage = getApiErrorMessage(
-            r.reason,
-            status === 403 ? 'Clave maestra incorrecta' : 'Se requiere la clave maestra para eliminar'
-          )
+          deleteBlockedMessage = getApiErrorMessage(r.reason, 'No se pudo eliminar la Lista')
         } else if (status === 404 || status === 405 || status === 501) {
           pending += 1
         }
@@ -426,7 +427,7 @@ export default function ListasPage() {
     },
     onSuccess: (result) => {
       if (result.blocked > 0) {
-        setDeleteImpactError(result.deleteBlockedMessage ?? 'No se pudo eliminar. Verifica la clave maestra.')
+        setDeleteImpactError(result.deleteBlockedMessage ?? 'No se pudo eliminar la Lista.')
         return
       }
       invalidate()
@@ -1029,7 +1030,7 @@ export default function ListasPage() {
           onConfirm={(ids) => {
             setConfirmDeleteOpen(false)
             setConfirmDeleteIds([])
-            deleteMutation.mutate({ ids, masterKey: '' })
+            deleteMutation.mutate({ ids })
           }}
         />
       )}
@@ -1044,9 +1045,9 @@ export default function ListasPage() {
             setDeleteImpactIds([])
             setDeleteImpactError(null)
           }}
-          onConfirm={(ids, masterKey) => {
+          onConfirm={(ids) => {
             setDeleteImpactError(null)
-            deleteMutation.mutate({ ids, masterKey })
+            deleteMutation.mutate({ ids })
           }}
         />
       )}

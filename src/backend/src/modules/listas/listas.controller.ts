@@ -15,6 +15,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@ne
 import { ListasService } from './listas.service';
 import { CreateListaDto } from './dto/create-lista.dto';
 import { UpdateListaDto } from './dto/update-lista.dto';
+import { DeleteListaDto } from './dto/delete-lista.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -183,14 +184,12 @@ export class ListasController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Eliminar Lista físicamente (y sus datos asociados en cascada)'
+      'Eliminar Lista físicamente, junto con sus productos huérfanos, precios, imágenes e inventario (cascada real). Exige confirm: true.'
   })
   @ApiResponse({ status: 200, description: 'Lista eliminada' })
+  @ApiResponse({ status: 400, description: 'Falta confirm: true' })
   @ApiResponse({ status: 404, description: 'Lista no encontrada' })
-  
-  
-remove(@Param('id') id: string, @CurrentUser() user: any) {
-  console.log(`[DELETE] Eliminando lista con ID: ${id}`);
-  return this.listasService.removeLista(id, this.ctx(user));
-}
+  remove(@Param('id') id: string, @Body() dto: DeleteListaDto, @CurrentUser() user: any) {
+    return this.listasService.removeLista(id, dto, this.ctx(user));
+  }
 }

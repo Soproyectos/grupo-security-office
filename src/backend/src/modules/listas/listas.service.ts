@@ -11,6 +11,8 @@ import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.serv
 import { AuditService } from '../audit/audit.service';
 import { CreateListaDto } from './dto/create-lista.dto';
 import { UpdateListaDto } from './dto/update-lista.dto';
+import { DeleteListaDto } from './dto/delete-lista.dto';
+import { FilesService } from '../files/files.service';
 import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 
@@ -20,7 +22,7 @@ export class ListasService {
     private prisma: PrismaService,
     private acl: AclService,
     private audit: AuditService,
-    
+    private files: FilesService,
   ) {}
 
   /** Lista de Listas autorizadas (deny-by-default). */
@@ -568,7 +570,22 @@ export class ListasService {
    * y al eliminar la Lista se hace hard-delete de TODAS sus assignments
    * (Assignment no tiene FK a Lista) para no dejar registros huérfanos.
    */
-  async removeLista(id: string, ctx: AccessContext) {
+  /**
+   * Elimina una Lista físicamente y, en la misma transacción, sus productos
+   * huérfanos con todo lo que cuelga de ellos (precios, imágenes, inventario,
+   * accesos). El inventario (`Stock`) no se borra a mano: su FK tiene
+   * `onDelete: Cascade` y desaparece solo al borrar el producto.
+   *
+   * Antes este método dejaba los productos vivos con `listaId = null` — la FK
+   * de `Product.listaId` es `ON DELETE SET NULL`, así que Postgres los
+   * desconectaba en vez de borrarlos — contradiciendo el comentario que decía
+   * "se eliminan en cascada". `prisma/cleanup-orphaned-list-products.ts` existe
+   * porque ese hueco dejaba huérfanos que había que limpiar a mano después.
+   *
+   * `AuditLog.productId` y `QuoteItem.productId` son opcionales con
+   * `onDelete: SetNull`: sobreviven al borrado, sin bloquear la transacción.
+   */
+  async removeLista(id: string, dto: DeleteListaDto, ctx: AccessContext) {
     // CHECK: Lista bloqueada por eliminación pendiente
     if (await this.isBlockedByDeletion(id)) {
       throw new ConflictException('No se puede eliminar físicamente una Lista con solicitud de eliminación pendiente. Use los endpoints de cancelación o restauración.');
@@ -584,9 +601,14 @@ export class ListasService {
     });
     if (!lista) throw new NotFoundException('Lista no encontrada');
 
-    const [products, prices, assignments] = await Promise.all([
-      this.prisma.product.count({ where: { listaId: id } }),
-      this.prisma.price.count({ where: { listaId: id } }),
+    const productIds = (
+      await this.prisma.product.findMany({ where: { listaId: id }, select: { id: true } })
+    ).map((p) => p.id);
+
+    const [prices, assignments] = await Promise.all([
+      this.prisma.price.count({
+        where: { OR: [{ listaId: id }, { productId: { in: productIds } }] },
+      }),
       // Fix H9: solo accesos ACTIVOS de terceros bloquean. La auto-asignación del
       // propio actor (create → manage_access del creador) y las assignments
       // soft-deleted (isActive=false) son ruido interno y NO bloquean, de modo que
@@ -602,11 +624,28 @@ export class ListasService {
     ]);
 
     const impact: string[] = [];
-    if (products > 0) impact.push(`${products} producto${products === 1 ? '' : 's'}`);
+    if (productIds.length > 0) impact.push(`${productIds.length} producto${productIds.length === 1 ? '' : 's'}`);
     if (prices > 0) impact.push(`${prices} precio${prices === 1 ? '' : 's'}`);
     if (assignments > 0) impact.push(`${assignments} accesos`);
 
-    // Asociados: se eliminan en cascada.
+    // Borrado físico destructivo: exige confirmación explícita, igual que el
+    // borrado de un producto (`DeleteProductDto`). Sin ella no se ejecuta
+    // ninguna escritura.
+    if (dto?.confirm !== true) {
+      throw new BadRequestException(
+        impact.length > 0
+          ? `Esta Lista tiene datos asociados que se eliminarán en cascada: ${impact.join(', ')}. Confirma con confirm: true.`
+          : 'Debes confirmar el borrado físico con confirm: true',
+      );
+    }
+
+    // Las imágenes se borran del almacenamiento después de confirmar el commit
+    // en BD, no antes: si el archivo se borrara primero y la transacción
+    // fallara, quedaría una fila ProductImage apuntando a un archivo inexistente.
+    const images = await this.prisma.productImage.findMany({
+      where: { productId: { in: productIds } },
+      select: { url: true },
+    });
 
     await this.audit.log({
       userId: ctx.userId,
@@ -614,17 +653,29 @@ export class ListasService {
       entity: 'LISTA',
       entityId: lista.id,
       oldValues: { name: lista.name, code: lista.code },
-      newValues: { code: lista.code, name: lista.name },
+      newValues: { code: lista.code, name: lista.name, productosEliminados: productIds.length },
     });
 
-    // Fix H9: hard-delete de las assignments de la Lista (Assignment no tiene FK a
-    // Lista) para no dejar registros huérfanos, sean activos o soft-deleted.
-    await this.prisma.assignment.deleteMany({
-      where: { resourceType: 'LISTA', resourceId: id },
-    });
+    await this.prisma.$transaction([
+      // Fix H9: hard-delete de las assignments de la Lista (Assignment no tiene FK a
+      // Lista) para no dejar registros huérfanos, sean activos o soft-deleted.
+      this.prisma.assignment.deleteMany({ where: { resourceType: 'LISTA', resourceId: id } }),
+      this.prisma.assignment.deleteMany({
+        where: { resourceType: 'PRODUCT', resourceId: { in: productIds } },
+      }),
+      this.prisma.productImage.deleteMany({ where: { productId: { in: productIds } } }),
+      this.prisma.price.deleteMany({
+        where: { OR: [{ listaId: id }, { productId: { in: productIds } }] },
+      }),
+      this.prisma.product.deleteMany({ where: { id: { in: productIds } } }),
+      this.prisma.lista.delete({ where: { id } }),
+    ]);
 
-    await this.prisma.lista.delete({ where: { id } });
-    return { message: 'Lista eliminada exitosamente' };
+    for (const image of images) {
+      await this.files.deleteByUrl(image.url);
+    }
+
+    return { message: 'Lista eliminada exitosamente', productosEliminados: productIds.length };
   }
 
   /** Alias interno: require manage (incluye deny-by-default por inactiva/archivada). */

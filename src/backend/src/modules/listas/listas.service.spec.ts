@@ -108,6 +108,7 @@ function buildPrisma(): AnyMock {
   p.product.findMany.mockResolvedValue([]);
   p.product.count.mockResolvedValue(0);
   p.price.findMany.mockResolvedValue([]);
+  p.productImage.findMany.mockResolvedValue([]);
   p.auditLog.findMany.mockResolvedValue([]);
   p.auditLog.count.mockResolvedValue(0);
   return p;
@@ -118,6 +119,7 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
   let acl: AclService;
   let mockPrisma: AnyMock;
   let mockAudit: { log: jest.Mock };
+  const mockFiles = { deleteByUrl: jest.fn().mockResolvedValue(undefined) };
   let mockMasterKey: { validateMasterKey: jest.Mock };
 
   beforeEach(() => {
@@ -126,7 +128,7 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
     mockAudit = { log: jest.fn().mockResolvedValue({}) };
     
     acl = new AclService(mockPrisma as any);
-    service = new ListasService(mockPrisma as any, acl, mockAudit as any);
+    service = new ListasService(mockPrisma as any, acl, mockAudit as any, mockFiles as any);
   });
 
   // T1: Super Admin sin assignment ve todas las Listas
@@ -882,14 +884,25 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
     });
   });
 
-  describe('removeLista â€” eliminaciÃ³n fÃ­sica (OLA 7A)', () => {
-    it('delete exitoso (Lista vacÃ­a) â†’ 200 y audita delete ANTES de borrar', async () => {
+  describe('removeLista â€” eliminaciÃ³n fÃ­sica en cascada real', () => {
+    it('sin confirm: true â†’ 400, no escribe nada', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0);
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      await expect(service.removeLista(LISTA_ID, {}, ADMIN)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.lista.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.product.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('delete exitoso (Lista vacÃ­a) â†’ 200 y audita delete ANTES de borrar', async () => {
+      mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
+      mockPrisma.price.count.mockResolvedValueOnce(0);
+      mockPrisma.assignment.count.mockResolvedValueOnce(0);
+
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
@@ -903,48 +916,80 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
       );
     });
 
-    it('200 cuando la Lista tiene productos (borra en cascada sin clave maestra)', async () => {
+    it('200 cuando la Lista tiene productos: los borra de verdad (ya no los deja huÃ©rfanos)', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(3);
+      mockPrisma.product.findMany.mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0);
+      mockPrisma.productImage.findMany.mockResolvedValueOnce([]);
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
+      expect(res.productosEliminados).toBe(3);
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
+      expect(mockPrisma.product.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['p1', 'p2', 'p3'] } },
+      });
       expect(mockPrisma.assignment.deleteMany).toHaveBeenCalledWith({
         where: { resourceType: 'LISTA', resourceId: LISTA_ID },
+      });
+      expect(mockPrisma.assignment.deleteMany).toHaveBeenCalledWith({
+        where: { resourceType: 'PRODUCT', resourceId: { in: ['p1', 'p2', 'p3'] } },
       });
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'delete',
           entity: 'LISTA',
           entityId: LISTA_ID,
+          newValues: expect.objectContaining({ productosEliminados: 3 }),
         }),
       );
     });
 
-    it('200 cuando la Lista tiene precios (borra en cascada)', async () => {
+    it('borra las imÃ¡genes de los productos huÃ©rfanos, en BD y en almacenamiento', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(3);
+      mockPrisma.product.findMany.mockResolvedValueOnce([{ id: 'p1' }]);
+      mockPrisma.price.count.mockResolvedValueOnce(0);
+      mockPrisma.assignment.count.mockResolvedValueOnce(0);
+      mockPrisma.productImage.findMany.mockResolvedValueOnce([
+        { url: '/api/files/img-1' },
+        { url: '/api/files/img-2' },
+      ]);
+
+      await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
+
+      expect(mockPrisma.productImage.deleteMany).toHaveBeenCalledWith({
+        where: { productId: { in: ['p1'] } },
+      });
+      expect(mockFiles.deleteByUrl).toHaveBeenCalledWith('/api/files/img-1');
+      expect(mockFiles.deleteByUrl).toHaveBeenCalledWith('/api/files/img-2');
+    });
+
+    it('200 cuando la Lista tiene precios (se borran, propios y de sus productos)', async () => {
+      mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
+      mockPrisma.product.findMany.mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }]);
       mockPrisma.price.count.mockResolvedValueOnce(5);
       mockPrisma.assignment.count.mockResolvedValueOnce(0);
+      mockPrisma.productImage.findMany.mockResolvedValueOnce([]);
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
+      expect(mockPrisma.price.deleteMany).toHaveBeenCalledWith({
+        where: { OR: [{ listaId: LISTA_ID }, { productId: { in: ['p1', 'p2', 'p3'] } }] },
+      });
     });
 
     it('el historial de auditorÃ­a NO bloquea el borrado: solo historial â†’ 200 y audita delete', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0); // sin accesos activos de terceros
       mockPrisma.auditLog.count.mockResolvedValueOnce(4); // historial: no bloquea, se conserva
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
@@ -961,12 +1006,12 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
 
     it('200 cuando la Lista tiene accesos activos de terceros (borra en cascada + hard-delete assignments)', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(2);
       mockPrisma.auditLog.count.mockResolvedValueOnce(4);
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
@@ -977,26 +1022,30 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
 
     it('404 si la Lista no existe', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(null);
-      await expect(service.removeLista('no-existe', ADMIN)).rejects.toThrow(NotFoundException);
+      await expect(service.removeLista('no-existe', { confirm: true }, ADMIN)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('403 si el usuario no es Super Admin', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0);
 
-      await expect(service.removeLista(LISTA_ID, MANAGER)).rejects.toThrow(ForbiddenException);
+      await expect(service.removeLista(LISTA_ID, { confirm: true }, MANAGER)).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(mockPrisma.lista.delete).not.toHaveBeenCalled();
     });
 
     it('excluye la auto-asignaciÃ³n del actor (NOT userId) y las assignments inactivas (isActive) del conteo bloqueante', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0); // solo auto-asignaciÃ³n â†’ 0 accesos de terceros
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.assignment.count).toHaveBeenCalledWith(
@@ -1014,11 +1063,11 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
 
     it('Fix H9 - assignment inactivo (soft-deleted) NO bloquea el borrado (200)', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0); // las inactivas quedan filtradas por isActive: true
 
-      const res = await service.removeLista(LISTA_ID, ADMIN);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, ADMIN);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
@@ -1057,11 +1106,11 @@ describe('ListasService â€” ACL (T1â€“T20)', () => {
 
     it('puede eliminar fÃ­sicamente una Lista vacÃ­a (DELETE â†’ 200) y audita', async () => {
       mockPrisma.lista.findUnique.mockResolvedValueOnce(mockLista);
-      mockPrisma.product.count.mockResolvedValueOnce(0);
+      mockPrisma.product.findMany.mockResolvedValueOnce([]);
       mockPrisma.price.count.mockResolvedValueOnce(0);
       mockPrisma.assignment.count.mockResolvedValueOnce(0);
 
-      const res = await service.removeLista(LISTA_ID, COMERCIAL);
+      const res = await service.removeLista(LISTA_ID, { confirm: true }, COMERCIAL);
 
       expect(res.message).toBe('Lista eliminada exitosamente');
       expect(mockPrisma.lista.delete).toHaveBeenCalledWith({ where: { id: LISTA_ID } });
