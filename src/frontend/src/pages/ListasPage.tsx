@@ -1008,14 +1008,7 @@ export default function ListasPage() {
       )}
 
       {showImportModal && (
-        <ImportWizard
-          onClose={() => setShowImportModal(false)}
-          onComplete={() => {
-            queryClient.invalidateQueries({ queryKey: ['products'] })
-            queryClient.invalidateQueries({ queryKey: ['listas'] })
-            setShowImportModal(false)
-          }}
-        />
+        <ImportWizard onClose={() => setShowImportModal(false)} />
       )}
 
       {/* Modal de confirmación simple */}

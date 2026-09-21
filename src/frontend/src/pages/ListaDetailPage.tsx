@@ -35,7 +35,6 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 export default function ListaDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('products')
   const [showImportModal, setShowImportModal] = useState(hasPersistedImportState)
 
@@ -201,16 +200,7 @@ export default function ListaDetailPage() {
       )}
 
       {showImportModal && (
-        <ImportWizard
-          listaId={id ?? undefined}
-          onClose={() => setShowImportModal(false)}
-          onComplete={() => {
-            queryClient.invalidateQueries({ queryKey: ['lista-products', id] })
-            queryClient.invalidateQueries({ queryKey: ['lista-prices', id] })
-            queryClient.invalidateQueries({ queryKey: ['listas'] })
-            setShowImportModal(false)
-          }}
-        />
+        <ImportWizard listaId={id ?? undefined} onClose={() => setShowImportModal(false)} />
       )}
     </div>
   )

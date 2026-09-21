@@ -372,13 +372,20 @@ export class ImportService {
   async getProgress(importId: string): Promise<ImportProgressResult> {
     const ctx = await this.loadContext(importId);
 
+    // SEC-IMPORT-003: `runBatchInBackground` ya no borra el contexto al
+    // terminar (antes sí, y por eso "sin contexto" se interpretaba como
+    // "completada" — era el único caso posible). Con eso removido,
+    // `deleteContext` quedó sin ningún llamador: la única forma de llegar
+    // aquí sin contexto es un importId que nunca existió (typo, u otro
+    // entorno). Reportarlo como 'completed' mentiría — quien sondea vería
+    // "importación completada" sin ningún resultado real detrás.
     if (!ctx) {
       return {
         importId,
-        status: 'completed',
-        progress: 100,
+        status: 'failed',
+        progress: 0,
         currentStage: 'batch_execution',
-        message: 'Importación completada',
+        message: 'No se encontró esta importación. Verifique el importId o inicie una nueva.',
       };
     }
 

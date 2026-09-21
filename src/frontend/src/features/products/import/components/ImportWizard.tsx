@@ -26,11 +26,10 @@ const STEP_LABELS: Record<string, string> = {
 
 interface ImportWizardProps {
   onClose: () => void;
-  onComplete: () => void;
   listaId?: string;
 }
 
-export default function ImportWizard({ onClose, onComplete, listaId }: ImportWizardProps) {
+export default function ImportWizard({ onClose, listaId }: ImportWizardProps) {
   const currentStep = useImportStore((s) => s.currentStep);
   const nextStep = useImportStore((s) => s.nextStep);
   const prevStep = useImportStore((s) => s.prevStep);
@@ -67,7 +66,7 @@ export default function ImportWizard({ onClose, onComplete, listaId }: ImportWiz
       case 'confirm':
         return <ImportStepConfirm />;
       case 'execution':
-        return <ImportStepExecution onComplete={onComplete} />;
+        return <ImportStepExecution onClose={handleClose} />;
       case 'result':
         return <ImportStepResult onNewImport={reset} onClose={handleClose} />;
       default:

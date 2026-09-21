@@ -146,8 +146,6 @@ export interface ImportWizardState {
   fileName: string;
   preview: ImportPreviewResult | null;
   executionResult: ImportExecutionResult | null;
-  /** Progreso en vivo del batch en segundo plano (sondeo de /progress). */
-  executionProgress: { progress: number; message: string } | null;
   columnMappings: Array<{ sourceColumn: string; targetField: SystemField }>;
   /** Valores fijos para campos sin columna en el archivo (ej: Marca="Hikvision", Categoría="CCTV"). */
   fixedValues: Partial<Record<SystemField, string>>;

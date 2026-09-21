@@ -13,6 +13,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -132,9 +133,17 @@ export class ImportController {
 
   /**
    * Progreso de una importación activa.
+   *
+   * `@SkipThrottle`: el límite global es 20 peticiones/min por IP, pensado
+   * para frenar fuerza bruta en endpoints como login — no para un endpoint
+   * de solo lectura, autenticado, hecho justamente para sondearse cada
+   * pocos segundos (SEC-IMPORT-002). Sin esto, el propio sondeo del wizard
+   * agota el límite en menos de un minuto y el usuario ve un 429 a mitad de
+   * su propia importación.
    */
   @Get('progress/:importId')
   @Roles('Super Admin', 'Admin Comercial')
+  @SkipThrottle()
   @ApiOperation({ summary: 'Consultar progreso de importación' })
   @ApiResponse({ status: 200, description: 'Progreso de la importación' })
   async getProgress(@Param('importId') importId: string) {

@@ -322,6 +322,19 @@ describe('ImportService — Lista destino (listaId)', () => {
       expect(secondPoll.status).toBe('completed');
       expect(secondPoll.result?.summary.created).toBe(1);
     });
+
+    it('getProgress de un importId que nunca existió responde "failed", no "completed"', async () => {
+      // Antes de SEC-IMPORT-003, execute() borraba el contexto al terminar
+      // y "sin contexto" se leía como "ya completó". Ahora runBatchInBackground
+      // ya NO borra el contexto — la única forma de llegar aquí sin contexto
+      // es un importId que nunca existió, y reportarlo como completado
+      // mentiría (el widget lo mostraría con un check verde sin ningún
+      // resultado real detrás).
+      const progress = await service.getProgress('importId-que-nunca-existio');
+
+      expect(progress.status).toBe('failed');
+      expect(progress.result).toBeUndefined();
+    });
   });
 
   describe('getCurrentPriceBySku (wizard de precios)', () => {
