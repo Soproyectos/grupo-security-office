@@ -25,8 +25,7 @@ import { Button } from '../components/ui'
 import { ProductPagination } from '../components/ProductPagination'
 import { SearchFilterBar, type SearchFilterChip } from '../components/filters/SearchFilterBar'
 import { fetchUsers, type UserListItem } from '../services/users.service'
-import ImportWizard from '../features/products/import/components/ImportWizard'
-import { hasPersistedImportState } from '../features/products/import/store/import.store'
+import { useImportModalStore } from '../features/products/import/store/importModal.store'
 
 const CURRENCIES = ['COP', 'USD', 'EUR'] as const
 const LISTA_TYPES = ['mayorista', 'detalle', 'oro', 'platino', 'instalador', 'tienda'] as const
@@ -186,7 +185,7 @@ export default function ListasPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState<ListaStateFilter>('all')
-  const [showImportModal, setShowImportModal] = useState(hasPersistedImportState)
+  const openImportModal = useImportModalStore((s) => s.open)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [expiryFilter, setExpiryFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -522,7 +521,7 @@ export default function ListasPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               }
-              onClick={() => setShowImportModal(true)}
+              onClick={() => openImportModal()}
             >
               Importar desde Excel
             </Button>
@@ -1005,10 +1004,6 @@ export default function ListasPage() {
           }}
           onError={(err) => setActionError(getApiErrorMessage(err, 'No se pudo guardar la Lista'))}
         />
-      )}
-
-      {showImportModal && (
-        <ImportWizard onClose={() => setShowImportModal(false)} />
       )}
 
       {/* Modal de confirmación simple */}

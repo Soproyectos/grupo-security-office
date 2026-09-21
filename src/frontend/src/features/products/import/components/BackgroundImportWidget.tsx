@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBackgroundImportStore } from '../store/backgroundImport.store'
+import { useImportModalStore } from '../store/importModal.store'
 import { resumeBackgroundImportIfPending } from '../services/import-background-runner'
 
 /**
@@ -14,6 +15,7 @@ import { resumeBackgroundImportIfPending } from '../services/import-background-r
 export default function BackgroundImportWidget() {
   const job = useBackgroundImportStore((s) => s.job)
   const dismissJob = useBackgroundImportStore((s) => s.dismissJob)
+  const openWizard = useImportModalStore((s) => s.open)
   const queryClient = useQueryClient()
 
   // Si la pestaña se recargó a mitad de una importación, retoma el sondeo
@@ -40,9 +42,24 @@ export default function BackgroundImportWidget() {
 
   if (!job) return null
 
+  // SEC-IMPORT-004: toda la tarjeta abre el wizard — reabrirlo con un job
+  // activo ya muestra el progreso completo ahí (ImportBackgroundJobView),
+  // así que no hace falta un botón "ver detalle" aparte. Es un <div> con
+  // role="button" (no un <button> real) porque contiene el botón de cerrar
+  // — un botón real dentro de otro es HTML inválido y algunos navegadores
+  // lo "arreglan" sacándolo del árbol, rompiendo el clic de cerrar.
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-full max-w-sm">
-      <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 overflow-hidden">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openWizard(job.listaId)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') openWizard(job.listaId)
+      }}
+      className="fixed bottom-4 right-4 z-40 w-full max-w-sm text-left cursor-pointer"
+      aria-label="Abrir el progreso de la importación"
+    >
+      <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 overflow-hidden hover:shadow-xl transition-shadow">
         <div className="flex items-start gap-3 p-4">
           <StatusIcon status={job.status} />
 
@@ -51,11 +68,14 @@ export default function BackgroundImportWidget() {
             <p className="mt-0.5 text-xs text-neutral-500">{job.message}</p>
 
             {job.status === 'processing' && (
-              <div className="mt-2 w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-security-700 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.max(5, job.progress)}%` }}
-                />
+              <div className="mt-2 flex items-center gap-2">
+                <div className="flex-1 h-2 bg-neutral-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-security-700 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.max(5, job.progress)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-neutral-500 tabular-nums">{job.progress}%</span>
               </div>
             )}
 
@@ -72,7 +92,16 @@ export default function BackgroundImportWidget() {
           {job.status !== 'processing' && (
             <button
               type="button"
-              onClick={dismissJob}
+              onClick={(e) => {
+                e.stopPropagation()
+                dismissJob()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation()
+                  dismissJob()
+                }
+              }}
               className="shrink-0 p-1 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
               aria-label="Cerrar"
             >

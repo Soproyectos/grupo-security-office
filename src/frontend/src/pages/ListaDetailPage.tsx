@@ -13,8 +13,8 @@ import { formatDate } from '../lib/format'
 import { Button, Modal } from '../components/ui'
 import ProductFormModal from '../features/products/components/ProductFormModal'
 import { MoveCategoryModal, type MoveCategoryTarget } from '../features/products/components/MoveCategoryModal'
-import ImportWizard from '../features/products/import/components/ImportWizard'
-import { hasPersistedImportState, useImportStore } from '../features/products/import/store/import.store'
+import { useImportStore } from '../features/products/import/store/import.store'
+import { useImportModalStore } from '../features/products/import/store/importModal.store'
 import type { Category, Brand, Product } from '../features/products/types/product.types'
 import { ProductIndicators } from '../features/products/components/ProductIndicators'
 
@@ -36,7 +36,7 @@ export default function ListaDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('products')
-  const [showImportModal, setShowImportModal] = useState(hasPersistedImportState)
+  const openImportModal = useImportModalStore((s) => s.open)
 
   const {
     data: lista,
@@ -146,7 +146,7 @@ export default function ListaDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 }
-                onClick={() => setShowImportModal(true)}
+                onClick={() => openImportModal(id ?? undefined)}
               >
                 Importar desde Excel
               </Button>
@@ -197,10 +197,6 @@ export default function ListaDetailPage() {
           listaId={id ?? ''}
           canEdit={canManageListas() || hasPermission('products:write')}
         />
-      )}
-
-      {showImportModal && (
-        <ImportWizard listaId={id ?? undefined} onClose={() => setShowImportModal(false)} />
       )}
     </div>
   )
