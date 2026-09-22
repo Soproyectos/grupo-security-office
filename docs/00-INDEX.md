@@ -25,6 +25,14 @@
 
 `docs/adr/` es la única ubicación para registrar nuevas decisiones de arquitectura.
 
+## Operación
+
+- [Runbook: importación de listas y agentes](./procedimientos/runbook-importacion-y-agentes.md)
+
+## Bitácoras
+
+- [2026-09-22 — Biblioteca de vitrina](./bitacora/2026-09-22-biblioteca-vitrina.md)
+
 ## Producto, testing, seguridad y UI
 
 - [Alcance MVP](./mvp-scope-v1.md)

@@ -162,19 +162,21 @@ Queda pendiente limpiar los 544 productos ya cargados que las tienen.
 - **Un producto no puede estar en dos listas.** `Product.listaId` es un solo campo. Mientras haya una lista por proveedor no molesta; aparece el día que exista una lista de promoción con productos repetidos.
 - **Borrar una lista arrastra sus productos.** Contradice la biblioteca permanente. Lo razonable es que borre sus precios y solo arrastre productos nunca publicados, pero es una decisión de negocio sin tomar.
 - **No existe la regla rol → tipo de precio.** Los siete códigos de precio solo se usan al importar; nada decide qué precio ve un cliente. Bloquea la vitrina pública por completo.
+- **Publicar varios productos a la vez no tiene interfaz.** El endpoint `POST /bulk-transition` existe y funciona, pero no hay forma de invocarlo desde la web: borrado masivo, actualización masiva de precios y mover categoría tienen su modal, publicar no. Con 764 productos por aprobar, esto convierte el estreno de la vitrina en 764 acciones de a una.
 
 ---
 
 ## Acciones pendientes
 
 1. [ ] Decidir qué precio ve cada rol (bloquea la vitrina pública).
-2. [ ] Migración Prisma: `nameSource`, `nameLockedAt`, `lastSeenAt`, tabla rol → tipo de precio.
-3. [ ] Dejar de sobrescribir identidad en la rama de update del pipeline.
-4. [ ] Tope de 70 caracteres en el validador y corte de líneas en la tarjeta.
-5. [ ] Importar las 764 fichas de la biblioteca.
-6. [ ] Limpiar costo y margen de `extraAttributes` en los 544 productos ya cargados.
-7. [ ] Decidir el comportamiento de borrado de listas.
-8. [ ] Resolver el origen de las imágenes — sin propuesta todavía.
+2. [ ] Interfaz para `bulk-transition` — sin ella, publicar el catálogo son 764 acciones de a una.
+3. [ ] Migración Prisma: `nameSource`, `nameLockedAt`, `lastSeenAt`, tabla rol → tipo de precio.
+4. [ ] Dejar de sobrescribir identidad en la rama de update del pipeline.
+5. [ ] Tope de 70 caracteres en el validador y corte de líneas en la tarjeta.
+6. [ ] Importar las 764 fichas de la biblioteca.
+7. [ ] Limpiar costo y margen de `extraAttributes` en los 544 productos ya cargados.
+8. [ ] Decidir el comportamiento de borrado de listas.
+9. [ ] Resolver el origen de las imágenes — sin propuesta todavía.
 
 ---
 
