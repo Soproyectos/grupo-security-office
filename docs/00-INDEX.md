@@ -21,8 +21,17 @@
 ## Decisiones (ADR)
 
 - [ADR: Arquitectura híbrida de importación masiva](./adr/ADR-001-import-hybrid-architecture.md)
+- [ADR: Biblioteca de Vitrina — separar la identidad del producto del precio](./adr/ADR-002-biblioteca-vitrina.md)
 
 `docs/adr/` es la única ubicación para registrar nuevas decisiones de arquitectura.
+
+## Operación
+
+- [Runbook: importación de listas y agentes](./procedimientos/runbook-importacion-y-agentes.md)
+
+## Bitácoras
+
+- [2026-09-22 — Biblioteca de vitrina](./bitacora/2026-09-22-biblioteca-vitrina.md)
 
 ## Producto, testing, seguridad y UI
 
