@@ -10,16 +10,11 @@ export interface AccessRequestPayload {
   website?: string
 }
 
+// Matches AccessRequestsService.createPublic's actual resolved shape on the
+// backend (api.ts's response interceptor already unwraps the `{ data: ... }`
+// envelope, so callers only ever see this inner shape).
 export interface AccessRequestResponse {
-  id: string
-  companyName: string
-  nit: string
-  contactName: string
-  email: string
-  phone: string
-  customerType: string
-  status: string
-  createdAt: string
+  received: boolean
 }
 
 export async function submitAccessRequest(
