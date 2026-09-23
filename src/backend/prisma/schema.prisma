@@ -166,7 +166,12 @@ model Product {
   publishedById   String?
   unpublishReason String?
   lifecycleStatus String         @default("DRAFT")
-  category        Category       @relation(fields: [categoryId], references: [id])
+  // Capa de identidad curada (ADR-002): origen del nombre, marcador de bloqueo
+  // de identidad y presencia en las listas mensuales.
+  nameSource        String         @default("sistema")
+  nameLockedAt      DateTime?
+  lastSeenAt        DateTime?
+  category          Category       @relation(fields: [categoryId], references: [id])
   brand           Brand          @relation(fields: [brandId], references: [id])
   lista           Lista?         @relation(fields: [listaId], references: [id])
   publishedBy     User?          @relation("ProductPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
