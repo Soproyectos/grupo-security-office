@@ -1,4 +1,4 @@
-﻿# Feature: CatÃ¡logo Comercial (public storefront)
+﻿# Feature: Catálogo Comercial (public storefront)
 
 ## Objective
 Implement the Claude Design handoff (`docs/design/catalogo-comercial/`) as a public storefront: Home, client login and "Solicitar acceso", plus the backend to receive access requests.
