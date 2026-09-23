@@ -466,3 +466,170 @@ describe('BatchExecutorService — Aislamiento de filas con SAVEPOINT', () => {
     );
   });
 });
+
+describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)', () => {
+  let service: BatchExecutorService;
+
+  const auditService = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const lockedProduct = {
+    id: 'prod-locked',
+    sku: 'SKU-1',
+    name: 'Nombre Curado',
+    description: 'Descripción curada',
+    categoryId: 'cat-1',
+    brandId: 'brand-1',
+    nameLockedAt: new Date('2026-09-01T00:00:00Z'),
+  };
+
+  const unlockedProduct = {
+    id: 'prod-libre',
+    sku: 'SKU-1',
+    name: 'Nombre Técnico Original',
+    description: 'Descripción original',
+    categoryId: 'cat-1',
+    brandId: 'brand-1',
+    nameLockedAt: null as Date | null,
+  };
+
+  const makeRow = (overrides?: Record<string, unknown>) => ({
+    rowIndex: 0,
+    sku: 'SKU-1',
+    name: 'Nombre Curado',
+    description: 'Descripción curada',
+    categoryName: 'CCTV',
+    brandName: 'Hikvision',
+    prices: [] as Array<{
+      priceListCode: string;
+      priceListName: string;
+      value: number;
+      ivaMode: 'with_iva' | 'without_iva';
+      currency: string;
+    }>,
+    technicalSpecs: {},
+    extraAttributes: {},
+    isUpdate: false,
+    nameIsFallback: false,
+    ...overrides,
+  });
+
+  const makeCtx = (overrides?: Partial<ImportContext>): ImportContext => ({
+    importId: 'import-1',
+    userId: 'user-1',
+    fileName: 'test.xlsx',
+    fileSize: 1024,
+    rawRows: [],
+    headers: ['REFERENCIA', 'NOMBRE'],
+    columnMapping: {
+      entries: [
+        { sourceColumn: 'REFERENCIA', targetField: 'sku', isRequired: true, confidence: 1.0 },
+        { sourceColumn: 'NOMBRE', targetField: 'name', isRequired: true, confidence: 1.0 },
+      ],
+      confirmed: true,
+    },
+    ivaMode: 'with_iva',
+    validatedRows: [],
+    normalizedRows: [],
+    pipelineErrors: [],
+    startedAt: new Date(),
+    currentStage: 'batch_execution',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    service = new BatchExecutorService(
+      mockPrisma as unknown as PrismaService,
+      auditService as unknown as AuditService,
+    );
+
+    mockPrisma.category.findMany.mockResolvedValue([
+      { id: 'cat-1', name: 'CCTV', slug: 'cctv' },
+    ]);
+    mockPrisma.brand.findMany.mockResolvedValue([
+      { id: 'brand-1', name: 'Hikvision', slug: 'hikvision' },
+    ]);
+    mockPrisma.priceList.findMany.mockResolvedValue([]);
+    (mockPrisma.category as any).findFirst = jest.fn().mockResolvedValue(null);
+    (mockPrisma.brand as any).findFirst = jest.fn().mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+    mockPrisma.$executeRawUnsafe.mockResolvedValue(0);
+    mockPrisma.product.findMany.mockResolvedValue([]);
+    mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
+    mockPrisma.priceList.create.mockResolvedValue({ id: 'pl-1', code: 'INSTALADOR_IVA' });
+    mockPrisma.price.findUnique.mockResolvedValue(null);
+    mockPrisma.price.create.mockResolvedValue({ id: 'price-1' });
+  });
+
+  it('producto bloqueado: NO sobrescribe identidad, SÍ upserta precios y marca lastSeenAt', async () => {
+    mockPrisma.product.findMany.mockResolvedValue([lockedProduct]);
+
+    const row = makeRow({
+      prices: [
+        { priceListCode: 'INSTALADOR_IVA', priceListName: 'Instalador (con IVA)', value: 110, ivaMode: 'with_iva', currency: 'COP' },
+      ],
+    });
+
+    const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+    expect(result.updated).toBe(1);
+    expect(result.identityChangesDetected).toBe(0);
+
+    // Solo se escribe lastSeenAt — ningún campo de identidad.
+    expect(mockPrisma.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'prod-locked' },
+        data: { lastSeenAt: expect.any(Date) },
+      }),
+    );
+
+    // Los precios sí se refrescan.
+    expect(mockPrisma.price.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ productId: 'prod-locked', value: 110 }),
+      }),
+    );
+  });
+
+  it('producto bloqueado con nombre entrante distinto: identityChangesDetected se incrementa y la identidad se conserva', async () => {
+    mockPrisma.product.findMany.mockResolvedValue([lockedProduct]);
+
+    const row = makeRow({ name: 'Nombre Distinto De La Fila' });
+
+    const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+    expect(result.updated).toBe(1);
+    expect(result.identityChangesDetected).toBe(1);
+
+    // La identidad NO se sobrescribe pese al nombre distinto.
+    expect(mockPrisma.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'prod-locked' },
+        data: { lastSeenAt: expect.any(Date) },
+      }),
+    );
+    expect(mockPrisma.product.update.mock.calls[0][0].data).not.toHaveProperty('name');
+  });
+
+  it('producto sin bloqueo (nameLockedAt NULL): comportamiento previo (sobrescribe nombre) + lastSeenAt, contador en 0', async () => {
+    mockPrisma.product.findMany.mockResolvedValue([unlockedProduct]);
+
+    const row = makeRow({ name: 'Nombre Nuevo De La Fila' });
+
+    const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+    expect(result.updated).toBe(1);
+    expect(result.identityChangesDetected).toBe(0);
+    expect(mockPrisma.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'prod-libre' },
+        data: expect.objectContaining({
+          name: 'Nombre Nuevo De La Fila',
+          lastSeenAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+});

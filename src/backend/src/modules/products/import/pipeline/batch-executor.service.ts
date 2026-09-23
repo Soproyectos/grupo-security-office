@@ -87,6 +87,7 @@ export class BatchExecutorService {
       productIds: [],
       durationMs: 0,
       defaultsByMissingInference: { category: 0, brand: 0 },
+      identityChangesDetected: 0,
     };
 
     // Pre-cargar categorías y marcas existentes + Lista destino
@@ -132,6 +133,7 @@ export class BatchExecutorService {
         result.skipped += batchResult.skipped;
         result.productIds.push(...batchResult.productIds);
         result.errors.push(...batchResult.errors);
+        result.identityChangesDetected += batchResult.identityChangesDetected;
         result.defaultsByMissingInference.category += batchResult.defaults.category;
         result.defaultsByMissingInference.brand += batchResult.defaults.brand;
 
@@ -187,6 +189,7 @@ export class BatchExecutorService {
     productIds: string[];
     errors: BatchError[];
     defaults: { category: number; brand: number };
+    identityChangesDetected: number;
   }> {
     return this.prisma.$transaction(
       async (tx) => {
@@ -197,17 +200,36 @@ export class BatchExecutorService {
           productIds: [] as string[],
           errors: [] as BatchError[],
           defaults: { category: 0, brand: 0 },
+          identityChangesDetected: 0,
         };
 
-        // Pre-cargar SKUs existentes en este batch
+        // Pre-cargar SKUs existentes en este batch. Además del id, se traen los
+        // campos de identidad (name/description/categoryId/brandId) y el
+        // marcador nameLockedAt: el guard de identidad bloqueada (ADR-002)
+        // los necesita para decidir qué sobrescribir y para detectar diffs
+        // entre la fila y la identidad curada almacenada.
         const skus = batch.map((r) => r.sku);
         const existingProducts = await tx.product.findMany({
           where: { sku: { in: skus } },
-          select: { id: true, sku: true },
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            description: true,
+            categoryId: true,
+            brandId: true,
+            nameLockedAt: true,
+          },
         });
-        const existingSkuMap = new Map<string, string>(
-          existingProducts.map((p) => [p.sku, p.id]),
-        );
+        const existingSkuMap = new Map<string, {
+          id: string;
+          sku: string;
+          name: string;
+          description: string | null;
+          categoryId: string;
+          brandId: string;
+          nameLockedAt: Date | null;
+        }>(existingProducts.map((p) => [p.sku, p]));
 
         for (const row of batch) {
           // Aislamiento por fila con SAVEPOINT: sin esto, un error real de Postgres
@@ -245,35 +267,67 @@ export class BatchExecutorService {
               batchResult.defaults,
             );
 
-            const existingProductId = existingSkuMap.get(row.sku);
+            const existingProduct = existingSkuMap.get(row.sku);
 
-            if (existingProductId) {
+            if (existingProduct) {
               // UPDATE: producto ya existe.
-              // `name` solo se sobrescribe si esta fila trae un nombre real
-              // (columna nombre o descripción). Si `nameIsFallback` es true
-              // (la fila solo traía SKU y precio), se conserva el nombre que
-              // el producto ya tenía en catálogo — de lo contrario un cargue
-              // mensual sin nombre borraría el nombre real ya guardado.
-              await tx.product.update({
-                where: { id: existingProductId },
-                data: {
-                  ...(row.nameIsFallback ? {} : { name: row.name }),
-                  description: row.description ?? undefined,
-                  categoryId: categoryResult.id,
-                  brandId: brandResult.id,
-                  technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                  extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                },
-              });
+              // Guard de identidad bloqueada (ADR-002): si el producto tiene
+              // nameLockedAt, su identidad fue curada (biblioteca biblioteca /
+              // curación manual) y un cargue mensual NO debe sobrescribirla —
+              // solo se refrescan los precios y lastSeenAt. Si la fila trae
+              // valores de identidad distintos a los almacenados, se cuenta en
+              // identityChangesDetected para revisión humana (nunca falla el import).
+              const isIdentityLocked = Boolean(existingProduct.nameLockedAt);
+
+              if (isIdentityLocked) {
+                // Diff de identidad: comparación exacta (case-sensitive) de
+                // name/description e ids resueltos de categoría/marca contra
+                // los valores almacenados. El nombre fallback (SKU de relleno)
+                // no propone nombre, así que no cuenta como diff; una fila sin
+                // descripción tampoco propone cambio de descripción.
+                const identityDiff =
+                  (!row.nameIsFallback && row.name !== existingProduct.name) ||
+                  (row.description !== undefined &&
+                    row.description !== existingProduct.description) ||
+                  categoryResult.id !== existingProduct.categoryId ||
+                  brandResult.id !== existingProduct.brandId;
+                if (identityDiff) {
+                  batchResult.identityChangesDetected++;
+                }
+
+                await tx.product.update({
+                  where: { id: existingProduct.id },
+                  data: { lastSeenAt: new Date() },
+                });
+              } else {
+                // Producto sin bloqueo: comportamiento previo. `name` solo se
+                // sobrescribe si esta fila trae un nombre real (columna nombre
+                // o descripción). Si `nameIsFallback` es true (la fila solo
+                // traía SKU y precio), se conserva el nombre que el producto
+                // ya tenía en catálogo — de lo contrario un cargue mensual sin
+                // nombre borraría el nombre real ya guardado.
+                await tx.product.update({
+                  where: { id: existingProduct.id },
+                  data: {
+                    ...(row.nameIsFallback ? {} : { name: row.name }),
+                    description: row.description ?? undefined,
+                    categoryId: categoryResult.id,
+                    brandId: brandResult.id,
+                    technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+                    extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+                    lastSeenAt: new Date(),
+                  },
+                });
+              }
 
               // Actualizar precios
               if (row.prices.length > 0) {
-                await this.upsertPrices(tx, existingProductId, row.prices, priceListMap);
+                await this.upsertPrices(tx, existingProduct.id, row.prices, priceListMap);
               }
 
               await tx.$executeRawUnsafe('RELEASE SAVEPOINT row_sp');
               batchResult.updated++;
-              batchResult.productIds.push(existingProductId);
+              batchResult.productIds.push(existingProduct.id);
             } else {
               // CREATE: producto nuevo
               const newProduct = await tx.product.create({
@@ -303,7 +357,7 @@ export class BatchExecutorService {
               // mismo SKU normalizado (no debería pasar tras el fix de validación,
               // pero evita un segundo choque de restricción única si ocurre), la
               // trata como UPDATE en vez de repetir el CREATE.
-              existingSkuMap.set(row.sku, newProduct.id);
+              existingSkuMap.set(row.sku, newProduct);
             }
           } catch (error) {
             await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT row_sp');
@@ -668,6 +722,7 @@ export class BatchExecutorService {
           errors: result.errors.length,
           durationMs: result.durationMs,
           defaultsByMissingInference: result.defaultsByMissingInference,
+          identityChangesDetected: result.identityChangesDetected,
           columnsMapped,
           columnsExtra,
           columnsSkipped,

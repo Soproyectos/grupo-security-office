@@ -94,6 +94,12 @@ export interface ImportExecutionResult {
       category: number;
       brand: number;
     };
+    /**
+     * Filas de productos con identidad bloqueada (nameLockedAt) cuya
+     * identidad propuesta por la fila difiere de la almacenada (solo conteo
+     * para revisión humana; el import no falla por esto).
+     */
+    identityChangesDetected: number;
   };
 
   /** Errores durante la ejecución */
