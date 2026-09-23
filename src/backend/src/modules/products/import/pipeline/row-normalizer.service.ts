@@ -14,6 +14,7 @@ import {
   normalizeBrandName,
   normalizeDescription,
   resolveEffectiveName,
+  truncateProductName,
 } from '../helpers/text-normalizer';
 import { parseNumericValue } from '../helpers/numeric-parser';
 
@@ -79,6 +80,7 @@ export class RowNormalizerService {
     // name: prevalece el nombre explícito (solo normalización de espacios). Si no hay
     // nombre útil y sí hay descripción con texto útil, se deriva un nombre breve desde
     // la descripción (evita que una descripción extensa supere la validación de name).
+    // Ambos caminos nacen ya truncados al presupuesto de vitrina (≤70, ADR-002).
     const effectiveName = resolveEffectiveName(rawName, rawDescription);
     // Último recurso: listas de proveedor que solo traen SKU/referencia y precio,
     // sin nombre ni descripción. Se usa el SKU como nombre provisional para no
@@ -86,7 +88,7 @@ export class RowNormalizerService {
     // BatchExecutorService NUNCA sobrescriba con esto un nombre real que el
     // producto ya tenga en catálogo (solo se usa al CREAR productos nuevos).
     const nameIsFallback = !effectiveName;
-    const name = effectiveName || sku;
+    const name = effectiveName || truncateProductName(sku);
     // description: se conserva completa, normalizando espacios (no se reemplaza por name).
     const description = normalizeDescription(rawDescription);
 

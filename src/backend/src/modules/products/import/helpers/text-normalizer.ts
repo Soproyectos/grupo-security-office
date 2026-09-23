@@ -137,6 +137,38 @@ function escapeRegExp(value: string): string {
 }
 
 /**
+ * Límite de caracteres del nombre de producto visible en vitrina (ADR-002).
+ * El título es cosmético: el texto completo vive en `description`.
+ */
+export const PRODUCT_NAME_MAX_LENGTH = 70;
+
+/**
+ * Recorta un nombre de producto al presupuesto de vitrina
+ * (PRODUCT_NAME_MAX_LENGTH) sin partir palabras ni dejar puntuación colgante.
+ * Nombres ya dentro del presupuesto se devuelven intactos (función pura).
+ *
+ * Cadena simple (UTF-16): un `slice` es aceptable aquí, igual que el
+ * comportamiento existente de deriveNameFromDescription.
+ */
+export function truncateProductName(
+  value: string,
+  maxLength: number = PRODUCT_NAME_MAX_LENGTH,
+): string {
+  if (value.length <= maxLength) return value;
+
+  const slice = value.slice(0, maxLength);
+  const lastBreak = Math.max(
+    slice.lastIndexOf(' '),
+    slice.lastIndexOf(','),
+    slice.lastIndexOf(';'),
+    slice.lastIndexOf('.'),
+  );
+  const candidate = lastBreak > 0 ? slice.slice(0, lastBreak) : slice;
+
+  return candidate.trim().replace(/[\s,;.\-–—]+$/, '').trim() || slice.trim();
+}
+
+/**
  * Genera un nombre breve y determinístico a partir de una descripción técnica.
  * Función pura: solo resume texto presente en la descripción. No añade el
  * SKU/referencia ni inventa atributos.
@@ -156,7 +188,7 @@ function deriveNameFromDescription(description: string): string | null {
     'Grabación',
   ];
   const MIN_USEFUL_BEFORE = 12;
-  const MAX_LENGTH = 120;
+  const MAX_LENGTH = PRODUCT_NAME_MAX_LENGTH;
 
   // 1-2. Normalizar tabs, saltos de línea y espacios repetidos a un solo espacio;
   // preserva el contenido técnico (SKU, unidades, resoluciones, tecnologías).
@@ -189,7 +221,7 @@ function deriveNameFromDescription(description: string): string | null {
     if (before.length >= MIN_USEFUL_BEFORE) nameCandidate = before;
   }
 
-  // 7. Limitar a 120 caracteres sin partir palabras.
+  // 7. Limitar al presupuesto de vitrina (70 caracteres) sin partir palabras.
   if (nameCandidate.length > MAX_LENGTH) {
     const slice = nameCandidate.slice(0, MAX_LENGTH);
     const lastBreak = Math.max(
@@ -210,9 +242,12 @@ function deriveNameFromDescription(description: string): string | null {
 /**
  * Resuelve el valor efectivo de `name` para una fila de importación.
  *
- * - Si hay un nombre explícito útil, lo usa (solo colapsa espacios).
+ * - Si hay un nombre explícito útil, lo usa (solo colapsa espacios) y lo
+ *   recorta al presupuesto de vitrina (PRODUCT_NAME_MAX_LENGTH) — nunca se
+ *   rechaza una fila por longitud de nombre: el título es cosmético y el
+ *   texto completo vive en `description` (ADR-002).
  * - Si no, y la descripción tiene texto útil, deriva un nombre breve desde la
- *   descripción (nunca usa toda la descripción como `name`).
+ *   descripción (nunca usa toda la descripción como `name`; ya nace ≤70).
  * - En otro caso devuelve cadena vacía.
  *
  * Compartida entre `RowValidatorService` (para no rechazar por NAME_REQUIRED
@@ -223,7 +258,7 @@ function deriveNameFromDescription(description: string): string | null {
  */
 export function resolveEffectiveName(rawName: unknown, rawDescription: unknown): string {
   const explicitName = normalizeProductName(rawName);
-  if (explicitName) return explicitName;
+  if (explicitName) return truncateProductName(explicitName);
 
   const derived = deriveNameFromDescription(normalizeDescription(rawDescription));
   return derived ?? '';
