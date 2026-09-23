@@ -7,6 +7,7 @@ jest.mock('../../prisma/prisma.service', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { AccessRequestsService } from './access-requests.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccessRequestDto, CustomerTypeEnum } from './dto/create-access-request.dto';
@@ -62,12 +63,12 @@ describe('AccessRequestsService', () => {
       expect(result).toEqual({ received: true });
     });
 
-    it('debe retornar { received: true } incluso si la DB falla (fire-and-forget)', async () => {
+    it('debe lanzar InternalServerErrorException si la DB falla en solicitud real', async () => {
       mockPrisma.accessRequest.create.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.createPublic(validDto, mockReq as any);
-
-      expect(result).toEqual({ received: true });
+      await expect(service.createPublic(validDto, mockReq as any)).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
 
     it('debe ignorar la solicitud silenciosamente si website (honeypot) está lleno', async () => {
@@ -112,13 +113,10 @@ describe('AccessRequestsService', () => {
       expect(capturedData.data?.ipHash?.length).toBe(64); // SHA256 hex = 64 chars
     });
 
-    it('debe manejar x-forwarded-for para proxies', async () => {
-      const mockReqWithForwarded = {
-        ip: '127.0.0.1',
-        get: jest.fn((key: string) => {
-          if (key === 'x-forwarded-for') return '10.0.0.1, 192.168.1.1';
-          return null;
-        }),
+    it('debe usar req.ip (Express extrae de X-Forwarded-For/X-Real-IP via trust proxy)', async () => {
+      const mockReqWithTrustProxy = {
+        ip: '203.0.113.42', // Express calcula esto desde headers cuando trust proxy=1
+        get: jest.fn(),
       };
 
       const capturedData = { data: null as any };
@@ -127,11 +125,10 @@ describe('AccessRequestsService', () => {
         return Promise.resolve({ id: 'req-1', ...data });
       });
 
-      await service.createPublic(validDto, mockReqWithForwarded as any);
+      await service.createPublic(validDto, mockReqWithTrustProxy as any);
 
-      // Debe usar el primer IP del x-forwarded-for: 10.0.0.1
+      // Debe hashear el IP que Express resolvió
       expect(capturedData.data?.ipHash).toBeDefined();
-      // Verificar que es un hash válido (64 caracteres hexadecimales)
       expect(/^[a-f0-9]{64}$/i.test(capturedData.data?.ipHash)).toBe(true);
     });
 

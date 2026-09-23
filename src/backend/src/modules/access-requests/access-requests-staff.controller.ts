@@ -1,62 +1,34 @@
 import {
   Controller,
-  Post,
   Get,
   Patch,
   Body,
   Param,
   Query,
-  Request,
   UseGuards,
-  HttpCode,
-  HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { AccessRequestsService, AccessRequestResponse } from './access-requests.service';
-import { CreateAccessRequestDto } from './dto/create-access-request.dto';
-import { Public } from '../../common/decorators/public.decorator';
+import { AccessRequestsService } from './access-requests.service';
+import { UpdateAccessRequestStatusDto } from './dto/update-access-request-status.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 
-@ApiTags('Access Requests')
-@Controller('api/public/access-requests')
-export class AccessRequestsController {
+@ApiTags('Access Requests — Staff')
+@ApiBearerAuth()
+@Controller('api/access-requests')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class AccessRequestsStaffController {
   constructor(private readonly accessRequestsService: AccessRequestsService) {}
-
-  /**
-   * Public endpoint to create an access request.
-   * Rate limited: 5 requests per 10 minutes per IP.
-   * Honeypot field suppresses logging.
-   * Always responds with generic success to prevent enumeration.
-   */
-  @Public()
-  @Post()
-  @Throttle({ default: { limit: 5, ttl: 600000 } })
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Submit access request (public, rate-limited)' })
-  @ApiResponse({
-    status: 201,
-    description: 'Request received (generic response)',
-    type: Object,
-    schema: { example: { data: { received: true } } },
-  })
-  async createPublic(
-    @Body() dto: CreateAccessRequestDto,
-    @Request() req: any,
-  ): Promise<AccessRequestResponse> {
-    return this.accessRequestsService.createPublic(dto, req);
-  }
 
   /**
    * List all access requests (paginated).
    * Protected: requires JWT + access_requests.manage permission.
    */
   @Get()
-  @UseGuards(JwtAuthGuard)
   @Permissions('access_requests.manage')
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'List access requests (staff only)' })
   @ApiResponse({
     status: 200,
@@ -77,16 +49,14 @@ export class AccessRequestsController {
    * Protected: requires JWT + access_requests.manage permission.
    */
   @Patch(':id/status')
-  @UseGuards(JwtAuthGuard)
   @Permissions('access_requests.manage')
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update access request status (staff only)' })
   @ApiResponse({ status: 200, description: 'Status updated' })
   async updateStatus(
-    @Param('id') id: string,
-    @Body() { status }: { status: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateAccessRequestStatusDto,
     @CurrentUser() user: any,
   ) {
-    return this.accessRequestsService.updateStatus(id, status, user.sub);
+    return this.accessRequestsService.updateStatus(id, dto.status, user.sub);
   }
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AccessRequestsService } from './access-requests.service';
-import { AccessRequestsController } from './access-requests.controller';
+import { PublicAccessRequestsController } from './public-access-requests.controller';
+import { AccessRequestsStaffController } from './access-requests-staff.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
   providers: [AccessRequestsService],
-  controllers: [AccessRequestsController],
+  controllers: [PublicAccessRequestsController, AccessRequestsStaffController],
 })
 export class AccessRequestsModule {}

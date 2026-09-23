@@ -14,6 +14,10 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['error', 'warn', 'log'] });
   const configService = app.get(ConfigService);
 
+  // Trust one hop (nginx reverse proxy): sets X-Forwarded-For/X-Real-IP headers
+  // Without this, ThrottlerGuard sees nginx's internal IP for all requests
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   app.use(helmet());
   app.use(cookieParser());
 

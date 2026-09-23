@@ -100,6 +100,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'listas:archive', 'listas:delete', 'listas:publish',
     'products:publish',
     'assignments:manage',
+    // Catálogo comercial (T1)
+    'access_requests.manage',
     // Legacy: se mantiene por compatibilidad temporal con el guard.
     // La excepción Super Admin del PermissionsGuard no depende de esta lista.
     'publish:manage',
@@ -123,6 +125,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'listas:archive', 'listas:delete', 'listas:publish',
     'products:publish',
     'assignments:manage',
+    // Catálogo comercial (T1)
+    'access_requests.manage',
     'publish:manage',
   ],
   // Vendedor: opera su propio pipeline comercial (cotizaciones, clientes, pedidos
