@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
+import { shouldRedirectOn401 } from '../../services/api'
 
 // Validation schema tests
 describe('Access Request Validation Schema', () => {
@@ -205,15 +206,8 @@ describe('Access Request Validation Schema', () => {
   })
 })
 
-// API Interceptor tests - logic tests without window dependency
+// Exercises the real guard used by the axios response interceptor
 describe('API 401 Redirect Logic', () => {
-  const shouldRedirectOn401 = (pathname: string): boolean => {
-    return (
-      pathname.includes('/login') === false &&
-      pathname.startsWith('/tienda') === false
-    )
-  }
-
   it('should not redirect on 401 when path starts with /tienda', () => {
     const shouldRedirect = shouldRedirectOn401('/tienda/solicitar-acceso')
     expect(shouldRedirect).toBe(false)

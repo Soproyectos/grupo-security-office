@@ -39,6 +39,11 @@ api.interceptors.request.use(
     return Promise.reject(error)
 })
 
+// Public storefront visitors have no staff session, so a 401 must not send them to the staff login.
+export function shouldRedirectOn401(pathname: string): boolean {
+  return !pathname.includes('/login') && !pathname.startsWith('/tienda')
+}
+
 api.interceptors.response.use(
   (response) => {
     if (
@@ -53,8 +58,7 @@ api.interceptors.response.use(
   (error) => {
     if (
       error.response?.status === 401 &&
-      !window.location.pathname.includes('/login') &&
-      !window.location.pathname.startsWith('/tienda')
+      shouldRedirectOn401(window.location.pathname)
     ) {
       window.location.href = '/login'
     }
