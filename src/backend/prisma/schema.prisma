@@ -658,7 +658,7 @@ enum AccessRequestStatus {
 }
 
 /// Solicitud de acceso al portal de clientes. Leads para revisión interna.
-/// `ipHash` es sha256 del IP cliente (nunca se almacena IP en claro).
+/// `ipHash` es HMAC-SHA256 del IP cliente con salt de servidor (nunca se almacena IP en claro); null si no hay salt configurado.
 /// `reviewedById` y `reviewedAt` registran quién aprobó/rechazó y cuándo.
 model AccessRequest {
   id             String                     @id @default(uuid())

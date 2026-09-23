@@ -14,9 +14,15 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['error', 'warn', 'log'] });
   const configService = app.get(ConfigService);
 
-  // Trust one hop (nginx reverse proxy): sets X-Forwarded-For/X-Real-IP headers
-  // Without this, ThrottlerGuard sees nginx's internal IP for all requests
-  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // Trust N hops of reverse proxy (nginx sets X-Forwarded-For/X-Real-IP).
+  // Without this, ThrottlerGuard sees the proxy's internal IP for all requests.
+  // Configurable because the number of trusted hops depends on deployment
+  // topology (extra CDN/load balancer in front changes this count); an
+  // incorrect fixed value lets the public throttle be bypassed via a spoofed
+  // X-Forwarded-For header.
+  const trustProxyHopsRaw = configService.get<string>('TRUST_PROXY_HOPS');
+  const trustProxyHops = trustProxyHopsRaw ? parseInt(trustProxyHopsRaw, 10) : 1;
+  app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
 
   app.use(helmet());
   app.use(cookieParser());
