@@ -1,0 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&family=Roboto+Condensed:wght@400;600;700&display=swap');
+:root{
+--font-sans:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+--font-condensed:'Roboto Condensed',system-ui,-apple-system,sans-serif;
+--font-mono:ui-monospace,'SF Mono',Menlo,monospace;
+/* Base scale */
+--text-xs:0.75rem;--text-sm:0.875rem;--text-base:1rem;--text-lg:1.125rem;--text-xl:1.25rem;--text-2xl:1.5rem;--text-3xl:1.875rem;
+/* Dashboard scale — the mockups use half-point sizes (10.5px, 11.5px, 12.5px) the default type scale doesn't have; named so nothing hardcodes a raw px value */
+--text-eyebrow:0.656rem;--text-micro:0.719rem;--text-caption:0.781rem;--text-body-sm:0.813rem;--text-panel-title:0.938rem;--text-page-title:1.625rem;--text-metric:1.688rem;
+--font-normal:400;--font-medium:500;--font-semibold:600;--font-bold:700;
+--leading-tight:1.2;--leading-snug:1.3;--leading-normal:1.4;--leading-relaxed:1.5;
+}
