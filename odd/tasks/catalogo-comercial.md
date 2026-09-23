@@ -18,6 +18,8 @@ Implement the Claude Design handoff (`docs/design/catalogo-comercial/`) as a pub
 - [x] T1 (commits a11ae38, 11faa44; parent review fixed route split, spoofable XFF, trust proxy, unvalidated PATCH, silent DB errors, permission seed; `npm test -- access-requests` 10/10 re-run by parent) Backend: Prisma `AccessRequest` model + migration, NestJS `access-requests` module (public create with throttling/honeypot, protected list/update status), tests. Route: delegated (writer trigger: 2+ files).
 - [x] T2 (commit 5098baa; parent re-ran `npm test` 41/41 and `npm run build` OK; visual check of /tienda and /tienda/solicitar-acceso) Frontend: storefront tokens, public layout, Home, ClientLogin, SolicitarAcceso (RHF + Zod) wired to T1 endpoint, routes in `App.tsx`, tests. Route: delegated.
 - [x] T3 (backend tests/tsc/build/lint reported by writer, access-requests tests re-run by parent; frontend tests/build re-run by parent). Pending: apply migration + seed on real DB, staff UI to review requests, real client auth (October portal) Verification: backend tests, frontend `vitest run`, `build`, `lint`.
+- [x] T5 gentle-ai review of PR #54 (lineage review-999c7817c7782239): approved after one bounded correction 39ae587.
+- [ ] T4 Resolve the non-blocking gentle-ai findings listed in `odd/tasks/review-findings-pr54.md`, then review with gentle-ai (base = 39ae587). Route: delegated (writer trigger: 2+ files).
 
 ## TDD
 Mode: off (no project/session TDD configuration found). Ordinary functional checks apply.
