@@ -1,44 +1,11 @@
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import Input from '../../../components/ui/Input'
 import Button from '../../../components/ui/Button'
 import { submitAccessRequest } from '../../../services/access-requests.service'
-
-const accessRequestSchema = z.object({
-  companyName: z
-    .string()
-    .min(1, 'El nombre de la empresa es requerido')
-    .max(120, 'El nombre no puede exceder 120 caracteres'),
-  nit: z
-    .string()
-    .min(1, 'El NIT es requerido')
-    .regex(/^[0-9]{5,12}(-[0-9])?$/, 'El NIT debe tener un formato válido'),
-  contactName: z
-    .string()
-    .min(1, 'El nombre de contacto es requerido')
-    .max(80, 'El nombre no puede exceder 80 caracteres'),
-  email: z
-    .string()
-    .min(1, 'El email es requerido')
-    .email('El email no es válido')
-    .max(120, 'El email no puede exceder 120 caracteres'),
-  phone: z
-    .string()
-    .min(1, 'El teléfono es requerido')
-    .regex(
-      /^[0-9+ ()-]{7,20}$/,
-      'El teléfono debe tener un formato válido (7-20 caracteres)'
-    ),
-  customerType: z.enum(['INSTALLER', 'DISTRIBUTOR', 'END_COMPANY'], {
-    error: 'Selecciona un tipo de cliente válido',
-  }),
-  website: z.string().optional(),
-})
-
-type AccessRequestFormData = z.infer<typeof accessRequestSchema>
+import { accessRequestSchema, AccessRequestFormData } from './request-access.schema'
 
 export default function RequestAccess() {
   const navigate = useNavigate()
@@ -251,14 +218,9 @@ export default function RequestAccess() {
                   aria-hidden="true"
                 />
 
-                {/* Error message */}
-                {submitStatus === 'error' && (
-                  <div className="mb-4 p-3 rounded-lg bg-brand-error-light border border-brand-error">
-                    <p className="m-0 text-sm text-brand-error">{errorMessage}</p>
-                  </div>
-                )}
-
-                {submitStatus === 'rate-limited' && (
+                {/* Error message (both 'error' and 'rate-limited' share this box; only
+                    errorMessage differs, so they stay in lockstep by construction) */}
+                {(submitStatus === 'error' || submitStatus === 'rate-limited') && (
                   <div className="mb-4 p-3 rounded-lg bg-brand-error-light border border-brand-error">
                     <p className="m-0 text-sm text-brand-error">{errorMessage}</p>
                   </div>

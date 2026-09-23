@@ -40,6 +40,10 @@ export default function StorefrontLayout({
           <div className="w-full bg-white px-12 py-5 flex items-center gap-8">
             {/* Logo */}
             <div className="flex-shrink-0">
+              {/* Crop/opacity/margins copied from the design handoff (docs/design/catalogo-comercial/),
+                  which explicitly flags them as unverified against the real logo asset.
+                  objectFit:'fill' will distort the image if the asset isn't exactly 181x165 —
+                  sanity-check against the production logo before adjusting. */}
               <img
                 src="/logo-grupo-security.png"
                 alt="Grupo Security"

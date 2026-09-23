@@ -33,7 +33,6 @@ export default function ClientLogin() {
             className="max-w-full h-auto"
             style={{
               maxWidth: '240px',
-              maxHeight: 'auto',
               aspectRatio: 'auto',
             }}
           />
@@ -68,11 +67,13 @@ export default function ClientLogin() {
                   <form onSubmit={handleSubmit} className="space-y-[18px]">
                     <Input
                       label="Correo electrónico"
+                      name="email"
                       placeholder="contacto@tuempresa.com"
                       type="email"
                     />
                     <Input
                       label="Contraseña"
+                      name="password"
                       type="password"
                       placeholder="••••••••"
                     />
