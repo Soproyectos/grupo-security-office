@@ -1,38 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { z } from 'zod'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { accessRequestSchema } from './pages/request-access.schema'
 import { shouldRedirectOn401 } from '../../services/api'
 
-// Validation schema tests
+// Validation schema tests — import the real schema from the module the
+// component uses, so drift between the component's schema and this suite
+// is impossible.
 describe('Access Request Validation Schema', () => {
-  const accessRequestSchema = z.object({
-    companyName: z
-      .string()
-      .min(1, 'El nombre de la empresa es requerido')
-      .max(120, 'El nombre no puede exceder 120 caracteres'),
-    nit: z
-      .string()
-      .min(1, 'El NIT es requerido')
-      .regex(/^[0-9]{5,12}(-[0-9])?$/, 'El NIT debe tener un formato válido'),
-    contactName: z
-      .string()
-      .min(1, 'El nombre de contacto es requerido')
-      .max(80, 'El nombre no puede exceder 80 caracteres'),
-    email: z
-      .string()
-      .min(1, 'El email es requerido')
-      .email('El email no es válido')
-      .max(120, 'El email no puede exceder 120 caracteres'),
-    phone: z
-      .string()
-      .min(1, 'El teléfono es requerido')
-      .regex(
-        /^[0-9+ ()-]{7,20}$/,
-        'El teléfono debe tener un formato válido (7-20 caracteres)'
-      ),
-    customerType: z.enum(['INSTALLER', 'DISTRIBUTOR', 'END_COMPANY']),
-    website: z.string().optional(),
-  })
-
   it('accepts valid access request data', () => {
     const validData = {
       companyName: 'Constructora Andina S.A.S.',
@@ -234,21 +209,141 @@ describe('API 401 Redirect Logic', () => {
   })
 })
 
-// Honeypot field test
-describe('Honeypot Protection', () => {
-  it('form includes hidden website field', () => {
-    // This is a structural check - in a real test with Testing Library,
-    // we would render the component and check for the hidden input
-    const honeypotField = {
-      name: 'website',
-      type: 'text',
-      tabIndex: -1,
-      ariaHidden: true,
-      display: 'none',
-    }
+// --- Real component rendering below, via Testing Library ---
 
-    expect(honeypotField.name).toBe('website')
-    expect(honeypotField.tabIndex).toBe(-1)
-    expect(honeypotField.display).toBe('none')
+vi.mock('../../services/access-requests.service', () => ({
+  submitAccessRequest: vi.fn(),
+}))
+
+vi.mock('../../services/api', async () => {
+  const actual = await vi.importActual<typeof import('../../services/api')>(
+    '../../services/api'
+  )
+  return {
+    ...actual,
+    default: { post: vi.fn(), get: vi.fn() },
+  }
+})
+
+import RequestAccess from './pages/RequestAccess'
+import ClientLogin from './pages/ClientLogin'
+import { submitAccessRequest } from '../../services/access-requests.service'
+import api from '../../services/api'
+
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
+
+async function fillValidForm() {
+  fireEvent.change(screen.getByLabelText('Nombre de la empresa'), {
+    target: { value: 'Constructora Andina S.A.S.' },
+  })
+  fireEvent.change(screen.getByLabelText('NIT'), {
+    target: { value: '900123456-7' },
+  })
+  fireEvent.change(screen.getByLabelText('Nombre de contacto'), {
+    target: { value: 'Juan Pérez' },
+  })
+  fireEvent.change(screen.getByLabelText('Correo corporativo'), {
+    target: { value: 'juan@constructora.com' },
+  })
+  fireEvent.change(screen.getByLabelText('Teléfono'), {
+    target: { value: '(6) 123 4567' },
+  })
+  fireEvent.change(screen.getByRole('combobox'), {
+    target: { value: 'INSTALLER' },
+  })
+}
+
+describe('Honeypot Protection', () => {
+  it('renders the hidden website field, unfilled by a real user', () => {
+    renderWithRouter(<RequestAccess />)
+
+    const honeypot = document.querySelector('input[name="website"]') as HTMLInputElement
+    expect(honeypot).not.toBeNull()
+    expect(honeypot.style.display).toBe('none')
+    expect(honeypot.tabIndex).toBe(-1)
+    expect(honeypot.getAttribute('aria-hidden')).toBe('true')
+    expect(honeypot.value).toBe('')
+  })
+})
+
+describe('RequestAccess page', () => {
+  beforeEach(() => {
+    vi.mocked(submitAccessRequest).mockReset()
+  })
+
+  it('shows the success state after a valid submission', async () => {
+    vi.mocked(submitAccessRequest).mockResolvedValue({ received: true })
+    renderWithRouter(<RequestAccess />)
+
+    await fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar solicitud' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Solicitud enviada')).toBeInTheDocument()
+    })
+    expect(submitAccessRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyName: 'Constructora Andina S.A.S.',
+        nit: '900123456-7',
+        email: 'juan@constructora.com',
+      })
+    )
+  })
+
+  it('shows the rate-limited message on a 429 response', async () => {
+    vi.mocked(submitAccessRequest).mockRejectedValue({
+      response: { status: 429 },
+    })
+    renderWithRouter(<RequestAccess />)
+
+    await fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar solicitud' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Demasiadas solicitudes, intenta más tarde')
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows a generic error message on any other failure', async () => {
+    vi.mocked(submitAccessRequest).mockRejectedValue(new Error('network down'))
+    renderWithRouter(<RequestAccess />)
+
+    await fillValidForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar solicitud' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Hubo un error al enviar tu solicitud. Intenta de nuevo.')
+      ).toBeInTheDocument()
+    })
+  })
+})
+
+describe('ClientLogin page', () => {
+  beforeEach(() => {
+    vi.mocked(api.post).mockClear()
+  })
+
+  it('does not call the staff auth endpoint on submit; shows the coming-soon message', async () => {
+    renderWithRouter(<ClientLogin />)
+
+    fireEvent.change(screen.getByLabelText('Correo electrónico'), {
+      target: { value: 'cliente@empresa.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Contraseña'), {
+      target: { value: 'whatever' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('El portal de clientes estará disponible pronto.')
+      ).toBeInTheDocument()
+    })
+    expect(api.post).not.toHaveBeenCalled()
   })
 })
