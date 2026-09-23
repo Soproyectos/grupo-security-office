@@ -7,21 +7,30 @@ jest.mock('../../prisma/prisma.service', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { InternalServerErrorException } from '@nestjs/common';
+import { InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { AccessRequestsService } from './access-requests.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccessRequestDto, CustomerTypeEnum } from './dto/create-access-request.dto';
+import { AccessRequestStatus } from './dto/update-access-request-status.dto';
 
 describe('AccessRequestsService', () => {
   let service: AccessRequestsService;
+  const mockConfig = { get: jest.fn() };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockConfig.get.mockImplementation((key: string) => {
+      if (key === 'ACCESS_REQUEST_IP_SALT') return 'test-salt';
+      return undefined;
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AccessRequestsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
 
@@ -113,6 +122,37 @@ describe('AccessRequestsService', () => {
       expect(capturedData.data?.ipHash?.length).toBe(64); // SHA256 hex = 64 chars
     });
 
+    it('debe guardar ipHash null si ACCESS_REQUEST_IP_SALT no está configurado (fail-safe)', async () => {
+      mockConfig.get.mockReturnValue(undefined);
+      const capturedData = { data: null as any };
+      mockPrisma.accessRequest.create.mockImplementation(({ data }) => {
+        capturedData.data = data;
+        return Promise.resolve({ id: 'req-1', ...data });
+      });
+
+      await service.createPublic(validDto, mockReq as any);
+
+      expect(capturedData.data?.ipHash).toBeNull();
+    });
+
+    it('debe hashear con HMAC-SHA256 (salt distinta produce hash distinto)', async () => {
+      const capture = async (salt: string) => {
+        mockConfig.get.mockReturnValue(salt);
+        const capturedData = { data: null as any };
+        mockPrisma.accessRequest.create.mockImplementation(({ data }) => {
+          capturedData.data = data;
+          return Promise.resolve({ id: 'req-1', ...data });
+        });
+        await service.createPublic(validDto, mockReq as any);
+        return capturedData.data?.ipHash;
+      };
+
+      const hashA = await capture('salt-a');
+      const hashB = await capture('salt-b');
+
+      expect(hashA).not.toBe(hashB);
+    });
+
     it('debe usar req.ip (Express extrae de X-Forwarded-For/X-Real-IP via trust proxy)', async () => {
       const mockReqWithTrustProxy = {
         ip: '203.0.113.42', // Express calcula esto desde headers cuando trust proxy=1
@@ -187,11 +227,11 @@ describe('AccessRequestsService', () => {
       mockPrisma.accessRequest.findMany.mockResolvedValue([]);
       mockPrisma.accessRequest.count.mockResolvedValue(0);
 
-      await service.findAll(1, 20, 'APPROVED');
+      await service.findAll(1, 20, AccessRequestStatus.APPROVED);
 
       expect(mockPrisma.accessRequest.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { status: 'APPROVED' },
+          where: { status: AccessRequestStatus.APPROVED },
         }),
       );
     });
@@ -207,17 +247,42 @@ describe('AccessRequestsService', () => {
       };
       mockPrisma.accessRequest.update.mockResolvedValue(updatedRecord);
 
-      const result = await service.updateStatus('req-1', 'APPROVED', 'user-1');
+      const result = await service.updateStatus(
+        'req-1',
+        AccessRequestStatus.APPROVED,
+        'user-1',
+      );
 
       expect(mockPrisma.accessRequest.update).toHaveBeenCalledWith({
         where: { id: 'req-1' },
         data: expect.objectContaining({
-          status: 'APPROVED',
+          status: AccessRequestStatus.APPROVED,
           reviewedById: 'user-1',
           reviewedAt: expect.any(Date),
         }),
       });
       expect(result.reviewedById).toBe('user-1');
+    });
+
+    it('debe lanzar NotFoundException si el id no existe (Prisma P2025)', async () => {
+      const p2025 = new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: '5.0.0',
+      });
+      mockPrisma.accessRequest.update.mockRejectedValue(p2025);
+
+      await expect(
+        service.updateStatus('missing-id', AccessRequestStatus.APPROVED, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('debe propagar errores de Prisma distintos a P2025', async () => {
+      const dbError = new Error('connection lost');
+      mockPrisma.accessRequest.update.mockRejectedValue(dbError);
+
+      await expect(
+        service.updateStatus('req-1', AccessRequestStatus.APPROVED, 'user-1'),
+      ).rejects.toThrow('connection lost');
     });
   });
 });
