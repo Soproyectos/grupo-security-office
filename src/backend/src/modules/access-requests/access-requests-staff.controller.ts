@@ -11,10 +11,20 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AccessRequestsService } from './access-requests.service';
 import { UpdateAccessRequestStatusDto } from './dto/update-access-request-status.dto';
+import { AccessRequestQueryDto } from './dto/access-request-query.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+
+/** Shape of the JWT payload attached to `req.user` by JwtStrategy#validate. */
+interface AuthenticatedUser {
+  sub: string;
+  email?: string;
+  name?: string;
+  roles?: string[];
+  permissions?: string[];
+}
 
 @ApiTags('Access Requests — Staff')
 @ApiBearerAuth()
@@ -34,14 +44,12 @@ export class AccessRequestsStaffController {
     status: 200,
     description: 'List of access requests',
   })
-  async findAll(
-    @Query('page') page: string = '1',
-    @Query('limit') limit: string = '20',
-    @Query('status') status?: string,
-  ) {
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
-    return this.accessRequestsService.findAll(pageNum, limitNum, status);
+  async findAll(@Query() query: AccessRequestQueryDto) {
+    return this.accessRequestsService.findAll(
+      query.page ?? 1,
+      query.limit ?? 20,
+      query.status,
+    );
   }
 
   /**
@@ -55,7 +63,7 @@ export class AccessRequestsStaffController {
   async updateStatus(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateAccessRequestStatusDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.accessRequestsService.updateStatus(id, dto.status, user.sub);
   }
