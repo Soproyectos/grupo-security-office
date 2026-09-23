@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { UPLOADS_DIR, UPLOADS_URL_PREFIX } from './common/uploads-path';
+import { parseTrustProxyHops } from './config/parse-trust-proxy-hops';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -21,7 +22,7 @@ async function bootstrap() {
   // incorrect fixed value lets the public throttle be bypassed via a spoofed
   // X-Forwarded-For header.
   const trustProxyHopsRaw = configService.get<string>('TRUST_PROXY_HOPS');
-  const trustProxyHops = trustProxyHopsRaw ? parseInt(trustProxyHopsRaw, 10) : 1;
+  const trustProxyHops = parseTrustProxyHops(trustProxyHopsRaw);
   app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
 
   app.use(helmet());
