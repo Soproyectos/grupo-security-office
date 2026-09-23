@@ -1,4 +1,4 @@
-﻿# Feature: Catálogo Comercial (public storefront)
+# Feature: Catálogo Comercial (public storefront)
 
 ## Objective
 Implement the Claude Design handoff (`docs/design/catalogo-comercial/`) as a public storefront: Home, client login and "Solicitar acceso", plus the backend to receive access requests.
@@ -19,7 +19,7 @@ Implement the Claude Design handoff (`docs/design/catalogo-comercial/`) as a pub
 - [x] T2 (commit 5098baa; parent re-ran `npm test` 41/41 and `npm run build` OK; visual check of /tienda and /tienda/solicitar-acceso) Frontend: storefront tokens, public layout, Home, ClientLogin, SolicitarAcceso (RHF + Zod) wired to T1 endpoint, routes in `App.tsx`, tests. Route: delegated.
 - [x] T3 (backend tests/tsc/build/lint reported by writer, access-requests tests re-run by parent; frontend tests/build re-run by parent). Pending: apply migration + seed on real DB, staff UI to review requests, real client auth (October portal) Verification: backend tests, frontend `vitest run`, `build`, `lint`.
 - [x] T5 gentle-ai review of PR #54 (lineage review-999c7817c7782239): approved after one bounded correction 39ae587.
-- [ ] T4 Resolve the non-blocking gentle-ai findings listed in `odd/tasks/review-findings-pr54.md`, then review with gentle-ai (base = 39ae587). Route: delegated (writer trigger: 2+ files).
+- [x] T4 (commits 050d491..12e3504; R4-003 intentionally not changed: dedup would leak enumeration timing; gentle-ai review lineage review-ecf84562e4f7de73 approved, 4 new non-blocking reliability follow-ups) Resolve the non-blocking gentle-ai findings listed in `odd/tasks/review-findings-pr54.md`, then review with gentle-ai (base = 39ae587). Route: delegated (writer trigger: 2+ files).
 
 ## TDD
 Mode: off (no project/session TDD configuration found). Ordinary functional checks apply.
