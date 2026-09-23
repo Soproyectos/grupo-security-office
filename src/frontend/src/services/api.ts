@@ -51,7 +51,11 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
-    if (error.response?.status === 401 && !window.location.pathname.includes('/login')) {
+    if (
+      error.response?.status === 401 &&
+      !window.location.pathname.includes('/login') &&
+      !window.location.pathname.startsWith('/tienda')
+    ) {
       window.location.href = '/login'
     }
     return Promise.reject(error)
