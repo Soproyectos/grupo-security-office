@@ -644,3 +644,40 @@ model QuoteItem {
   @@index([productId])
   @@map("quote_items")
 }
+
+enum AccessRequestCustomerType {
+  INSTALLER
+  DISTRIBUTOR
+  END_COMPANY
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Solicitud de acceso al portal de clientes. Leads para revisión interna.
+/// `ipHash` es sha256 del IP cliente (nunca se almacena IP en claro).
+/// `reviewedById` y `reviewedAt` registran quién aprobó/rechazó y cuándo.
+model AccessRequest {
+  id             String                     @id @default(uuid())
+  companyName    String
+  nit            String
+  contactName    String
+  email          String
+  phone          String
+  customerType   AccessRequestCustomerType
+  status         AccessRequestStatus       @default(PENDING)
+  ipHash         String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([email])
+  @@index([nit])
+  @@index([status])
+  @@index([createdAt])
+  @@map("access_requests")
+}
