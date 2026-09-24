@@ -159,4 +159,60 @@ describe('RowValidatorService', () => {
       expect(priceErrors[0].code).toBe('PRICE_TOO_HIGH');
     });
   });
+
+  describe('presupuesto de nombre de vitrina (70 caracteres, ADR-002)', () => {
+    const nameBudgetMapping: ColumnMapping = {
+      entries: [
+        { sourceColumn: 'SKU', targetField: 'sku', isRequired: true, confidence: 1.0 },
+        { sourceColumn: 'NOMBRE', targetField: 'name', isRequired: true, confidence: 1.0 },
+        { sourceColumn: 'DESCRIPCION', targetField: 'description', isRequired: false, confidence: 1.0 },
+      ],
+      confirmed: true,
+    };
+
+    it('acepta un nombre de exactamente 70 caracteres', () => {
+      const rawRow: RawRow = {
+        SKU: 'CAM-001',
+        NOMBRE: 'Cámara IP turbo de resolución 4MP con lente varifocal de 2.8-12mm meta',
+        DESCRIPCION: '',
+      };
+
+      const errors = service.validateRow(rawRow, nameBudgetMapping, new Map(), 0);
+
+      const nameErrors = errors.filter((e) => e.field === 'name');
+      expect(nameErrors).toHaveLength(0);
+    });
+
+    it('NO rechaza un nombre de 120 caracteres: se trunca a ≤70 antes de validar (el rechazo bloquearía el refresco de precios)', () => {
+      const rawRow: RawRow = {
+        SKU: 'CAM-001',
+        NOMBRE: 'Cámara IP turbo de resolución 4MP con lente varifocal de 2.8-12mm metálico '.repeat(2),
+        DESCRIPCION: '',
+      };
+      expect(String(rawRow.NOMBRE).trim().length).toBeGreaterThan(70);
+
+      const errors = service.validateRow(rawRow, nameBudgetMapping, new Map(), 0);
+
+      const nameErrors = errors.filter((e) => e.field === 'name' && e.code === 'NAME_TOO_LONG');
+      expect(nameErrors).toHaveLength(0);
+      expect(errors).toHaveLength(0);
+    });
+
+    it('nombre fallback derivado de una descripción extensa queda ≤70 y la fila no se rechaza', () => {
+      const longDescription =
+        'Cámara de seguridad IP Hikvision con resolución 4MP, lente motorizado 2.8-12mm, ' +
+        'casco IP67, alimentación PoE, socket múltiple, doble tarjeta SD y arranque rápido para ' +
+        'la vigilancia perimetral de recintos amplios en exteriores';
+      const rawRow: RawRow = {
+        SKU: 'CAM-001',
+        NOMBRE: '',
+        DESCRIPCION: longDescription,
+      };
+
+      const errors = service.validateRow(rawRow, nameBudgetMapping, new Map(), 0);
+
+      const nameErrors = errors.filter((e) => e.field === 'name');
+      expect(nameErrors).toHaveLength(0);
+    });
+  });
 });

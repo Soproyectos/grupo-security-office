@@ -141,7 +141,7 @@ describe('RowNormalizerService', () => {
       expect(row.description).toContain('Compresión');
     });
 
-    it('iDS-7216HQHI-M2/FA con descripción extensa queda válida (name <= 120, description completa)', () => {
+    it('iDS-7216HQHI-M2/FA con descripción extensa queda válida (name <= 70, description completa)', () => {
       const sku = 'iDS-7216HQHI-M2/FA';
       const ctx = makeDescriptionOnlyContext([{ SKU: sku, DESCRIPCION: DVR_DESCRIPTION }]);
 
@@ -149,20 +149,20 @@ describe('RowNormalizerService', () => {
 
       // normalizeSku normaliza a mayúsculas (iDS- → IDS-).
       expect(row.sku).toBe(sku.toUpperCase());
-      expect(row.name.length).toBeLessThanOrEqual(120);
+      expect(row.name.length).toBeLessThanOrEqual(70);
       expect(row.name).not.toContain(sku.toUpperCase());
       // description no se trunca: conserva los tokens tras el corte del nombre.
       expect(row.description.includes('Compatible')).toBe(true);
     });
 
-    it('iDS-9016HUHI-M8S con descripción extensa queda válida (name <= 120, description completa)', () => {
+    it('iDS-9016HUHI-M8S con descripción extensa queda válida (name <= 70, description completa)', () => {
       const sku = 'iDS-9016HUHI-M8S';
       const ctx = makeDescriptionOnlyContext([{ SKU: sku, DESCRIPCION: DVR_DESCRIPTION }]);
 
       const [row] = service.normalizeAll(ctx);
 
       expect(row.sku).toBe(sku.toUpperCase());
-      expect(row.name.length).toBeLessThanOrEqual(120);
+      expect(row.name.length).toBeLessThanOrEqual(70);
       expect(row.name).not.toContain(sku.toUpperCase());
       expect(row.description.includes('Compresión')).toBe(true);
     });
@@ -210,7 +210,7 @@ describe('RowNormalizerService', () => {
       expect(row.nameIsFallback).toBe(true);
     });
 
-    it('describe larga sin frase de corte: name <= 120, sin palabra partida y sin SKU', () => {
+    it('describe larga sin frase de corte: name <= 70, sin palabra partida y sin SKU', () => {
       const sku = 'SKU-LARGO';
       const longDescription =
         'Cámara de seguridad IP Hikvision con resolución 4MP, lente motorizado 2.8-12mm, ' +
@@ -221,10 +221,67 @@ describe('RowNormalizerService', () => {
 
       const [row] = service.normalizeAll(ctx);
 
-      expect(row.name.length).toBeLessThanOrEqual(120);
+      expect(row.name.length).toBeLessThanOrEqual(70);
       expect(row.name).not.toContain(sku);
       // No termina en espacio/puntuación: no quedó una palabra partida en la cola.
       expect(row.name).toMatch(/[a-zA-Z0-9]$/);
+    });
+  });
+
+  describe('presupuesto de nombre de vitrina (70 caracteres, ADR-002)', () => {
+    const makeNameOnlyContext = (rows: Array<{ SKU: string; NOMBRE: string; DESCRIPCION: string }>) =>
+      makeContext({
+        columnMapping: makeMapping([
+          { sourceColumn: 'SKU', targetField: 'sku' },
+          { sourceColumn: 'NOMBRE', targetField: 'name' },
+          { sourceColumn: 'DESCRIPCION', targetField: 'description' },
+        ]),
+        validatedRows: rows.map((r, i) => makeValidatedRow(i, r)),
+      });
+
+    it('nombre explícito de más de 70 caracteres se trunca a 70', () => {
+      const longName = 'A'.repeat(80);
+      const ctx = makeNameOnlyContext([{ SKU: 'SKU-1', NOMBRE: longName, DESCRIPCION: '' }]);
+
+      const [row] = service.normalizeAll(ctx);
+
+      expect(row.name.length).toBe(70);
+      expect(row.name).toBe(longName.slice(0, 70));
+      expect(row.nameIsFallback).toBe(false);
+    });
+
+    it('nombre explícito de exactamente 70 caracteres queda intacto', () => {
+      const name70 = 'Cámara IP turbo de resolución 4MP con lente varifocal de 2.8-12mm meta';
+      expect(name70.length).toBe(70);
+      const ctx = makeNameOnlyContext([{ SKU: 'SKU-1', NOMBRE: name70, DESCRIPCION: '' }]);
+
+      const [row] = service.normalizeAll(ctx);
+
+      expect(row.name).toBe(name70);
+    });
+
+    it('nombre con espacios de más de 70 caracteres se trunca sin partir palabras (≤70, sin cola sucia)', () => {
+      const longSpacedName =
+        'Cámara IP turbo de resolución 4MP con lente motorizado varifocal de 2.8-12mm metálico';
+      expect(longSpacedName.length).toBeGreaterThan(70);
+      const ctx = makeNameOnlyContext([{ SKU: 'SKU-1', NOMBRE: longSpacedName, DESCRIPCION: '' }]);
+
+      const [row] = service.normalizeAll(ctx);
+
+      expect(row.name.length).toBeLessThanOrEqual(70);
+      expect(longSpacedName.startsWith(row.name)).toBe(true);
+      expect(row.name).toMatch(/[a-zA-Z0-9]$/);
+    });
+
+    it('la descripción se conserva íntegra aunque el nombre se trunque al presupuesto', () => {
+      const longName = 'A'.repeat(80);
+      const description = 'Descripción técnica completa que no debe perderse al truncar el nombre';
+      const ctx = makeNameOnlyContext([{ SKU: 'SKU-1', NOMBRE: longName, DESCRIPCION: description }]);
+
+      const [row] = service.normalizeAll(ctx);
+
+      expect(row.name.length).toBe(70);
+      expect(row.description).toBe(description);
     });
   });
 });

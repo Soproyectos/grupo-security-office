@@ -406,6 +406,7 @@ export class ImportService {
             skipped: result.skipped,
             errors: result.errors.length,
             defaultsByMissingInference: result.defaultsByMissingInference ?? { category: 0, brand: 0 },
+            identityChangesDetected: result.identityChangesDetected ?? 0,
           },
           executionErrors: result.errors,
           durationMs: result.durationMs,

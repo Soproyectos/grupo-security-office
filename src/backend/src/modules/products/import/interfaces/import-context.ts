@@ -221,6 +221,13 @@ export interface BatchExecutionResult {
     category: number;
     brand: number;
   };
+
+  /**
+   * Filas de productos con identidad bloqueada (nameLockedAt) cuya identidad
+   * propuesta por la fila difiere de la almacenada. Solo se cuentan para
+   * revisión humana — nunca fallan el import ni sobrescriben la identidad.
+   */
+  identityChangesDetected?: number;
 }
 
 /**

@@ -6,7 +6,7 @@ import {
 } from '../interfaces/import-context';
 import { SystemField, ColumnMapping } from '../interfaces/column-mapping';
 import { RawRow } from '../interfaces/import-source.adapter';
-import { resolveEffectiveName, normalizeSku } from '../helpers/text-normalizer';
+import { resolveEffectiveName, normalizeSku, PRODUCT_NAME_MAX_LENGTH } from '../helpers/text-normalizer';
 
 /**
  * Servicio de validación de filas de importación.
@@ -125,11 +125,17 @@ export class RowValidatorService {
     const descriptionValue = getFieldValue('description');
     const name = resolveEffectiveName(nameValue, descriptionValue);
 
-    if (name && name.length > 500) {
+    // Presupuesto de vitrina (ADR-002): el tope pasó de 500 a 70 caracteres.
+    // En el camino estándar este guard es defensivo y nunca debe dispararse:
+    // resolveEffectiveName ya trunca al presupuesto (nunca se RECHAZA una
+    // fila por longitud — el rechazo dejaría sin refrescar el precio de
+    // productos con identidad bloqueada). Solo atraparía un camino que
+    // bypasseara la normalización.
+    if (name && name.length > PRODUCT_NAME_MAX_LENGTH) {
       errors.push({
         field: 'name',
         code: 'NAME_TOO_LONG',
-        message: 'El nombre no puede tener más de 500 caracteres',
+        message: `El nombre no puede tener más de ${PRODUCT_NAME_MAX_LENGTH} caracteres`,
       });
     }
 
