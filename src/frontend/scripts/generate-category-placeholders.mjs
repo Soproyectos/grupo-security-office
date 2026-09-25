@@ -8,6 +8,9 @@
  *
  * The SVGs are committed so the demo tree renders without running this script.
  * Re-running it must produce byte-identical files (no dates, no randomness).
+ * Since MENU-07 they are the fallback artwork: featured tiles with a real
+ * product photo (downloaded from public manufacturer/distributor sites) use
+ * `/images/categories/<slug>.<ext>` instead; the seed decides per slug.
  *
  * The tree below is the single source of truth for the *artwork*; the demo rows
  * live in src/backend/prisma/seed-categories.ts (backend is a separate package,

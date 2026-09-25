@@ -18,10 +18,12 @@
  *
  * Rutas de medios (las sirve Vite desde public/):
  *   - icono de raíz       → /images/category-icons/<slug>.svg
- *   - portada destacada   → /images/categories/<slug>.svg
+ *   - portada destacada   → /images/categories/<slug>.<ext>
  * Los SVG los genera src/frontend/scripts/generate-category-placeholders.mjs
  * (`npm --prefix src/frontend run gen:category-images`), que además verifica
- * que este árbol y el suyo coincidan.
+ * que este árbol y el suyo coincidan, y siguen como fallback para los slugs
+ * sin foto real (MENU-07): los destacados con foto real usan la foto descargada
+ * del sitio público del fabricante/distribuidor (atribución en REAL_IMAGE_EXT).
  *
  * Uso (ts-node, estilo prisma/seed.ts):
  *   npm run db:seed:categories
@@ -32,6 +34,32 @@ const prisma = new PrismaClient();
 
 const ICON_PATH_PREFIX = '/images/category-icons';
 const TILE_PATH_PREFIX = '/images/categories';
+
+/**
+ * Extensión real de la foto destacada por slug (MENU-07): solo los slugs cuya
+ * foto se descargó con éxito del sitio público del fabricante/distribuidor.
+ * Los demás siguen apuntando al SVG placeholder generado localmente.
+ */
+const REAL_IMAGE_EXT: Record<string, string> = {
+  'accesorios-cctv-discos-duros': 'jpg', // Western Digital (WD Purple)
+  'baterias': 'jpg', // Mighty Max Battery
+  'biometricos-huella': 'jpg', // ZKTeco (K40)
+  'cableado-utp': 'png', // Connectec UK
+  'cerraduras-inteligentes-smart': 'png', // ZKTeco
+  'citofonos': 'png', // Commax
+  'electroimanes': 'jpg', // ZKTeco (LM-350)
+  'energia-paneles-solares': 'jpg', // Renogy
+  'fuentes-de-poder': 'jpg', // Secuview
+  'grabadores-nvr': 'jpg', // TP-Link (VIGI)
+  'intercomunicadores-ip': 'png', // Security System Depot (Akuvox)
+  'kits-cctv': 'webp', // TP-Link (VIGI kit)
+  'racks': 'jpg', // StarTech.com
+  'routers-y-wifi': 'jpg', // TP-Link (Archer C6)
+  'sensores-humo': 'jpg', // BigCommerce (detector autónomo)
+  'switches-poe': 'jpg', // TP-Link
+  'ups': 'jpg', // Schneider Electric (APC)
+  'videoporteros': 'png', // Commax (CDV-70H2)
+};
 
 interface DemoNode {
   slug: string;
@@ -169,7 +197,10 @@ function desiredRow(node: DemoNode, parentId: string | null, index: number): Des
     sortOrder: (index + 1) * 10,
     isActive: true,
     isFeatured: node.featured,
-    imageUrl: !isRoot && node.featured ? `${TILE_PATH_PREFIX}/${node.slug}.svg` : null,
+    imageUrl:
+      !isRoot && node.featured
+        ? `${TILE_PATH_PREFIX}/${node.slug}.${REAL_IMAGE_EXT[node.slug] ?? 'svg'}`
+        : null,
     iconUrl: isRoot ? `${ICON_PATH_PREFIX}/${node.slug}.svg` : null,
   };
 }
