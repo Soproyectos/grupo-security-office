@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "gen:category-images": "node scripts/generate-category-placeholders.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",

@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "ts-node prisma/seed.ts",
+    "db:seed:categories": "ts-node prisma/seed-categories.ts",
     "db:import-biblioteca": "ts-node prisma/import-biblioteca.ts",
     "db:bootstrap:dev-admin": "ts-node scripts/dev-admin-bootstrap.ts",
     "db:bootstrap:dev-rbac": "ts-node scripts/dev-rbac-bootstrap.ts",
