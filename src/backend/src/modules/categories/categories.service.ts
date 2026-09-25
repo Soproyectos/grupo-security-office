@@ -3,6 +3,29 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
+type MenuCategoryRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  imageUrl: string | null;
+  iconUrl: string | null;
+  isFeatured: boolean;
+  sortOrder: number;
+  isActive?: boolean;
+};
+
+export type MenuCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+  iconUrl: string | null;
+  isFeatured: boolean;
+  sortOrder: number;
+  children: MenuCategory[];
+};
+
 @Injectable()
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
@@ -34,6 +57,25 @@ export class CategoriesService {
     return { data: this.buildTree(categories) };
   }
 
+  async findMenu() {
+    const categories = await this.prisma.category.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        parentId: true,
+        imageUrl: true,
+        iconUrl: true,
+        isFeatured: true,
+        sortOrder: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    return { data: this.buildMenuTree(categories) };
+  }
+
   /**
    * Ensambla el árbol de categorías de forma recursiva, soportando
    * profundidad arbitraria. El orden lo resuelve Prisma en la consulta
@@ -45,6 +87,27 @@ export class CategoriesService {
       .map((n) => ({
         ...n,
         children: this.buildTree(nodes, n.id),
+      }));
+  }
+
+  private buildMenuTree(
+    nodes: MenuCategoryRecord[],
+    parentId: string | null = null,
+    depth = 1,
+  ): MenuCategory[] {
+    if (depth > 3) return [];
+
+    return nodes
+      .filter((node) => node.parentId === parentId && node.isActive !== false)
+      .map((node) => ({
+        id: node.id,
+        name: node.name,
+        slug: node.slug,
+        imageUrl: node.imageUrl,
+        iconUrl: node.iconUrl,
+        isFeatured: node.isFeatured,
+        sortOrder: node.sortOrder,
+        children: depth < 3 ? this.buildMenuTree(nodes, node.id, depth + 1) : [],
       }));
   }
 
@@ -78,6 +141,9 @@ export class CategoriesService {
         parentId: dto.parentId,
         sortOrder: dto.sortOrder ?? 0,
         isActive: dto.isActive ?? true,
+        ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+        ...(dto.iconUrl !== undefined && { iconUrl: dto.iconUrl }),
+        ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
       },
     });
 
@@ -104,6 +170,9 @@ export class CategoriesService {
         ...(dto.parentId !== undefined && { parentId: dto.parentId }),
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+        ...(dto.iconUrl !== undefined && { iconUrl: dto.iconUrl }),
+        ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
       },
     });
 

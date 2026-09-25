@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, MinLength, IsOptional, IsBoolean, IsNumber, Matches, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateCategoryDto {
@@ -33,4 +33,23 @@ export class UpdateCategoryDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Matches(/^(\/images\/[\w\-/]+\.(svg|png|jpe?g|webp)|https:\/\/.+)$/)
+  imageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Matches(/^(\/images\/[\w\-/]+\.(svg|png|jpe?g|webp)|https:\/\/.+)$/)
+  iconUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean;
 }

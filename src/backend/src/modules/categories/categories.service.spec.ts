@@ -19,6 +19,9 @@ const mockCategory = {
   parentId: null,
   sortOrder: 0,
   isActive: true,
+  imageUrl: null,
+  iconUrl: null,
+  isFeatured: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -89,11 +92,25 @@ describe('CategoriesService', () => {
       mockPrisma.category.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.create.mockResolvedValue(mockCategory);
 
-      const dto = { name: 'CCTV', slug: 'cctv', description: 'Cámaras de vigilancia' };
+      const dto = {
+        name: 'CCTV',
+        slug: 'cctv',
+        description: 'Cámaras de vigilancia',
+        imageUrl: '/images/categories/cctv.svg',
+        iconUrl: 'https://cdn.example.com/cctv.png',
+        isFeatured: true,
+      };
       const result = await service.create(dto);
 
       expect(result.name).toBe('CCTV');
       expect(result.slug).toBe('cctv');
+      expect(mockPrisma.category.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          imageUrl: dto.imageUrl,
+          iconUrl: dto.iconUrl,
+          isFeatured: dto.isFeatured,
+        }),
+      });
     });
 
     it('debe rechazar slug duplicado con ConflictException', async () => {
@@ -133,10 +150,21 @@ describe('CategoriesService', () => {
       mockPrisma.category.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.update.mockResolvedValue({ ...mockCategory, name: 'CCTV Profesional' });
 
-      const dto = { name: 'CCTV Profesional' };
+      const dto = {
+        name: 'CCTV Profesional',
+        imageUrl: '/images/categories/cctv.webp',
+        isFeatured: false,
+      };
       const result = await service.update('cat-1', dto);
 
       expect(result.name).toBe('CCTV Profesional');
+      expect(mockPrisma.category.update).toHaveBeenCalledWith({
+        where: { id: 'cat-1' },
+        data: expect.objectContaining({
+          imageUrl: dto.imageUrl,
+          isFeatured: dto.isFeatured,
+        }),
+      });
     });
 
     it('debe lanzar NotFoundException si la categoría no existe', async () => {
@@ -176,6 +204,85 @@ describe('CategoriesService', () => {
       const result = await service.findTree();
 
       expect(result.data.map((c) => c.id)).toEqual(['cat-3', 'cat-4', 'cat-2']);
+    });
+  });
+
+  describe('findMenu', () => {
+    it('excluye categorías inactivas y sus subárboles', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'active-root', name: 'Activa', slug: 'activa', parentId: null, isActive: true },
+        { ...mockCategory, id: 'inactive-root', name: 'Inactiva', slug: 'inactiva', parentId: null, isActive: false },
+        { ...mockCategory, id: 'active-child', name: 'Hija activa', slug: 'hija-activa', parentId: 'active-root', isActive: true },
+        { ...mockCategory, id: 'hidden-child', name: 'Hija oculta', slug: 'hija-oculta', parentId: 'inactive-root', isActive: true },
+      ]);
+
+      const result = await service.findMenu();
+
+      expect(result.data.map((category) => category.id)).toEqual(['active-root']);
+      expect(result.data[0].children.map((category) => category.id)).toEqual(['active-child']);
+    });
+
+    it('limita el menú a tres niveles', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'level-1', slug: 'level-1', parentId: null },
+        { ...mockCategory, id: 'level-2', slug: 'level-2', parentId: 'level-1' },
+        { ...mockCategory, id: 'level-3', slug: 'level-3', parentId: 'level-2' },
+        { ...mockCategory, id: 'level-4', slug: 'level-4', parentId: 'level-3' },
+      ]);
+
+      const result = await service.findMenu();
+
+      expect(result.data[0].children[0].children[0].id).toBe('level-3');
+      expect(result.data[0].children[0].children[0].children).toEqual([]);
+    });
+
+    it('expone únicamente el whitelist del menú en cada nivel', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        {
+          ...mockCategory,
+          id: 'root',
+          slug: 'root',
+          parentId: null,
+          description: 'No debe aparecer',
+          _count: { products: 4 },
+        },
+        {
+          ...mockCategory,
+          id: 'child',
+          slug: 'child',
+          parentId: 'root',
+          description: 'No debe aparecer',
+          _count: { products: 2 },
+        },
+      ]);
+
+      const result = await service.findMenu();
+      const expectedKeys = ['children', 'iconUrl', 'id', 'imageUrl', 'isFeatured', 'name', 'slug', 'sortOrder'];
+
+      expect(Object.keys(result.data[0]).sort()).toEqual(expectedKeys);
+      expect(Object.keys(result.data[0].children[0]).sort()).toEqual(expectedKeys);
+      expect(result.data[0]).not.toHaveProperty('description');
+      expect(result.data[0]).not.toHaveProperty('createdAt');
+      expect(result.data[0]).not.toHaveProperty('updatedAt');
+      expect(result.data[0]).not.toHaveProperty('_count');
+    });
+
+    it('conserva el orden de sortOrder y name de la consulta', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'root-zero', name: 'Cero', slug: 'cero', parentId: null, sortOrder: 0 },
+        { ...mockCategory, id: 'root-a', name: 'A', slug: 'a', parentId: null, sortOrder: 1 },
+        { ...mockCategory, id: 'root-b', name: 'B', slug: 'b', parentId: null, sortOrder: 1 },
+      ]);
+
+      const result = await service.findMenu();
+      const query = mockPrisma.category.findMany.mock.calls[0][0];
+
+      expect(result.data.map((category) => category.id)).toEqual(['root-zero', 'root-a', 'root-b']);
+      expect(query.orderBy).toEqual([{ sortOrder: 'asc' }, { name: 'asc' }]);
+      expect(query.select).not.toHaveProperty('description');
+      expect(query.select).not.toHaveProperty('createdAt');
+      expect(query.select).not.toHaveProperty('updatedAt');
+      expect(query.select).not.toHaveProperty('_count');
     });
   });
 
