@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
+import AccountMenu from './AccountMenu'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
 import CoverageSelector from './CoverageSelector'
 import StorefrontFooter from './StorefrontFooter'
@@ -65,8 +66,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
             </button>
           </form>
           <CoverageSelector />
-          <Link to="/clientes/login" className="ml-auto flex shrink-0 items-center gap-2 text-slate-500 transition hover:text-[#CE0203]" title="Mi cuenta"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" height="34" width="34" aria-hidden="true"><path fill="currentColor" d="M35.8 26c2.3-1.8 3.8-4.6 3.8-7.7 0-5.4-4.4-9.7-9.7-9.7-5.4 0-9.7 4.4-9.7 9.7 0 3.1 1.5 5.9 3.7 7.7-5.5 1.4-9.4 4.6-9.4 8.3V53.1H45V34.3c0-3.8-3.8-7-9.2-8.3zm-13-7.7c0-3.8 3.1-7 7-7 3.8 0 7 3.1 7 7s-3.1 7-7 7c-3.9-.1-7-3.2-7-7zm19.5 32H17.2v-16c0-1.4 1.1-2.8 3.1-4 2.4-1.4 5.9-2.3 9.4-2.3s7 .8 9.4 2.3c2 1.2 3.1 2.6 3.1 4v16z" /></svg><span className="text-xs font-bold text-slate-800">Mi Cuenta</span></Link>
-          <Link to="/clientes/solicitar-acceso" className="shrink-0 rounded-[10px] bg-[#CE0203] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#AD0102]">Crear cuenta</Link>
+          <AccountMenu />
         </div>
       </header>
       {children}
