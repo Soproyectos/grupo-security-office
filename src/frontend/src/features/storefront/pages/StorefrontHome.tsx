@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
+import StorefrontSalesChannels from '../components/StorefrontSalesChannels'
 import { featuredTiles, navigableRoots } from '../components/mega-menu/menu-model'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
 import { HOME_SECTIONS, type HomeSection } from '../fixtures/home-sections'
@@ -177,6 +178,7 @@ export default function StorefrontHome() {
         {HOME_SECTIONS.map((section) => (
           <HomeSectionBlock key={section.id} section={section} />
         ))}
+        <StorefrontSalesChannels />
       </main>
     </StorefrontChrome>
   )

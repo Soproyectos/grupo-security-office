@@ -195,6 +195,17 @@ describe('estados del menú', () => {
   })
 })
 
+describe('canales de venta', () => {
+  it('muestra la sección de canales con los cuatro títulos', () => {
+    const markup = renderPage()
+
+    expect(markup).toContain('aria-labelledby="home-canales-title"')
+    expect(markup).toContain('Canales de venta')
+    expect(markup).toContain('Venta telefónica')
+    expect(markup).toContain('Ventas al por mayor')
+  })
+})
+
 describe('chrome de la tienda', () => {
   it('se renderiza dentro del chrome y el logo apunta a /tienda', () => {
     const markup = renderPage()
