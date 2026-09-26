@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
+import StorefrontFooter from './StorefrontFooter'
 
 type StorefrontChromeProps = { children: React.ReactNode }
 
@@ -67,7 +68,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
         </div>
       </header>
       {children}
-      <footer className="bg-[#1A1A1A] px-5 py-8 text-center text-xs text-slate-300">© {new Date().getFullYear()} Grupo Security S.A.S. Todos los derechos reservados.</footer>
+      <StorefrontFooter />
     </div>
   )
 }
