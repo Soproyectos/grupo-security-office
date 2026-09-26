@@ -3,6 +3,7 @@ import { useAuthStore } from './stores/auth.store'
 import AdminLayout from './components/layout/AdminLayout'
 import CommercialLayout from './components/layout/CommercialLayout'
 import CategoryPage from './features/storefront/pages/CategoryPage'
+import StorefrontHome from './features/storefront/pages/StorefrontHome'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import ProductsPage from './pages/ProductsPage'
@@ -60,6 +61,7 @@ function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="audit" element={<AuditPage />} />
       </Route>
+      <Route path="/tienda" element={<StorefrontHome />} />
       <Route path="/catalogo/categoria/:slug" element={<CategoryPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

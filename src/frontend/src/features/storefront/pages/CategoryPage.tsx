@@ -125,7 +125,7 @@ function Breadcrumb({ trail }: { trail: CategoryTrail }) {
  * the `CategoryIcon` mask because `currentColor` does not cross the `<img>`
  * boundary.
  */
-function CategoryTile({ node }: { node: MenuCategory }) {
+export function CategoryTile({ node }: { node: MenuCategory }) {
   return (
     <li className="flex flex-col items-center gap-3 text-center">
       <Link to={categoryHref(node.slug)} className="group flex flex-col items-center gap-3 text-center">

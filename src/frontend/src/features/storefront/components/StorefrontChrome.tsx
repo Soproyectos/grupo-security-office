@@ -14,7 +14,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
       </div>
       <header className="relative bg-white px-5 py-3 lg:h-20 lg:px-12 lg:py-0">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-4 lg:flex-nowrap lg:gap-6 lg:h-full">
-          <Link to="/" className="shrink-0 lg:flex lg:h-full lg:items-center" aria-label="Grupo Security, inicio">
+          <Link to="/tienda" className="shrink-0 lg:flex lg:h-full lg:items-center" aria-label="Grupo Security, inicio">
             <picture>
               <source srcSet="/logo-grupo-security.webp" type="image/webp" media="(min-width: 1024px)" />
               <img
