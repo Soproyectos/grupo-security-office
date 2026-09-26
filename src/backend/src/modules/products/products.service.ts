@@ -230,6 +230,61 @@ export class ProductsService {
   }
 
   /**
+   * Búsqueda pública de lectura mínima para el storefront (HOM-02): solo
+   * productos publicados (estado canónico PUBLISHED de la FSM), devuelve
+   * id/nombre/imagen/categoría sin precios internos ni datos sensibles.
+   * El modelo Product no tiene slug propio; la ficha del resultado usa el
+   * slug de la categoría (la página de categoría de la tienda).
+   */
+  async searchPublic(params: { q?: string; limit?: number }): Promise<{
+    data: Array<{
+      id: string;
+      name: string;
+      imageUrl: string | null;
+      categoryName: string;
+      categorySlug: string;
+    }>;
+  }> {
+    const term = params.q?.trim() ?? '';
+    const take = params.limit ?? 24;
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        lifecycleStatus: 'PUBLISHED',
+        ...(term !== '' && {
+          OR: [
+            { name: { contains: term, mode: 'insensitive' } },
+            { sku: { contains: term, mode: 'insensitive' } },
+          ],
+        }),
+      },
+      select: {
+        id: true,
+        name: true,
+        category: { select: { name: true, slug: true } },
+        images: {
+          where: { isPrimary: true },
+          select: { url: true },
+          take: 1,
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: [{ name: 'asc' }],
+      take,
+    });
+
+    return {
+      data: products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        imageUrl: p.images[0]?.url ?? null,
+        categoryName: p.category.name,
+        categorySlug: p.category.slug,
+      })),
+    };
+  }
+
+  /**
    * Obtiene productos tendencia (últimos 30 días visibles y activos)
    */
   async findTrending(params?: {

@@ -1,9 +1,12 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
 
 type StorefrontChromeProps = { children: React.ReactNode }
 
+const SEARCH_ROUTE = '/catalogo/buscar'
+
 export default function StorefrontChrome({ children }: StorefrontChromeProps) {
+  const navigate = useNavigate()
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <div className="hidden bg-[#484748] px-6 py-2 text-xs text-[#FAFAFA] sm:block lg:px-12">
@@ -27,9 +30,24 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
             </picture>
           </Link>
           <CategoryMenuContainer />
-          <label className="order-3 flex min-w-full flex-1 items-center gap-2 rounded-[10px] border border-slate-300 bg-slate-50 px-4 focus-within:border-[#CE0203] focus-within:bg-white focus-within:ring-2 focus-within:ring-red-200 lg:order-none lg:min-w-0">
+          <form
+            action={SEARCH_ROUTE}
+            method="get"
+            className="order-3 flex min-w-full flex-1 items-center gap-2 rounded-[10px] border border-slate-300 bg-slate-50 px-4 focus-within:border-[#CE0203] focus-within:bg-white focus-within:ring-2 focus-within:ring-red-200 lg:order-none lg:min-w-0"
+            onSubmit={(event) => {
+              // The SPA navigation wins over the native action: same
+              // destination, no full page reload. The `action`/`method` stay
+              // so a submit without JavaScript still reaches the route.
+              event.preventDefault()
+              const value = new FormData(event.currentTarget).get('q')
+              if (typeof value === 'string' && value.trim() !== '') {
+                navigate(`${SEARCH_ROUTE}?q=${encodeURIComponent(value.trim())}`)
+              }
+            }}
+          >
             <span className="sr-only">Buscar productos</span>
             <input
+              name="q"
               className="min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm outline-none"
               placeholder="¿Qué estás buscando?"
             />
@@ -43,7 +61,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
                 <path d="M21 21l-4.35-4.35" strokeLinecap="round" />
               </svg>
             </button>
-          </label>
+          </form>
           <Link to="/clientes/login" className="ml-auto flex shrink-0 items-center gap-2 text-slate-500 transition hover:text-[#CE0203]" title="Mi cuenta"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" height="34" width="34" aria-hidden="true"><path fill="currentColor" d="M35.8 26c2.3-1.8 3.8-4.6 3.8-7.7 0-5.4-4.4-9.7-9.7-9.7-5.4 0-9.7 4.4-9.7 9.7 0 3.1 1.5 5.9 3.7 7.7-5.5 1.4-9.4 4.6-9.4 8.3V53.1H45V34.3c0-3.8-3.8-7-9.2-8.3zm-13-7.7c0-3.8 3.1-7 7-7 3.8 0 7 3.1 7 7s-3.1 7-7 7c-3.9-.1-7-3.2-7-7zm19.5 32H17.2v-16c0-1.4 1.1-2.8 3.1-4 2.4-1.4 5.9-2.3 9.4-2.3s7 .8 9.4 2.3c2 1.2 3.1 2.6 3.1 4v16z" /></svg><span className="text-xs font-bold text-slate-800">Mi Cuenta</span></Link>
           <Link to="/clientes/solicitar-acceso" className="shrink-0 rounded-[10px] bg-[#CE0203] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#AD0102]">Crear cuenta</Link>
         </div>

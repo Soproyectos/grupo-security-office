@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MenuCategory } from '../features/storefront/types/categoryMenu'
+import type { PublicProductResult } from '../features/storefront/types/publicProduct'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 
 vi.mock('./api', () => ({ default: { get } }))
 
-import { fetchCategoryMenu } from './public-catalog.service'
+import { fetchCategoryMenu, searchPublicProducts } from './public-catalog.service'
 
 // ---------------------------------------------------------------------------
 // Covered scenarios:
@@ -127,5 +128,82 @@ describe('fetchCategoryMenu', () => {
     get.mockResolvedValue({ data: menu })
 
     await expect(fetchCategoryMenu()).resolves.toHaveLength(2)
+  })
+})
+
+describe('searchPublicProducts', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  const results: PublicProductResult[] = [
+    {
+      id: 'prod-1',
+      name: 'Cámara Domo 4K',
+      imageUrl: '/api/files/img-1',
+      categoryName: 'Cámaras IP',
+      categorySlug: 'camaras-ip',
+    },
+    {
+      id: 'prod-2',
+      name: 'Lector biométrico',
+      imageUrl: null,
+      categoryName: 'Control de Acceso',
+      categorySlug: 'control-de-acceso',
+    },
+  ]
+
+  it('pide el endpoint público de productos con el término y el límite', async () => {
+    get.mockResolvedValue({ data: { data: results } })
+
+    await searchPublicProducts('cámara')
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith('/public/products', {
+      params: { q: 'cámara', limit: 24 },
+    })
+  })
+
+  it('desenvuelve el payload doble envuelto y devuelve los resultados completos', async () => {
+    get.mockResolvedValue({ data: { data: results } })
+
+    const result = await searchPublicProducts('cámara')
+
+    expect(Array.isArray(result)).toBe(true)
+    expect(result).toEqual(results)
+  })
+
+  it('resuelve también la forma que entrega el interceptor del cliente', async () => {
+    get.mockResolvedValue({ data: results })
+
+    await expect(searchPublicProducts('cámara')).resolves.toEqual(results)
+  })
+
+  it('devuelve un arreglo vacío cuando la búsqueda no trae productos', async () => {
+    get.mockResolvedValue({ data: { data: [] } })
+
+    await expect(searchPublicProducts('xyz-sin-resultados')).resolves.toEqual([])
+  })
+
+  const invalidPayloads: [string, unknown][] = [
+    ['sin envoltorio y sin arreglo', { status: 'ok' }],
+    ['con data nulo', { data: null }],
+    ['con doble data nulo', { data: { data: null } }],
+    ['con data que no es arreglo', { data: { unexpected: true } }],
+  ]
+
+  it.each(invalidPayloads)('devuelve resultados vacíos si el payload es %s', async (_caso: string, payload: unknown) => {
+    get.mockResolvedValue(payload)
+
+    await expect(searchPublicProducts('cámara')).resolves.toEqual([])
+  })
+
+  it('propaga el error HTTP para que la página pueda ofrecer reintentar', async () => {
+    const failure = Object.assign(new Error('Network Error'), {
+      response: undefined,
+    })
+    get.mockRejectedValue(failure)
+
+    await expect(searchPublicProducts('cámara')).rejects.toBe(failure)
   })
 })
