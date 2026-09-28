@@ -9,9 +9,16 @@ WORKDIR /app
 RUN apk add --no-cache openssl
 
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production && \
+# `--ignore-scripts` evita los postinstall (rápido y seguro), pero también deja
+# a bcrypt sin su binding nativo -> MODULE_NOT_FOUND al arrancar. Se compila
+# explícitamente con un toolchain temporal de Alpine, que se borra después para
+# no engordar la imagen.
+RUN npm ci --only=production --ignore-scripts && \
     cp -R node_modules /tmp/node_modules-prod && \
-    npm ci
+    npm ci --ignore-scripts && \
+    apk add --no-cache --virtual .build-deps python3 make g++ gcc && \
+    npm rebuild bcrypt --build-from-source && \
+    apk del .build-deps
 
 # ---- Stage 2: Prisma generate ----
 FROM node:20-alpine AS prisma

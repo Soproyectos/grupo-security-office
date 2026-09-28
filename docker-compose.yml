@@ -42,15 +42,20 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       API_PORT: 3000
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY}
     volumes:
       - ./src/backend/src:/app/src
       - ./src/backend/prisma:/app/prisma
+      - ./src/backend/tsconfig.json:/app/tsconfig.json
+      - ./src/backend/nest-cli.json:/app/nest-cli.json
+      - ./src/backend/package.json:/app/package.json
+      - ./src/backend/tsconfig.build.json:/app/tsconfig.build.json
     command: >
-      sh -c "npx prisma generate && npx prisma migrate deploy && npm run start:dev"
+      sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
 
   # ---- Frontend (Vite con hot-reload) ----
   frontend:
-    image: node:20-alpine
+    image: node:22-alpine
     container_name: gs-frontend
     restart: unless-stopped
     ports:
@@ -59,6 +64,7 @@ services:
       - api
     working_dir: /app
     volumes:
+      - /app/node_modules
       - ./src/frontend:/app
     command: >
       sh -c "npm ci && npm run dev -- --host 0.0.0.0"
