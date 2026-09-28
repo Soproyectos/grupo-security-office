@@ -18,6 +18,9 @@ import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
+import StorefrontHome from './features/storefront/pages/Home'
+import StorefrontClientLogin from './features/storefront/pages/ClientLogin'
+import StorefrontRequestAccess from './features/storefront/pages/RequestAccess'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -33,6 +36,9 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/tienda" element={<StorefrontHome />} />
+      <Route path="/tienda/login" element={<StorefrontClientLogin />} />
+      <Route path="/tienda/solicitar-acceso" element={<StorefrontRequestAccess />} />
       <Route
         path="/"
         element={

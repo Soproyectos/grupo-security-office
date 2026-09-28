@@ -8,11 +8,22 @@ import helmet from 'helmet';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { UPLOADS_DIR, UPLOADS_URL_PREFIX } from './common/uploads-path';
+import { parseTrustProxyHops } from './config/parse-trust-proxy-hops';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['error', 'warn', 'log'] });
   const configService = app.get(ConfigService);
+
+  // Trust N hops of reverse proxy (nginx sets X-Forwarded-For/X-Real-IP).
+  // Without this, ThrottlerGuard sees the proxy's internal IP for all requests.
+  // Configurable because the number of trusted hops depends on deployment
+  // topology (extra CDN/load balancer in front changes this count); an
+  // incorrect fixed value lets the public throttle be bypassed via a spoofed
+  // X-Forwarded-For header.
+  const trustProxyHopsRaw = configService.get<string>('TRUST_PROXY_HOPS');
+  const trustProxyHops = parseTrustProxyHops(trustProxyHopsRaw);
+  app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
 
   app.use(helmet());
   app.use(cookieParser());

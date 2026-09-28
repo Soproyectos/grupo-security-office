@@ -1,0 +1,26 @@
+function SolicitarAcceso({ onBack }) {
+  const { Input, Select, Button } = window.GrupoSecurityDesignSystem_1201f7;
+  return (
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', padding: '48px 24px', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 640 }}>
+        <a onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#64748B', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginBottom: 20 }}>← Volver a la tienda</a>
+        <div style={{ background: '#fff', border: '1px solid var(--color-border)', borderRadius: 20, padding: 40, boxShadow: 'var(--shadow-sm)' }}>
+          <h1 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 700, color: '#171717' }}>Solicita tu acceso como cliente</h1>
+          <p style={{ margin: '0 0 28px', fontSize: 13.5, color: '#475569' }}>Cuéntanos sobre tu empresa y te asignaremos una Lista de precios y un asesor comercial.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Input label="Nombre de la empresa" placeholder="Constructora Andina S.A.S." />
+            <Input label="NIT" placeholder="900.123.456-7" />
+            <Input label="Nombre de contacto" placeholder="Nombre completo" />
+            <Input label="Correo corporativo" placeholder="contacto@tuempresa.com" />
+            <Input label="Teléfono" placeholder="(6) 123 4567" />
+            <Select label="Tipo de cliente" placeholder="Selecciona una opción" options={[{ value: 'instalador', label: 'Instalador' }, { value: 'distribuidor', label: 'Distribuidor' }, { value: 'empresa', label: 'Empresa final' }]} />
+          </div>
+          <Button variant="primary" style={{ width: '100%', marginTop: 24 }}>Enviar solicitud</Button>
+          <p style={{ margin: '14px 0 0', fontSize: 11.5, color: '#94A3B8', textAlign: 'center' }}>Un asesor comercial revisará tu solicitud en 1-2 días hábiles.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+window.StoreScreens = window.StoreScreens || {};
+window.StoreScreens.SolicitarAcceso = SolicitarAcceso;

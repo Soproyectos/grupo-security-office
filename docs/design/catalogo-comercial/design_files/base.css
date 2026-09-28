@@ -1,0 +1,4 @@
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text-primary);background:var(--color-bg-page);font-variant:tabular-nums}
+a{color:var(--color-brand-primary);text-decoration:none;transition:color var(--transition-fast)}
+a:hover{color:var(--color-brand-primary-hover)}
