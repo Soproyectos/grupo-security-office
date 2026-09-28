@@ -88,7 +88,7 @@ function Breadcrumb({ trail }: { trail: CategoryTrail }) {
     <nav aria-label="Ruta de navegación">
       <ol role="list" className="flex flex-wrap items-center gap-1.5 text-body-sm text-ink-500">
         <BreadcrumbItem>
-          <Link to="/" className="transition hover:text-security-500">
+          <Link to="/tienda" className="transition hover:text-security-500">
             Inicio
           </Link>
         </BreadcrumbItem>

@@ -5,6 +5,7 @@ import CommercialLayout from './components/layout/CommercialLayout'
 import CategoryPage from './features/storefront/pages/CategoryPage'
 import SearchResultsPage from './features/storefront/pages/SearchResultsPage'
 import StorefrontHome from './features/storefront/pages/StorefrontHome'
+import CatalogIndexPage from './features/storefront/pages/CatalogIndexPage'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import ProductsPage from './pages/ProductsPage'
@@ -63,9 +64,12 @@ function App() {
         <Route path="audit" element={<AuditPage />} />
       </Route>
       <Route path="/tienda" element={<StorefrontHome />} />
+      <Route path="/catalogo" element={<CatalogIndexPage />} />
       <Route path="/catalogo/categoria/:slug" element={<CategoryPage />} />
       <Route path="/catalogo/buscar" element={<SearchResultsPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* The storefront owns every unknown route: a visitor never lands on the
+          internal app (/, /commercial/*, ...) from a dead or future link. */}
+      <Route path="*" element={<Navigate to="/tienda" replace />} />
     </Routes>
   )
 }

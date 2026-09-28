@@ -164,7 +164,7 @@ describe('categoría conocida', () => {
     const markup = renderPage('camaras-ip')
 
     expect(markup).toContain('aria-label="Ruta de navegación"')
-    expect(markup).toContain('href="/"')
+    expect(markup).toContain('href="/tienda"')
     expect(markup).toContain('href="/catalogo"')
     expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
     expect(markup).toContain('Videovigilancia')
