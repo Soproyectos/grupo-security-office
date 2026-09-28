@@ -44,6 +44,9 @@ El usuario pidió organizar el repo para seguir trabajando desde `main`; descubr
 
 ## Siguiente paso
 - Preguntar al coordinador si borra la rama `agent/claude/IMPORT-BIBLIOTECA-VITRINA-001` (ya mergeada; usar `git branch -d`).
+
+## Evidencia de commits (2026-09-28, autorización del coordinador)
+- Biblioteca protegida en git: `biblioteca/` (774 fichas), `catalogo-base.json`, `listas/` y `scripts/parsear_listas.py` → commit `a1db9c7` `chore(data): add catalog biblioteca (774 fichas), provider lists and import helper`. Antes estaban untracked (riesgo de pérdida); además respaldo en `/tmp/opencode/backup-biblioteca-20260928-174429/`.
 - RDD: si el coordinador quiere cerrar el review de 21f759e, reintentar collect con shape conocido o aceptar manualmente (la revisión queda documentada como pendiente, tier medio, sin rebajar).
 - Stashes conservados: `wip-schema-prisma-portal-antes-fusion` (backup), `wip-overlap-main-antes-pull-1519`, `wip-portal-biblioteca-antes-de-main`, `opencode.json openpencil MCP local`.
 

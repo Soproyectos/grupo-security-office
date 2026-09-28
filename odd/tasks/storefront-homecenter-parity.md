@@ -62,3 +62,8 @@ Coordinador pidió copiar de Homecenter lo que falte. Estado actual del storefro
 - **Slider de fotos** (reemplaza el hero estático de `hero-vitrina.svg`): replica el banner slider de la web anterior gruposecurity.co — 2 banners 1500x400 descargados a `public/images/home/` (`banner-hikvision-distribuidor.png`, `banner-ezviz-nuevas.png`), autoplay 5 s, pausa al hover, flechas adentro, paginación de puntos abajo, sin overlay de texto (el mensaje va en las imágenes). Componente `HeroSlider` en `StorefrontHome.tsx` sin librería de carrusel (timer + track con translate, convención de FeaturedCategoryRow). `h1` sr-only conservado para a11y.
 - **Selector de ciudades retirado del header** (HOM-05): `CoverageSelector` quitado de `StorefrontChrome.tsx` (import + uso). Los archivos del componente y su spec permanecen (posible reuso futuro).
 - Verificación: vitest storefront 103/103 (9 archivos), `tsc --noEmit` OK, eslint sin desviaciones del baseline. Cambio sin commit — pendiente autorización del coordinador para commitear.
+
+## Ajustes commiteados (2026-09-28, autorización del coordinador)
+- Logo restaurado + 2 banners + HeroSlider + chrome con ajustes del coordinador → commit `ea649f9` `feat(storefront): homecenter parity layout with banners and header chrome` (StorefrontChrome, StorefrontHome, storefront-home.spec, 2 banners, logo, doc).
+- Páginas `ClientLoginPage` / `AccessRequestPage` → commit `053a0bc` `feat(customer-portal): client login and access request storefront pages`.
+- Evidencia: vitest 145/145 (11 archivos), tsc --noEmit OK, typecheck backend 0 errores.

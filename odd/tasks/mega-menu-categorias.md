@@ -110,6 +110,10 @@ EXTENSION (2026-09-25, coordinator): MENU-07 authorized — replace the 27 featu
 - [x] MENU-05 — See Tasks. Commit `510f2b0`; RDD lineage `review-a7890e205a5524b6` reviewing.
 - [x] MENU-06 — See Tasks. Docs + cross-link done; `graphify update .` unavailable (no binary/subcommand in gentle-ai 3.4.0).
 
+## Docs committed (2026-09-28)
+- MENU-06 dejó los docs en `odd/` untracked; hoy quedaron commiteados: `odd/tasks/mega-menu-categorias.md`, `public-storefront.md`, `fusion-import-biblioteca-adr-002.md`, `nvidia-gentle-ai-models.md` → commit `6242d5c` `chore(odd): add task docs for mega-menu, public storefront and biblioteca fusion`.
+- RDD hoy: CLI `gentle-ai` no está en PATH (ni `~/.gentle-ai/bin`, ni `/usr/local/bin`) → assessment de los commits nuevos = **unavailable** (no baja el tier; commits quedan due hasta que corra el review nativo).
+
 ## Next Step
 All six MENU tasks complete (5 work-unit commits, docs done). Remaining:
 1. **RDD**: 5 native reviews in progress (MENU-01 `b211592a`, MENU-02 `8d65e043`, MENU-03 `362d998d`, MENU-04 `5fe263ac`, MENU-05 `a7890e20`) — boundaries advance per slice on native acknowledgement; headless runtime lacks provider-bound lens context. NOTE: accumulated range 21f759e..HEAD exceeds native lens budget (`lens_context_budget_exceeded`) → per-slice reviews are the viable path (confirms feature-branch-chain).

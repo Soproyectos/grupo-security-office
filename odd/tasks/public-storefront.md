@@ -95,6 +95,12 @@ Coordination note (2026-09-24): an OpenCode session ran the backend draft concur
 - `npx prisma migrate status` then confirmed: `Database schema is up to date!`
 - No deployment, fixture records, commits, or pushes were created.
 
+## Portal work committed (2026-09-28, coordinator authorization)
+- Schema + migration `20260924090000_add_customer_portal` → commit `8e0646d` `feat(prisma): add customer portal schema and applied migration`.
+- Backend module (controller + roles contract, service, portal-auth guard, DTOs) → commit `dfcff32` `feat(customer-portal): backend module with RBAC matrix and portal specs` — spec evidence: `npx jest src/modules/customer-portal` 3 suites / 32 tests PASS (host, jest+ts-jest). NOTE: container Jest falls back to babel-jest (image built without devDependencies) → backend specs run on host, not in the api container.
+- Frontend portal (ClientLoginPage, AccessRequestPage, `features/customer-portal/`, `services/customer-portal.service.ts`, `stores/customer-portal-auth.store.ts`) → commit `053a0bc`.
+- PENDING: `CustomerPortalModule` is NOT registered in `app.module.ts` → no `/portal` routes yet. PORTAL-05 (integrated browser verification) remains open.
+
 ---
 
 ## Related feature: Mega Menu Categorías (2026-09-25)
