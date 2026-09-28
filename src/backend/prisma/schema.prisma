@@ -279,6 +279,7 @@ model PriceList {
   validUntil DateTime?
   prices     Price[]
   quotes     Quote[]    @relation("QuotePriceList")
+  portalPriceListMappings PortalPriceListMapping[] @relation("PortalPriceListMappingPriceList")
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
@@ -507,6 +508,7 @@ model Customer {
   owner     User? @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   createdBy User? @relation("CustomerCreator", fields: [createdById], references: [id], onDelete: SetNull)
   quotes    Quote[]
+  portalAccounts PortalAccount[] @relation("PortalAccountCustomer")
 
   @@unique([documentType, documentId])
   @@index([ownerId, status])
@@ -651,4 +653,85 @@ model QuoteItem {
   @@index([quoteId])
   @@index([productId])
   @@map("quote_items")
+}
+
+// ============================================================
+// Customer Portal — cuentas de acceso de clientes al catálogo
+// Tablas portal_*, migración 20260924090000_add_customer_portal
+// ============================================================
+
+enum PortalAccountType {
+  FINAL_CUSTOMER
+  INSTALLER
+}
+
+enum PortalAccountState {
+  PENDING
+  ACTIVE
+  REJECTED
+}
+
+/// Solicitud de acceso de un cliente al portal. Nace PENDING y solo un
+/// administrador comercial la aprueba (ACTIVE) o rechaza (REJECTED).
+/// El enlace a `customer` NO implica aprobación: la cuenta sigue PENDING.
+model PortalAccount {
+  id              String             @id @default(uuid())
+  email           String             @unique
+  passwordHash    String
+  contactName     String
+  companyName     String
+  documentId      String?
+  phone           String?
+  type            PortalAccountType
+  state           PortalAccountState @default(PENDING)
+  customerId      String?
+  /// approvedById / rejectedById se guardan sin FK a propósito: son
+  /// rastro de auditoría y deben sobrevivir al borrado del usuario.
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  customer Customer?       @relation("PortalAccountCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  sessions PortalSession[] @relation("PortalAccountSession")
+
+  @@index([state, createdAt])
+  @@index([customerId])
+  @@index([documentId])
+  @@map("portal_accounts")
+}
+
+/// Sesión de acceso al portal. El `jti` del JWT se puede revocar aquí.
+model PortalSession {
+  id        String   @id @default(uuid())
+  jti       String   @unique
+  accountId String
+  expiresAt DateTime
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  account PortalAccount @relation("PortalAccountSession", fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, revokedAt])
+  @@index([expiresAt])
+  @@map("portal_sessions")
+}
+
+/// Tarifa de precios asignada a cada tipo de cuenta del portal.
+model PortalPriceListMapping {
+  id          String            @id @default(uuid())
+  type        PortalAccountType @unique
+  priceListId String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  priceList PriceList @relation("PortalPriceListMappingPriceList", fields: [priceListId], references: [id])
+
+  @@index([priceListId])
+  @@map("portal_price_list_mappings")
 }
