@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACSC901COM",
+  "nombre": {
+    "valor": "Motor de Garaje Accessmatic Scorpion 901 de 1/2 HP",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MOTOR DE GARAJE ACCESSMATIC SCORPION 901 DE 1/2 HP, MOTOR DE 24V 3 TRAMOS DE RIEL EN C CADA UNO DE 1 METRO, CAJA TODO EN 1 CON CADENA. ACCESSSCREEN. PANTALLA L.C.D. PARA UNA FÁCIL PROGRAMACIÓN INCLUYE 2 CONTROLES DE 3 CANALES, PULSADOR DE PARED WIRELESS. 110V. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Motor de Garaje Accessmatic Scorpion 901 de 1/2 HP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBAT-7271",
+  "nombre": {
+    "valor": "Bateria Plomo Carbono 12V-100AH",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Baterías Plomo Carbono",
+    "origen": "inferido",
+    "razon": "Seccion 19.2. BATERIA PLOMO CARBONO FULI BATTERY SELLADAS LIBRES DE MANTENIMIENTO de la lista"
+  },
+  "marca": {
+    "valor": "Fuli Battery",
+    "origen": "inferido",
+    "razon": "Seccion BATERIAS FULI BATTERY de la lista"
+  },
+  "descripcion": {
+    "valor": "BATERIA PLOMO CARBONO 12V-100AH",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bateria Plomo Carbono 12V-100AH",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

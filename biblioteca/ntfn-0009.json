@@ -1,0 +1,19 @@
+{
+  "referencia": "NTFN-0009",
+  "categoria": {
+    "valor": "Accesorios de Cableado",
+    "origen": "inferido",
+    "razon": "Seccion 23.4 ACCESORIOS de la lista"
+  },
+  "descripcion": {
+    "valor": "TAPA ESPACIO NEGRO",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Tapa Espacio Negro",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

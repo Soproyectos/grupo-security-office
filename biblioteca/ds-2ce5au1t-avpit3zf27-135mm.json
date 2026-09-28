@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE5AU1T-AVPIT3ZF(2.7-13.5mm)",
+  "nombre": {
+    "valor": "Domo TurboHD 4K (8 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Domo TURBOHD 4K (8 Megapixel) / Lente Mot. 2.7 a 13.5 mm / 40 mts IR EXIR / IP67 / 12 Vcc / 24 VCA / TVI-AHD-CVI-CVBS / 9 a 15 Vcc",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Domo TurboHD 4K (8 Megapixel",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE70DF3T-PFS(3.6mm)",
+  "nombre": {
+    "valor": "Cámara de Torreta Fija con Audio para Interiores ColorVu de 2 MP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara de torreta fija con audio para interiores ColorVu de 2 MP apertura de F1.0 tecnología WDR real de 130 dB Lente focal fija de 3,6 mm Hasta 20 m de distancia de luz blanca para imágenes nocturnas brillantes micrófono incorporado.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 2MP Audio Interior ColorVu 3.6mm",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

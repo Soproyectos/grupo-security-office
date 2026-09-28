@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE12DF3T-FS(2.8mm)",
+  "nombre": {
+    "valor": "Cámara Bala con Audio ColorVu de 2 MP Imágenes en Color 24 Horas al",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara Bala con Audio ColorVu de 2 MP Imágenes en color 24 horas al día, 7 días a la semana Tecnología WDR real de 130 dB Tecnología 3D DNR Distancia de luz blanca de hasta 40 metros Resistente al agua y al polvo (IP67) Micrófono incorporado",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 2MP ColorVu Audio Color 24/7",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

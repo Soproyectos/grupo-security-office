@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACT9",
+  "categoria": {
+    "valor": "Herrajes para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion KIT DE HERRAJES PARA 100KG & 3,66M X 2,44M de la lista"
+  },
+  "descripcion": {
+    "valor": "BARRAS DE TORSIÓN PARA PUERTAS DE GARAJE Y EJES DE 1” CAL. 14, DE 2,74 MTS DE LONGITUD",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Barras de Torsión Garaje 2,74m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

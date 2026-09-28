@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBAT-7629",
+  "nombre": {
+    "valor": "Bateria Gel Ciclo Profundo -12v 200Ah FLS122000 DC",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Baterías Gel Ciclo Profundo",
+    "origen": "inferido",
+    "razon": "Seccion 19.1. BATERIA GEL CICLO PROFUNDO FULI BATTERY SELLADAS LIBRES DE MANTENIMIENTO de la lista"
+  },
+  "marca": {
+    "valor": "Fuli Battery",
+    "origen": "inferido",
+    "razon": "Seccion BATERIAS FULI BATTERY de la lista"
+  },
+  "descripcion": {
+    "valor": "BATERIA GEL CICLO PROFUNDO -12v 200Ah REF. FLS122000 DC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bateria Gel Ciclo Profundo -12v 200Ah FLS122000 DC",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

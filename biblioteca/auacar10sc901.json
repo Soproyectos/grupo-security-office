@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACAR10SC901",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "RIEL EN C PARA SISTEMA DE APERTURA DE GARAJE LEVADIZA SC901. 1M. ESPESOR DE 1.2MM.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Riel en C Garaje Levadiza SC901",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

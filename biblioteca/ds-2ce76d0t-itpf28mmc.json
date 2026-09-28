@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE76D0T-ITPF(2.8mm)(C)",
+  "nombre": {
+    "valor": "Cámara de Torreta Fija para Interiores de 2 MP EXIR 2.0: Tecnología",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara de torreta fija para interiores de 2 MP EXIR 2.0: tecnología infrarroja avanzada con una distancia IR de 20 m 4 en 1 (4 señales conmutables TVI/AHD/CVI/CVBS).",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 2MP Interior EXIR 2.0 Smart",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

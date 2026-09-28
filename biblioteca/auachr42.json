@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACHR42",
+  "nombre": {
+    "valor": "Receptora Accessmatic para Motores Hulk",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "RECEPTORA ACCESSMATIC PARA MOTORES HULK. INCLUYE DOS CONTROLES DE 433 MHz Y ENTRADA PARA FOTOCELDAS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Receptora Accessmatic para Motores Hulk",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

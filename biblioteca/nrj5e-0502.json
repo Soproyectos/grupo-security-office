@@ -1,0 +1,19 @@
+{
+  "referencia": "NRJ5E-0502",
+  "categoria": {
+    "valor": "Cableado Categoría 5E",
+    "origen": "inferido",
+    "razon": "Seccion 23.1 CATEGORIA 5E de la lista"
+  },
+  "descripcion": {
+    "valor": "RJ 45 5E",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Conector RJ45 CAT 5E",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

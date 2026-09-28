@@ -1,0 +1,23 @@
+{
+  "referencia": "NUHIB-7592",
+  "nombre": {
+    "valor": "Inversor Solar All In One 12KVA On-grid Fase Partida IP65",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Inversores Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.1 INVERSOR SOLAR - UPS HIBRIDA de la lista"
+  },
+  "descripcion": {
+    "valor": "INVERSOR SOLAR ALL IN ONE 12KVA ON-GRID FASE PARTIDA IP65",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Inversor Solar AIO 12KVA On-Grid IP65",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

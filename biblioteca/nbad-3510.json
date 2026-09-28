@@ -1,0 +1,23 @@
+{
+  "referencia": "NBAD-3510",
+  "nombre": {
+    "valor": "Bandeja Deslizable Ventilada 1 u x 35 CM",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "BANDEJA DESLIZABLE VENTILADA 1 U X 35 CM",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bandeja Deslizable Ventilada 1 u x 35 CM",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

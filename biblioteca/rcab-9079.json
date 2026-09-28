@@ -1,0 +1,19 @@
+{
+  "referencia": "RCAB-9079",
+  "categoria": {
+    "valor": "Accesorios para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 7. ACCESORIOS UPS ONLINE TIPO TORRE de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE CONEXIÓN PARALELO UPS BIFÁSICAS",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable Conexión Paralelo UPS Bifásicas",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

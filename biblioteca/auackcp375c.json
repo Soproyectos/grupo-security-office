@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKCP375C",
+  "nombre": {
+    "valor": "Puerta Pánel a Cuadros 2,74m de Ancho x 2,44m de Alto",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "PUERTA PÁNEL A CUADROS 2,74m DE ANCHO X 2,44m DE ALTO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Puerta Pánel Cuadros 2,74 x 2,44m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

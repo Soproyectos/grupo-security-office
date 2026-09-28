@@ -1,0 +1,23 @@
+{
+  "referencia": "CEELTRA-2272",
+  "nombre": {
+    "valor": "Transformador de Aislamiento 2KVA Monofásico C",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "TRANSFORMADOR DE AISLAMIENTO 2KVA MONOFÁSICO C",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Transformador de Aislamiento 2KVA Monofásico C",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

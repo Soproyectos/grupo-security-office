@@ -1,0 +1,23 @@
+{
+  "referencia": "NORV-8040",
+  "nombre": {
+    "valor": "Organizador Vertical para Gabinete 80 x 40U AXAL",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "ORGANIZADOR VERTICAL PARA GABINETE 80 X 40U (AXAL)",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Organizador Vertical para Gabinete 80 x 40U AXAL",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

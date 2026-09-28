@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE56U1T-AITZF(2.7-13.5mm)",
+  "nombre": {
+    "valor": "Cámara Domo Varifocal Motorizada para Interiores 4K",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara domo varifocal motorizada para interiores 4K",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Domo 4K Varifocal Motorizada Interior",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

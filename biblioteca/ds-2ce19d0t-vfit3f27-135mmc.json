@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE19D0T-VFIT3F(2.7-13.5mm)(C)",
+  "nombre": {
+    "valor": "Camara Turbo Bala Varifocal 0.01LUX F2.7-13.5 IR40M IP67",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO BALA VARIFOCAL 0.01LUX F2.7-13.5 IR40M IP67",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 1080P Varifocal 2.7-13.5 IR40m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

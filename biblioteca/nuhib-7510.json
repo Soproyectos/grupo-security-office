@@ -1,0 +1,23 @@
+{
+  "referencia": "NUHIB-7510",
+  "nombre": {
+    "valor": "Inversor Solar All In One 1KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Inversores Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.1 INVERSOR SOLAR - UPS HIBRIDA de la lista"
+  },
+  "descripcion": {
+    "valor": "INVERSOR SOLAR ALL IN ONE 1KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Inversor Solar All In One 1KVA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

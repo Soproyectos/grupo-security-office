@@ -1,0 +1,23 @@
+{
+  "referencia": "NRPRO-7462",
+  "nombre": {
+    "valor": "Combo Protectores Refrimatic + Multimatic",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "COMBO PROTECTORES REFRIMATIC + MULTIMATIC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Combo Protectores Refrimatic + Multimatic",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

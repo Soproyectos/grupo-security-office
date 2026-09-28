@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE10DF0T-PFS(2.8mm)",
+  "nombre": {
+    "valor": "Camara Turbo 1080P Bala F28mm 0001LUX F10 24/7",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 1080P BALA F28mm 0001LUX F10 24/7",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turbo 1080P Bala F28mm 0001LUX F10 24/7",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "referencia": "AP201",
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "descripcion": {
+    "valor": "Aislador de esquina compatible con SFSP, con Gran Resistencia Mecánica y alta resistencia a climas extremos",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Aislador de Esquina Reforzado Compatible SFSP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, con palabras de la propia descripcion"
+  }
+}

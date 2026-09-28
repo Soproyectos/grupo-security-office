@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACALR4",
+  "nombre": {
+    "valor": "Control Remoto Accessmatic de 4 Canales de 433 MHz Compatible con",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CONTROL REMOTO ACCESSMATIC DE 4 CANALES DE 433 MHZ COMPATIBLE CON RAPTOR Y ELITE.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Control Remoto Accessmatic 4CH 433MHz Raptor/Elite",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

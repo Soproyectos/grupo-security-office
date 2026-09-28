@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACMN20",
+  "nombre": {
+    "valor": "Sensor de Movimiento Accessmatic Access-motion",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "SENSOR DE MOVIMIENTO ACCESSMATIC ACCESS-MOTION. DETECTA EL MOVIMIENTO A TRAVES DE MICROONDAS, SIRVE PARA TODO TIPO DE CABEZALES DE TODAS LAS MARCAS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Sensor de Movimiento Accessmatic Access-motion",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

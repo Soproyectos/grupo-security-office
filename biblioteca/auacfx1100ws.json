@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACFX1100WS",
+  "nombre": {
+    "valor": "Abrepuertas de Garaje FOX 1100 Pro Silencioso y Rápido de Uso Contínuo",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "ABREPUERTAS DE GARAJE FOX 1100 PRO SILENCIOSO Y RÁPIDO DE USO CONTÍNUO. ALIMENTACIÓN 110V/24V. FUERZA 3/4 HP (1000N). FÁCIL PROGRAMACIÓN. WIFI INCORPORADO PARA APERTURA Y CIERRE, RÁPIDO. INCLUYE 2 TRANSMISORES DE 4 CANALES 433MHZ, PULSADOR DE PARED WIRELESS. OPCIÓN DE BATERÍA DE RESPALDO (NO INCLUIDA) NO INCLUYE RIEL. GARANTÍA DE 3 AÑOS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Abrepuertas Garaje FOX 1100 Pro Silencioso",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

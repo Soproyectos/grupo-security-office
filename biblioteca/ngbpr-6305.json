@@ -1,0 +1,23 @@
+{
+  "referencia": "NGBPR-6305",
+  "nombre": {
+    "valor": "Gabinete Pared 60 x 35 x 5U AXPXAL",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "GABINETE PARED 60 X 35 X 5U (AXPXAL)",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Gabinete Pared 60 x 35 x 5U AXPXAL",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

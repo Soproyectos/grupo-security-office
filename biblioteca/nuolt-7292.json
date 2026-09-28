@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7292",
+  "nombre": {
+    "valor": "UPS On Line 1000VA Powest 1KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS On Line",
+    "origen": "inferido",
+    "razon": "Seccion 5. UPS ON LINE INCLUYE BATERIAS (AUTONOMIA). POWEST de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS ON LINE 1000VA REF POWEST 1KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS On Line 1000VA Powest 1KVA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

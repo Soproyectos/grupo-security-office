@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACFENIX600",
+  "nombre": {
+    "valor": "Kit de 2 Motores Batientes Fenix para Puertas de 2 Hojas de 5.5 Mt de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE 2 MOTORES BATIENTES FENIX PARA PUERTAS DE 2 HOJAS DE 5.5 MT DE ANCHO O MAXIMO 600KG. INCLUYE 2 MOTORES FENIX600, 2 CONTROLES Y TARJETA ELECTRONICA ACCESSCOMAND AC24NE CON DISPLAY DIGITAL. 24V. 3 AÑOS DE GARANTIA. PARA USO INTENSIVO.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit 2 Motores Fenix Batientes 2 Hojas 5.5m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

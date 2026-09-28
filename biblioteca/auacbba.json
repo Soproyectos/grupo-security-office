@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACBBA",
+  "nombre": {
+    "valor": "Soporte para Batería de Respaldo Accessmatic para Motores Shark",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "SOPORTE PARA BATERÍA DE RESPALDO ACCESSMATIC PARA MOTORES SHARK, RAPTOR, COBRA 3424 Y ELITE MG.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Soporte Batería Respaldo Motores Shark Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

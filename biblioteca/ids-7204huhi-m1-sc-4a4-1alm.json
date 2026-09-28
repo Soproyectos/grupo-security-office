@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7204HUHI-M1/S(C)/4A+4/1ALM",
+  "nombre": {
+    "valor": "DVR 4CH Turbo 8MP 1BAHIA/10TB H.265+ Analiticas 30FPS HDMI/VGA Metal",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 4CH TURBO 8MP 1BAHIA/10TB H.265+ ANALITICAS 30FPS HDMI/VGA METAL 2nd Gen AcuSense HIKVISION ENTRADA Y SALIDA DE ALARMA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 4CH Turbo 8MP 10TB Analíticas 30FPS Metal",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

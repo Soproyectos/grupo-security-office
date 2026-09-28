@@ -1,0 +1,28 @@
+{
+  "referencia": "NUIMN-7269",
+  "nombre": {
+    "valor": "UPS INTERACTIVA750VA MICRONET750",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Interactivas",
+    "origen": "inferido",
+    "razon": "Seccion 4. UPS INTERACTIVAS MICRONET de la lista"
+  },
+  "marca": {
+    "valor": "Micronet",
+    "origen": "inferido",
+    "razon": "'MICRONET' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS INTERACTIVA750VA REF. MICRONET750",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Interactiva 750VA Micronet 750",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

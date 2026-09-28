@@ -1,0 +1,28 @@
+{
+  "referencia": "NERM450-8450",
+  "nombre": {
+    "valor": "Panel Solar Mono HC PERC 450W Powest",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Paneles Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.2 PANELES SOLARES de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "PANEL SOLAR MONO HC PERC 450W REF. POWEST PANEL SOLAR MONO HC PERC 450W",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Panel Solar Mono HC PERC 450W Powest",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

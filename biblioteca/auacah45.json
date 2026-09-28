@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACAH45",
+  "nombre": {
+    "valor": "Receptora Universal Accessmatic Accesshub 500",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "RECEPTORA UNIVERSAL ACCESSMATIC ACCESSHUB 500, CAPACIDAD DE MEMORIZAR HASTA 500 CONTROLES, TECNOLOGÍA ROLLING CODE, COMPATIBLE CON TODOS LOS CONTROLES ACCESSMATIC Y ELITE DE 433MHZ. 2 CANALES.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Receptora Universal Accessmatic Accesshub 500",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACACCESSCLIP",
+  "nombre": {
+    "valor": "Accessclip",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "ACCESSCLIP. CLIP UNIVERSAL PARA CONTROLES REMOTOS. ALTURA AJUSTABLE.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Accessclip",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

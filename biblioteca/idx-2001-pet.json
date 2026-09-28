@@ -1,0 +1,24 @@
+{
+  "referencia": "IDX-2001-PET",
+  "nombre": {
+    "valor": "Detector de Movimiento Dual Cableado para Uso Interior Deteccion",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "descripcion": {
+    "valor": "DETECTOR DE MOVIMIENTO DUAL CABLEADO PARA USO INTERIOR DETECCION 108°X12M ANTIMASCOTA HASTA 20KG",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Detector de Movimiento Dual Cableado Interior",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

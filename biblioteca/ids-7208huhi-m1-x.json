@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7208HUHI-M1/X",
+  "nombre": {
+    "valor": "AcuSense Evita Falsas Alarmas) DVR 8 Megapixel 8 Canales TurboHD + 4",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "ACUSENSE EVITA FALSAS ALARMAS) DVR 8 MEGAPIXEL 8 CANALES TURBOHD + 4 CANALES IP 1 BAHÍA DE DISCO DURO AUDIO POR COAXITRON H.265+",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense 8MP 8 Canales TurboHD Hikvision",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

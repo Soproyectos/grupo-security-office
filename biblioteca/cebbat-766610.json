@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBBAT-766610",
+  "nombre": {
+    "valor": "Banco Baterías (10min) Powest HV3360 Externo",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Bancos de Baterías para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 18. BANCO BATERIAS UPS ON LINE TRIFASICAS POWEST IN/OUT 380/400/415 VAC de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "BANCO BATERÍAS (10min) REF.POWEST HV3360 EXTERNO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Banco Baterías (10min) Powest HV3360 Externo",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

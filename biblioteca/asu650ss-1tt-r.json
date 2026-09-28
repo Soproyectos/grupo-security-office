@@ -1,0 +1,36 @@
+{
+  "referencia": "ASU650SS-1TT-R",
+  "nombre": {
+    "valor": "SSD ADATA Ultimate SU650 1TB SATA 2.5\"",
+    "origen": "web",
+    "fuente": "https://www.pbtech.co.nz/product/HDDADS11120/ADATA-SU650-1TB-Ultimate-SATA-25-3D-NAND-SSD-Up-to"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "ADATA",
+    "origen": "web",
+    "fuente": "https://www.pbtech.co.nz/product/HDDADS11120/ADATA-SU650-1TB-Ultimate-SATA-25-3D-NAND-SSD-Up-to"
+  },
+  "descripcion": {
+    "valor": "ADATA SSD SATA MODELO SU650 1TB",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://www.pbtech.co.nz/imgprod/H/D/HDDADS11120.jpg?h=2444669228",
+    "origen": "web",
+    "fuente": "https://www.pbtech.co.nz/product/HDDADS11120/ADATA-SU650-1TB-Ultimate-SATA-25-3D-NAND-SSD-Up-to"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://www.pbtech.co.nz/product/HDDADS11120/ADATA-SU650-1TB-Ultimate-SATA-25-3D-NAND-SSD-Up-to"
+  ],
+  "nombre_vitrina": {
+    "valor": "SSD ADATA Ultimate SU650 1TB SATA 2.5\"",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

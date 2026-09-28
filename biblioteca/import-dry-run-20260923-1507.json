@@ -1,0 +1,85 @@
+{
+  "mode": "dry-run",
+  "generatedAt": "2026-09-23T15:07:01.888Z",
+  "totals": {
+    "fichasFiles": 764,
+    "valid": 764,
+    "invalid": 0,
+    "updates": 509,
+    "creates": 255,
+    "skipped": 0,
+    "errors": 0,
+    "images": 20,
+    "namesTruncated": 0
+  },
+  "perEstado": {
+    "verificado": {
+      "updates": 2,
+      "creates": 20,
+      "skipped": 0,
+      "errors": 0,
+      "total": 22
+    },
+    "parcial": {
+      "updates": 437,
+      "creates": 150,
+      "skipped": 0,
+      "errors": 0,
+      "total": 587
+    },
+    "no_encontrado": {
+      "updates": 70,
+      "creates": 85,
+      "skipped": 0,
+      "errors": 0,
+      "total": 155
+    }
+  },
+  "categoriesToCreate": [
+    "Accesorios para UPS",
+    "Accesorios Solares",
+    "Motores para Puertas Levadizas",
+    "Herrajes para Puertas Levadizas",
+    "Cerraduras Inteligentes",
+    "Kits de Autonomía para UPS",
+    "Bancos de Baterías para UPS",
+    "Baterías Selladas",
+    "Baterías Plomo Carbono",
+    "Baterías de Litio",
+    "Baterías Solares",
+    "Baterías Gel Ciclo Profundo",
+    "Transformadores de Aislamiento",
+    "DVRs Turbo",
+    "Gabinetes Tipo Rack",
+    "Paneles Solares",
+    "Controladores Solares",
+    "Accesorios de Cableado",
+    "Cableado Categoría 6A",
+    "Cableado Categoría 5E",
+    "Cableado Categoría 6",
+    "Protectores de Voltaje",
+    "Reguladores de Voltaje",
+    "Inversores Solares",
+    "UPS Interactivas",
+    "UPS On Line",
+    "UPS Trifásicas",
+    "Variadores de Frecuencia"
+  ],
+  "brandsToCreate": [
+    "ADATA",
+    "Accessmatic",
+    "Elite",
+    "Fuli Battery",
+    "JFL",
+    "YONUSA",
+    "Micronet",
+    "Kingston",
+    "Imou",
+    "Seagate",
+    "Western Digital"
+  ],
+  "categoriesCreated": 0,
+  "brandsCreated": 0,
+  "invalidFichas": [],
+  "rowErrors": []
+}

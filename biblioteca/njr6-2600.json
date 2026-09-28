@@ -1,0 +1,19 @@
+{
+  "referencia": "NJR6-2600",
+  "categoria": {
+    "valor": "Cableado Categoría 6",
+    "origen": "inferido",
+    "razon": "Seccion 23.2 CATEGORIA 6 de la lista"
+  },
+  "descripcion": {
+    "valor": "JACK CAT 6 UTP ROJO",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Jack CAT 6 UTP Rojo",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

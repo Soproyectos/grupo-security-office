@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACSH1000",
+  "nombre": {
+    "valor": "Motor de Garaje Accessmatic Shark 1000",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MOTOR DE GARAJE ACCESSMATIC SHARK 1000, MOTOR DE 3/4HP DE FUERZA, 24V USO INTENSIVO COMPLETAMENTE SILENCIOSO, 12 MT DE RECORRIDO AGREGANDOLE “ACCESSRAIL” INCLUYE 2 CONTROLES DE 2 BOTONES DE 433MHZ, CARGADOR DE BATERÍA INCORPORADO, PULSADOR INALÁMBRICO DE 3 FUNCIONES. 110V 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Motor de Garaje Accessmatic Shark 1000",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

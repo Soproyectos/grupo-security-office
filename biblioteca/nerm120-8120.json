@@ -1,0 +1,28 @@
+{
+  "referencia": "NERM120-8120",
+  "nombre": {
+    "valor": "Panel Solar Mono PERC 120W Powest",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Paneles Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.2 PANELES SOLARES de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "PANEL SOLAR MONO PERC 120W REF. POWEST PANEL SOLAR MONO PERC 120W",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Panel Solar Mono PERC 120W Powest",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

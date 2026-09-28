@@ -1,0 +1,28 @@
+{
+  "referencia": "ACCCAR-7286",
+  "nombre": {
+    "valor": "Kit Cargador Adicional 4A Powest 6-10KVA Tipo Torre",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Accesorios para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 7. ACCESORIOS UPS ONLINE TIPO TORRE de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT CARGADOR ADICIONAL 4A POWEST 6-10KVA TIPO TORRE",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Cargador 4A Powest 6-10KVA Torre",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

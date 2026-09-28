@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACACCESSCAM",
+  "nombre": {
+    "valor": "Cámara y Módulo WiFi Accesscam Universal",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CÁMARA Y MÓDULO WIFI ACCESSCAM UNIVERSAL. SIRVE CON TODOS LOS MOTORES ACCESSMATIC. 1280P X 720P. FUNCIÓN DE GRABACIÓN, VISION NOCTURNA E INTERCOMUNICACIÓN. 100° DE VISIÓN. COMPATIBLE CON LA APLICACIÓN ACCESSHUB.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cámara y Módulo WiFi Accesscam Universal",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

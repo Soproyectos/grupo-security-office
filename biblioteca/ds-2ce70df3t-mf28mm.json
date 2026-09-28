@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE70DF3T-MF(2.8mm)",
+  "nombre": {
+    "valor": "Turret TurboHD 2 Megapixel (1080p)",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Turret TURBOHD 2 Megapixel (1080p) / Imagen a color 24/7 / Lente 2.8 mm / Luz Blanca 20 mts / Exterior IP67 / WDR 130 dB",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 1080P ColorVu 0.0005Lux 20m Metálica",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

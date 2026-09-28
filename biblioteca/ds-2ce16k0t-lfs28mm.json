@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE16K0T-LFS(2.8mm)",
+  "nombre": {
+    "valor": "Camara Mini Bala con 2.8 IR 30M 3K Hibrida B/N - Color VU 20M IP67",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA MINI BALA CON 2.8 IR 30M 3K HIBRIDA B/N - Color VU 20M IP67 0.01LUX METAL AUDIO COAXIAL",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Mini Bala 3K Hibrida ColorVu IR 30m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

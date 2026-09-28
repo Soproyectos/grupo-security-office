@@ -1,0 +1,23 @@
+{
+  "referencia": "NBAC-5510",
+  "nombre": {
+    "valor": "Bandeja Completa Ventilada 1 u x 55 CM Ajustable",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "BANDEJA COMPLETA VENTILADA 1 U X 55 CM AJUSTABLE",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bandeja Completa Ventilada 1 u x 55 CM Ajustable",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

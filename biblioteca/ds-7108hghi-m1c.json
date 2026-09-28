@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-7108HGHI-M1(C)",
+  "nombre": {
+    "valor": "DVR 8CH Turbo 1080p Lite 1BAHIA/4TB H.265+/H.265 HDMI/VGA AcuSense",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 8CH TURBO 1080p LITE 1BAHIA/4TB H.265+/H.265 HDMI/VGA AcuSense",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 8CH Turbo 1080P Lite 4TB AcuSense",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

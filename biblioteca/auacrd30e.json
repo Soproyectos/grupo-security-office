@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACRD30E",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "LÁMINAS DE POLICARBONATO CON ACABADO ESCARCHADO PARA PUERTAS ENROLLABLES DE HASTA 16 METROS DE ANCHO. IDEAL PARA ALMACENES Y LOCALES COMERCIALES. RESISTENTES A LOS RAYOS UV DEL SOL. ANCHO: 30CM; ALTO TOTAL: 11.4CM; ALTURA ENSAMBLADO 5.2CM; ESPESOR: 3MM; UNIDADES POR CAJA: 144PCS; UNIDADES POR M2: 36PCS; PESO POR METRO CUADRADO: 9KG.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Láminas Policarbonato Escarchado Enrollables",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

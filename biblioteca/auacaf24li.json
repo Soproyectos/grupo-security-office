@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACAF24Li",
+  "nombre": {
+    "valor": "Batería de Respaldo Accessmatic ACCESFUEL24Li para Motores de Garaje",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "BATERÍA DE RESPALDO ACCESMATIC ACCESFUEL24Li PARA MOTORES DE GARAJE SCORPION, SHARK, RAPTOR Y FOX. LITIO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Batería Respaldo ACCESFUEL24Li Motores Garaje",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

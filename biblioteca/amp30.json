@@ -1,0 +1,22 @@
+{
+  "referencia": "AMP30",
+  "nombre": {
+    "valor": "Modulo Amplificador de Potencia para Energizador",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "descripcion": {
+    "valor": "Modulo Amplificador de Potencia para Energizador",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Modulo Amplificador de Potencia para Energizador",
+    "origen": "lista"
+  }
+}

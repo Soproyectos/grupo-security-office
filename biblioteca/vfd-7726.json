@@ -1,0 +1,28 @@
+{
+  "referencia": "VFD-7726",
+  "nombre": {
+    "valor": "Powest VFD 2.2 KW (3 HP - 220/240 VAC 1 Phase",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Variadores de Frecuencia",
+    "origen": "inferido",
+    "razon": "Seccion 1. VARIADORES DE FRECUENCIA. de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "POWEST VFD 2.2 KW (3 HP) - 220/240 VAC 1 PHASE",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Powest VFD 2.2 KW (3 HP - 220/240 VAC 1 Phase",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBAT-7582",
+  "nombre": {
+    "valor": "Bateria Solar 12V-250AH FLS122500",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Baterías Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.4 BATERIAS SELLADAS SOLARES de la lista"
+  },
+  "marca": {
+    "valor": "Fuli Battery",
+    "origen": "inferido",
+    "razon": "Prefijo FLS/FLL del REF en la descripcion, linea Fuli Battery de la lista"
+  },
+  "descripcion": {
+    "valor": "BATERIA SOLAR 12V-250AH REF. FLS122500",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bateria Solar 12V-250AH FLS122500",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

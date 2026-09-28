@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE70DF3T-PF(2.8mm)",
+  "nombre": {
+    "valor": "Camara Turbo 1080P Turret 0.0005LUX F1.0 24/7 ColorVu Luz Blanca 20M",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 1080P TURRET 0.0005LUX F1.0 24/7 COLORVU LUZ BLANCA 20M 3D DNR 130dB WDR IP67 PLASTICA HIKVISION",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 1080P ColorVu 0.0005Lux 20m Plástica",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

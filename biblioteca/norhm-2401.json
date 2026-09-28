@@ -1,0 +1,23 @@
+{
+  "referencia": "NORHM-2401",
+  "nombre": {
+    "valor": "Organizador Horizontal Metalico 1U",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "ORGANIZADOR HORIZONTAL METALICO 1U",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Organizador Horizontal Metalico 1U",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

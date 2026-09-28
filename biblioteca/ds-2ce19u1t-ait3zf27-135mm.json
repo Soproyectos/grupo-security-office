@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE19U1T-AIT3ZF(2.7-13.5mm)",
+  "nombre": {
+    "valor": "Bala TurboHD 4K (8 Megapixeles)",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Bala TURBOHD 4K (8 Megapixeles) / Lente Mot. 2.7 a 13.5 mm / IR EXIR Inteligente 80 mts / Exterior IP67 / Soporta 12 VCD & 24 VCA / dWDR",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bala TurboHD 4K (8 Megapixeles)",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

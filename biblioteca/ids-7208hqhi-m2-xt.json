@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7208HQHI-M2/XT",
+  "nombre": {
+    "valor": "DVR AcuSense de 8 Canales",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR ACUSENSE DE 8 CANALES, 1080P, 1U, H.265 REDUCCIÓN DE C21S,CAPACIDAD DE CODIFICACIÓN HASTA 3K/5M LITE A 12 FPS HASTA 12 CÁMARAS DE RED.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense de 8 Canales",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

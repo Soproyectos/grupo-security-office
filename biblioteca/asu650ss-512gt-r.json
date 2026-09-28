@@ -1,0 +1,36 @@
+{
+  "referencia": "ASU650SS-512GT-R",
+  "nombre": {
+    "valor": "SSD ADATA Ultimate SU650 512GB SATA 2.5\"",
+    "origen": "web",
+    "fuente": "https://pcx.com.ph/products/adata-512gb-su650-2-5-asu650ss-512gt-r-solid-state-drive"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "ADATA",
+    "origen": "web",
+    "fuente": "https://pcx.com.ph/products/adata-512gb-su650-2-5-asu650ss-512gt-r-solid-state-drive"
+  },
+  "descripcion": {
+    "valor": "Unidad Estado Solido ADATA SU650 512GB",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://pcx.com.ph/cdn/shop/files/1.SSD-ADATA512GBSU6502.5.jpg?v=1692237910&width=1090",
+    "origen": "web",
+    "fuente": "https://pcx.com.ph/products/adata-512gb-su650-2-5-asu650ss-512gt-r-solid-state-drive"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://pcx.com.ph/products/adata-512gb-su650-2-5-asu650ss-512gt-r-solid-state-drive"
+  ],
+  "nombre_vitrina": {
+    "valor": "SSD ADATA Ultimate SU650 512GB SATA 2.5\"",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBBAT-728314",
+  "nombre": {
+    "valor": "Banco Baterias Powest 3KVA (14 Min Incluido Banco Interno de la UPS",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Bancos de Baterías para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 6. BANCO BATERIAS UPS ONLINE ADICIONALES PARA UPS MONO Y BIFASICAS de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "BANCO BATERIAS POWEST 3KVA (14 MIN incluido banco interno de la UPS)",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Banco Baterías Powest 3KVA 14min",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

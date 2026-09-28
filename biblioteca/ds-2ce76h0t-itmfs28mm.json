@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE76H0T-ITMFS(2.8mm)",
+  "nombre": {
+    "valor": "Turret TurboHD 5 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Turret TURBOHD 5 Megapixel / Lente 2.8 mm / Audio por Coaxitron / 30 mts IR EXIR / Exterior IP67 / 4 Tecnologías / dWDR",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 5MP Audio Coaxial IR30m 2.8mm",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

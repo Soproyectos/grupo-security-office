@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7232HQHI-M2/XT",
+  "nombre": {
+    "valor": "DVR 32 Canales TurboHD + 8 Canales IP 5 Megapixel Lite - 3K Lite",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 32 CANALES TURBOHD + 8 CANALES IP 5 MEGAPIXEL LITE - 3K LITE ACUSENSE AUDIO POR COAXITRON / 2 BAHÍAS DE DISCO DURO H.265+ SALIDA DE VIDEO EN FULL HD_x000D_ _x000D_",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 32CH TurboHD 5MP Lite + 8CH IP",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

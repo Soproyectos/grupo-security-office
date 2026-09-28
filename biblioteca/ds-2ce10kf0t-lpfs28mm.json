@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE10KF0T-LPFS(2.8mm)",
+  "nombre": {
+    "valor": "Cámara Tipo Bullet 3K ColorVu con Imagen en Color 24/7",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara tipo bullet 3K ColorVu con imagen en color 24/7, lente fijo de 2.8mm, micrófono integrado, visión nocturna híbrida (IR y luz blanca hasta 20m), salida 4 en 1 (TVI/AHD/CVI/CVBS) y carcasa IP67 resistente al agua.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 3K ColorVu Color 24/7",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

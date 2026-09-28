@@ -1,0 +1,29 @@
+{
+  "referencia": "AUELSL5000",
+  "nombre": {
+    "valor": "Cerradura Inteligente Elite Lock SL5000 de Sobreponer para Puertas de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Cerraduras Inteligentes",
+    "origen": "inferido",
+    "razon": "Seccion SMART LOCK de la lista"
+  },
+  "marca": {
+    "valor": "Elite",
+    "origen": "inferido",
+    "razon": "'ELITE' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CERRADURA INTELIGENTE ELITE LOCK SL5000 DE SOBREPONER PARA PUERTAS DE HASTA 8CM. 5 MÉTODOS DE APERTURA: 100 HUELLAS / LLAVE / WIFI APP / 100 CONTRASEÑAS / TARJETA. FÁCIL INSTALACIÓN.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cerradura Elite Lock SL5000 de Sobreponer",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

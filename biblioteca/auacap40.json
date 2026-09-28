@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACAP40",
+  "nombre": {
+    "valor": "Pulsador Accessmatic Access-pulse de 4 Botones",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "PULSADOR ACCESSMATIC ACCESS-PULSE DE 4 BOTONES. COMPATIBLE CON MOTOR PANTHER 1500",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Pulsador Accessmatic Access-pulse de 4 Botones",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

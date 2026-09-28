@@ -1,0 +1,19 @@
+{
+  "referencia": "NUU5EP-0509",
+  "categoria": {
+    "valor": "Cableado Categoría 5E",
+    "origen": "inferido",
+    "razon": "Seccion 23.1 CATEGORIA 5E de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE UTP CAT 5E (305 MTS)",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable UTP CAT 5E 305m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

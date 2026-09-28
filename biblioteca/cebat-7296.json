@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBAT-7296",
+  "nombre": {
+    "valor": "Modulo de Litio 51.2V200AH FLL51.2V200Ah",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Baterías de Litio",
+    "origen": "inferido",
+    "razon": "Seccion 19.3. MODULO DE LITIO de la lista"
+  },
+  "marca": {
+    "valor": "Fuli Battery",
+    "origen": "inferido",
+    "razon": "Prefijo FLS/FLL del REF en la descripcion, linea Fuli Battery de la lista"
+  },
+  "descripcion": {
+    "valor": "MODULO DE LITIO 51.2V200AH REF. FLL51.2V200Ah",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Modulo de Litio 51.2V200AH FLL51.2V200Ah",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

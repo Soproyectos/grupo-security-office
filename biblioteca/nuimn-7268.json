@@ -1,0 +1,28 @@
+{
+  "referencia": "NUIMN-7268",
+  "nombre": {
+    "valor": "UPS Interactiva 500-UPS500",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Interactivas",
+    "origen": "inferido",
+    "razon": "Seccion 4. UPS INTERACTIVAS MICRONET de la lista"
+  },
+  "marca": {
+    "valor": "Micronet",
+    "origen": "inferido",
+    "razon": "Seccion UPS INTERACTIVAS MICRONET de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS INTERACTIVA 500-UPS500",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Interactiva 500-UPS500",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "JFL-AVISO",
+  "nombre": {
+    "valor": "Aviso Cerco Electrico",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "marca": {
+    "valor": "JFL",
+    "origen": "inferido",
+    "razon": "Prefijo JFL de la referencia, ecosistema JFL de la lista"
+  },
+  "descripcion": {
+    "valor": "AVISO CERCO ELECTRICO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Aviso Cerco Electrico",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

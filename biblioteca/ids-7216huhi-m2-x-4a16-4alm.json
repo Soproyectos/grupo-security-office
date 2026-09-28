@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7216HUHI-M2/X/4A+16/4ALM",
+  "nombre": {
+    "valor": "Hikpro",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "HIKPRO. DVR 16CH ACUSENSE (4 CH DETEC HUMANO/COCHE), 5 EN 1 (TVI, AHD, CVI, ANALÓG E IP) 8MPX, 2HDD 10TB (N.I.), 4 E AUDIO, 16E/4S ALARM, HDMI 4K,VGAYBNC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Hikpro",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

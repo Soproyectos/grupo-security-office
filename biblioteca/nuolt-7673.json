@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7673",
+  "nombre": {
+    "valor": "UPS Powest HV33300 300KVA In/OUT 380/400/415 VAC",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Trifásicas",
+    "origen": "inferido",
+    "razon": "Seccion 17. UPS ON LINE TRIFASICAS POWEST IN/OUT 380/400/415 VAC de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS POWEST HV33300 300KVA IN/OUT 380/400/415 VAC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Powest HV33300 300KVA",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

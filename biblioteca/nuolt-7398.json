@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7398",
+  "nombre": {
+    "valor": "Modulo 10KVA UPS On Line Modular Powest RM9910",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Trifásicas",
+    "origen": "inferido",
+    "razon": "Seccion 16. UPS ON LINE TRIFASICAS POWEST RM SISTEMA Y GABINETES POWEST de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MODULO 10KVA UPS ON LINE MODULAR REF.POWEST RM9910",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Modulo 10KVA UPS On Line Modular Powest RM9910",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE16D0T-VFIR3F(2.8-12mm)",
+  "nombre": {
+    "valor": "Camara Turbo 1080P Bala Varifocal 0.01LUX -12 IR40m IP66 Metal",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 1080P BALA VARIFOCAL 0.01LUX -12 IR40m IP66 METAL HIKVISION",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 1080P Varifocal 12mm IR40m IP66",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

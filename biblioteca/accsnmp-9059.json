@@ -1,0 +1,23 @@
+{
+  "referencia": "ACCSNMP-9059",
+  "nombre": {
+    "valor": "SNMP Software y Tarjeta SNMP On Line",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Accesorios para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 7. ACCESORIOS UPS ONLINE TIPO TORRE de la lista"
+  },
+  "descripcion": {
+    "valor": "SNMP SOFTWARE Y TARJETA REF. SNMP ON LINE",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "SNMP Software y Tarjeta SNMP On Line",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

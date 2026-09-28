@@ -1,0 +1,23 @@
+{
+  "referencia": "NKITV-2317",
+  "nombre": {
+    "valor": "Kit de Ventilacion Doble con Chasis",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE VENTILACION DOBLE CON CHASIS",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit de Ventilacion Doble con Chasis",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

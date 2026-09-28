@@ -1,0 +1,28 @@
+{
+  "referencia": "AUELMC4",
+  "nombre": {
+    "valor": "Kit de Motor Corredizo Elite Slide 400 de 400KG",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Elite",
+    "origen": "inferido",
+    "razon": "'ELITE' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTOR CORREDIZO ELITE SLIDE 400 DE 400KG. INCLUYE MOTOR MC4 CON ENGRANAJE METÁLICO+ 4 METROS DE CREMALLERA DE ACERO CON PERNOS Y 2 CONTROLES. (CREMALLERA INCLUIDA EN LA CAJA) VELOCIDAD 14 MT/MIN. 110V AC. USO RESIDENCIAL. 2 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit de Motor Corredizo Elite Slide 400 de 400KG",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

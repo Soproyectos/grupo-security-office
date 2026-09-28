@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACTAP02",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "JUEGO DE TAPAS PLÁSTICAS PARA PUERTAS ENROLLABLES CON LÁMINAS DE POLICARBONATO. 2 PCS.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Tapas Plásticas Enrollables 2 Pcs",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

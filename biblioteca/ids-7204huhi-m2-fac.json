@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7204HUHI-M2/FA(C)",
+  "nombre": {
+    "valor": "DVR AcuSense de 4 Canales",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR AcuSense de 4 canales, 5 MP, 1U, H.265 2 discos duros de 1U Admite reducción de falsas alarmas basada en un algoritmo de aprendizaje profundo. Tecnología de compresión eficiente .265 pro+ Capacidad de codificación hasta 4K a 7,5 fps/3K a 12 fps Se pueden conectar hasta 6 cámaras de red 5 señales de entrada adaptativas (HDTVI/AHD/CVI/CVBS/IP)",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense 4CH 5MP Facial 1U",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

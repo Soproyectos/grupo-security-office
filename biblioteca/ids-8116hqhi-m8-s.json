@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-8116HQHI-M8/S",
+  "nombre": {
+    "valor": "DVR 4 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 4 Megapixel / 16 Canales TURBOHD + 4 Canales IP / 8 Bahías de Disco Duro / 16 canales de Audio / Audio por Coaxitron / 16 Entradas de Alarma / Soporta POS",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 4MP 16CH TurboHD + 4CH IP 8Bahías",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

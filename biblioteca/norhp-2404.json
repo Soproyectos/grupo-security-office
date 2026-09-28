@@ -1,0 +1,23 @@
+{
+  "referencia": "NORHP-2404",
+  "nombre": {
+    "valor": "Organizador Horizontal Plastico 2U",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "ORGANIZADOR HORIZONTAL PLASTICO 2U",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Organizador Horizontal Plastico 2U",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "NUEVO AUACKAR382F ANTES AUACKAR380F",
+  "nombre": {
+    "valor": "Kit Accessmatic Sistema de Apertura Central para Cortinas Enrollables",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT ACCESSMATIC SISTEMA DE APERTURA CENTRAL PARA CORTINAS ENROLLABLES DE HASTA 380KG DE PESO CON COMPENSACIÓN. 110V/60HZ. USO COMERCIAL. INCLUYE DISPOSITIVO DE DESBLOQUEO, FRENO, TARJETA ELECTRONICA CON RECEPTOR Y DOS CONTROLES. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Apertura Central Enrollables 380kg Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

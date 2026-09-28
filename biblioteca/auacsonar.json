@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACSONAR",
+  "nombre": {
+    "valor": "Sistema de Apertura Remoto WiFi Accessmatic Compatible con Motores",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "SISTEMA DE APERTURA REMOTO WIFI ACCESSMATIC COMPATIBLE CON MOTORES FOX1000, FOX1050HS, RP120. 2.4GHZ",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Sistema Apertura WiFi Accessmatic p/Motores",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

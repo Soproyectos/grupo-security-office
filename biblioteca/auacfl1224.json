@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACFL1224",
+  "nombre": {
+    "valor": "Lámpara LED Destellante 12-240V AC/DC",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "LÁMPARA LED DESTELLANTE 12-240V AC/DC. NARANJA CON LUZ BLANCA PARA MOTOR KONG.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Lámpara LED Destellante 12-240V AC/DC",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

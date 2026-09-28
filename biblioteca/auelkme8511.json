@@ -1,0 +1,29 @@
+{
+  "referencia": "AUELKME8511",
+  "nombre": {
+    "valor": "Kit de Sistema de Apertura para Cortinas Enrollables Elite Spin ME8511",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Elite",
+    "origen": "inferido",
+    "razon": "'ELITE' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE SISTEMA DE APERTURA PARA CORTINAS ENROLLABLES ELITE SPIN ME8511 DE 800 KG SIN RESORTE; IDEAL PARA CORTINAS ENROLLABLES DE CENTROS DE DISTRIBUCIÓN. INCLUYE MOTOR, ACCESORIOS DE INSTALACIÓN, RECEPTOR INCORPORADO Y 2 CONTROLES. FUNCIONA A 110V. 2 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Apertura Enrollables Elite SPIN8511",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

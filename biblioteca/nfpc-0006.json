@@ -1,0 +1,19 @@
+{
+  "referencia": "NFPC-0006",
+  "categoria": {
+    "valor": "Accesorios de Cableado",
+    "origen": "inferido",
+    "razon": "Seccion 23.4 ACCESORIOS de la lista"
+  },
+  "descripcion": {
+    "valor": "FACE PLATE CUADRUPLE",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Face Plate Cuádruple",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

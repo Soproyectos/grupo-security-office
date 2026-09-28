@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACGC02",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "PINZA PARA VIDRIO CON TAPA EN ALUMINIO. 1 METRO. SIRVE PARA TODOS LOS CABEZALES.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Pinza para Vidrio con Tapa en Aluminio de 1 Metro",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, con palabras de la propia descripcion"
+  }
+}

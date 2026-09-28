@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7571",
+  "nombre": {
+    "valor": "UPS Powest EA9910 UL 10 KVA + Banco de Baterias",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Trifásicas",
+    "origen": "inferido",
+    "razon": "Seccion 12. UPS ON LINE TRIFASICAS POWEST EA + BATERIAS INTERNAS de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS POWEST EA9910 UL 10 KVA + BANCO DE BATERIAS",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Powest EA9910 UL 10 KVA + Banco de Baterias",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

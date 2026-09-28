@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACKFOX1100WS",
+  "nombre": {
+    "valor": "Motor de Garaje Accessmatic FOX 1100 Pro Silencioso y Rápido de Uso",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MOTOR DE GARAJE ACCESSMATIC FOX 1100 PRO SILENCIOSO Y RÁPIDO DE USO CONTÍNUO. ALIMENTACIÓN 110V/24V. FUERZA 3/4 HP (1000N). TRANSMISIÓN DE CADENA EN RIEL EN T (ADAPTABLE RIEL EN C) DE 3 METROS Y CON EXTENSIÓN HASTA 7 METROS.FÁCIL PROGRAMACIÓN. WIFI INCORPORADO PARA APERTURA Y CIERRE, RÁPIDO. INCLUYE 2 CONTROLES DE 4 CANALES 433MHZ, PULSADOR DE PARED WIRELESS.OPCIÓN DE BATERÍA DE RESPALDO (NO INCLUIDA). GARANTÍA DE 3 AÑOS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Motor Garaje FOX 1100 Pro Silencioso Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

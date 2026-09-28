@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACOWL504",
+  "nombre": {
+    "valor": "Cerradura Inteligente Digital con 5 Métodos de Apertura: Huella",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Cerraduras Inteligentes",
+    "origen": "inferido",
+    "razon": "Seccion SMART LOCK de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "CERRADURA INTELIGENTE DIGITAL CON 5 MÉTODOS DE APERTURA: HUELLA DIGITAL / CONTRASEÑA / TARJETA / LLAVE / APP. RESPALDO DE BATERÍA CON PUERTO USB. CILINDRO TIPO “C.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cerradura Inteligente Digital 5 Métodos Apertura",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

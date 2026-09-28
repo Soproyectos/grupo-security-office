@@ -1,0 +1,23 @@
+{
+  "referencia": "CEBBAT-764705",
+  "nombre": {
+    "valor": "Banco Baterias (5MN) 40KVA EA Bbtitan EA9940",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "BANCO BATERIAS (5MN) 40KVA EA REF.BBTITAN EA9940",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Banco Baterias (5MN) 40KVA EA Bbtitan EA9940",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACEG500",
+  "nombre": {
+    "valor": "Kit de Motores Batientes Accessmatic Eagle 500 para Puertas de 2 Hojas",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTORES BATIENTES ACCESSMATIC EAGLE 500 PARA PUERTAS DE 2 HOJAS DE 5MT DE ANCHO O MAX 350 KG. INCLUYE 2 MOTORES EG500, 2 CONTROLES Y TARJETA ELECTRÓNICA ACCESSCOMAND 24NE CON DISPLAY DIGITAL. 24V. FUNCIONA CON BATERÍA DE RESPALDO AUACAF2X (NO INCLUIDA). USO INTENSIVO. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Motores Batientes Eagle 500 2 Hojas",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

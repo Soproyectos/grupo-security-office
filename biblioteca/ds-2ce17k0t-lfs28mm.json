@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE17K0T-LFS(2.8mm)",
+  "nombre": {
+    "valor": "Camara Turbo Bala 2,8 3K Hibrida B/N - Color VU 40M Exterior IP67",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO BALA 2,8 3K HIBRIDA B/N - Color VU 40M EXTERIOR IP67 HIKVISION AUDIO COAXIAL",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 3K ColorVu Híbrida 40m Exterior",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

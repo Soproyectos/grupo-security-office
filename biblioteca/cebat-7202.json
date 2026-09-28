@@ -1,0 +1,28 @@
+{
+  "referencia": "CEBAT-7202",
+  "nombre": {
+    "valor": "Bateria Sellada 12V-5AH FL1250GS",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Baterías Selladas",
+    "origen": "inferido",
+    "razon": "Seccion 19. BATERIAS FULI BATTERY SELLADAS LIBRES DE MANTENIMIENTO de la lista"
+  },
+  "marca": {
+    "valor": "Fuli Battery",
+    "origen": "inferido",
+    "razon": "Seccion BATERIAS FULI BATTERY de la lista"
+  },
+  "descripcion": {
+    "valor": "BATERIA SELLADA 12V-5AH REF. FL1250GS",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bateria Sellada 12V-5AH FL1250GS",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

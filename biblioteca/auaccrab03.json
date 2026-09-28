@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACCRAB03",
+  "nombre": {
+    "valor": "Sistema Anticaida para Puertas Seccionales Levadizas",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "SISTEMA ANTICAIDA PARA PUERTAS SECCIONALES LEVADIZAS. INCLUYE 2 FRENOS AJUSTABLES DE 3” CONTRA FALLA DE GUAYAS. 2 GUAYAS DE 4.0M (3/16).",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Sistema Anticaída Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

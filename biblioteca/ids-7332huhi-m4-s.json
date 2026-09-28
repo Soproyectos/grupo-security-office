@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7332HUHI-M4/S",
+  "nombre": {
+    "valor": "DVR 32CH Turbo 5MP 12TB H265+ Analiticas 8FPS a 12FPS Hikvision",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 32CH TURBO 5MP 12TB H265+ ANALITICAS 8FPS A 12FPS HIKVISION AcuSense",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 32CH Turbo 5MP 12TB Analíticas Hikvision",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

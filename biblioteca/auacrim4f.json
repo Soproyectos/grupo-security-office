@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACRIM4F",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "CREMALLERA MEDIANA DE ACERO GALVANIZADO DE 1 MT DE LARGO. RECOMENDADA PARA PUERTAS DE HASTA 1200 KG DE PESO. INCLUYE PERNOS DE FIJACIÓN DE 30MM X 12MM.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cremallera Mediana Acero Galv. 1200kg",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

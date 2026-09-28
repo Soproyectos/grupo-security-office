@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACALK4",
+  "nombre": {
+    "valor": "Kit de Receptora para Motor Kong 433.92MHZ",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE RECEPTORA PARA MOTOR KONG 433.92MHZ. INCLUYE DOS CONTROLES DE 4 CANALES.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit de Receptora para Motor Kong 433.92MHZ",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

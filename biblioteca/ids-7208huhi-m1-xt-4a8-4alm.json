@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7208HUHI-M1/XT/4A+8/4ALM",
+  "nombre": {
+    "valor": "Grabador 8 Canales, 1 Disco SATA de hasta 12 Tb, Resolución 5MP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "GRABADOR 8 CANALES, 1 DISCO SATA DE HASTA 12 TB, RESOLUCIÓN 5MP, ALARMA 8E / 4S, ACUSENSE, MOTION DETECTION, 1 INTERFAZ RJ45.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 8CH Turbo 5MP 12TB Hikvision",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

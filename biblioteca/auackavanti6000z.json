@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKAVANTI6000Z",
+  "nombre": {
+    "valor": "Kit de Puerta Automática Accessmatic Telescopica de 6 Metros",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE PUERTA AUTOMÁTICA ACCESSMATIC TELESCOPICA DE 6 METROS. PARA 4 HOJAS DE MAX. 120KG. HOJAS DE 600 A 1500mm. INCLUYE DOS SENSORES MN20, 2 CONTROLES MULTIFUNCIÓN, BATERÍA DE RESPALDO. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Puerta Telescópica Accessmatic 6m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

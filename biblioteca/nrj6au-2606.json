@@ -1,0 +1,19 @@
+{
+  "referencia": "NRJ6AU-2606",
+  "categoria": {
+    "valor": "Cableado Categoría 6A",
+    "origen": "inferido",
+    "razon": "Seccion 23.3 CATEGORIA 6A de la lista"
+  },
+  "descripcion": {
+    "valor": "RJ45 6A UTP",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Conector RJ45 CAT 6A UTP",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

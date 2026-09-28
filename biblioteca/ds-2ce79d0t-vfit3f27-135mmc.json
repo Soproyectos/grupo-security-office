@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE79D0T-VFIT3F(2.7-13.5mm)(C)",
+  "nombre": {
+    "valor": "Camara Turbo 1080P Turret Varifocal 0.01LUX Distancia IR40m IP67",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 1080P TURRET VARIFOCAL 0.01LUX DISTANCIA IR40m IP67 FRONTAL METALICA CUERPO PLASTICO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 1080P Varifocal 2.7-13.5 IR40m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

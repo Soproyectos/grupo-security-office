@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACKAT63M",
+  "nombre": {
+    "valor": "Kit de Puerta Automática Accessmatic AVANTI6300 de 6.3 Mt de Ancho",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE PUERTA AUTOMÁTICA ACCESSMATIC AVANTI6300 DE 6.3 MT DE ANCHO PARA 2 HOJAS DE 1.4 MT DE ANCHO Y MAXIMO 140 KG DE PESO POR HOJA O TAMBIÉN UNA SOLA HOJA DE 2 MT DE ANCHO Y 150 KG DE PESO. TECNOLOGIA FULL RANGE VOLTAGE QUE FUNCIONA DESDE 95V-265V A 60HZ. INCLUYE 2 SENSORES DE DOBLE FUNCION ACCESSVISION SIRVE PARA PRESENCIA Y MOVIMIENTO, 2 CONTROLES DE 433 MHZ MULTIFUNCIÓN. FUNCIONA A 110/220V. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Puerta Automática AVANTI6300 6.3m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

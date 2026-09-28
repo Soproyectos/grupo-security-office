@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7402",
+  "nombre": {
+    "valor": "UPS Online Powest Winner 2KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS On Line",
+    "origen": "inferido",
+    "razon": "Seccion 5. UPS ON LINE INCLUYE BATERIAS (AUTONOMIA). POWEST de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS ONLINE POWEST WINNER 2KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Online Powest Winner 2KVA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE10DF3T-PFS(2.8mm)",
+  "nombre": {
+    "valor": "Cámara TurboHD ColorVu Bullet",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara TurboHD ColorVu, Bullet. Lente fijo 2.8mm. Resolución máxima 1920x1080. Soporta 4 tecnologías, seleccionables (TVI / AHD / CVI / CVBS). Iluminación mínima 0.0005 Lux, F1.0, luz blanca complementaria (alcance hasta 20m). Audio de alta calidad a través de cable coaxial, micrófono incorporado. (NOTA: LA DVR DEBE ACEPTAR AUDIO A TRAVÉS DEL CABLE COAXIAL). WDR 130db. IP67. Alimentación 12VDC (no incluida). Fabricada en material plástico.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cámara TurboHD ColorVu Bullet",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}
