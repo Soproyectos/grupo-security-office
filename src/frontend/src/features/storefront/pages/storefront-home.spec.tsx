@@ -8,7 +8,7 @@ import StorefrontHome from './StorefrontHome'
 /**
  * As HOM-01's sibling `category-page.spec.tsx` did, the suite asserts what the
  * visitor sees on a server render (`react-dom/server`) of the real page inside
- * a `MemoryRouter`: the hero, the category tiles, the demo sections and the
+ * a `MemoryRouter`: the slider, the category tiles, the demo sections and the
  * states. The tree of categories is fed through the session store the page
  * reads, and the fetch itself is out of reach here (no DOM environment).
  */
@@ -93,20 +93,22 @@ beforeEach(() => {
   retryMock.mockReset()
 })
 
-describe('hero de la vitrina', () => {
-  it('muestra el banner y la copy principal', () => {
+describe('slider de la vitrina', () => {
+  it('muestra los dos banners de la web anterior', () => {
     const markup = renderPage()
 
-    expect(markup).toContain('src="/images/home/hero-vitrina.svg"')
-    expect(markup).toContain('aria-labelledby="home-hero-title"')
+    expect(markup).toContain('src="/images/home/banner-hikvision-distribuidor.png"')
+    expect(markup).toContain('src="/images/home/banner-ezviz-nuevas.png"')
+    expect(markup).toContain('aria-roledescription="carousel"')
     expect(markup).toContain('Todo para tu seguridad, en un solo lugar')
   })
 
-  it('apunta el CTA al catálogo', () => {
+  it('expone flechas y paginación para navegarlo', () => {
     const markup = renderPage()
 
-    expect(markup).toContain('Ver catálogo')
-    expect(markup).toContain('href="/catalogo"')
+    expect(markup).toContain('aria-label="Promoción anterior"')
+    expect(markup).toContain('aria-label="Promoción siguiente"')
+    expect(markup).toContain('aria-label="Ir a la promoción 2"')
   })
 })
 
@@ -148,8 +150,8 @@ describe('secciones temáticas', () => {
     expect(markup).toContain('aria-labelledby="home-marcas-title"')
     expect(markup).toContain('aria-labelledby="home-ofertas-title"')
     expect(markup).toContain('aria-labelledby="home-novedades-title"')
-    // 1 hero CTA + 10 demo cards.
-    expect(occurrences(markup, 'href="/catalogo"')).toBe(11)
+    // 10 demo cards (the slider banners carry no CTA).
+    expect(occurrences(markup, 'href="/catalogo"')).toBe(10)
     // The ofertas cards carry a demo price.
     expect(markup).toContain('Desde $899.900')
   })

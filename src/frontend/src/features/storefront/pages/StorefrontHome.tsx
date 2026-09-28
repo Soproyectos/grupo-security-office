@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import StorefrontSalesChannels from '../components/StorefrontSalesChannels'
@@ -26,36 +27,102 @@ function featuredAcrossRoots(categories: MenuCategory[]): MenuCategory[] {
 }
 
 /**
- * Hero of the home. The banner is the generated artwork
- * (`public/images/home/hero-vitrina.svg`, 1600x500); the copy is real HTML
- * overlaid on top, so it stays editable and readable. The CTA points at the
- * catalog, the destination of the storefront even before the route exists.
+ * Slides of the home photo slider, the same two 1500x400 banners of the
+ * previous website (gruposecurity.co), copied into `public/images/home/` so
+ * they do not depend on the old hosting. The marketing message lives in the
+ * banner images themselves (the old slider carried no captions), so there is
+ * no overlay copy.
  */
-function Hero() {
+const HERO_SLIDES = [
+  {
+    id: 'hikvision-distribuidor',
+    src: '/images/home/banner-hikvision-distribuidor.png',
+    alt: 'Distribuidor autorizado de Hikvision y HiLook',
+  },
+  {
+    id: 'ezviz-nuevas',
+    src: '/images/home/banner-ezviz-nuevas.png',
+    alt: 'Nuevas cámaras EZVIZ H8X 2K+, H80x Dual y H90x Dual',
+  },
+]
+
+/** Autoplay of the old slider: one slide every 5 s, paused on hover. */
+const SLIDE_INTERVAL_MS = 5000
+
+function HeroSlider() {
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+  const count = HERO_SLIDES.length
+
+  useEffect(() => {
+    if (paused) {
+      return
+    }
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % count)
+    }, SLIDE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [paused, count])
+
+  const go = (delta: number) => setIndex((current) => (current + delta + count) % count)
+
   return (
-    <section aria-labelledby="home-hero-title" className="relative overflow-hidden rounded-card">
-      <img
-        src="/images/home/hero-vitrina.svg"
-        alt=""
-        className="h-64 w-full object-cover sm:h-80 lg:h-[420px]"
-      />
-      <div className="absolute inset-0 flex flex-col items-start justify-center gap-4 bg-gradient-to-r from-black/75 via-black/45 to-transparent px-6 sm:px-12 lg:px-20">
-        <h1
-          id="home-hero-title"
-          className="max-w-xl text-2xl font-bold leading-tight text-white sm:text-3xl lg:text-4xl"
+    <section
+      aria-roledescription="carousel"
+      aria-label="Promociones y marcas"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <h1 className="sr-only">Todo para tu seguridad, en un solo lugar</h1>
+      <div className="relative overflow-hidden rounded-card">
+        <div
+          className="flex transition-transform duration-500 ease-out"
+          style={{ transform: `translateX(-${index * 100}%)` }}
         >
-          Todo para tu seguridad, en un solo lugar
-        </h1>
-        <p className="max-w-lg text-body-sm text-white/90 sm:text-base">
-          Cámaras, control de acceso, alarmas y energía: distribución autorizada de marcas
-          líderes.
-        </p>
-        <Link
-          to="/catalogo"
-          className="rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600"
+          {HERO_SLIDES.map((slide, slideIndex) => (
+            <img
+              key={slide.id}
+              src={slide.src}
+              alt={slideIndex === index ? slide.alt : ''}
+              className="aspect-[15/4] w-full shrink-0 object-cover"
+              loading={slideIndex === 0 ? 'eager' : 'lazy'}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => go(-1)}
+          aria-label="Promoción anterior"
+          className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60"
         >
-          Ver catálogo
-        </Link>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => go(1)}
+          aria-label="Promoción siguiente"
+          className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+            <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      <div className="mt-3 flex justify-center gap-2">
+        {HERO_SLIDES.map((slide, slideIndex) => (
+          <button
+            key={slide.id}
+            type="button"
+            onClick={() => setIndex(slideIndex)}
+            aria-label={`Ir a la promoción ${slideIndex + 1}`}
+            aria-current={slideIndex === index}
+            className={`h-2.5 w-2.5 rounded-full transition ${
+              slideIndex === index ? 'scale-110 bg-security-500' : 'bg-surface-300 hover:bg-surface-400'
+            }`}
+          />
+        ))}
       </div>
     </section>
   )
@@ -147,7 +214,7 @@ export default function StorefrontHome() {
   return (
     <StorefrontChrome>
       <main className="mx-auto max-w-7xl px-5 py-8 lg:px-12">
-        <Hero />
+        <HeroSlider />
         <section aria-labelledby="home-categorias-title" className="mt-12">
           <h2 id="home-categorias-title" className="text-xl font-bold text-ink-900">
             Categorías destacadas

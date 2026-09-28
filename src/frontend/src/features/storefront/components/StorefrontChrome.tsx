@@ -1,7 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
-import CoverageSelector from './CoverageSelector'
 import StorefrontFooter from './StorefrontFooter'
 
 type StorefrontChromeProps = { children: React.ReactNode }
@@ -65,7 +64,6 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
               </svg>
             </button>
           </form>
-          <CoverageSelector />
           <AccountMenu />
         </div>
       </header>
