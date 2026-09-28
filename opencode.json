@@ -18,7 +18,7 @@
         "server",
         "--mcp-only",
         "--http-url",
-        "http://localhost:4747"
+        "http://srv-soporte.taila71364.ts.net:4747"
       ],
       "enabled": true,
       "type": "local"

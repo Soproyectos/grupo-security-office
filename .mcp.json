@@ -1,5 +1,16 @@
 {
   "mcpServers": {
+    "agentation": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "agentation-mcp",
+        "server",
+        "--mcp-only",
+        "--http-url",
+        "http://srv-soporte.taila71364.ts.net:4747"
+      ]
+    },
     "context7": {
       "args": [
         "-y",
