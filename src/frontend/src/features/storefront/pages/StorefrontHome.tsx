@@ -9,6 +9,8 @@ import { CategoryShopTiles, CategoryShopTilesSkeleton } from '../components/Cate
 import { HOME_CATEGORY_TILE_LIMIT, HOME_SHELVES } from '../constants/home-catalog'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
 import { useCategoryProductCounts } from '../hooks/useCategoryProductCounts'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { HOME_TITLE } from '../utils/documentTitle'
 import { FEATURED_SOLUTIONS } from '../fixtures/featured-solutions'
 
 /**
@@ -63,6 +65,8 @@ function ShopByCategory() {
  * category tree is the same session menu the header reads.
  */
 export default function StorefrontHome() {
+  useDocumentTitle(HOME_TITLE)
+
   return (
     <StorefrontChrome>
       <HomeHero />

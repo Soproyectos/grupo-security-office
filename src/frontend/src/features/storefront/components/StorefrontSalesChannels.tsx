@@ -1,20 +1,18 @@
+import { SALES_LINE_HREF, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
+
 /**
  * As HOM-04 defines it, the sales-channels section of the storefront
  * (Homecenter style): four channels with inline SVG icons, a short title and
- * a one-line description each. Every phone number and WhatsApp link is DEMO
- * (the same demo pattern of the footer contact), no real PII.
- *
- * The destinations of the internal channels (`Proyectos`, `Ventas al por
- * mayor`) are intended routes that do not exist yet (no route was created in
- * this task): they use plain `<a href>` so a visitor without JavaScript still
- * sees where each link leads. When the routes land, each anchor can be
- * swapped for a `Link` from react-router.
+ * a one-line description each. Contact data comes from `constants/contact.ts`
+ * (DEMO values). `Proyectos` and `Ventas al por mayor` have no page, so they
+ * open WhatsApp with a prefilled message instead of a dead route.
  */
 
 type SalesChannel = {
   title: string
   description: string
-  href: string
+  /** Channels without a destination are not rendered. */
+  href?: string
   external?: boolean
   icon: React.ReactNode
 }
@@ -51,26 +49,28 @@ const SALES_CHANNELS: SalesChannel[] = [
   {
     title: 'WhatsApp',
     description: 'Escríbenos por WhatsApp y te asesoramos en tu compra.',
-    href: 'https://wa.me/576011234567',
+    href: whatsappUrl(),
     external: true,
     icon: WHATSAPP_ICON,
   },
   {
     title: 'Venta telefónica',
     description: 'Llama a nuestra línea de ventas y haz tu pedido.',
-    href: 'tel:+5761234567',
+    href: SALES_LINE_HREF,
     icon: PHONE_ICON,
   },
   {
     title: 'Proyectos',
     description: 'Cotiza proyectos de seguridad para tu empresa o edificio.',
-    href: '/proyectos',
+    href: whatsappUrl(WHATSAPP_MESSAGES.projects),
+    external: true,
     icon: PROJECTS_ICON,
   },
   {
     title: 'Ventas al por mayor',
     description: 'Precios especiales por volumen para distribuidores e instaladores.',
-    href: '/ventas-al-por-mayor',
+    href: whatsappUrl(WHATSAPP_MESSAGES.wholesale),
+    external: true,
     icon: WHOLESALE_ICON,
   },
 ]
@@ -78,21 +78,21 @@ const SALES_CHANNELS: SalesChannel[] = [
 export default function StorefrontSalesChannels() {
   return (
     <section aria-labelledby="home-canales-title" className="mt-12">
-      <h2 id="home-canales-title" className="text-xl font-bold text-ink-900">
+      <h2 id="home-canales-title" className="font-condensed text-2xl font-bold text-storefront-ink">
         Canales de venta
       </h2>
       <ul role="list" className="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {SALES_CHANNELS.map((channel) => (
+        {SALES_CHANNELS.filter((channel) => channel.href !== undefined).map((channel) => (
           <li key={channel.title}>
             <a
               href={channel.href}
-              className="flex h-full flex-col gap-2 rounded-card border border-surface-200 bg-white p-5 transition hover:border-security-500 hover:shadow-lg"
+              className="flex h-full flex-col gap-2 rounded-card border border-surface-200 bg-white p-5 transition-colors duration-150 hover:border-storefront-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
               {...(channel.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-security-50 text-security-500">
                 {channel.icon}
               </span>
-              <span className="font-semibold text-ink-900">{channel.title}</span>
+              <span className="font-condensed text-lg font-bold text-storefront-ink">{channel.title}</span>
               <span className="text-body-sm text-ink-500">{channel.description}</span>
             </a>
           </li>

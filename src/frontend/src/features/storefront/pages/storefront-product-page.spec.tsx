@@ -121,7 +121,7 @@ describe('ficha del producto', () => {
     expect(markup).toContain(`href="https://wa.me/576011234567?text=${message}"`)
     expect(markup).toContain('Cotizar por WhatsApp')
     // Summary CTA and the bottom bar of small screens.
-    expect(occurrences(markup, 'https://wa.me/576011234567?text=')).toBe(2)
+    expect(occurrences(markup, `href="https://wa.me/576011234567?text=${message}"`)).toBe(2)
   })
 
   it('ofrece llamar por teléfono', () => {

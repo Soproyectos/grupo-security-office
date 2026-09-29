@@ -10,6 +10,8 @@ import {
   PublicProductPager,
 } from '../components/PublicProductGrid'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { pageTitle } from '../utils/documentTitle'
 import { usePublicProductListing } from '../hooks/usePublicProductListing'
 import type { MenuCategory } from '../types/categoryMenu'
 
@@ -278,6 +280,7 @@ export default function CategoryPage() {
   )
   const children = trail === null ? NO_CHILDREN : childrenBySortOrder(trail.category)
   const showNotFound = status === 'error' || (status === 'ready' && trail === null)
+  useDocumentTitle(pageTitle(showNotFound ? 'Categoría no encontrada' : (trail?.category.name ?? 'Catálogo')))
 
   return (
     <StorefrontChrome>

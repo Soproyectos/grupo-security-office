@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { pageTitle } from '../utils/documentTitle'
 import type { MenuCategory } from '../types/categoryMenu'
 import { CategoryTile } from './CategoryPage'
 
@@ -136,6 +138,7 @@ function CatalogEmpty() {
  */
 export default function CatalogIndexPage() {
   const { status, categories, retry } = useCategoryMenu()
+  useDocumentTitle(pageTitle('Catálogo'))
 
   const roots = useMemo(
     () => (status === 'ready' ? rootsBySortOrder(categories) : NO_ROOTS),

@@ -9,8 +9,8 @@ import AccountMenu, { ACCOUNT_MENU_LINKS } from './AccountMenu'
  * the suite asserts what the visitor sees on a server render
  * (`react-dom/server`) of the menu — inside a `MemoryRouter`, because the
  * internal link renders with react-router —: the trigger with its user icon
- * and label, the a11y attributes and the three static options with their
- * destinations (the menu stays in the DOM hidden while closed). Events that
+ * and label, the a11y attributes and the options that have a real
+ * destination (the menu stays in the DOM hidden while closed). Events that
  * only exist in the browser (the `mousedown` and `keydown` listeners on
  * `document`, the click on the trigger and on the items) cannot run here and
  * are covered by reading the wiring in the component.
@@ -32,24 +32,26 @@ describe('disparador de Mi Cuenta', () => {
     expect(markup).toContain('title="Mi cuenta"')
   })
 
-  it('declara exactamente tres opciones en el menú', () => {
+  it('declara todas las opciones pero solo pinta las que tienen destino', () => {
     const markup = renderAccountMenu()
+    const routed = ACCOUNT_MENU_LINKS.filter((link) => link.href !== undefined)
 
     expect(ACCOUNT_MENU_LINKS).toHaveLength(3)
-    for (const link of ACCOUNT_MENU_LINKS) {
-      expect(markup).toContain(link.label)
-    }
+    expect(routed.map((link) => link.label)).toEqual(['Ingresar'])
     expect(markup).toContain('role="menu"')
     expect(markup).toContain('aria-label="Mi Cuenta"')
-    expect(markup.split('role="menuitem"').length - 1).toBe(3)
+    expect(markup.split('role="menuitem"').length - 1).toBe(routed.length)
   })
 
-  it('apunta cada opción a su destino', () => {
+  it('apunta Ingresar al acceso y oculta las opciones sin ruta', () => {
     const markup = renderAccountMenu()
 
     expect(markup).toContain('href="/login"')
-    expect(markup).toContain('href="/crear-cuenta"')
-    expect(markup).toContain('href="/rastrea-tu-pedido"')
+    expect(markup).toContain('>Ingresar<')
+    expect(markup).not.toContain('Crear cuenta')
+    expect(markup).not.toContain('/crear-cuenta')
+    expect(markup).not.toContain('Rastrea tu pedido')
+    expect(markup).not.toContain('/rastrea-tu-pedido')
   })
 
   it('mantiene el menú oculto mientras está cerrado', () => {

@@ -4,8 +4,10 @@ import StorefrontChrome from '../components/StorefrontChrome'
 import ProductGallery from '../components/ProductGallery'
 import { categoryHref } from '../components/mega-menu/menu-model'
 import { SALES_PHONE_HREF, whatsappUrl } from '../constants/contact'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { usePublicProductDetail } from '../hooks/usePublicProductDetail'
 import type { PublicProductDetail } from '../types/publicProduct'
+import { pageTitle } from '../utils/documentTitle'
 import { formatCop } from '../utils/formatCop'
 import { toSentenceCase } from '../utils/toSentenceCase'
 
@@ -271,6 +273,9 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
 export default function StorefrontProductPage() {
   const { id = '' } = useParams<{ id: string }>()
   const { status, product, retry } = usePublicProductDetail(id)
+  useDocumentTitle(
+    pageTitle(status === 'ready' && product !== null ? product.name : status === 'not-found' ? 'Producto no encontrado' : 'Producto'),
+  )
 
   return (
     <StorefrontChrome>

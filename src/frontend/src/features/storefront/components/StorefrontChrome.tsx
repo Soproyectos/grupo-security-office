@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
 import StorefrontFooter from './StorefrontFooter'
+import { SALES_LINE_DISPLAY, SALES_LINE_HREF, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
 
 type StorefrontChromeProps = { children: React.ReactNode }
 
@@ -13,8 +14,20 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <div className="hidden bg-[#484748] px-6 py-2 text-xs text-[#FAFAFA] sm:block lg:px-12">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <span>Línea de ventas: (6) 123 4567</span>
-          <div className="flex items-center gap-5"><span>Rastrea tu pedido</span><span>Centro de ayuda</span><span>Distribuidor autorizado · marcas líderes en seguridad</span><span>Vende con nosotros</span></div>
+          <a href={SALES_LINE_HREF} className="text-[#FAFAFA] transition hover:text-white hover:underline">
+            Línea de ventas: {SALES_LINE_DISPLAY}
+          </a>
+          <div className="flex items-center gap-5">
+            <span>Distribuidor autorizado · marcas líderes en seguridad</span>
+            <a
+              href={whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-[#FAFAFA] transition hover:text-white hover:underline"
+            >
+              Vende con nosotros
+            </a>
+          </div>
         </div>
       </div>
       <header className="relative bg-white px-5 py-3 lg:h-20 lg:px-12 lg:py-0">
@@ -70,7 +83,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
       {children}
       <StorefrontFooter />
       <a
-        href="https://wa.me/576011234567"
+        href={whatsappUrl()}
         target="_blank"
         rel="noreferrer noopener"
         aria-label="Escríbenos por WhatsApp"

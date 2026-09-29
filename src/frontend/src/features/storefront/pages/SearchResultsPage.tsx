@@ -6,7 +6,9 @@ import {
   PublicProductListingError,
   PublicProductPager,
 } from '../components/PublicProductGrid'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { usePublicProductListing } from '../hooks/usePublicProductListing'
+import { pageTitle } from '../utils/documentTitle'
 
 /**
  * Shown when the search returned no products. The query is quoted so the
@@ -53,6 +55,7 @@ function EmptyQuery() {
 export default function SearchResultsPage() {
   const [searchParams] = useSearchParams()
   const query = (searchParams.get('q') ?? '').trim()
+  useDocumentTitle(pageTitle(query === '' ? 'Buscar productos' : `Resultados para ${query}`))
   const { status, items, total, hasMore, loadingMore, loadMoreError, loadMore, retry } =
     usePublicProductListing({ q: query })
 
