@@ -18,6 +18,7 @@ function category(slug: string, name: string, options: Partial<MenuCategory> = {
     iconUrl: options.iconUrl ?? null,
     isFeatured: false,
     sortOrder: 0,
+    productCount: 0,
     children: [],
   }
 }

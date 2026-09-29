@@ -51,6 +51,7 @@ function node(
     iconUrl: rest.iconUrl ?? null,
     isFeatured: featured,
     sortOrder: rest.sortOrder ?? 0,
+    productCount: 0,
     children,
   }
 }

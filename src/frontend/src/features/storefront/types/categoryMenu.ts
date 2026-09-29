@@ -11,6 +11,8 @@ export interface MenuCategory {
   iconUrl: string | null
   isFeatured: boolean
   sortOrder: number
+  /** Published products in the category and all its descendants. */
+  productCount: number
   children: MenuCategory[]
 }
 

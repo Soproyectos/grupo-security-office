@@ -42,12 +42,14 @@ function node(
     iconUrl: options.iconUrl ?? null,
     isFeatured: options.isFeatured ?? false,
     sortOrder: options.sortOrder ?? 0,
+    productCount: options.productCount ?? 0,
     children: options.children ?? [],
   }
 }
 
 const videovigilancia = node('r-vv', 'Videovigilancia', 'videovigilancia', {
   sortOrder: 10,
+  productCount: 12,
   children: [
     node('c-camaras', 'Cámaras IP', 'camaras-ip', {
       sortOrder: 10,
@@ -61,13 +63,14 @@ const videovigilancia = node('r-vv', 'Videovigilancia', 'videovigilancia', {
 
 const energia = node('r-energia', 'Energía y Respaldo', 'energia-y-respaldo', {
   sortOrder: 20,
+  productCount: 1,
   children: [
     node('l-ups', 'UPS', 'ups', { imageUrl: '/images/categories/ups.jpg', isFeatured: true, sortOrder: 10 }),
   ],
 })
 
 /** Flat root from the library import: featured tiles skip it (no children). */
-const cablesUtp = node('f-cables', 'Cables UTP', 'cables-utp', { isFeatured: true })
+const cablesUtp = node('f-cables', 'Cables UTP', 'cables-utp', { isFeatured: true, productCount: 0 })
 
 const menu: MenuCategory[] = [cablesUtp, videovigilancia, energia]
 
@@ -138,22 +141,27 @@ describe('slider de la vitrina', () => {
 })
 
 describe('compra por categoría', () => {
-  it('muestra el esqueleto con la forma de los tiles mientras se cuentan los productos', () => {
+  it('muestra un tile por categoría con productos y el conteo que trae el menú', () => {
     const markup = renderPage()
 
     expect(markup).toContain('aria-labelledby="home-categorias-title"')
     expect(markup).toContain('Compra por categoría')
-    expect(markup).toContain('Cargando categorías')
-    expect(occurrences(markup, 'h-12 w-12 shrink-0 animate-pulse')).toBe(8)
+    expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
+    expect(markup).toContain('12 productos')
+    expect(markup).toContain('1 producto<')
+    expect(markup).not.toContain('href="/catalogo/categoria/cables-utp"')
+    expect(markup).not.toContain('Cargando categorías')
   })
 
-  it('no muestra el esqueleto de categorías ni tiles antes de conocer el árbol', () => {
+  it('muestra el esqueleto con la forma de los tiles mientras carga el menú', () => {
     menuMock.status = 'loading'
+    menuMock.categories = []
 
     const markup = renderPage()
 
     expect(markup).toContain('Cargando categorías')
-    expect(markup).not.toContain('href="/catalogo/categoria/cables-utp"')
+    expect(occurrences(markup, 'h-12 w-12 shrink-0 animate-pulse')).toBe(8)
+    expect(markup).not.toContain('href="/catalogo/categoria/videovigilancia"')
   })
 
   it('muestra el error con el reintento del hook', () => {

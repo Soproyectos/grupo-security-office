@@ -208,6 +208,10 @@ describe('CategoriesService', () => {
   });
 
   describe('findMenu', () => {
+    beforeEach(() => {
+      mockPrisma.product.groupBy.mockResolvedValue([]);
+    });
+
     it('excluye categorías inactivas y sus subárboles', async () => {
       mockPrisma.category.findMany.mockResolvedValue([
         { ...mockCategory, id: 'active-root', name: 'Activa', slug: 'activa', parentId: null, isActive: true },
@@ -257,7 +261,7 @@ describe('CategoriesService', () => {
       ]);
 
       const result = await service.findMenu();
-      const expectedKeys = ['children', 'iconUrl', 'id', 'imageUrl', 'isFeatured', 'name', 'slug', 'sortOrder'];
+      const expectedKeys = ['children', 'iconUrl', 'id', 'imageUrl', 'isFeatured', 'name', 'productCount', 'slug', 'sortOrder'];
 
       expect(Object.keys(result.data[0]).sort()).toEqual(expectedKeys);
       expect(Object.keys(result.data[0].children[0]).sort()).toEqual(expectedKeys);
@@ -265,6 +269,40 @@ describe('CategoriesService', () => {
       expect(result.data[0]).not.toHaveProperty('createdAt');
       expect(result.data[0]).not.toHaveProperty('updatedAt');
       expect(result.data[0]).not.toHaveProperty('_count');
+    });
+
+    it('acumula productCount hacia los ancestros con una sola consulta agrupada', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'root', slug: 'root', parentId: null },
+        { ...mockCategory, id: 'child', slug: 'child', parentId: 'root' },
+        { ...mockCategory, id: 'leaf', slug: 'leaf', parentId: 'child' },
+        { ...mockCategory, id: 'empty', slug: 'empty', parentId: 'root' },
+      ]);
+      mockPrisma.product.groupBy.mockResolvedValue([
+        { categoryId: 'root', _count: { _all: 1 } },
+        { categoryId: 'child', _count: { _all: 2 } },
+        { categoryId: 'leaf', _count: { _all: 4 } },
+      ]);
+
+      const result = await service.findMenu();
+      const [root] = result.data;
+      const [child, empty] = root.children;
+
+      expect(root.productCount).toBe(7);
+      expect(child.productCount).toBe(6);
+      expect(child.children[0].productCount).toBe(4);
+      expect(empty.productCount).toBe(0);
+      expect(mockPrisma.product.groupBy).toHaveBeenCalledTimes(1);
+    });
+
+    it('cuenta solo productos PUBLISHED', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'root', slug: 'root', parentId: null },
+      ]);
+
+      await service.findMenu();
+
+      expect(mockPrisma.product.groupBy.mock.calls[0][0].where).toEqual({ lifecycleStatus: 'PUBLISHED' });
     });
 
     it('conserva el orden de sortOrder y name de la consulta', async () => {

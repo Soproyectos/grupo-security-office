@@ -23,6 +23,8 @@ export type MenuCategory = {
   iconUrl: string | null;
   isFeatured: boolean;
   sortOrder: number;
+  /** Productos PUBLISHED de la categoría y de todas sus descendientes activas. */
+  productCount: number;
   children: MenuCategory[];
 };
 
@@ -73,7 +75,39 @@ export class CategoriesService {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
 
-    return { data: this.buildMenuTree(categories) };
+    const counts = await this.publishedCountsByCategory(categories);
+
+    return { data: this.buildMenuTree(categories, counts) };
+  }
+
+  /**
+   * Una sola consulta agrupada de productos PUBLISHED por categoría; los
+   * conteos se acumulan hacia los ancestros en memoria.
+   */
+  private async publishedCountsByCategory(
+    categories: MenuCategoryRecord[],
+  ): Promise<Map<string, number>> {
+    const grouped = await this.prisma.product.groupBy({
+      by: ['categoryId'],
+      where: { lifecycleStatus: 'PUBLISHED' },
+      _count: { _all: true },
+    });
+
+    const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
+    const totals = new Map<string, number>();
+
+    for (const row of grouped) {
+      const own = row._count._all;
+      const seen = new Set<string>();
+      let current: string | null = row.categoryId;
+      while (current !== null && parentOf.has(current) && !seen.has(current)) {
+        seen.add(current);
+        totals.set(current, (totals.get(current) ?? 0) + own);
+        current = parentOf.get(current) ?? null;
+      }
+    }
+
+    return totals;
   }
 
   /**
@@ -92,6 +126,7 @@ export class CategoriesService {
 
   private buildMenuTree(
     nodes: MenuCategoryRecord[],
+    counts: Map<string, number>,
     parentId: string | null = null,
     depth = 1,
   ): MenuCategory[] {
@@ -107,7 +142,8 @@ export class CategoriesService {
         iconUrl: node.iconUrl,
         isFeatured: node.isFeatured,
         sortOrder: node.sortOrder,
-        children: depth < 3 ? this.buildMenuTree(nodes, node.id, depth + 1) : [],
+        productCount: counts.get(node.id) ?? 0,
+        children: depth < 3 ? this.buildMenuTree(nodes, counts, node.id, depth + 1) : [],
       }));
   }
 

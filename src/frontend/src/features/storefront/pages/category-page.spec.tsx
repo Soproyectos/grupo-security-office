@@ -56,6 +56,7 @@ function node(
     iconUrl: options.iconUrl ?? null,
     isFeatured: options.isFeatured ?? false,
     sortOrder: options.sortOrder ?? 0,
+    productCount: 0,
     children: options.children ?? [],
   }
 }

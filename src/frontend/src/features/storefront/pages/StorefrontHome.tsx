@@ -8,9 +8,9 @@ import ProductShelf from '../components/ProductShelf'
 import { CategoryShopTiles, CategoryShopTilesSkeleton } from '../components/CategoryShopTiles'
 import { HOME_CATEGORY_TILE_LIMIT, HOME_SHELVES } from '../constants/home-catalog'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
-import { useCategoryProductCounts } from '../hooks/useCategoryProductCounts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { HOME_TITLE } from '../utils/documentTitle'
+import { pickCountedCategories } from '../utils/pickCountedCategories'
 import { FEATURED_SOLUTIONS } from '../fixtures/featured-solutions'
 
 /**
@@ -20,14 +20,13 @@ import { FEATURED_SOLUTIONS } from '../fixtures/featured-solutions'
  */
 function ShopByCategory() {
   const { status: menuStatus, categories, retry: retryMenu } = useCategoryMenu()
-  const candidates = useMemo(() => (menuStatus === 'ready' ? categories : []), [menuStatus, categories])
-  const { status: countsStatus, entries, retry: retryCounts } = useCategoryProductCounts(
-    candidates,
-    HOME_CATEGORY_TILE_LIMIT,
+  const entries = useMemo(
+    () => (menuStatus === 'ready' ? pickCountedCategories(categories, HOME_CATEGORY_TILE_LIMIT) : []),
+    [menuStatus, categories],
   )
 
-  const loading = menuStatus === 'loading' || (menuStatus === 'ready' && countsStatus === 'loading')
-  const failed = menuStatus === 'error' || (menuStatus === 'ready' && countsStatus === 'error')
+  const loading = menuStatus === 'loading'
+  const failed = menuStatus === 'error'
 
   return (
     <section aria-labelledby="home-categorias-title" className="mt-12">
@@ -43,7 +42,7 @@ function ShopByCategory() {
             </p>
             <button
               type="button"
-              onClick={menuStatus === 'error' ? retryMenu : retryCounts}
+              onClick={retryMenu}
               className="mt-6 min-h-11 rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
             >
               Intentar de nuevo
