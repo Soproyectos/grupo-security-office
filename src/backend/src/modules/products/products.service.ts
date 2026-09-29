@@ -304,16 +304,19 @@ export class ProductsService {
       if (params?.search && params.search.trim().length > 2) {
         // Fuzzy search para trending
         const searchTerm = params.search.trim();
-        const categoryFilter = params?.categoryId ? `AND "categoryId" = '${params.categoryId}'` : '';
+        const categoryId = params?.categoryId;
 
-        const whereClause = `WHERE "isVisible" = true AND "isActive" = true AND "createdAt" >= NOW() - INTERVAL '30 days' ${categoryFilter}`;
+        // categoryId is caller-controlled: bind it as a query parameter, never interpolate it into the SQL string.
+        const baseWhere = `WHERE "isVisible" = true AND "isActive" = true AND "createdAt" >= NOW() - INTERVAL '30 days'`;
+        const countWhere = categoryId ? `${baseWhere} AND "categoryId" = $2` : baseWhere;
+        const selectWhere = categoryId ? `${baseWhere} AND "categoryId" = $3` : baseWhere;
 
         const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(`
           SELECT COUNT(*)::bigint as count
           FROM "products"
-          ${whereClause}
+          ${countWhere}
           AND (similarity("name", $1) + similarity("sku", $1) + similarity("description", $1)) > 0.1
-        `, searchTerm);
+        `, searchTerm, ...(categoryId ? [categoryId] : []));
         const total = Number(countResult[0]?.count ?? 0);
 
         const products = await this.prisma.$queryRawUnsafe<any[]>(`
@@ -321,11 +324,11 @@ export class ProductsService {
             p.*,
             (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) as _similarity
           FROM "products" p
-          ${whereClause}
+          ${selectWhere}
           AND (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) > 0.1
           ORDER BY _similarity DESC
           LIMIT $2
-        `, searchTerm, take);
+        `, searchTerm, take, ...(categoryId ? [categoryId] : []));
 
         // Fetch related data
         const productIds = products.map(p => p.id);

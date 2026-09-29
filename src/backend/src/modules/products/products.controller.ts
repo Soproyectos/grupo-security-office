@@ -20,7 +20,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -34,7 +33,7 @@ export class ProductsController {
   }
 
   @Get('trending')
-  @Public()
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener productos tendencia' })
   findTrending(
     @Query('take') take?: number,

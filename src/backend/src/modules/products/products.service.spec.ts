@@ -1186,6 +1186,48 @@ describe('ProductsService', () => {
 
       expect(mockPrisma.product.findMany).toHaveBeenCalledTimes(2);
     });
+
+    describe('fuzzy search con categoryId (parámetro enlazado, sin inyección SQL)', () => {
+      const injectedCategoryId = "cat-1' OR '1'='1";
+
+      beforeEach(() => {
+        mockPrisma.$queryRawUnsafe
+          .mockResolvedValueOnce([{ count: BigInt(0) }])
+          .mockResolvedValueOnce([]);
+        mockPrisma.category.findMany.mockResolvedValue([]);
+        mockPrisma.brand.findMany.mockResolvedValue([]);
+        mockPrisma.productImage.findMany.mockResolvedValue([]);
+        mockPrisma.price.findMany.mockResolvedValue([]);
+      });
+
+      it('enlaza categoryId como $3 en el SELECT y $2 en el COUNT, sin interpolarlo en el SQL', async () => {
+        await service.findTrending({ take: 5, search: 'camara', categoryId: injectedCategoryId });
+
+        expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+        const [countSql, ...countArgs] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+        const [selectSql, ...selectArgs] = mockPrisma.$queryRawUnsafe.mock.calls[1];
+
+        expect(countSql).toContain('"categoryId" = $2');
+        expect(countSql).not.toContain(injectedCategoryId);
+        expect(countArgs).toEqual(['camara', injectedCategoryId]);
+
+        expect(selectSql).toContain('"categoryId" = $3');
+        expect(selectSql).not.toContain(injectedCategoryId);
+        expect(selectArgs).toEqual(['camara', 5, injectedCategoryId]);
+      });
+
+      it('sin categoryId no agrega filtro de categoría ni parámetros extra', async () => {
+        await service.findTrending({ take: 5, search: 'camara' });
+
+        const [countSql, ...countArgs] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+        const [selectSql, ...selectArgs] = mockPrisma.$queryRawUnsafe.mock.calls[1];
+
+        expect(countSql).not.toContain('"categoryId"');
+        expect(countArgs).toEqual(['camara']);
+        expect(selectSql).not.toContain('"categoryId"');
+        expect(selectArgs).toEqual(['camara', 5]);
+      });
+    });
   });
 
   describe('importFromExcel', () => {
