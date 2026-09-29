@@ -50,6 +50,8 @@ services:
       - ./src/backend/nest-cli.json:/app/nest-cli.json
       - ./src/backend/package.json:/app/package.json
       - ./src/backend/tsconfig.build.json:/app/tsconfig.build.json
+      # Uploads persist on the host (data/ is git-ignored)
+      - ./data/uploads:/app/uploads
     command: >
       sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
 

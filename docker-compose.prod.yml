@@ -50,6 +50,10 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://panel.gruposecurity.com}
       API_PORT: 3000
+    volumes:
+      # Uploads persist on the host (data/ is git-ignored). The directory must
+      # be writable by the container user (nestjs): chown it before first start.
+      - ./data/uploads:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
