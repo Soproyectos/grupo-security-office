@@ -6,7 +6,7 @@ jest.mock('../../prisma/prisma.service', () => ({
   PrismaService: jest.fn().mockImplementation(() => mockPrisma),
 }));
 
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
@@ -17,6 +17,8 @@ import { PublicCatalogService } from './public-catalog.service';
 import { PublicPricingService } from './public-pricing.service';
 import { PublicProductsController } from './public-products.controller';
 import { PublicProductSearchDto } from './dto/public-product-search.dto';
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { TransformInterceptor } from '../../common/interceptors/transform.interceptor';
 
 /** ConfigService hermético: no depende del process.env de quien corre la prueba. */
 const makeConfig = (env: Record<string, string | undefined> = {}) =>
@@ -55,11 +57,13 @@ describe('PublicCatalogService.search', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.product.count.mockResolvedValue(0);
     build();
   });
 
   it('solo devuelve productos publicados con id, sku, nombre, imagen, categoría, marca y precio', async () => {
     mockPrisma.product.findMany.mockResolvedValue(mockProducts);
+    mockPrisma.product.count.mockResolvedValue(2);
     build([{ productId: 'prod-1', value: '2450000.00', currency: 'COP', list: PUBLIC_LIST }]);
 
     const result = await service.search({ q: 'cámara', limit: 24 });
@@ -87,6 +91,7 @@ describe('PublicCatalogService.search', () => {
           price: null,
         },
       ],
+      meta: { total: 2, offset: 0, limit: 24 },
     });
   });
 
@@ -137,7 +142,10 @@ describe('PublicCatalogService.search', () => {
   it('no consulta precios cuando no hay productos', async () => {
     mockPrisma.product.findMany.mockResolvedValue([]);
 
-    await expect(service.search({ q: 'nada' })).resolves.toEqual({ data: [] });
+    await expect(service.search({ q: 'nada' })).resolves.toEqual({
+      data: [],
+      meta: { total: 0, offset: 0, limit: 24 },
+    });
     expect(mockPrisma.price.findMany).not.toHaveBeenCalled();
   });
 
@@ -211,11 +219,17 @@ describe('PublicProductsController', () => {
   let app: INestApplication;
   const catalogService = {
     search: jest.fn(),
+    getDetail: jest.fn(),
   };
+  const PRODUCT_ID = '3f2b8c1e-6a4d-4e0b-9d57-1c2a3b4c5d6e';
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    catalogService.search.mockResolvedValue({ data: mockProducts });
+    catalogService.getDetail.mockReset();
+    catalogService.search.mockResolvedValue({
+      data: mockProducts,
+      meta: { total: 2, offset: 0, limit: 24 },
+    });
 
     const moduleFixture = await Test.createTestingModule({
       controllers: [PublicProductsController],
@@ -239,12 +253,82 @@ describe('PublicProductsController', () => {
     expect(catalogService.search).toHaveBeenCalledWith({ q: 'camara', limit: 5 });
   });
 
-  it('devuelve la respuesta del servicio como { data: [...] }', async () => {
+  it('devuelve la respuesta del servicio como { data: [...], meta }', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/public/products?q=camara')
       .expect(200);
 
-    expect(response.body).toEqual({ data: mockProducts });
+    expect(response.body).toEqual({
+      data: mockProducts,
+      meta: { total: 2, offset: 0, limit: 24 },
+    });
+  });
+
+  it('con el TransformInterceptor global el cable queda { data: { data, meta } }', async () => {
+    const wrapped = (
+      await Test.createTestingModule({
+        controllers: [PublicProductsController],
+        providers: [{ provide: PublicCatalogService, useValue: catalogService }],
+      }).compile()
+    ).createNestApplication();
+    wrapped.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    wrapped.useGlobalInterceptors(new TransformInterceptor());
+    await wrapped.init();
+    try {
+      const response = await request(wrapped.getHttpServer()).get('/api/public/products?q=camara').expect(200);
+
+      expect(response.body).toEqual({
+        data: { data: mockProducts, meta: { total: 2, offset: 0, limit: 24 } },
+      });
+    } finally {
+      await wrapped.close();
+    }
+  });
+
+  it('pasa category, offset y limit al servicio', async () => {
+    await request(app.getHttpServer())
+      .get('/api/public/products?category=camaras-ip&offset=48&limit=48')
+      .expect(200);
+
+    expect(catalogService.search).toHaveBeenCalledWith({ category: 'camaras-ip', offset: 48, limit: 48 });
+  });
+
+  it('rechaza offset negativo o no entero, category vacía y limit sobre el tope de 48', async () => {
+    for (const query of ['offset=-1', 'offset=1.5', 'offset=abc', 'category=', 'limit=49', 'limit=2.5']) {
+      await request(app.getHttpServer()).get(`/api/public/products?${query}`).expect(400);
+    }
+    expect(catalogService.search).not.toHaveBeenCalled();
+  });
+
+  it('marca el listado y el detalle como @Public (sin JWT)', () => {
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, PublicProductsController.prototype.search)).toBe(true);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, PublicProductsController.prototype.detail)).toBe(true);
+  });
+
+  describe('GET /api/public/products/:id', () => {
+    it('sirve el detalle sin JWT', async () => {
+      catalogService.getDetail.mockResolvedValue({ id: PRODUCT_ID, name: 'Cámara Domo 4K' });
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/public/products/${PRODUCT_ID}`)
+        .expect(200);
+
+      expect(catalogService.getDetail).toHaveBeenCalledWith(PRODUCT_ID);
+      expect(response.body).toEqual({ id: PRODUCT_ID, name: 'Cámara Domo 4K' });
+    });
+
+    it('propaga el 404 del servicio (inexistente o no publicado)', async () => {
+      catalogService.getDetail.mockRejectedValue(new NotFoundException('Producto no encontrado'));
+
+      await request(app.getHttpServer()).get(`/api/public/products/${PRODUCT_ID}`).expect(404);
+    });
+
+    it('rechaza con 400 un id que no es UUID sin llamar al servicio', async () => {
+      await request(app.getHttpServer()).get('/api/public/products/no-es-uuid').expect(400);
+      await request(app.getHttpServer()).get('/api/public/products/1%20OR%201=1').expect(400);
+
+      expect(catalogService.getDetail).not.toHaveBeenCalled();
+    });
   });
 
   it('rechaza un limit fuera del rango permitido', async () => {
@@ -264,7 +348,7 @@ describe('PublicProductsController', () => {
 
   it('valida el DTO de búsqueda con class-validator', async () => {
     const valid = plainToInstance(PublicProductSearchDto, { q: 'cámara', limit: '24' });
-    const invalidLimit = plainToInstance(PublicProductSearchDto, { limit: '51' });
+    const invalidLimit = plainToInstance(PublicProductSearchDto, { limit: '49' });
     const invalidTerm = plainToInstance(PublicProductSearchDto, { q: 'x'.repeat(101) });
 
     const [validErrors, limitErrors, termErrors] = await Promise.all([
