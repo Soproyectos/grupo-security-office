@@ -150,8 +150,9 @@ describe('secciones temáticas', () => {
     expect(markup).toContain('aria-labelledby="home-marcas-title"')
     expect(markup).toContain('aria-labelledby="home-ofertas-title"')
     expect(markup).toContain('aria-labelledby="home-novedades-title"')
-    // 10 demo cards (the slider banners carry no CTA).
-    expect(occurrences(markup, 'href="/catalogo"')).toBe(10)
+    // 17 links to the catalog: 3 of the hero (2 banners + "Ver catálogo"),
+    // 4 CTAs of "Soluciones destacadas" and 10 demo cards.
+    expect(occurrences(markup, 'href="/catalogo"')).toBe(17)
     // The ofertas cards carry a demo price.
     expect(markup).toContain('Desde $899.900')
   })
@@ -161,6 +162,40 @@ describe('secciones temáticas', () => {
 
     // The demo prices live only in the ofertas section.
     expect(occurrences(markup, 'Desde $')).toBe(3)
+  })
+})
+
+describe('soluciones destacadas', () => {
+  it('muestra la sección con sus cuatro tarjetas y sus CTA', () => {
+    const markup = renderPage()
+
+    expect(markup).toContain('aria-labelledby="home-soluciones-title"')
+    expect(markup).toContain('Soluciones destacadas')
+    expect(markup).toContain('Videovigilancia corporativa')
+    expect(markup).toContain('Control de acceso')
+    expect(markup).toContain('Detección de intrusos')
+    expect(markup).toContain('Respaldo de energía')
+    expect(occurrences(markup, 'Ver solución')).toBe(4)
+  })
+
+  it('expone los controles anterior/siguiente de la lista', () => {
+    const markup = renderPage()
+
+    expect(markup).toContain('aria-label="Ver soluciones anteriores"')
+    expect(markup).toContain('aria-label="Ver soluciones siguientes"')
+    expect(markup).toContain('aria-label="Lista de soluciones destacadas"')
+  })
+
+  it('va después de las categorías y antes de las secciones de demo', () => {
+    const markup = renderPage()
+
+    const categorias = markup.indexOf('Categorías destacadas')
+    const soluciones = markup.indexOf('Soluciones destacadas')
+    const marcas = markup.indexOf('Marcas destacadas')
+
+    expect(categorias).toBeGreaterThanOrEqual(0)
+    expect(soluciones).toBeGreaterThan(categorias)
+    expect(marcas).toBeGreaterThan(soluciones)
   })
 })
 

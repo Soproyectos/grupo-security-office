@@ -25,7 +25,7 @@ export default function StorefrontChrome({ children }: StorefrontChromeProps) {
               <img
                 src="/logo-grupo-security.png"
                 alt="Grupo Security"
-                className="h-12 w-auto object-contain sm:h-16 lg:h-[74px]"
+                className="h-[68px] w-auto object-contain sm:h-[96px] lg:h-[104px]"
                 width={2000}
                 height={1414}
               />

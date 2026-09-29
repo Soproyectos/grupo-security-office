@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import StorefrontSalesChannels from '../components/StorefrontSalesChannels'
+import FeaturedSolutionsSection from '../components/FeaturedSolutionsSection'
 import { featuredTiles, navigableRoots } from '../components/mega-menu/menu-model'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
 import { HOME_SECTIONS, type HomeSection } from '../fixtures/home-sections'
+import { FEATURED_SOLUTIONS } from '../fixtures/featured-solutions'
 import { CategoryTile } from './CategoryPage'
 import type { MenuCategory } from '../types/categoryMenu'
 
@@ -26,101 +28,100 @@ function featuredAcrossRoots(categories: MenuCategory[]): MenuCategory[] {
     .slice(0, MAX_HOME_TILES)
 }
 
-/**
- * Slides of the home photo slider, the same two 1500x400 banners of the
- * previous website (gruposecurity.co), copied into `public/images/home/` so
- * they do not depend on the old hosting. The marketing message lives in the
- * banner images themselves (the old slider carried no captions), so there is
- * no overlay copy.
- */
-const HERO_SLIDES = [
+const PROMOTION_BANNERS = [
   {
-    id: 'hikvision-distribuidor',
     src: '/images/home/banner-hikvision-distribuidor.png',
     alt: 'Distribuidor autorizado de Hikvision y HiLook',
   },
   {
-    id: 'ezviz-nuevas',
     src: '/images/home/banner-ezviz-nuevas.png',
     alt: 'Nuevas cámaras EZVIZ H8X 2K+, H80x Dual y H90x Dual',
   },
 ]
 
-/** Autoplay of the old slider: one slide every 5 s, paused on hover. */
-const SLIDE_INTERVAL_MS = 5000
+const PROMOTION_SLIDE_INTERVAL_MS = 5000
 
-function HeroSlider() {
+function Hero() {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
-  const count = HERO_SLIDES.length
+  const count = PROMOTION_BANNERS.length
 
   useEffect(() => {
-    if (paused) {
-      return
-    }
+    if (paused) return
+
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % count)
-    }, SLIDE_INTERVAL_MS)
-    return () => window.clearInterval(timer)
-  }, [paused, count])
+    }, PROMOTION_SLIDE_INTERVAL_MS)
 
-  const go = (delta: number) => setIndex((current) => (current + delta + count) % count)
+    return () => window.clearInterval(timer)
+  }, [count, paused])
 
   return (
     <section
       aria-roledescription="carousel"
-      aria-label="Promociones y marcas"
+      aria-label="Promociones destacadas"
+      className="relative w-full overflow-hidden"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <h1 className="sr-only">Todo para tu seguridad, en un solo lugar</h1>
-      <div className="relative overflow-hidden rounded-card">
-        <div
-          className="flex transition-transform duration-500 ease-out"
-          style={{ transform: `translateX(-${index * 100}%)` }}
-        >
-          {HERO_SLIDES.map((slide, slideIndex) => (
+      <div className="flex transition-transform duration-500 ease-out" style={{ transform: `translateX(-${index * 100}%)` }}>
+        {PROMOTION_BANNERS.map((banner, slideIndex) => (
+          <Link key={banner.src} to="/catalogo" className="w-full shrink-0">
             <img
-              key={slide.id}
-              src={slide.src}
-              alt={slideIndex === index ? slide.alt : ''}
-              className="aspect-[15/4] w-full shrink-0 object-cover"
+              src={banner.src}
+              alt={slideIndex === index ? banner.alt : ''}
+              className="h-64 w-full object-cover sm:h-80 lg:h-[420px]"
               loading={slideIndex === 0 ? 'eager' : 'lazy'}
             />
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => go(-1)}
-          aria-label="Promoción anterior"
-          className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-            <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => go(1)}
-          aria-label="Promoción siguiente"
-          className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-            <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+          </Link>
+        ))}
       </div>
-      <div className="mt-3 flex justify-center gap-2">
-        {HERO_SLIDES.map((slide, slideIndex) => (
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-4 bg-gradient-to-r from-black/75 via-black/45 to-transparent px-6 sm:px-12 lg:px-20">
+        <h1
+          id="home-hero-title"
+          className="max-w-xl text-2xl font-bold leading-tight text-white sm:text-3xl lg:text-4xl"
+        >
+          Todo para tu seguridad, en un solo lugar
+        </h1>
+        <p className="max-w-lg text-body-sm text-white/90 sm:text-base">
+          Cámaras, control de acceso, alarmas y energía: distribución autorizada de marcas líderes.
+        </p>
+        <Link
+          to="/catalogo"
+          className="pointer-events-auto rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600"
+        >
+          Ver catálogo
+        </Link>
+      </div>
+      <button
+        type="button"
+        onClick={() => setIndex((current) => (current - 1 + count) % count)}
+        aria-label="Promoción anterior"
+        className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={() => setIndex((current) => (current + 1) % count)}
+        aria-label="Promoción siguiente"
+        className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-2">
+        {PROMOTION_BANNERS.map((banner, slideIndex) => (
           <button
-            key={slide.id}
+            key={banner.src}
             type="button"
             onClick={() => setIndex(slideIndex)}
             aria-label={`Ir a la promoción ${slideIndex + 1}`}
             aria-current={slideIndex === index}
-            className={`h-2.5 w-2.5 rounded-full transition ${
-              slideIndex === index ? 'scale-110 bg-security-500' : 'bg-surface-300 hover:bg-surface-400'
-            }`}
+            className={`h-2.5 w-2.5 rounded-full transition ${slideIndex === index ? 'scale-110 bg-white' : 'bg-white/60 hover:bg-white'}`}
           />
         ))}
       </div>
@@ -213,8 +214,8 @@ export default function StorefrontHome() {
 
   return (
     <StorefrontChrome>
+      <Hero />
       <main className="mx-auto max-w-7xl px-5 py-8 lg:px-12">
-        <HeroSlider />
         <section aria-labelledby="home-categorias-title" className="mt-12">
           <h2 id="home-categorias-title" className="text-xl font-bold text-ink-900">
             Categorías destacadas
@@ -242,6 +243,7 @@ export default function StorefrontHome() {
             </p>
           )}
         </section>
+        <FeaturedSolutionsSection solutions={FEATURED_SOLUTIONS} />
         {HOME_SECTIONS.map((section) => (
           <HomeSectionBlock key={section.id} section={section} />
         ))}
