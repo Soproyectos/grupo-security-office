@@ -3,7 +3,14 @@ import { Link, useParams } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import { CategoryIcon } from '../components/mega-menu/CategorySidebar'
 import { categoryHref } from '../components/mega-menu/menu-model'
+import {
+  PublicProductGrid,
+  PublicProductGridSkeleton,
+  PublicProductListingError,
+  PublicProductPager,
+} from '../components/PublicProductGrid'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
+import { usePublicProductListing } from '../hooks/usePublicProductListing'
 import type { MenuCategory } from '../types/categoryMenu'
 
 /**
@@ -148,20 +155,63 @@ export function CategoryTile({ node }: { node: MenuCategory }) {
   )
 }
 
-/** Placeholder of the product grid, which is not published yet for any category. */
-function ComingSoonBlock() {
+/** Shown when the category (and its descendants) hold no published product. */
+function EmptyProducts() {
   return (
-    <section
-      aria-labelledby="categoria-productos-proximamente"
-      className="rounded-card border border-dashed border-surface-300 bg-white p-8 text-center"
-    >
-      <h2 id="categoria-productos-proximamente" className="text-lg font-bold text-ink-900">
-        Productos próximamente
-      </h2>
+    <div role="status" className="rounded-card border border-dashed border-surface-300 bg-white p-8 text-center">
+      <h3 className="text-lg font-bold text-ink-900">Aún no hay productos en esta categoría</h3>
       <p className="mx-auto mt-2 max-w-md text-body-sm text-ink-500">
-        Estamos preparando el inventario de esta categoría. Muy pronto verás aquí todos sus
-        productos.
+        Explora otras categorías o escríbenos y te ayudamos a encontrar lo que necesitas.
       </p>
+      <Link
+        to="/catalogo"
+        className="mt-6 inline-flex rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600"
+      >
+        Volver al catálogo
+      </Link>
+    </div>
+  )
+}
+
+/**
+ * Product grid of a category. The endpoint already includes the products of
+ * every descendant category, so a family page lists its whole subtree.
+ */
+function CategoryProducts({ slug }: { slug: string }) {
+  const { status, items, total, hasMore, loadingMore, loadMoreError, loadMore, retry } =
+    usePublicProductListing({ category: slug })
+
+  return (
+    <section aria-labelledby="categoria-productos" className="mt-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="categoria-productos" className="text-eyebrow uppercase text-ink-500">
+          Productos
+        </h2>
+        {status === 'ready' && total > 0 && (
+          <p className="text-body-sm text-ink-500">
+            <span className="font-semibold text-ink-700">{total}</span>{' '}
+            {total === 1 ? 'producto' : 'productos'}
+          </p>
+        )}
+      </div>
+      <div className="mt-5">
+        {status === 'loading' && <PublicProductGridSkeleton />}
+        {status === 'error' && <PublicProductListingError onRetry={retry} />}
+        {status === 'ready' && items.length === 0 && total === 0 && <EmptyProducts />}
+        {status === 'ready' && items.length > 0 && (
+          <>
+            <PublicProductGrid products={items} />
+            <PublicProductPager
+              shown={items.length}
+              total={total}
+              hasMore={hasMore}
+              loadingMore={loadingMore}
+              loadMoreError={loadMoreError}
+              onLoadMore={loadMore}
+            />
+          </>
+        )}
+      </div>
     </section>
   )
 }
@@ -260,9 +310,7 @@ export default function CategoryPage() {
                 Esta categoría todavía no tiene subcategorías.
               </p>
             )}
-            <div className="mt-10">
-              <ComingSoonBlock />
-            </div>
+            <CategoryProducts slug={slug} />
           </>
         )}
       </main>
