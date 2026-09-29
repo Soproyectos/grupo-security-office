@@ -15,18 +15,24 @@ export function PublicProductGrid({ products }: { products: PublicProductResult[
 }
 
 /** Placeholder of the grid while the first page is in flight; keeps its shape. */
-export function PublicProductGridSkeleton({ label = 'Cargando productos…' }: { label?: string }) {
+export function PublicProductGridSkeleton({
+  label = 'Cargando productos…',
+  count = 8,
+}: {
+  label?: string
+  count?: number
+}) {
   return (
     <div role="status" className={GRID_CLASS}>
       <span className="sr-only">{label}</span>
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((card) => (
+      {Array.from({ length: count }, (_, card) => (
         <div
           key={card}
           aria-hidden="true"
           data-testid="product-skeleton-card"
           className="flex flex-col overflow-hidden rounded-card border border-surface-200 bg-white"
         >
-          <span className="aspect-square w-full animate-pulse bg-surface-200" />
+          <span className="aspect-[4/3] w-full animate-pulse bg-surface-200" />
           <span className="flex flex-col gap-2 p-4">
             <span className="h-2.5 w-1/3 animate-pulse rounded bg-surface-100" />
             <span className="h-4 w-4/5 animate-pulse rounded bg-surface-100" />
@@ -70,7 +76,7 @@ export function PublicProductPager({
           type="button"
           onClick={onLoadMore}
           disabled={loadingMore}
-          className="rounded-control border border-security-500 px-6 py-3 text-sm font-bold text-security-500 transition hover:bg-security-50 disabled:cursor-wait disabled:opacity-60"
+          className="min-h-11 rounded-control border border-security-500 px-6 py-3 text-sm font-bold text-security-500 transition hover:bg-security-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500 disabled:cursor-wait disabled:opacity-60"
         >
           {loadingMore ? 'Cargando…' : 'Cargar más'}
         </button>

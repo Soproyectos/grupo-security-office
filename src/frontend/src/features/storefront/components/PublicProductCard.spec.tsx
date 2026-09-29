@@ -42,12 +42,51 @@ describe('PublicProductCard', () => {
     expect(render()).toContain('src="/api/files/img-1"')
   })
 
-  it('usa un marcador neutro cuando el producto no tiene imagen', () => {
-    const markup = render({ imageUrl: null })
+  it('muestra la etiqueta técnica con las specs del nombre cuando no hay imagen', () => {
+    const markup = render({
+      imageUrl: null,
+      name: 'Camara Bala 8MP EXIR IR30m 2.8mm Plástica',
+      sku: 'DS-2CE16U1T-ITPF(2.8mm)',
+      categorySlug: 'camaras-turbo',
+    })
 
     expect(markup).not.toContain('<img')
+    expect(markup).toContain('data-testid="spec-label"')
     expect(markup).toContain('<svg')
     expect(markup).toContain('from-surface-50 to-surface-200')
+    expect(markup).toContain('>8 MP</span>')
+    expect(markup).toContain('>IR 30 m</span>')
+    expect(markup).toContain('>2.8 mm</span>')
+  })
+
+  it('deja solo el icono cuando el nombre no trae specs reconocibles', () => {
+    const markup = render({ imageUrl: null, name: 'Sistema Anticaída Puertas Levadizas', sku: 'AUACCRAB03' })
+
+    expect(markup).toContain('data-testid="spec-label"')
+    expect(markup).not.toContain('font-condensed font-bold leading-none')
+  })
+
+  it('reserva un medio 4:3 y no usa cuadrado', () => {
+    const markup = render()
+
+    expect(markup).toContain('aspect-[4/3]')
+    expect(markup).not.toContain('aspect-square')
+  })
+
+  it('pinta el precio en tinta con cifras tabulares, no en rojo', () => {
+    const markup = render()
+
+    expect(markup).toMatch(/font-condensed[^"]*tabular-nums[^"]*text-storefront-ink">\$ 118\.259/)
+    expect(markup).not.toMatch(/text-security-500">\$ /)
+  })
+
+  it('cambia solo el color del borde al pasar el cursor, sin elevar la tarjeta', () => {
+    const markup = render()
+
+    expect(markup).toContain('hover:border-storefront-ink')
+    expect(markup).not.toContain('hover:-translate-y')
+    expect(markup).not.toContain('hover:shadow')
+    expect(markup).toContain('focus-visible:outline')
   })
 
   it('ofrece cotizar cuando no hay precio público', () => {

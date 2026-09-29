@@ -45,7 +45,7 @@ function scrollByOneCard(list: HTMLUListElement | null, direction: 1 | -1) {
 }
 
 const CONTROL_CLASS =
-  'flex h-10 w-10 items-center justify-center rounded-full border border-surface-200 bg-white text-ink-900 transition hover:border-security-500 hover:text-security-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
+  'flex h-11 w-11 items-center justify-center rounded-full border border-surface-200 bg-white text-ink-900 transition hover:border-security-500 hover:text-security-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 
 export default function FeaturedSolutionsSection({ solutions }: { solutions: FeaturedSolution[] }) {
   const listRef = useRef<HTMLUListElement | null>(null)
@@ -53,7 +53,7 @@ export default function FeaturedSolutionsSection({ solutions }: { solutions: Fea
   return (
     <section aria-labelledby="home-soluciones-title" className="mt-12">
       <div className="flex items-center justify-between gap-4">
-        <h2 id="home-soluciones-title" className="text-xl font-bold text-ink-900">
+        <h2 id="home-soluciones-title" className="font-condensed text-2xl font-bold text-storefront-ink">
           Soluciones destacadas
         </h2>
         <div className="flex shrink-0 gap-2">
@@ -90,7 +90,7 @@ export default function FeaturedSolutionsSection({ solutions }: { solutions: Fea
             key={solution.id}
             className="flex shrink-0 snap-start basis-[85%] sm:basis-[calc(50%-0.75rem)] lg:basis-[calc(33.333%-1rem)]"
           >
-            <article className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition hover:border-security-500 hover:shadow-lg">
+            <article className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition-colors duration-150 hover:border-storefront-ink">
               {solution.imageUrl !== null && (
                 <img
                   src={solution.imageUrl}

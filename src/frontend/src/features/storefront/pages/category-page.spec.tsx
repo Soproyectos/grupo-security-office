@@ -280,10 +280,10 @@ describe('categoría conocida', () => {
     expect(markup).toContain('>Cámaras IP</h1>')
   })
 
-  it('avisa cuando la categoría no tiene subcategorías', () => {
+  it('no imprime avisos ni sección cuando la categoría no tiene subcategorías', () => {
     const markup = renderPage('grabadores')
 
-    expect(markup).toContain('todavía no tiene subcategorías')
+    expect(markup).not.toContain('subcategorías')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
   })
 
@@ -295,7 +295,7 @@ describe('categoría conocida', () => {
     // No family in the trail: the breadcrumb stops at Catálogo.
     expect(markup).toContain('Catálogo')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
-    expect(markup).toContain('todavía no tiene subcategorías')
+    expect(markup).not.toContain('todavía no tiene subcategorías')
   })
 
   it('se renderiza dentro del chrome de la tienda', () => {

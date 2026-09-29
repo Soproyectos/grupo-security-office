@@ -1,26 +1,30 @@
 import { useState } from 'react'
 import { resolveAssetUrl } from '../../../services/api'
 import type { PublicProductDetail } from '../types/publicProduct'
-import { ProductPlaceholderIcon } from './PublicProductCard'
+import { ProductSpecLabel } from './ProductMedia'
 
 /**
- * Image gallery of the product sheet: a large square tile plus thumbnails when
- * there is more than one image. Without images it shows the same gradient
- * placeholder as the cards.
+ * Image gallery of the product sheet: a large 4:3 tile plus thumbnails when
+ * there is more than one image. Without images it shows the same spec label as
+ * the cards, set larger.
  */
 export default function ProductGallery({
   images,
   productName,
+  sku,
+  categorySlug,
 }: {
   images: PublicProductDetail['images']
   productName: string
+  sku: string
+  categorySlug: string | null
 }) {
   const [selected, setSelected] = useState(0)
   const current = images[selected] ?? images[0]
 
   return (
     <div>
-      <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-card border border-surface-200 bg-gradient-to-br from-surface-50 to-surface-200 text-ink-400">
+      <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-card border border-surface-200 bg-surface-50">
         {current !== undefined ? (
           <img
             src={resolveAssetUrl(current.url)}
@@ -28,7 +32,7 @@ export default function ProductGallery({
             className="h-full w-full object-contain"
           />
         ) : (
-          <ProductPlaceholderIcon className="h-20 w-20" />
+          <ProductSpecLabel name={productName} sku={sku} categorySlug={categorySlug} size="detail" />
         )}
       </div>
       {images.length > 1 && (

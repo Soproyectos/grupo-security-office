@@ -1,3 +1,4 @@
+import { categoryHref } from '../components/mega-menu/menu-model'
 import type { FeaturedSolution } from '../types/featuredSolution'
 
 /**
@@ -11,8 +12,9 @@ import type { FeaturedSolution } from '../types/featuredSolution'
  * - corporate/commercial security solution concepts, NOT distributor catalog
  *   data (no brands, no SKUs, no distributor pricing).
  *
- * Every card links to `/catalogo`, the destination that exists today; when a
- * solution gets a real destination only its `href` changes. The covers reuse
+ * Every card links to a category (or search) that holds published products
+ * today; when a solution gets a real destination only its `href` changes. The
+ * covers reuse
  * existing storefront images as placeholders until real solution media exists.
  * Replace this file with real solution data when the contract lands.
  */
@@ -24,7 +26,7 @@ export const FEATURED_SOLUTIONS: FeaturedSolution[] = [
     description: 'Sistemas de cámaras y grabación para sedes, bodegas y conjuntos.',
     imageUrl: '/images/categories/camaras-ip-domo.svg',
     imageAlt: 'Cámara de videovigilancia tipo domo para interiores corporativos',
-    href: '/catalogo',
+    href: categoryHref('camaras-turbo'),
     ctaLabel: 'Ver solución',
   },
   {
@@ -34,7 +36,7 @@ export const FEATURED_SOLUTIONS: FeaturedSolution[] = [
     description: 'Lectores biométricos y tarjetas para gestionar el ingreso del personal.',
     imageUrl: '/images/categories/biometricos-huella.jpg',
     imageAlt: 'Lector biométrico de huella para control de acceso de personal',
-    href: '/catalogo',
+    href: '/catalogo/buscar?q=cerradura',
     ctaLabel: 'Ver solución',
   },
   {
@@ -44,7 +46,7 @@ export const FEATURED_SOLUTIONS: FeaturedSolution[] = [
     description: 'Paneles de alarma y sensores para proteger locales y perímetros.',
     imageUrl: '/images/categories/paneles-de-alarma.svg',
     imageAlt: 'Panel de alarma para detección de intrusos en locales comerciales',
-    href: '/catalogo',
+    href: categoryHref('cercos-electricos'),
     ctaLabel: 'Ver solución',
   },
   {
@@ -54,7 +56,7 @@ export const FEATURED_SOLUTIONS: FeaturedSolution[] = [
     description: 'UPS y baterías para mantener los equipos de seguridad en línea.',
     imageUrl: '/images/categories/fuentes-de-poder.jpg',
     imageAlt: 'Equipos de respaldo de energía para sistemas de seguridad',
-    href: '/catalogo',
+    href: categoryHref('ups-on-line'),
     ctaLabel: 'Ver solución',
   },
 ]

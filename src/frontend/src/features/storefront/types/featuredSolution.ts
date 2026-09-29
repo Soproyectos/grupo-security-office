@@ -18,8 +18,8 @@ export interface FeaturedSolution {
   /** Useful alt text for the cover; read by assistive tech, never decorative. */
   imageAlt: string
   /**
-   * Destination of the card. It must be a route that exists today (`/catalogo`);
-   * do not invent solution routes here.
+   * Destination of the card: a category or search that holds published products
+   * today. Do not invent solution routes here.
    */
   href: string
   ctaLabel: string

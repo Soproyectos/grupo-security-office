@@ -3,14 +3,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { MenuCategory } from '../types/categoryMenu'
+import { HOME_BRANDS, HOME_SHELVES, brandSearchHref } from '../constants/home-catalog'
 import StorefrontHome from './StorefrontHome'
 
 /**
  * As HOM-01's sibling `category-page.spec.tsx` did, the suite asserts what the
  * visitor sees on a server render (`react-dom/server`) of the real page inside
- * a `MemoryRouter`: the slider, the category tiles, the demo sections and the
- * states. The tree of categories is fed through the session store the page
- * reads, and the fetch itself is out of reach here (no DOM environment).
+ * a `MemoryRouter`: the slider, the shelves, the brands and the states. Effects
+ * do not run on a server render, so the data-driven pieces (tiles with counts,
+ * filled shelves) are covered by `home-components.spec.tsx`; here the page shows
+ * their loading state. The tree of categories is fed through the session store
+ * the page reads.
  */
 
 const retryMock = vi.hoisted(() => vi.fn())
@@ -100,7 +103,15 @@ describe('slider de la vitrina', () => {
     expect(markup).toContain('src="/images/home/banner-hikvision-distribuidor.png"')
     expect(markup).toContain('src="/images/home/banner-ezviz-nuevas.png"')
     expect(markup).toContain('aria-roledescription="carousel"')
-    expect(markup).toContain('Todo para tu seguridad, en un solo lugar')
+  })
+
+  it('no superpone texto sobre los banners y deja un h1 solo para lectores de pantalla', () => {
+    const markup = renderPage()
+
+    expect(markup).not.toContain('Todo para tu seguridad, en un solo lugar')
+    expect(markup).not.toContain('bg-gradient-to-r from-black')
+    expect(markup).toContain('<h1 class="sr-only">Grupo Security: seguridad electrónica al mejor precio</h1>')
+    expect(occurrences(markup, '<h1')).toBe(1)
   })
 
   it('expone flechas y paginación para navegarlo', () => {
@@ -110,58 +121,90 @@ describe('slider de la vitrina', () => {
     expect(markup).toContain('aria-label="Promoción siguiente"')
     expect(markup).toContain('aria-label="Ir a la promoción 2"')
   })
+
+  it('oculta a lectores de pantalla y saca del tab las diapositivas que no se ven', () => {
+    const markup = renderPage()
+
+    expect(occurrences(markup, 'aria-hidden="true" tabindex="-1"')).toBe(1)
+    expect(markup).toContain('motion-reduce:transition-none')
+  })
+
+  it('da a flechas y puntos un área táctil de 44 px', () => {
+    const markup = renderPage()
+
+    expect(occurrences(markup, 'h-11 w-11')).toBeGreaterThanOrEqual(2)
+    expect(occurrences(markup, 'group flex h-11 w-8')).toBe(2)
+  })
 })
 
-describe('tiles de categoría', () => {
-  it('pinta un tile por familia con su foto real del payload', () => {
+describe('compra por categoría', () => {
+  it('muestra el esqueleto con la forma de los tiles mientras se cuentan los productos', () => {
     const markup = renderPage()
 
     expect(markup).toContain('aria-labelledby="home-categorias-title"')
-    expect(markup).toContain('href="/catalogo/categoria/camaras-ip-domo"')
-    expect(markup).toContain('href="/catalogo/categoria/ups"')
-    expect(markup).toContain('src="/images/categories/camaras-ip-domo.svg"')
-    expect(markup).toContain('src="/images/categories/ups.jpg"')
-    // The flat root has no children: featuredTiles skips it.
+    expect(markup).toContain('Compra por categoría')
+    expect(markup).toContain('Cargando categorías')
+    expect(occurrences(markup, 'h-12 w-12 shrink-0 animate-pulse')).toBe(8)
+  })
+
+  it('no muestra el esqueleto de categorías ni tiles antes de conocer el árbol', () => {
+    menuMock.status = 'loading'
+
+    const markup = renderPage()
+
+    expect(markup).toContain('Cargando categorías')
     expect(markup).not.toContain('href="/catalogo/categoria/cables-utp"')
   })
 
-  it('no deja tiles en el DOM cuando el árbol llegó vacío', () => {
-    menuMock.categories = []
+  it('muestra el error con el reintento del hook', () => {
+    menuMock.status = 'error'
 
     const markup = renderPage()
 
-    expect(markup).toContain('Aún no hay categorías destacadas para mostrar.')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('No pudimos cargar las categorías')
+    expect(markup).toContain('Intentar de nuevo')
+    expect(markup).not.toContain('href="/catalogo/categoria/cables-utp"')
   })
 })
 
-describe('secciones temáticas', () => {
-  it('muestra las tres secciones de demo', () => {
+describe('vitrinas de productos', () => {
+  it('muestra las tres vitrinas del catálogo real con su enlace "Ver todo"', () => {
     const markup = renderPage()
 
-    expect(markup).toContain('Marcas destacadas')
-    expect(markup).toContain('Ofertas')
-    expect(markup).toContain('Novedades')
+    for (const shelf of HOME_SHELVES) {
+      expect(markup).toContain(`aria-labelledby="home-shelf-${shelf.slug}"`)
+      expect(markup).toContain(shelf.title)
+      expect(markup).toContain(`href="/catalogo/categoria/${shelf.slug}"`)
+    }
+    expect(HOME_SHELVES).toHaveLength(3)
+    expect(occurrences(markup, 'Ver todo')).toBe(3)
   })
 
-  it('enlaza cada tarjeta de demo al catálogo', () => {
+  it('muestra un esqueleto de cuatro tarjetas por vitrina mientras cargan', () => {
+    const markup = renderPage()
+
+    expect(occurrences(markup, 'data-testid="product-skeleton-card"')).toBe(12)
+  })
+
+  it('ya no contiene las secciones de demostración con precios ficticios', () => {
+    const markup = renderPage()
+
+    expect(markup).not.toContain('Ofertas')
+    expect(markup).not.toContain('Novedades')
+    expect(markup).not.toContain('Desde $')
+  })
+})
+
+describe('marcas', () => {
+  it('muestra las marcas reales como chips que abren la búsqueda', () => {
     const markup = renderPage()
 
     expect(markup).toContain('aria-labelledby="home-marcas-title"')
-    expect(markup).toContain('aria-labelledby="home-ofertas-title"')
-    expect(markup).toContain('aria-labelledby="home-novedades-title"')
-    // 17 links to the catalog: 3 of the hero (2 banners + "Ver catálogo"),
-    // 4 CTAs of "Soluciones destacadas" and 10 demo cards.
-    expect(occurrences(markup, 'href="/catalogo"')).toBe(17)
-    // The ofertas cards carry a demo price.
-    expect(markup).toContain('Desde $899.900')
-  })
-
-  it('no deja un precio en las secciones que no llevan precio', () => {
-    const markup = renderPage()
-
-    // The demo prices live only in the ofertas section.
-    expect(occurrences(markup, 'Desde $')).toBe(3)
+    for (const brand of HOME_BRANDS) {
+      expect(markup).toContain(`href="${brandSearchHref(brand)}"`)
+      expect(markup).toContain(`>${brand.label}</a>`)
+    }
   })
 })
 
@@ -178,6 +221,15 @@ describe('soluciones destacadas', () => {
     expect(occurrences(markup, 'Ver solución')).toBe(4)
   })
 
+  it('apunta cada solución a una categoría o búsqueda real, no al catálogo general', () => {
+    const markup = renderPage()
+
+    expect(markup).toContain('href="/catalogo/categoria/camaras-turbo"')
+    expect(markup).toContain('href="/catalogo/categoria/ups-on-line"')
+    expect(markup).toContain('href="/catalogo/categoria/cercos-electricos"')
+    expect(markup).toContain('href="/catalogo/buscar?q=cerradura"')
+  })
+
   it('expone los controles anterior/siguiente de la lista', () => {
     const markup = renderPage()
 
@@ -186,49 +238,18 @@ describe('soluciones destacadas', () => {
     expect(markup).toContain('aria-label="Lista de soluciones destacadas"')
   })
 
-  it('va después de las categorías y antes de las secciones de demo', () => {
+  it('sigue el orden categorías, vitrinas, marcas y soluciones', () => {
     const markup = renderPage()
 
-    const categorias = markup.indexOf('Categorías destacadas')
+    const categorias = markup.indexOf('Compra por categoría')
+    const vitrina = markup.indexOf('Videovigilancia</h2>')
+    const marcas = markup.indexOf('Marcas que distribuimos')
     const soluciones = markup.indexOf('Soluciones destacadas')
-    const marcas = markup.indexOf('Marcas destacadas')
 
     expect(categorias).toBeGreaterThanOrEqual(0)
-    expect(soluciones).toBeGreaterThan(categorias)
-    expect(marcas).toBeGreaterThan(soluciones)
-  })
-})
-
-describe('estados del menú', () => {
-  it('muestra el esqueleto mientras carga el árbol', () => {
-    menuMock.status = 'loading'
-
-    const markup = renderPage()
-
-    expect(markup).toContain('role="status"')
-    expect(markup).toContain('Cargando categorías')
-    expect(occurrences(markup, 'animate-pulse')).toBeGreaterThan(0)
-    // The skeleton keeps the shape of the row: 12 circles where the tiles go.
-    expect(occurrences(markup, 'rounded-full bg-surface-200')).toBe(12)
-    expect(markup).not.toContain('href="/catalogo/categoria/')
-  })
-
-  it('muestra el error con el reintento del hook', () => {
-    menuMock.status = 'error'
-
-    const markup = renderPage()
-
-    expect(markup).toContain('role="alert"')
-    expect(markup).toContain('No pudimos cargar las categorías')
-    expect(markup).toContain('Intentar de nuevo')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
-  })
-
-  it('no deja esqueleto ni error cuando el árbol está listo', () => {
-    const markup = renderPage()
-
-    expect(markup).not.toContain('role="status"')
-    expect(markup).not.toContain('role="alert"')
+    expect(vitrina).toBeGreaterThan(categorias)
+    expect(marcas).toBeGreaterThan(vitrina)
+    expect(soluciones).toBeGreaterThan(marcas)
   })
 })
 

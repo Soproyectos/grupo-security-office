@@ -108,7 +108,10 @@ describe('ficha del producto', () => {
 
     expect(markup).not.toContain('/api/files/')
     expect(markup).not.toContain('Imágenes del producto')
+    expect(markup).toContain('data-testid="spec-label"')
     expect(markup).toContain('from-surface-50 to-surface-200')
+    // Spec label of the detail page: tokens read from the name (4K).
+    expect(markup).toContain('>4K</span>')
   })
 
   it('ofrece cotizar por WhatsApp con el nombre y el SKU en el mensaje', () => {
@@ -137,6 +140,22 @@ describe('ficha del producto', () => {
     expect(markup).toContain('4 MP')
     expect(markup).toContain('ONVIF')
     expect(markup).toContain('href="https://example.com/ds.pdf"')
+  })
+
+  it('muestra en oración una descripción que llega toda en mayúsculas', () => {
+    detailMock.product = {
+      ...product,
+      description: 'CÁMARA HIKVISION IP CON VISIÓN NOCTURNA, ALIMENTACIÓN 12V Y SOPORTE WIFI.',
+    }
+
+    const markup = renderPage()
+
+    expect(markup).toContain('Cámara Hikvision IP con visión nocturna, alimentación 12V y soporte WiFi.')
+    expect(markup).not.toContain('CÁMARA HIKVISION')
+  })
+
+  it('no altera una descripción bien escrita', () => {
+    expect(renderPage()).toContain('Cámara IP de 4 MP con visión nocturna.')
   })
 
   it('omite descripción, especificaciones y fichas cuando no hay datos', () => {

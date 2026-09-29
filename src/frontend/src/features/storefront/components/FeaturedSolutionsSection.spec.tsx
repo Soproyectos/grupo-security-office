@@ -53,9 +53,12 @@ describe('soluciones destacadas', () => {
   it('pinta el CTA de cada tarjeta con su etiqueta y destino', () => {
     const markup = renderSection()
 
-    // One CTA per fixture card, all pointing at the catalog for now.
+    // One CTA per fixture card, each pointing at its own real destination.
     expect(occurrences(markup, 'Ver solución')).toBe(FEATURED_SOLUTIONS.length)
-    expect(occurrences(markup, 'href="/catalogo"')).toBe(FEATURED_SOLUTIONS.length)
+    for (const solution of FEATURED_SOLUTIONS) {
+      expect(markup).toContain(`href="${solution.href}"`)
+      expect(solution.href).not.toBe('/catalogo')
+    }
   })
 
   it('describe cada portada con un alt útil', () => {

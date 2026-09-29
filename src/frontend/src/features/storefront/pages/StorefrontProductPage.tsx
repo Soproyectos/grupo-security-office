@@ -7,13 +7,14 @@ import { SALES_PHONE_HREF, whatsappUrl } from '../constants/contact'
 import { usePublicProductDetail } from '../hooks/usePublicProductDetail'
 import type { PublicProductDetail } from '../types/publicProduct'
 import { formatCop } from '../utils/formatCop'
+import { toSentenceCase } from '../utils/toSentenceCase'
 
 const TRUST_ITEMS = ['Distribuidor autorizado', 'Garantía de fábrica', 'Envíos a toda Colombia']
 
 const PRIMARY_BUTTON =
-  'inline-flex items-center justify-center rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600'
+  'inline-flex min-h-11 items-center justify-center rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 const SECONDARY_BUTTON =
-  'inline-flex items-center justify-center rounded-control border border-surface-300 bg-white px-5 py-3 text-sm font-bold text-ink-700 transition hover:border-security-500 hover:text-security-500'
+  'inline-flex min-h-11 items-center justify-center rounded-control border border-surface-300 bg-white px-5 py-3 text-sm font-bold text-ink-700 transition hover:border-security-500 hover:text-security-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 
 function quoteMessage(product: PublicProductDetail): string {
   return `Hola, quiero cotizar el producto ${product.name} (SKU: ${product.sku}).`
@@ -76,14 +77,16 @@ function PriceBlock({ product }: { product: PublicProductDetail }) {
   if (product.price === null) {
     return (
       <div>
-        <p className="text-2xl font-bold text-ink-900">Precio a consultar</p>
+        <p className="font-condensed text-2xl font-bold text-storefront-ink">Precio a consultar</p>
         <p className="text-body-sm text-ink-500">Solicita una cotización y te respondemos por WhatsApp.</p>
       </div>
     )
   }
   return (
     <div>
-      <p className="text-4xl font-bold leading-tight text-ink-900">{formatCop(product.price.value)}</p>
+      <p className="font-condensed text-4xl font-bold leading-tight tabular-nums text-storefront-ink">
+        {formatCop(product.price.value)}
+      </p>
       <p className="text-body-sm text-ink-500">IVA incluido</p>
     </div>
   )
@@ -111,8 +114,8 @@ function Summary({ product }: { product: PublicProductDetail }) {
   return (
     <div className="flex flex-col gap-5 lg:sticky lg:top-24 lg:self-start">
       {product.brand !== null && <p className="text-eyebrow uppercase text-security-500">{product.brand.name}</p>}
-      <h1 className="text-2xl font-bold leading-tight text-ink-900 sm:text-3xl">{product.name}</h1>
-      <p className="font-mono text-sm text-ink-400">SKU: {product.sku}</p>
+      <h1 className="font-condensed text-2xl font-bold leading-tight text-storefront-ink sm:text-3xl">{product.name}</h1>
+      <p className="font-mono text-sm text-ink-500">SKU: {product.sku}</p>
       <PriceBlock product={product} />
       <div className="flex flex-col gap-3 sm:flex-row">
         <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={`${PRIMARY_BUTTON} sm:flex-1`}>
@@ -134,7 +137,7 @@ function MobileBar({ product }: { product: PublicProductDetail }) {
       <div className="min-w-0 flex-1">
         {product.price !== null ? (
           <>
-            <p className="truncate text-lg font-bold leading-tight text-ink-900">{formatCop(product.price.value)}</p>
+            <p className="truncate font-condensed text-xl font-bold leading-tight tabular-nums text-storefront-ink">{formatCop(product.price.value)}</p>
             <p className="text-micro text-ink-500">IVA incluido</p>
           </>
         ) : (
@@ -148,13 +151,15 @@ function MobileBar({ product }: { product: PublicProductDetail }) {
   )
 }
 
-function Description({ text }: { text: string }) {
+function Description({ text, brand }: { text: string; brand: string | null }) {
+  const readable = toSentenceCase(text, { keep: brand !== null ? [brand] : [] })
+
   return (
     <section aria-labelledby="producto-descripcion">
       <h2 id="producto-descripcion" className="text-lg font-bold text-ink-900">
         Descripción
       </h2>
-      <p className="mt-3 whitespace-pre-line text-body-sm leading-relaxed text-ink-600">{text}</p>
+      <p className="mt-3 whitespace-pre-line text-body-sm leading-relaxed text-ink-600">{readable}</p>
     </section>
   )
 }
@@ -217,7 +222,7 @@ function ProductSkeleton() {
   return (
     <div role="status" className="grid gap-8 lg:grid-cols-2">
       <span className="sr-only">Cargando producto…</span>
-      <span aria-hidden="true" className="aspect-square w-full animate-pulse rounded-card bg-surface-200" />
+      <span aria-hidden="true" className="aspect-[4/3] w-full animate-pulse rounded-card bg-surface-200" />
       <div aria-hidden="true" className="flex flex-col gap-4">
         <span className="h-3 w-24 animate-pulse rounded bg-surface-100" />
         <span className="h-8 w-4/5 animate-pulse rounded bg-surface-200" />
@@ -277,12 +282,17 @@ export default function StorefrontProductPage() {
           <>
             <Breadcrumb product={product} />
             <div className="mt-6 grid gap-8 lg:grid-cols-2 lg:gap-12">
-              <ProductGallery images={product.images} productName={product.name} />
+              <ProductGallery
+                images={product.images}
+                productName={product.name}
+                sku={product.sku}
+                categorySlug={product.category?.slug ?? null}
+              />
               <Summary product={product} />
             </div>
             <div className="mt-12 flex max-w-3xl flex-col gap-10">
               {product.description !== null && product.description !== '' && (
-                <Description text={product.description} />
+                <Description text={product.description} brand={product.brand?.name ?? null} />
               )}
               {product.technicalSpecs.length > 0 && <SpecsTable specs={product.technicalSpecs} />}
               {product.datasheets.length > 0 && <Datasheets datasheets={product.datasheets} />}

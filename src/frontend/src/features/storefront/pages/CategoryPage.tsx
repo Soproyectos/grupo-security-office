@@ -288,7 +288,7 @@ export default function CategoryPage() {
           <>
             <Breadcrumb trail={trail} />
             <h1 className="mt-4 text-page-title font-bold text-ink-900">{trail.category.name}</h1>
-            {children.length > 0 ? (
+            {children.length > 0 && (
               <section aria-labelledby="categoria-subcategorias" className="mt-8">
                 <h2
                   id="categoria-subcategorias"
@@ -305,10 +305,6 @@ export default function CategoryPage() {
                   ))}
                 </ul>
               </section>
-            ) : (
-              <p className="mt-4 text-body-sm text-ink-500">
-                Esta categoría todavía no tiene subcategorías.
-              </p>
             )}
             <CategoryProducts slug={slug} />
           </>

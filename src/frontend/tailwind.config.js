@@ -40,6 +40,11 @@ export default {
           900: '#0F172A',
         },
 
+        // Tinta de la vitrina pública: precios, nombres y bandas oscuras.
+        storefront: {
+          ink: '#1A1A1A',
+        },
+
         neutral: {
           50: '#FFFFFF',
           100: '#F5F5F5',
