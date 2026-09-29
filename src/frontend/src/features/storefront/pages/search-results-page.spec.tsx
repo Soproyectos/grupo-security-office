@@ -93,8 +93,8 @@ describe('resultados de búsqueda', () => {
 
     expect(markup).toContain('Cámara Domo 4K')
     expect(markup).toContain('Lector biométrico')
-    expect(markup).toContain('href="/catalogo/categoria/camaras-ip"')
-    expect(markup).toContain('href="/catalogo/categoria/control-de-acceso"')
+    expect(markup).toContain('href="/catalogo/productos/prod-1"')
+    expect(markup).toContain('href="/catalogo/productos/prod-2"')
     // The image of the first product, resolved against the backend origin
     // (dev: relative, served by the Vite proxy).
     expect(markup).toContain('src="/api/files/img-1"')
@@ -145,7 +145,7 @@ describe('estado vacío', () => {
 
     expect(markup).toContain('No encontramos resultados para')
     expect(markup).toContain('«candado-ineexistente»')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
+    expect(markup).not.toContain('href="/catalogo/productos/')
   })
 
   it('ofrece explorar categorías cuando no hay resultados', () => {
@@ -232,7 +232,7 @@ describe('error de conexión', () => {
     expect(markup).toContain('No pudimos cargar los resultados')
     expect(markup).toContain('Revisa tu conexión e inténtalo de nuevo.')
     expect(markup).toContain('Intentar de nuevo')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
+    expect(markup).not.toContain('href="/catalogo/productos/')
   })
 })
 

@@ -63,6 +63,10 @@ describe('PublicProductCard', () => {
     expect(render({ brandName: null })).not.toContain('text-security-500">Hikvision')
   })
 
+  it('enlaza la tarjeta con la ficha pública del producto', () => {
+    expect(render()).toContain('href="/catalogo/productos/prod-1"')
+  })
+
   it('envuelve toda la tarjeta en un único enlace', () => {
     const markup = render()
 

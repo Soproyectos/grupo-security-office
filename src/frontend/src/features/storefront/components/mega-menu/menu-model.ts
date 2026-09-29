@@ -3,11 +3,18 @@ import type { MenuCategory } from '../../types/categoryMenu'
 /** Landing route of a category, rendered by the category page (MENU-05). */
 export const CATEGORY_ROUTE = '/catalogo/categoria'
 
+/** Public product sheet route, rendered by the storefront product page. */
+export const PRODUCT_ROUTE = '/catalogo/productos'
+
 /** Id of the region the trigger controls, referenced by `aria-controls`. */
 export const MENU_PANEL_ID = 'category-mega-menu'
 
 export function categoryHref(slug: string): string {
   return `${CATEGORY_ROUTE}/${slug}`
+}
+
+export function productHref(id: string): string {
+  return `${PRODUCT_ROUTE}/${id}`
 }
 
 /**

@@ -6,7 +6,7 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 
 vi.mock('./api', () => ({ default: { get } }))
 
-import { fetchCategoryMenu, fetchPublicProducts } from './public-catalog.service'
+import { fetchCategoryMenu, fetchPublicProductDetail, fetchPublicProducts } from './public-catalog.service'
 
 // ---------------------------------------------------------------------------
 // Covered scenarios:
@@ -229,5 +229,60 @@ describe('fetchPublicProducts', () => {
     get.mockRejectedValue(failure)
 
     await expect(fetchPublicProducts({ q: 'cámara' })).rejects.toBe(failure)
+  })
+})
+
+describe('fetchPublicProductDetail', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  const detail = {
+    id: 'prod-1',
+    sku: 'CAM-4K',
+    name: 'Cámara Domo 4K',
+    description: null,
+    brand: { name: 'Hikvision', slug: 'hikvision' },
+    category: { id: 'c-1', name: 'Cámaras IP', slug: 'camaras-ip' },
+    breadcrumb: [],
+    images: [],
+    technicalSpecs: [],
+    datasheets: [],
+    price: { value: 118258.8, currency: 'COP' },
+  }
+
+  it('pide la ficha pública por id', async () => {
+    get.mockResolvedValue({ data: { data: detail } })
+
+    await fetchPublicProductDetail('prod-1')
+
+    expect(get).toHaveBeenCalledWith('/public/products/prod-1')
+  })
+
+  it('devuelve la ficha tanto doble envuelta como ya desenvuelta', async () => {
+    get.mockResolvedValueOnce({ data: { data: { data: detail } } })
+    get.mockResolvedValueOnce({ data: { data: detail } })
+
+    await expect(fetchPublicProductDetail('prod-1')).resolves.toEqual(detail)
+    await expect(fetchPublicProductDetail('prod-1')).resolves.toEqual(detail)
+  })
+
+  it.each([404, 400])('resuelve null cuando el backend responde %i', async (status: number) => {
+    get.mockRejectedValue(Object.assign(new Error('failed'), { response: { status } }))
+
+    await expect(fetchPublicProductDetail('nope')).resolves.toBeNull()
+  })
+
+  it('resuelve null si el payload no trae un producto', async () => {
+    get.mockResolvedValue({ data: { data: null } })
+
+    await expect(fetchPublicProductDetail('prod-1')).resolves.toBeNull()
+  })
+
+  it('propaga los demás errores para poder reintentar', async () => {
+    const failure = Object.assign(new Error('boom'), { response: { status: 500 } })
+    get.mockRejectedValue(failure)
+
+    await expect(fetchPublicProductDetail('prod-1')).rejects.toBe(failure)
   })
 })

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { resolveAssetUrl } from '../../../services/api'
 import type { PublicProductResult } from '../types/publicProduct'
 import { formatCop } from '../utils/formatCop'
-import { categoryHref } from './mega-menu/menu-model'
+import { productHref } from './mega-menu/menu-model'
 
 /** Neutral icon of the media tile when the product has no image. */
 export function ProductPlaceholderIcon({ className = 'h-10 w-10' }: { className?: string }) {
@@ -32,7 +32,7 @@ export default function PublicProductCard({ product }: { product: PublicProductR
   return (
     <li>
       <Link
-        to={categoryHref(product.categorySlug)}
+        to={productHref(product.id)}
         className="group flex h-full flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-surface-300 hover:shadow-lg"
       >
         <span className="flex aspect-square w-full items-center justify-center overflow-hidden bg-gradient-to-br from-surface-50 to-surface-200 text-ink-400">
