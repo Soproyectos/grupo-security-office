@@ -1,13 +1,5 @@
-import {
-  BUSINESS_HOURS,
-  CUSTOMER_SERVICE_EMAIL,
-  SALES_LINE_DISPLAY,
-  SALES_LINE_HREF,
-  SALES_PHONE_DISPLAY,
-  SALES_PHONE_HREF,
-  WHATSAPP_MESSAGES,
-  whatsappUrl,
-} from '../constants/contact'
+import { whatsappUrl } from '../constants/contact'
+import { useStorefrontContact } from '../hooks/useStorefrontContact'
 
 /**
  * Full footer of the storefront: dark background with the red accent,
@@ -17,11 +9,17 @@ import {
  * The link lists are data: an entry without `href` has no destination yet (its
  * page does not exist) and is not rendered, and a column or the social row with
  * nothing to show disappears. Giving an entry its `href` is all it takes to
- * publish it. Contact data comes from `constants/contact.ts` (DEMO values).
+ * publish it. Contact data comes from `useStorefrontContact()` (public API,
+ * falling back to the demo values of `constants/contact.ts`); the columns and
+ * the social row stay out of that record and are edited in the code.
  */
 
 type FooterLink = { label: string; href?: string; external?: boolean }
 type FooterColumn = { title: string; links: FooterLink[] }
+
+// Etiqueta del enlace cuyo destino (WhatsApp con el mensaje guardado) sólo se
+// puede calcular dentro del componente: el número y el mensaje son asíncronos.
+const SELL_WITH_US_LABEL = 'Vende con nosotros'
 
 const COLUMNS: FooterColumn[] = [
   {
@@ -37,7 +35,7 @@ const COLUMNS: FooterColumn[] = [
     title: 'Compañía',
     links: [
       { label: 'Sobre nosotros' },
-      { label: 'Vende con nosotros', href: whatsappUrl(WHATSAPP_MESSAGES.sellWithUs), external: true },
+      { label: SELL_WITH_US_LABEL, external: true },
       { label: 'Trabaja con nosotros' },
       { label: 'Mapa del sitio' },
     ],
@@ -130,9 +128,19 @@ function FooterLinkList({ title, links }: { title: string; links: Array<FooterLi
 }
 
 export default function StorefrontFooter() {
-  const columns = COLUMNS.map((column) => ({ title: column.title, links: column.links.filter(hasHref) })).filter(
-    (column) => column.links.length > 0,
-  )
+  const { contact } = useStorefrontContact()
+  const columns = COLUMNS.map((column) => ({
+    title: column.title,
+    links: column.links
+      .map((link) =>
+        // "Vende con nosotros" lleva el número y el mensaje guardados; sin
+        // resolverlo aquí perdería su `href` y desaparecería del filtro.
+        link.label === SELL_WITH_US_LABEL
+          ? { ...link, href: contact.whatsappUrl(contact.sellWithUsMessage) }
+          : link,
+      )
+      .filter(hasHref),
+  })).filter((column) => column.links.length > 0)
   const socials = SOCIAL_LINKS.filter(hasHref)
 
   return (
@@ -147,25 +155,33 @@ export default function StorefrontFooter() {
               Contacto
             </h2>
             <ul className="space-y-2.5 text-sm">
+              {contact.salesLineHref !== null && (
+                <li>
+                  <a
+                    href={contact.salesLineHref}
+                    className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}
+                  >
+                    Línea de ventas: {contact.salesLineDisplay}
+                  </a>
+                </li>
+              )}
               <li>
-                <a href={SALES_LINE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
-                  Línea de ventas: {SALES_LINE_DISPLAY}
-                </a>
-              </li>
-              <li>
-                <a href={SALES_PHONE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
-                  Línea nacional: {SALES_PHONE_DISPLAY}
+                <a
+                  href={contact.nationalPhoneHref}
+                  className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}
+                >
+                  Línea nacional: {contact.nationalPhoneDisplay}
                 </a>
               </li>
               <li>
                 <a
-                  href={`mailto:${CUSTOMER_SERVICE_EMAIL}`}
+                  href={`mailto:${contact.email}`}
                   className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}
                 >
-                  {CUSTOMER_SERVICE_EMAIL}
+                  {contact.email}
                 </a>
               </li>
-              <li>Horario de atención: {BUSINESS_HOURS}</li>
+              <li>Horario de atención: {contact.businessHours}</li>
             </ul>
           </div>
         </div>

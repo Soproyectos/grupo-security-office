@@ -3,9 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import ProductGallery from '../components/ProductGallery'
 import { categoryHref } from '../components/mega-menu/menu-model'
-import { SALES_PHONE_HREF, whatsappUrl } from '../constants/contact'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { usePublicProductDetail } from '../hooks/usePublicProductDetail'
+import { useStorefrontContact } from '../hooks/useStorefrontContact'
 import type { PublicProductDetail } from '../types/publicProduct'
 import { pageTitle } from '../utils/documentTitle'
 import { formatCop } from '../utils/formatCop'
@@ -111,7 +111,8 @@ function TrustStrip() {
 
 /** Brand, name, SKU, price, CTAs and trust strip; sticky on desktop. */
 function Summary({ product }: { product: PublicProductDetail }) {
-  const whatsapp = whatsappUrl(quoteMessage(product))
+  const { contact } = useStorefrontContact()
+  const whatsapp = contact.whatsappUrl(quoteMessage(product))
 
   return (
     <div className="flex flex-col gap-5 lg:sticky lg:top-24 lg:self-start">
@@ -123,7 +124,7 @@ function Summary({ product }: { product: PublicProductDetail }) {
         <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={`${PRIMARY_BUTTON} sm:flex-1`}>
           Cotizar por WhatsApp
         </a>
-        <a href={SALES_PHONE_HREF} className={SECONDARY_BUTTON}>
+        <a href={contact.nationalPhoneHref} className={SECONDARY_BUTTON}>
           Llamar
         </a>
       </div>
@@ -134,6 +135,8 @@ function Summary({ product }: { product: PublicProductDetail }) {
 
 /** Fixed bottom bar of small screens, so the quote CTA is always reachable. */
 function MobileBar({ product }: { product: PublicProductDetail }) {
+  const { contact } = useStorefrontContact()
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-surface-200 bg-white px-4 py-3 lg:hidden">
       <div className="min-w-0 flex-1">
@@ -146,7 +149,7 @@ function MobileBar({ product }: { product: PublicProductDetail }) {
           <p className="text-sm font-semibold text-ink-700">Precio a consultar</p>
         )}
       </div>
-      <a href={whatsappUrl(quoteMessage(product))} target="_blank" rel="noopener noreferrer" className={PRIMARY_BUTTON}>
+      <a href={contact.whatsappUrl(quoteMessage(product))} target="_blank" rel="noopener noreferrer" className={PRIMARY_BUTTON}>
         Cotizar por WhatsApp
       </a>
     </div>

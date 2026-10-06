@@ -1,11 +1,14 @@
-import { SALES_LINE_HREF, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
+import { WHATSAPP_MESSAGES } from '../constants/contact'
+import { useStorefrontContact } from '../hooks/useStorefrontContact'
 
 /**
  * As HOM-04 defines it, the sales-channels section of the storefront
  * (Homecenter style): four channels with inline SVG icons, a short title and
- * a one-line description each. Contact data comes from `constants/contact.ts`
- * (DEMO values). `Proyectos` and `Ventas al por mayor` have no page, so they
- * open WhatsApp with a prefilled message instead of a dead route.
+ * a one-line description each. Contact data comes from
+ * `useStorefrontContact()` (public API, falling back to the demo values of
+ * `constants/contact.ts`), so the hrefs are built on every render. `Proyectos`
+ * and `Ventas al por mayor` have no page, so they open WhatsApp with a
+ * prefilled message instead of a dead route.
  */
 
 type SalesChannel = {
@@ -45,44 +48,48 @@ const WHOLESALE_ICON = (
   </svg>
 )
 
-const SALES_CHANNELS: SalesChannel[] = [
-  {
-    title: 'WhatsApp',
-    description: 'Escríbenos por WhatsApp y te asesoramos en tu compra.',
-    href: whatsappUrl(),
-    external: true,
-    icon: WHATSAPP_ICON,
-  },
-  {
-    title: 'Venta telefónica',
-    description: 'Llama a nuestra línea de ventas y haz tu pedido.',
-    href: SALES_LINE_HREF,
-    icon: PHONE_ICON,
-  },
-  {
-    title: 'Proyectos',
-    description: 'Cotiza proyectos de seguridad para tu empresa o edificio.',
-    href: whatsappUrl(WHATSAPP_MESSAGES.projects),
-    external: true,
-    icon: PROJECTS_ICON,
-  },
-  {
-    title: 'Ventas al por mayor',
-    description: 'Precios especiales por volumen para distribuidores e instaladores.',
-    href: whatsappUrl(WHATSAPP_MESSAGES.wholesale),
-    external: true,
-    icon: WHOLESALE_ICON,
-  },
-]
-
 export default function StorefrontSalesChannels() {
+  const { contact } = useStorefrontContact()
+
+  // Los href se calculan en cada render: los números vienen del API y un
+  // enlace de módulo se quedaría con el valor del import.
+  const channels: SalesChannel[] = [
+    {
+      title: 'WhatsApp',
+      description: 'Escríbenos por WhatsApp y te asesoramos en tu compra.',
+      href: contact.whatsappUrl(),
+      external: true,
+      icon: WHATSAPP_ICON,
+    },
+    {
+      title: 'Venta telefónica',
+      description: 'Llama a nuestra línea de ventas y haz tu pedido.',
+      href: contact.salesLineHref ?? undefined,
+      icon: PHONE_ICON,
+    },
+    {
+      title: 'Proyectos',
+      description: 'Cotiza proyectos de seguridad para tu empresa o edificio.',
+      href: contact.whatsappUrl(WHATSAPP_MESSAGES.projects),
+      external: true,
+      icon: PROJECTS_ICON,
+    },
+    {
+      title: 'Ventas al por mayor',
+      description: 'Precios especiales por volumen para distribuidores e instaladores.',
+      href: contact.whatsappUrl(WHATSAPP_MESSAGES.wholesale),
+      external: true,
+      icon: WHOLESALE_ICON,
+    },
+  ]
+
   return (
     <section aria-labelledby="home-canales-title" className="mt-12">
       <h2 id="home-canales-title" className="font-condensed text-2xl font-bold text-storefront-ink">
         Canales de venta
       </h2>
       <ul role="list" className="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {SALES_CHANNELS.filter((channel) => channel.href !== undefined).map((channel) => (
+        {channels.filter((channel) => channel.href !== undefined).map((channel) => (
           <li key={channel.title}>
             <a
               href={channel.href}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
+import { BUSINESS_HOURS_SHORT, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
 import StorefrontChrome from './StorefrontChrome'
 
 function renderChrome(): string {
@@ -28,6 +28,32 @@ describe('barra superior', () => {
     const markup = renderChrome()
 
     expect(markup).toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}"`)
+  })
+
+  it('pinta la barra con el rojo institucional y texto blanco de la marca', () => {
+    const markup = renderChrome()
+
+    expect(markup).toContain('bg-[#CE0203]')
+    expect(markup).toContain('text-xs text-white')
+  })
+
+  it('ofrece contacto directo: teléfono, horario y WhatsApp a un asesor', () => {
+    const markup = renderChrome()
+
+    expect(markup).toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.contact)}"`)
+    expect(markup).toContain('aria-label="Contáctenos por WhatsApp"')
+    expect(markup).toContain('>Contáctenos</a>')
+  })
+
+  it('publica el horario para que el visitante sepa cuándo esperar respuesta', () => {
+    expect(renderChrome()).toContain(`Atención: ${BUSINESS_HOURS_SHORT}`)
+  })
+
+  it('no afirma marcas ni promociones que no se pueden verificar', () => {
+    const markup = renderChrome()
+
+    expect(markup).not.toContain('marcas líderes')
+    expect(markup).not.toContain('Distribuidor autorizado')
   })
 })
 
