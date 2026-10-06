@@ -31,6 +31,7 @@
 
 ## Bitácoras
 
+- [2026-10-06 — Contacto editable del storefront](./bitacora/2026-10-06-storefront-contact-settings.md)
 - [2026-09-22 — Biblioteca de vitrina](./bitacora/2026-09-22-biblioteca-vitrina.md)
 
 ## Producto, testing, seguridad y UI
