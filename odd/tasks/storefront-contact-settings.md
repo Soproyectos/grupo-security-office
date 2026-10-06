@@ -126,7 +126,7 @@ Estrategia de cadena elegida: **`feature-branch-chain`**. Cada commit es un slic
 | `a01233f` | SC-02 página `/storefront` | +690 | `vitest run StorefrontSettingsPage.spec.tsx` → 13/13 |
 | `5323eea` | SC-04 concesión rol/usuario | +530/−72 | `jest user-permissions.service.spec.ts` 9/9 · `vitest users` 11/11 |
 | `5e4952b` | SC-03 consumidores + barra roja | +942/−76 | `vitest run src/features/storefront` → 23 archivos, 239/239 |
-| (este commit) | SC-05 docs | — | `N/A` (docs; sin runtime) |
+| `3188425` | SC-05 docs | +203 | `N/A` (docs; sin runtime) |
 
 **RDD**: `gentle-ai` sigue ausente del PATH en este servidor → `review assess` **no disponible** en los 5 commits; no se infiere riesgo (tier no baja). Revisión pendiente de que el coordinador instale/exponga el CLI.
 
