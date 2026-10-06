@@ -4,6 +4,7 @@ export const ROLES = {
   SUPER_ADMIN: 'Super Admin',
   SUPERVISOR: 'Supervisor',
   ADMIN_COMERCIAL: 'Admin Comercial',
+  VENDEDOR: 'Vendedor',
   OPERADOR: 'Operador',
   CONSULTA: 'Consulta',
 } as const
@@ -14,6 +15,7 @@ export const ALL_ROLES: RoleName[] = [
   ROLES.SUPER_ADMIN,
   ROLES.SUPERVISOR,
   ROLES.ADMIN_COMERCIAL,
+  ROLES.VENDEDOR,
   ROLES.OPERADOR,
   ROLES.CONSULTA,
 ]

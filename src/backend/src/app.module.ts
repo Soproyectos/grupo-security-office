@@ -25,6 +25,7 @@ import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-orders.module';
 import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-targets.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-tar
     QuotesModule,
     SalesOrdersModule,
     SalesTargetsModule,
+    PromotionsModule,
   ],
   providers: [
     {

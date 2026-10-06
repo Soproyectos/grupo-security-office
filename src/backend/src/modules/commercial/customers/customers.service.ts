@@ -1,12 +1,14 @@
 import {
   Injectable,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { HierarchyService } from '../../../common/hierarchy/hierarchy.service';
+import { isPersonalSeller } from '../../../common/rbac/personal-seller';
 import { AuditService } from '../../audit/audit.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -19,6 +21,7 @@ import { CustomerQueryDto } from './dto/customer-query.dto';
  *
  * Scoping de acceso:
  * - Super Admin / Admin Comercial (`isListasAdmin`) → ven TODOS los clientes.
+ * - Vendedor sin rol de gestión → solo su propia cartera.
  * - Cualquier otro rol → solo clientes cuyo `ownerId` es el propio usuario o
  *   uno de sus subordinados (HierarchyService.getSubordinateIds incluyéndose).
  */
@@ -33,12 +36,15 @@ export class CustomersService {
 
   /**
    * Condición de visibilidad por jerarquía. Devuelve `null` para admins
-   * (sin filtro) o un `WhereInput` con `ownerId in [self + subordinados]`.
+   * (sin filtro), cartera propia para Vendedor o jerarquía para los otros roles.
    */
   private async scopeWhere(
     ctx: AccessContext,
   ): Promise<Prisma.CustomerWhereInput | null> {
     if (this.acl.isListasAdmin(ctx.roles)) return null;
+    if (isPersonalSeller(ctx.roles)) {
+      return { ownerId: { in: ctx.userId ? [ctx.userId] : [] } };
+    }
     const ids = ctx.userId
       ? await this.hierarchy.getSubordinateIds(ctx.userId, { includeSelf: true })
       : [];
@@ -104,6 +110,7 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto, ctx: AccessContext) {
+    this.assertOwnCustomerOwner(dto.ownerId, ctx);
     const data: Prisma.CustomerCreateInput = {
       code: await this.generateCode(),
       name: dto.name.trim(),
@@ -150,6 +157,7 @@ export class CustomersService {
 
   async update(id: string, dto: UpdateCustomerDto, ctx: AccessContext) {
     const existing = await this.findOne(id, ctx);
+    this.assertOwnCustomerOwner(dto.ownerId, ctx);
 
     const data: Prisma.CustomerUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
@@ -265,6 +273,12 @@ export class CustomersService {
     });
     if (exists) return this.generateCode(attempt + 1);
     return candidate;
+  }
+
+  private assertOwnCustomerOwner(ownerId: string | null | undefined, ctx: AccessContext): void {
+    if (isPersonalSeller(ctx.roles) && ownerId !== undefined && ownerId !== ctx.userId) {
+      throw new ForbiddenException('Solo puedes gestionar clientes de tu propia cartera');
+    }
   }
 
   private throwOnUniqueViolation(error: unknown): never {

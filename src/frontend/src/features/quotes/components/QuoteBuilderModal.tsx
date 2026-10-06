@@ -21,7 +21,10 @@ function useDebounced<T>(value: T, delayMs = 300): T {
  * Solo recolecta SELECCIONES (ids, fecha, notas); todos los montos los
  * calcula el backend al crear la cotización y al agregar ítems después.
  */
-export default function QuoteBuilderModal() {
+export default function QuoteBuilderModal({
+  quotesPath = '/commercial/quotes',
+  ownerId,
+}: { quotesPath?: string; ownerId?: string }) {
   const navigate = useNavigate()
   const store = useQuoteBuilderStore()
   const { create } = useQuoteMutations()
@@ -30,9 +33,9 @@ export default function QuoteBuilderModal() {
   const debouncedSearch = useDebounced(customerSearch)
 
   const customersQuery = useQuery({
-    queryKey: ['customers', 'picker', debouncedSearch],
+    queryKey: ['customers', 'picker', ownerId, debouncedSearch],
     queryFn: () =>
-      fetchCustomers({ search: debouncedSearch || undefined }, 1, 10),
+      fetchCustomers({ search: debouncedSearch || undefined, ownerId }, 1, 10),
     enabled: store.isOpen && store.step === 'customer',
   })
 
@@ -64,7 +67,7 @@ export default function QuoteBuilderModal() {
         notes: store.notes || undefined,
       })
       store.reset()
-      navigate(`/commercial/quotes/${quote.id}`)
+      navigate(`${quotesPath}/${quote.id}`)
     } catch (err) {
       setSubmitError(extractBackendMessage(err))
     }

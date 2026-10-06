@@ -55,7 +55,10 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function QuoteDetailPage() {
+export default function QuoteDetailPage({
+  personal = false,
+  quotesPath = '/commercial/quotes',
+}: { personal?: boolean; quotesPath?: string }) {
   const { id } = useParams<{ id: string }>()
   const { quote, isLoading, error } = useQuote(id)
   const { updateStatus } = useQuoteMutations()
@@ -85,7 +88,7 @@ export default function QuoteDetailPage() {
           No se pudo cargar la cotización. Intenta de nuevo.
         </p>
         <Link
-          to="/commercial/quotes"
+          to={quotesPath}
           className="text-sm font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]"
         >
           Volver a cotizaciones
@@ -95,6 +98,7 @@ export default function QuoteDetailPage() {
   }
 
   const transitions = allowedTransitions(quote.status)
+    .filter(status => !personal || status !== 'ganada')
   const itemsEditable = areItemsEditable(quote.status)
   const currency = quote.currency
 
@@ -126,7 +130,7 @@ export default function QuoteDetailPage() {
     <div className="space-y-6">
       <nav aria-label="Ruta de navegación" className="text-sm">
         <Link
-          to="/commercial/quotes"
+          to={quotesPath}
           className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]"
         >
           Cotizaciones

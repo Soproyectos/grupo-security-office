@@ -33,7 +33,7 @@ function formatDocument(customer: Customer): string {
     : customer.documentId
 }
 
-export default function CustomersPage() {
+export default function CustomersPage({ personal = false }: { personal?: boolean }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<CustomerStatus | undefined>()
   const [page, setPage] = useState(1)
@@ -42,13 +42,13 @@ export default function CustomersPage() {
 
   const currentUser = useAuthStore((state) => state.user)
   const showOwnerColumn = useMemo(
-    () => OWNER_COLUMN_ROLES.some((r) => currentUser?.roles?.includes(r)),
-    [currentUser]
+    () => !personal && OWNER_COLUMN_ROLES.some((r) => currentUser?.roles?.includes(r)),
+    [currentUser, personal]
   )
 
   const filters: CustomerFilters = useMemo(
-    () => ({ search: search || undefined, status: statusFilter }),
-    [search, statusFilter]
+    () => ({ search: search || undefined, status: statusFilter, ownerId: personal ? currentUser?.id : undefined }),
+    [search, statusFilter, personal, currentUser?.id]
   )
 
   const { customers, total, totalPages, isLoading, error } = useCustomers({
@@ -178,7 +178,7 @@ export default function CustomersPage() {
               Convertir
             </Button>
           )}
-          <Button
+          {!personal && <Button
             type="button"
             variant="ghost"
             className="px-2 py-1 text-xs text-[var(--color-error)]"
@@ -189,20 +189,20 @@ export default function CustomersPage() {
             }}
           >
             Eliminar
-          </Button>
+          </Button>}
         </div>
       ),
     })
 
     return cols
-  }, [showOwnerColumn, ownerNames, convert.isPending, remove.isPending]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showOwnerColumn, ownerNames, convert.isPending, remove.isPending, personal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-condensed font-semibold text-neutral-800">
-            Clientes y leads
+            {personal ? 'Mis clientes y leads' : 'Clientes y leads'}
           </h1>
           <p className="text-sm text-neutral-500">
             {total} registro{total === 1 ? '' : 's'} en tu alcance

@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { createPrismaMock } from '../../../__test__/mocks/prisma.mock';
 
@@ -197,4 +197,41 @@ describe('CustomersService', () => {
     await expect(service.convert('c1', adminCtx)).rejects.toThrow(ConflictException);
     expect(prisma.customer.update).not.toHaveBeenCalled();
   });
+  describe('personal seller portfolio', () => {
+    const seller = { userId: 'seller-1', roles: ['Vendedor'] };
+
+    it('scopes both rows and totals to the seller even if they have subordinates', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue(['seller-1', 'other-seller']);
+      prisma.customer.findMany.mockResolvedValue([]);
+      prisma.customer.count.mockResolvedValue(0);
+      await service.findAll({}, seller);
+      const where = prisma.customer.findMany.mock.calls[0][0].where;
+      expect(where.AND).toContainEqual({ ownerId: { in: ['seller-1'] } });
+      expect(prisma.customer.count).toHaveBeenCalledWith({ where });
+      expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
+    });
+
+    it('does not reveal another seller customer by ID', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'other', isActive: true, ownerId: 'other-seller' });
+      await expect(service.findOne('other', seller)).rejects.toThrow(NotFoundException);
+    });
+
+    it('can read an owned customer', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId });
+      await expect(service.findOne('mine', seller)).resolves.toMatchObject({ id: 'mine' });
+    });
+
+    it('cannot create a customer for a different owner', async () => {
+      await expect(service.create({ name: 'Demo', ownerId: 'other-seller' }, seller))
+        .rejects.toThrow(ForbiddenException);
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['other-seller', null])('cannot transfer or unassign a customer to %s', async ownerId => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId });
+      await expect(service.update('mine', { ownerId }, seller)).rejects.toThrow(ForbiddenException);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+  });
+
 });

@@ -9,6 +9,7 @@ import { Prisma, Quote, QuoteItem } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { HierarchyService } from '../../../common/hierarchy/hierarchy.service';
+import { isPersonalSeller } from '../../../common/rbac/personal-seller';
 import { AuditService } from '../../audit/audit.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { AddQuoteItemDto } from './dto/add-quote-item.dto';
@@ -77,12 +78,15 @@ export class QuotesService {
 
   /**
    * Condición de visibilidad por jerarquía. Devuelve `null` para admins
-   * (sin filtro) o un `WhereInput` con `ownerId in [self + subordinados]`.
+   * (sin filtro), cartera propia para Vendedor o jerarquía para los otros roles.
    */
   private async scopeWhere(
     ctx: AccessContext,
   ): Promise<Prisma.QuoteWhereInput | null> {
     if (this.acl.isListasAdmin(ctx.roles)) return null;
+    if (isPersonalSeller(ctx.roles)) {
+      return { ownerId: { in: ctx.userId ? [ctx.userId] : [] } };
+    }
     const ids = ctx.userId
       ? await this.hierarchy.getSubordinateIds(ctx.userId, { includeSelf: true })
       : [];
@@ -178,7 +182,8 @@ export class QuotesService {
     const customer = await this.prisma.customer.findUnique({
       where: { id: dto.customerId },
     });
-    if (!customer || !customer.isActive) {
+    if (!customer || !customer.isActive ||
+        (isPersonalSeller(ctx.roles) && customer.ownerId !== ctx.userId)) {
       throw new NotFoundException('Cliente no encontrado');
     }
 
