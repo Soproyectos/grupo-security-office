@@ -19,6 +19,7 @@ import {
 } from '../services/roles.service'
 import { Modal } from '../components/ui'
 import DashboardGrants from '../features/users/components/DashboardGrants'
+import { PERMISSION_GROUPS } from '../features/users/constants/permission-groups'
 
 interface User {
   id: string
@@ -28,16 +29,6 @@ interface User {
   supervisorId?: string | null
   roles: { id: string; name: string }[]
 }
-
-const PERMISSION_GROUPS: { label: string; permissions: string[] }[] = [
-  { label: 'Productos', permissions: ['products:read', 'products:write', 'products:delete'] },
-  { label: 'Categorías', permissions: ['categories:read', 'categories:write'] },
-  { label: 'Marcas', permissions: ['brands:read', 'brands:write'] },
-  { label: 'Precios', permissions: ['prices:read', 'prices:write'] },
-  { label: 'Usuarios', permissions: ['users:read', 'users:write', 'users:manage'] },
-  { label: 'Auditoría', permissions: ['audit:read'] },
-  { label: 'Publicación', permissions: ['publish:manage'] },
-]
 
 type MatrixRule =
   | { kind: 'permission'; permission: string }
@@ -74,7 +65,8 @@ function groupedPermissionLabels(permissions: string[]): string[] {
 }
 
 export default function UsersPage() {
-  // Panel de concesiones de dashboard (fase 5): sólo Super Admin.
+  // Concesiones por usuario (fase 5): paneles del dashboard y configuración de
+  // tienda. Sólo Super Admin.
   const [grantsUser, setGrantsUser] = useState<User | null>(null)
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -312,7 +304,7 @@ export default function UsersPage() {
                           onClick={() => setGrantsUser(user)}
                           className="text-xs text-security-600 hover:text-security-800 font-medium"
                         >
-                          Paneles
+                          Accesos
                         </button>
                       </div>
                       <div className="flex gap-2">
@@ -358,7 +350,7 @@ export default function UsersPage() {
             <Modal
               open
               onClose={() => setGrantsUser(null)}
-              title={`Paneles de ${grantsUser.name}`}
+              title={`Accesos de ${grantsUser.name}`}
               size="lg"
             >
               <DashboardGrants userId={grantsUser.id} />

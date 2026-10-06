@@ -13,8 +13,24 @@ import {
  * **visibilidad**, no capacidades. Permitir conceder `users:manage` o
  * `listas:delete` por esta vía convertiría un control pensado para "que vea el
  * panel de ventas" en una puerta trasera de escalada de privilegios.
+ *
+ * Excepción consciente: `storefront:`. `storefront:read` sí es visibilidad,
+ * pero `storefront:write` es una capacidad —editar los teléfonos, el correo y
+ * los horarios que la tienda pública muestra—, así que no encaja en la regla de
+ * arriba. Se admite porque no amplía quién puede hacer qué:
+ *
+ * 1. Sólo la concede Super Admin: `GET` y `PUT /users/:id/dashboard-permissions`
+ *    exigen `@Roles('Super Admin')`. Y como Super Admin ya podía concederla
+ *    por rol (`PUT /roles/:id`), abrir este prefijo no le da poder nuevo: sólo
+ *    un atajo para dársela a una persona concreta sin tocar el resto del rol.
+ * 2. Queda auditada: `replaceForUser` registra el antes y el después en
+ *    `AuditLog` con la acción `grant-dashboard-permissions`, así que siempre
+ *    consta quién decidió esto y sobre qué conjunto anterior.
+ * 3. El alcance ya está acotado en su propio sitio: el endpoint de escritura
+ *    sigue exigiendo `@Permissions('storefront:write')` y el de lectura
+ *    `storefront:read`, así que la concesión no salta ningún control.
  */
-const GRANTABLE_PREFIXES = ['dashboard:pack:', 'dashboard:block:'];
+const GRANTABLE_PREFIXES = ['dashboard:pack:', 'dashboard:block:', 'storefront:'];
 
 export interface GrantedPermission {
   permission: string;
@@ -34,7 +50,7 @@ export class UserPermissionsService {
   private assertGrantable(permission: string): void {
     if (!GRANTABLE_PREFIXES.some((p) => permission.startsWith(p))) {
       throw new BadRequestException(
-        `Sólo pueden concederse permisos de dashboard. Recibido: "${permission}".`,
+        `Sólo pueden concederse permisos de dashboard o de configuración de tienda. Recibido: "${permission}".`,
       );
     }
 

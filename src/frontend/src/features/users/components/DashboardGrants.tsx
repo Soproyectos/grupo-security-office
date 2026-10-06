@@ -4,6 +4,13 @@ import api from '../../../services/api'
 import { PACKS, blocksInPack } from '../../dashboard/registry/blocks'
 import { blockPermission, packPermission, type PackId } from '../../dashboard/registry/types'
 import { StatusPill } from '../../../components/ui'
+import {
+  selectionFromGrants,
+  packSelectionState,
+  togglePackInSelection,
+  toggleBlockInSelection,
+  togglePermissionInSelection,
+} from '../lib/grant-selection'
 
 interface GrantedPermission {
   permission: string
@@ -17,7 +24,27 @@ const fetchGrants = async (userId: string): Promise<GrantedPermission[]> => {
 }
 
 /**
- * Concesiones de dashboard por usuario (fase 5).
+ * Permisos de configuración de tienda que se pueden conceder por usuario.
+ *
+ * `read` permite abrir la página `/storefront`; `write` permite editarla. Se
+ * conceden por la misma vía que los paneles y sólo el Super Admin puede hacerlo.
+ */
+const STOREFRONT_PERMISSIONS = [
+  {
+    permission: 'storefront:read',
+    title: 'Ver la configuración',
+    description: 'Abrir los ajustes de la tienda sin poder guardarlos',
+  },
+  {
+    permission: 'storefront:write',
+    title: 'Editar la configuración',
+    description: 'Cambiar teléfonos, correo, horarios y mensajes',
+  },
+]
+
+/**
+ * Concesiones por usuario (fase 5): paneles del dashboard y configuración de
+ * tienda.
  *
  * Modelo híbrido: el Super Admin marca **paquetes** y, si hace falta, despliega
  * y elige **bloques sueltos**. La casilla del paquete tiene tres estados —vacía,
@@ -27,6 +54,15 @@ const fetchGrants = async (userId: string): Promise<GrantedPermission[]> => {
  * crecerá solo cuando se añadan bloques nuevos al catálogo; marcar piezas
  * sueltas guarda esas piezas, que quedan congeladas. Es la diferencia entre
  * "que vea lo de ventas" y "le habilité estos dos informes".
+ *
+ * Los permisos de tienda no tienen paquete ni piezas: son dos casillas sueltas
+ * que comparten este mismo borrador y este mismo botón de guardar, porque el
+ * endpoint sustituye el conjunto entero y mandarlo en dos listas obligaría a
+ * coordinarlas para no perder la otra.
+ *
+ * La lógica de selección vive en `../lib/grant-selection`, donde es testeable:
+ * el repo no tiene entorno DOM ni @testing-library, así que no se puede montar
+ * el componente y pulsar sus casillas en un spec.
  */
 export default function DashboardGrants({ userId }: { userId: string }) {
   const queryClient = useQueryClient()
@@ -40,10 +76,7 @@ export default function DashboardGrants({ userId }: { userId: string }) {
   })
 
   // El borrador arranca desde lo guardado y sólo existe mientras se edita.
-  const selected = useMemo(
-    () => draft ?? new Set((data ?? []).map((g) => g.permission)),
-    [draft, data],
-  )
+  const selected = useMemo(() => draft ?? selectionFromGrants(data ?? []), [draft, data])
 
   const mutation = useMutation({
     mutationFn: (permissions: string[]) =>
@@ -58,58 +91,13 @@ export default function DashboardGrants({ userId }: { userId: string }) {
     },
   })
 
-  const update = (fn: (next: Set<string>) => void) => {
-    const next = new Set(selected)
-    fn(next)
-    setDraft(next)
-  }
+  const togglePack = (packId: PackId) => setDraft(togglePackInSelection(selected, packId))
 
-  /** Estado de la casilla del paquete, contando paquete completo y piezas. */
-  const packState = (packId: PackId) => {
-    if (selected.has(packPermission(packId))) {
-      return { state: 'all' as const, count: blocksInPack(packId).length }
-    }
+  const toggleBlock = (packId: PackId, blockId: string) =>
+    setDraft(toggleBlockInSelection(selected, packId, blockId))
 
-    const count = blocksInPack(packId).filter((b) =>
-      selected.has(blockPermission(b.id)),
-    ).length
-
-    return {
-      state: count === 0 ? ('none' as const) : ('partial' as const),
-      count,
-    }
-  }
-
-  const togglePack = (packId: PackId) => {
-    const { state } = packState(packId)
-
-    update((next) => {
-      // Al marcar el paquete se limpian sus piezas sueltas: conservarlas sería
-      // redundante y haría que al desmarcar el paquete quedaran restos.
-      blocksInPack(packId).forEach((b) => next.delete(blockPermission(b.id)))
-
-      if (state === 'all') {
-        next.delete(packPermission(packId))
-      } else {
-        next.add(packPermission(packId))
-      }
-    })
-  }
-
-  const toggleBlock = (packId: PackId, blockId: string) => {
-    update((next) => {
-      // Tocar una pieza degrada el paquete a piezas: se expande a sus bloques
-      // y se quita el permiso de paquete, para que lo guardado refleje la
-      // selección exacta y no crezca sola.
-      if (next.has(packPermission(packId))) {
-        next.delete(packPermission(packId))
-        blocksInPack(packId).forEach((b) => next.add(blockPermission(b.id)))
-      }
-
-      const perm = blockPermission(blockId)
-      next.has(perm) ? next.delete(perm) : next.add(perm)
-    })
-  }
+  const toggleStorefront = (permission: string) =>
+    setDraft(togglePermissionInSelection(selected, permission))
 
   if (isLoading) {
     return <p className="text-caption text-ink-400">Cargando concesiones…</p>
@@ -137,7 +125,7 @@ export default function DashboardGrants({ userId }: { userId: string }) {
 
       <div className="divide-y divide-surface-100 overflow-hidden rounded-panel border border-surface-200">
         {PACKS.map((pack) => {
-          const { state, count } = packState(pack.id)
+          const { state, count } = packSelectionState(selected, pack.id)
           const total = blocksInPack(pack.id).length
           const isOpen = expanded.has(pack.id)
 
@@ -149,7 +137,11 @@ export default function DashboardGrants({ userId }: { userId: string }) {
                   onClick={() =>
                     setExpanded((prev) => {
                       const next = new Set(prev)
-                      next.has(pack.id) ? next.delete(pack.id) : next.add(pack.id)
+                      if (next.has(pack.id)) {
+                        next.delete(pack.id)
+                      } else {
+                        next.add(pack.id)
+                      }
                       return next
                     })
                   }
@@ -212,6 +204,30 @@ export default function DashboardGrants({ userId }: { userId: string }) {
             </div>
           )
         })}
+      </div>
+
+      <div>
+        <h3 className="text-panel-title text-ink-900">Configuración de tienda</h3>
+        <p className="mt-1 text-caption text-ink-500">
+          Permisos sobre los datos de contacto que muestra la tienda pública.
+        </p>
+      </div>
+
+      <div className="divide-y divide-surface-100 overflow-hidden rounded-panel border border-surface-200">
+        {STOREFRONT_PERMISSIONS.map(({ permission, title, description }) => (
+          <div key={permission} className="px-4 py-3">
+            <label className="flex cursor-pointer items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={selected.has(permission)}
+                onChange={() => toggleStorefront(permission)}
+                className="h-4 w-4 rounded border-surface-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              />
+              <span className="text-body-sm font-semibold text-ink-900">{title}</span>
+              <span className="text-micro text-ink-400">{description}</span>
+            </label>
+          </div>
+        ))}
       </div>
 
       {hasChanges && (
