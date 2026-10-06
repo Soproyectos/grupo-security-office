@@ -25,6 +25,13 @@ export class DashboardController {
     return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
   }
 
+  @Get('sales-goal')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Meta mensual y facturado del usuario autenticado, sin datos de equipo' })
+  getPersonalSalesGoal(@CurrentUser() user: any) {
+    return this.dashboardService.getPersonalSalesGoal(this.ctx(user));
+  }
+
   @Get('me')
   @Roles(...ALL_ROLES)
   @ApiOperation({

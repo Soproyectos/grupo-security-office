@@ -1,6 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/auth.store'
 import AdminLayout from './components/layout/AdminLayout'
+import SalesLayout from './features/sales/SalesLayout'
+import SalesHomePage from './features/sales/SalesHomePage'
+import { workspaceRedirect, type Workspace } from './lib/workspace'
 import CommercialLayout from './components/layout/CommercialLayout'
 import CategoryPage from './features/storefront/pages/CategoryPage'
 import SearchResultsPage from './features/storefront/pages/SearchResultsPage'
@@ -20,15 +23,20 @@ import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
+import PromotionManagerPage from './features/promotions/PromotionManagerPage'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({
+  children,
+  workspace = 'admin',
+}: {
+  children: React.ReactNode
+  workspace?: Workspace
+}) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const user = useAuthStore((state) => state.user)
+  const redirect = workspaceRedirect(user?.roles, isAuthenticated, workspace)
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
-  }
-
-  return <>{children}</>
+  return redirect ? <Navigate to={redirect} replace /> : <>{children}</>
 }
 
 function App() {
@@ -63,6 +71,18 @@ function App() {
         <Route path="products" element={<Navigate to="/commercial/products" replace />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="promotions" element={<PromotionManagerPage />} />
+      </Route>
+      <Route
+        path="/sales"
+        element={<ProtectedRoute workspace="sales"><SalesLayout /></ProtectedRoute>}
+      >
+        <Route index element={<SalesHomePage />} />
+        <Route path="customers" element={<CustomersPage personal />} />
+        <Route path="promotions" element={<></>} />
+        <Route path="quotes" element={<QuotesPage personal quotesPath="/sales/quotes" />} />
+        <Route path="quotes/:id" element={<QuoteDetailPage personal quotesPath="/sales/quotes" />} />
+        <Route path="*" element={<Navigate to="/sales" replace />} />
       </Route>
       <Route path="/tienda" element={<StorefrontHome />} />
       <Route path="/catalogo" element={<CatalogIndexPage />} />

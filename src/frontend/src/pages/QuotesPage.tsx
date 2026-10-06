@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuthStore } from '../stores/auth.store'
 import { Button, Table } from '../components/ui'
 import { SearchFilterBar } from '../components/filters/SearchFilterBar'
 import QuoteStatusBadge from '../features/quotes/components/QuoteStatusBadge'
@@ -17,7 +18,11 @@ import {
 
 const PAGE_SIZE = 20
 
-export default function QuotesPage() {
+export default function QuotesPage({
+  personal = false,
+  quotesPath = '/commercial/quotes',
+}: { personal?: boolean; quotesPath?: string }) {
+  const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const openBuilder = useQuoteBuilderStore((s) => s.open)
   const [search, setSearch] = useState('')
@@ -25,8 +30,8 @@ export default function QuotesPage() {
   const [page, setPage] = useState(1)
 
   const filters: QuoteFilters = useMemo(
-    () => ({ search: search || undefined, status: statusFilter }),
-    [search, statusFilter]
+    () => ({ search: search || undefined, status: statusFilter, ownerId: personal ? currentUser?.id : undefined }),
+    [search, statusFilter, personal, currentUser?.id]
   )
 
   const { quotes, total, totalPages, isLoading, error } = useQuotes({
@@ -40,7 +45,7 @@ export default function QuotesPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-condensed font-semibold text-neutral-800">
-            Cotizaciones
+            {personal ? 'Mis cotizaciones' : 'Cotizaciones'}
           </h1>
           <p className="text-sm text-neutral-500">
             {total} cotizaci{total === 1 ? 'ón' : 'ones'} en tu alcance
@@ -174,7 +179,7 @@ export default function QuotesPage() {
         isLoading={isLoading}
         emptyMessage="No hay cotizaciones con estos filtros"
         keyExtractor={(q: QuoteListItem) => q.id}
-        onRowClick={(q) => navigate(`/commercial/quotes/${q.id}`)}
+        onRowClick={(q) => navigate(`${quotesPath}/${q.id}`)}
       />
 
       {totalPages > 1 && (
@@ -203,7 +208,7 @@ export default function QuotesPage() {
         </div>
       )}
 
-      <QuoteBuilderModal />
+      <QuoteBuilderModal quotesPath={quotesPath} ownerId={personal ? currentUser?.id : undefined} />
     </div>
   )
 }

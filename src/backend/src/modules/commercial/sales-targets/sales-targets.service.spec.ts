@@ -26,6 +26,13 @@ describe('SalesTargetsService', () => {
   });
 
   describe('findAll', () => {
+    it('el vendedor no consulta metas ajenas aunque tenga subordinados', async () => {
+      await expect(service.findAll({ userId: 'sub-1' }, { userId: 'seller', roles: ['Vendedor'] }))
+        .rejects.toThrow(ForbiddenException);
+      expect(prisma.salesTarget.findMany).not.toHaveBeenCalled();
+      expect(hierarchy.assertCanViewUser).not.toHaveBeenCalled();
+    });
+
     it('sin userId, un no-admin solo recibe las metas propias', async () => {
       prisma.salesTarget.findMany.mockResolvedValue([]);
 
@@ -138,7 +145,7 @@ describe('SalesTargetsService', () => {
       expect(prisma.salesTarget.upsert).not.toHaveBeenCalled();
     });
 
-    it('Admin Comercial puede fijar la meta de cualquier usuario sin consultar jerarquia', async () => {
+    it('Super Admin puede fijar la meta de cualquier usuario sin consultar jerarquia', async () => {
       acl.isListasAdmin.mockReturnValue(true);
       prisma.salesTarget.upsert.mockResolvedValue({ id: 'st-1' });
 
@@ -146,6 +153,13 @@ describe('SalesTargetsService', () => {
 
       expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
       expect(prisma.salesTarget.upsert).toHaveBeenCalled();
+    });
+
+    it.each(['Vendedor', 'Admin Comercial'])('rechaza asignar metas con rol %s incluso con subordinados', async (role) => {
+      acl.isListasAdmin.mockReturnValue(true);
+      await expect(service.upsert(dto, { userId: 'other', roles: [role] }))
+        .rejects.toThrow(ForbiddenException);
+      expect(prisma.salesTarget.upsert).not.toHaveBeenCalled();
     });
 
     it('rechaza amount negativo o no numerico con BadRequestException', async () => {

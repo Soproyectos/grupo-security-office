@@ -457,4 +457,46 @@ describe('QuotesService', () => {
     // no persiste el cambio
     expect(prisma.quote.update).not.toHaveBeenCalled();
   });
+  describe('personal seller quotes', () => {
+    const seller = { userId: 'seller-1', roles: ['Vendedor'] };
+
+    it('scopes rows and totals to the seller without expanding to a team', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue(['seller-1', 'other-seller']);
+      prisma.quote.findMany.mockResolvedValue([]);
+      prisma.quote.count.mockResolvedValue(0);
+      await service.findAll({}, seller);
+      const where = prisma.quote.findMany.mock.calls[0][0].where;
+      expect(where.AND).toContainEqual({ ownerId: { in: ['seller-1'] } });
+      expect(prisma.quote.count).toHaveBeenCalledWith({ where });
+      expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
+    });
+
+    it('cannot open or modify another seller quote by ID', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, ownerId: 'other-seller' });
+      await expect(service.findOne('q1', seller)).rejects.toThrow(NotFoundException);
+      await expect(service.updateItem('q1', 'item-1', { quantity: 2 }, seller))
+        .rejects.toThrow(NotFoundException);
+      expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+    });
+
+    it('cannot quote for a customer outside their portfolio', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'other', isActive: true, ownerId: 'other-seller' });
+      await expect(service.create({ customerId: 'other', listaId: 'lista-1' }, seller))
+        .rejects.toThrow(NotFoundException);
+      expect(prisma.quote.create).not.toHaveBeenCalled();
+    });
+
+    it('can create a quote for an owned customer using an authorized list', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId });
+      prisma.quote.findFirst.mockResolvedValue(null);
+      prisma.quote.findUnique.mockResolvedValue(null);
+      prisma.quote.create.mockResolvedValue({ ...baseQuote, ownerId: seller.userId });
+      await service.create({ customerId: 'mine', listaId: 'lista-1' }, seller);
+      expect(acl.assertListaAccess).toHaveBeenCalledWith('lista-1', seller, 'view_prices');
+      expect(prisma.quote.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ owner: { connect: { id: seller.userId } } }),
+      }));
+    });
+  });
+
 });

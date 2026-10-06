@@ -4,6 +4,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isPersonalSeller } from '../../../common/rbac/personal-seller';
+import { ROLE } from '../../../common/rbac/roles.constants';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { HierarchyService } from '../../../common/hierarchy/hierarchy.service';
@@ -28,6 +30,10 @@ export class SalesTargetsService {
    * las propias; un admin sin `userId` ve todas.
    */
   async findAll(query: SalesTargetQueryDto, ctx: AccessContext) {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    if (isPersonalSeller(ctx.roles) && query.userId && query.userId !== ctx.userId) {
+      throw new ForbiddenException('Solo puedes consultar tu propia meta');
+    }
     const isAdmin = this.acl.isListasAdmin(ctx.roles);
 
     let effectiveUserId = query.userId;
@@ -59,18 +65,22 @@ export class SalesTargetsService {
   /**
    * Fija (upsert) la meta de un usuario para un periodo `YYYY-MM`.
    *
-   * Escritura: solo un ancestro jerárquico del dueño de la meta o un admin
-   * (Super Admin / Admin Comercial) puede fijarla. En particular, un usuario
+   * Escritura: solo un Supervisor ancestro del dueño de la meta o Super Admin
+   * puede fijarla. En particular, un usuario
    * NO fija su propia meta salvo que sea admin.
    */
   async upsert(dto: UpsertSalesTargetDto, ctx: AccessContext) {
-    if (!this.acl.isListasAdmin(ctx.roles)) {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    if (!ctx.roles.includes(ROLE.SUPER_ADMIN)) {
+      if (!ctx.roles.includes(ROLE.SUPERVISOR) || dto.userId === ctx.userId) {
+        throw new ForbiddenException('Solo Supervisor o Super Admin pueden asignar metas');
+      }
       const subordinateIds = ctx.userId
         ? await this.hierarchy.getSubordinateIds(ctx.userId)
         : [];
       if (!subordinateIds.includes(dto.userId)) {
         throw new ForbiddenException(
-          'Solo un supervisor ancestro o un admin puede fijar la meta de este usuario',
+          'Solo un Supervisor ancestro o Super Admin puede fijar la meta de este usuario',
         );
       }
     }

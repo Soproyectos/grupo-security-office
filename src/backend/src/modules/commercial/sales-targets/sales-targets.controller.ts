@@ -12,7 +12,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { AccessContext } from '../../../common/acl/acl.service';
-import { COMMERCIAL_READ_ROLES } from '../../../common/rbac/roles.constants';
+import { ROLE, COMMERCIAL_READ_ROLES } from '../../../common/rbac/roles.constants';
 
 const ALL_ROLES = COMMERCIAL_READ_ROLES;
 
@@ -38,10 +38,10 @@ export class SalesTargetsController {
   }
 
   @Post()
-  @Roles(...ALL_ROLES)
+  @Roles(ROLE.SUPER_ADMIN, ROLE.SUPERVISOR)
   @ApiOperation({
     summary:
-      'Fijar (upsert) la meta de un usuario por (userId, period). Solo ancestro jerárquico o Super Admin/Admin Comercial',
+      'Fijar (upsert) la meta de un usuario por (userId, period). Solo Supervisor ancestro jerárquico o Super Admin',
   })
   upsert(@CurrentUser() user: any, @Body() dto: UpsertSalesTargetDto) {
     return this.salesTargetsService.upsert(dto, this.ctx(user));

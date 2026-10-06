@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   bogotaYearMonth,
@@ -17,6 +18,14 @@ import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 export const MY_LISTAS_DEFAULT_TAKE = 12;
 export const RECENT_ACTIVITY_TAKE = 10;
 export const RECENT_ACTIVITY_WINDOW_DAYS = 30;
+
+export interface PersonalSalesGoal {
+  period: string;
+  target: MoneyAmount | null;
+  invoiced: MoneyAmount & { mixedCurrency: boolean };
+  remaining: MoneyAmount | null;
+  progressPercent: number | null;
+}
 
 export interface MyListaSummary {
   id: string;
@@ -125,6 +134,48 @@ export class DashboardService {
    * Admin Comercial, que ven todas), `ASSIGNED` para el resto, que solo ve las
    * Listas donde tiene un assignment activo (directo o por rol).
    */
+  /** Personal KPI: no team, catalog, hierarchy or other users' aggregates. */
+  async getPersonalSalesGoal(ctx: AccessContext): Promise<PersonalSalesGoal> {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    const at = new Date();
+    const { year, month } = bogotaYearMonth(at);
+    const period = `${year}-${String(month).padStart(2, '0')}`;
+    const range = currentMonthRangeBogota(at);
+    const [target, orders] = await Promise.all([
+      this.prisma.salesTarget.findUnique({
+        where: { userId_period: { userId: ctx.userId, period: periodStartFromString(period) } },
+        select: { amount: true, currency: true },
+      }),
+      this.prisma.salesOrder.findMany({
+        where: {
+          ownerId: ctx.userId,
+          externalInvoiceNumber: { not: null },
+          externalInvoiceDate: { gte: range.start, lt: range.end },
+        },
+        select: { total: true, currency: true },
+      }),
+    ]);
+    const currency = target?.currency ?? 'COP';
+    const mixedCurrency = orders.some(order => order.currency !== currency);
+    const total = orders.reduce(
+      (sum, order) => order.currency === currency ? sum.plus(order.total) : sum,
+      new Prisma.Decimal(0),
+    );
+    const goal = target ? new Prisma.Decimal(target.amount) : null;
+    const comparable = !!goal && !mixedCurrency;
+    return {
+      period,
+      target: goal ? { amount: goal.toFixed(2), currency } : null,
+      invoiced: { amount: total.toFixed(2), currency, mixedCurrency },
+      remaining: comparable
+        ? { amount: Prisma.Decimal.max(goal!.minus(total), 0).toFixed(2), currency }
+        : null,
+      progressPercent: comparable && goal!.greaterThan(0)
+        ? total.div(goal!).times(100).toDecimalPlaces(1).toNumber()
+        : null,
+    };
+  }
+
   async getMyWorkspace(
     ctx: AccessContext,
     params: { take?: number } = {},
