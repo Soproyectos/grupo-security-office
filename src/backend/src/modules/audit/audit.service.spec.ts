@@ -36,7 +36,7 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
     mockPrisma.auditLog.count.mockResolvedValue(1);
   });
 
-  it('exporta las 6 entidades comerciales', () => {
+  it('exporta las 7 entidades comerciales', () => {
     expect(COMERCIAL_ENTITIES).toEqual([
       'LISTA',
       'Product',
@@ -44,6 +44,7 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
       'Brand',
       'Price',
       'Stock',
+      'StorefrontContact',
     ]);
   });
 

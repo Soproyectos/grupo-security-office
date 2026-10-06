@@ -40,6 +40,13 @@ export const createPrismaMock = () => ({
     create: jest.fn(),
     deleteMany: jest.fn(),
   },
+  userPermission: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+    createMany: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
   // --- Seguridad (Fase S) ---
   loginAttempt: {
     findFirst: jest.fn(),
@@ -215,9 +222,20 @@ export const createPrismaMock = () => ({
     delete: jest.fn(),
     count: jest.fn(),
   },
-  salesOrder: {
+salesOrder: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+    count: jest.fn(),
+  },
+  storefrontContact: {
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),

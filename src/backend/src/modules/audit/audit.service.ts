@@ -15,6 +15,10 @@ export const COMERCIAL_ENTITIES = [
   'Brand',
   'Price',
   'Stock',
+  // Contacto del storefront: lo edita Super Admin, pero sin esto el Admin
+  // Comercial no vería en el historial quién cambió los datos que muestra la
+  // tienda (el filtro de este allowlist es deny-default).
+  'StorefrontContact',
 ] as const;
 
 /** Contexto opcional de auditoría: roles del JWT actual. */

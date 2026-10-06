@@ -43,6 +43,7 @@ model User {
   salesOrders             SalesOrder[]         @relation("SalesOrderOwner")
   salesTargetsOwned       SalesTarget[]        @relation("TargetOwner")
   salesTargetsSet         SalesTarget[]        @relation("TargetSetter")
+  storefrontContact       StorefrontContact[]  @relation("StorefrontContactUpdater")
   // Seguridad (Fase S)
   mfa                     UserMfa?
   sessions                Session[]
@@ -734,4 +735,29 @@ model PortalPriceListMapping {
 
   @@index([priceListId])
   @@map("portal_price_list_mappings")
+}
+
+/// Datos de contacto del storefront (línea nacional, WhatsApp, correo, horarios
+/// y el mensaje prellenado de "Vende con nosotros"). Es un SINGLETON: la tabla
+/// tiene una sola fila, sembrada por `prisma/seed.ts`, y el storefront la lee
+/// por `GET /api/public/storefront/contact`. Se guarda el teléfono en E.164 sin
+/// `+` ni espacios; los `href` (`tel:`, `https://wa.me/…`) se derivan en el
+/// cliente para que no exista la inconsistencia de duplicarlos por teléfono.
+model StorefrontContact {
+  id                 String   @id @default(uuid())
+  nationalPhone      String
+  whatsappPhone      String
+  salesPhone         String?
+  email              String
+  businessHoursShort String
+  businessHoursFull  String
+  sellWithUsMessage  String
+  updatedById        String?
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+
+  updatedBy User? @relation("StorefrontContactUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
+  @@map("storefront_contacts")
 }

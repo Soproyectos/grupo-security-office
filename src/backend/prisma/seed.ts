@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { BCRYPT_ROUNDS } from '../src/common/security/password.constants';
 import { dashboardPermissionsForRole } from '../src/common/security/dashboard-permissions';
+import { DEMO_STOREFRONT_CONTACT } from '../src/modules/storefront/storefront-contact.demo';
 
 const prisma = new PrismaClient();
 
@@ -100,6 +101,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'listas:archive', 'listas:delete', 'listas:publish',
     'products:publish',
     'assignments:manage',
+    // Configuración de la tienda (storefront-contact-settings): solo Super
+    // Admin por defecto. Admin Comercial cubre catálogo, marcas y tarifas, no
+    // la tienda; asignable por rol o por usuario desde el panel.
+    'storefront:read', 'storefront:write',
     // Legacy: se mantiene por compatibilidad temporal con el guard.
     // La excepción Super Admin del PermissionsGuard no depende de esta lista.
     'publish:manage',
@@ -195,6 +200,26 @@ async function upsertRole(name: string) {
   return role;
 }
 
+/**
+ * Singleton de contacto del storefront. Idempotente por diseño: si la fila ya
+ * existe NO se sobrescribe, porque a partir de ese momento el dato es del
+ * negocio y lo edita el Super Admin desde el panel — volver a correr el seed no
+ * puede deshacer esa edición (misma regla que la contraseña del Super Admin).
+ */
+async function ensureStorefrontContact() {
+  const existing = await prisma.storefrontContact.findFirst({
+    select: { id: true },
+  });
+
+  if (existing) {
+    console.log('✅ Contacto del storefront ya existe → no se sobrescribe (lo edita el panel)');
+    return;
+  }
+
+  await prisma.storefrontContact.create({ data: { ...DEMO_STOREFRONT_CONTACT } });
+  console.log('✅ Contacto del storefront creado con los valores demo');
+}
+
 async function migrateLegacyRoles() {
   for (const [oldName, newName] of Object.entries(LEGACY_ROLE_MAPPING)) {
     const oldRole = await prisma.role.findUnique({
@@ -259,17 +284,23 @@ async function main() {
     passwordEnvVar: 'SEED_COMPRAS_PASSWORD',
   });
 
+  // Contacto del storefront: única excepción a "el seed no crea datos", y no
+  // es catálogo ni precio sino la configuración mínima que la tienda pública
+  // necesita para no mostrar datos demo al visitante. Luego lo edita el panel.
+  await ensureStorefrontContact();
+
   // DECISIÓN DE NEGOCIO: el seed NO crea datos comerciales.
   // "no pueden haber nada de listas ni marcas ni categorías ya creadas, debe de estar todo
   // limpio para que la persona de compras lo haga". La persona de compras (compras@gruposecurity.co)
   // creará listas, marcas, categorías y tarifas desde la app.
   //
   // Solo se seedean: los 6 roles + el usuario admin (Super Admin) + el usuario compras
-  // (Admin Comercial). Nada de listas, categorías, marcas ni price lists.
+  // (Admin Comercial) + el contacto del storefront. Nada de listas, categorías, marcas
+  // ni price lists.
   //
   // El seed es idempotente por email/rol y NO borra datos que ya existan en BD:
   // solo deja de crearlos (los upsert de datos comerciales fueron eliminados).
-  console.log('✅ Seed completado: roles (6) + usuarios admin/compras. Sin datos comerciales (listas/marcas/categorías/tarifas).');
+  console.log('✅ Seed completado: roles (6) + usuarios admin/compras + contacto del storefront. Sin datos comerciales (listas/marcas/categorías/tarifas).');
 }
 
 main()
