@@ -20,6 +20,7 @@ import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
+import StorefrontSettingsPage from './pages/StorefrontSettingsPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -62,6 +63,7 @@ function App() {
         </Route>
         <Route path="products" element={<Navigate to="/commercial/products" replace />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="storefront" element={<StorefrontSettingsPage />} />
         <Route path="audit" element={<AuditPage />} />
       </Route>
       <Route path="/tienda" element={<StorefrontHome />} />

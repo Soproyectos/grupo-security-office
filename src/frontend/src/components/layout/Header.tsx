@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import api from '../../services/api'
-import { canViewAudit, canViewUsers } from '../../lib/rbac'
+import { canViewAudit, canViewStorefront, canViewUsers } from '../../lib/rbac'
 
 const COMMERCIAL_ITEMS = [
   { to: '/commercial/products', label: 'Productos' },
@@ -210,6 +210,11 @@ export default function Header() {
             {canViewUsers() && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
+              </div>
+            )}
+            {canViewStorefront() && (
+              <div className="flex-shrink-0">
+                <NavItem to="/storefront" label="Tienda" />
               </div>
             )}
             {canViewAudit() && (

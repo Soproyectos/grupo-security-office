@@ -78,3 +78,14 @@ export function canViewAudit(): boolean {
   )
 }
 
+// --- Tienda: a diferencia de usuarios y auditoría, el acceso se decide por
+//     permiso y no por rol, porque `storefront:write` es una capacidad que se
+//     puede conceder a un usuario suelto, no una sección con contenido propio. ---
+export function canViewStorefront(): boolean {
+  return hasPermission('storefront:read') || hasPermission('storefront:write')
+}
+
+export function canEditStorefront(): boolean {
+  return hasPermission('storefront:write')
+}
+
