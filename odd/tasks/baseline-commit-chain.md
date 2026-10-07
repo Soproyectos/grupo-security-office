@@ -62,7 +62,8 @@ no relacionado.
 - [x] SBC-07 — Commits 12-15: `feat(storefront)`, `feat(app)`, `chore(frontend)`, `chore(tools)`. (1fb02a3…445a89b)
 - [x] SBC-08 — Commit 16: `docs` (ACTION_ITEMS, runbooks, propuestas UI, libretas ODD). (c48b13d)
 - [x] SBC-08b — Commit 17: `fix(types)` typecheck limpio en frontend y backend (361ae05).
-- [x] SBC-09 — Cierre: `git status` sin cambios trackeados; 17 commits; espejo Engram actualizado.
+- [x] SBC-09 — Cierre: `git status` sin cambios trackeados; 18 commits (17 de trabajo +
+      este cierre de documentación); espejo Engram actualizado.
 
 ## Evidencia de verificación (2026-10-07)
 
