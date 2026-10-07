@@ -14,7 +14,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial')
+  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({ summary: 'Listar logs de auditoría' })
   @ApiQuery({ name: 'skip', required: false, type: Number })
   @ApiQuery({ name: 'take', required: false, type: Number })
@@ -45,7 +45,7 @@ export class AuditController {
   }
 
   @Get(':entity/:entityId')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial')
+  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({ summary: 'Obtener auditoría de una entidad específica' })
   findByEntity(
     @Param('entity') entity: string,

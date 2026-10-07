@@ -192,12 +192,20 @@ export class AuditService {
 
     const logs = await this.prisma.auditLog.findMany({
       where: { entity: entityFilter, entityId },
+      // Only the display name leaves the server: no user id, email or other fields.
       include: {
-        user: { select: { id: true, name: true, email: true } },
+        user: { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return { data: logs };
+    // `actorName` is null when the entry has no actor (system) or the user was deleted;
+    // clients tell both apart with `userId` (null = system) and never resolve ids themselves.
+    const data = logs.map(({ user, ...log }) => ({
+      ...log,
+      actorName: user?.name?.trim() || null,
+    }));
+
+    return { data };
   }
 }
