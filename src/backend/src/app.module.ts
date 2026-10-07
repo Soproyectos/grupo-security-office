@@ -1,3 +1,5 @@
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { WorkflowModule } from './modules/team-workflow/workflow.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -26,6 +28,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-orders.module';
 import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-targets.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -68,7 +71,10 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
     QuotesModule,
     SalesOrdersModule,
     SalesTargetsModule,
+    NotificationsModule,
     PromotionsModule,
+    WorkflowModule,
+    CustomerPortalModule,
   ],
   providers: [
     {

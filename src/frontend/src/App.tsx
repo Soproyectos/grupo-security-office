@@ -1,3 +1,13 @@
+import CustomerAccountPage, { CustomerPortalShell } from './features/customer-portal/pages/CustomerAccountPage'
+import PortalAccountsAdminPage from './features/customer-portal/pages/PortalAccountsAdminPage'
+import ClientLoginPage from './features/storefront/pages/ClientLoginPage'
+import AccessRequestPage from './features/storefront/pages/AccessRequestPage'
+import ClientCatalogPage from './features/customer-portal/pages/ClientCatalogPage'
+import PortalProductDetailPage from './features/customer-portal/pages/PortalProductDetailPage'
+import AgendaCalendarPage from './features/supervisor/AgendaCalendarPage'
+import TeamWorkflowPage from './features/supervisor/TeamWorkflowPage'
+import SupervisorLayout from './features/supervisor/SupervisorLayout'
+import SupervisorWorkspacePage from './features/supervisor/SupervisorWorkspacePage'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/auth.store'
 import AdminLayout from './components/layout/AdminLayout'
@@ -9,7 +19,7 @@ import CategoryPage from './features/storefront/pages/CategoryPage'
 import SearchResultsPage from './features/storefront/pages/SearchResultsPage'
 import StorefrontHome from './features/storefront/pages/StorefrontHome'
 import CatalogIndexPage from './features/storefront/pages/CatalogIndexPage'
-import StorefrontProductPage from './features/storefront/pages/StorefrontProductPage'
+import { ProductDetailRoute } from './features/products'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import ProductsPage from './pages/ProductsPage'
@@ -70,8 +80,11 @@ function App() {
         </Route>
         <Route path="products" element={<Navigate to="/commercial/products" replace />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="customer-accounts" element={<PortalAccountsAdminPage />} />
+        <Route path="team-requests" element={<TeamWorkflowPage kind="requests" key="admin-requests" />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="promotions" element={<PromotionManagerPage />} />
+
       </Route>
       <Route
         path="/sales"
@@ -79,16 +92,24 @@ function App() {
       >
         <Route index element={<SalesHomePage />} />
         <Route path="customers" element={<CustomersPage personal />} />
+        <Route path="agenda" element={<AgendaCalendarPage />} />
         <Route path="promotions" element={<></>} />
         <Route path="quotes" element={<QuotesPage personal quotesPath="/sales/quotes" />} />
         <Route path="quotes/:id" element={<QuoteDetailPage personal quotesPath="/sales/quotes" />} />
         <Route path="*" element={<Navigate to="/sales" replace />} />
       </Route>
+      <Route path="/supervisor" element={<ProtectedRoute workspace="supervisor"><SupervisorLayout /></ProtectedRoute>}><Route index element={<SupervisorWorkspacePage />} /><Route path="agenda" element={<AgendaCalendarPage />} /><Route path="requests" element={<TeamWorkflowPage kind="requests" key="requests" />} /><Route path="*" element={<Navigate to="/supervisor" replace />} /></Route>
+      <Route path="/clientes/login" element={<ClientLoginPage />} />
+      <Route path="/clientes/registro" element={<AccessRequestPage />} />
+      <Route path="/clientes/solicitar-acceso" element={<Navigate to="/clientes/registro" replace />} />
+      <Route path="/clientes" element={<CustomerPortalShell />}><Route index element={<CustomerAccountPage />} /><Route path="perfil" element={<CustomerAccountPage profile />} /><Route path="productos" element={<ClientCatalogPage />} /><Route path="productos/:productId" element={<PortalProductDetailPage privateCatalog />} /></Route>
       <Route path="/tienda" element={<StorefrontHome />} />
       <Route path="/catalogo" element={<CatalogIndexPage />} />
       <Route path="/catalogo/categoria/:slug" element={<CategoryPage />} />
       <Route path="/catalogo/buscar" element={<SearchResultsPage />} />
-      <Route path="/catalogo/productos/:id" element={<StorefrontProductPage />} />
+      <Route path="/catalogo/productos/:id" element={<ProductDetailRoute />} />
+      {/* Same sheet by published catalog slug */}
+      <Route path="/productos/:slug" element={<ProductDetailRoute />} />
       {/* The storefront owns every unknown route: a visitor never lands on the
           internal app (/, /commercial/*, ...) from a dead or future link. */}
       <Route path="*" element={<Navigate to="/tienda" replace />} />
