@@ -224,6 +224,7 @@ export const createPrismaMock = () => ({
     delete: jest.fn(),
     count: jest.fn(),
   },
+  $queryRaw: jest.fn().mockResolvedValue([]),
   $queryRawUnsafe: jest.fn(),
   $executeRaw: jest.fn().mockResolvedValue(0),
   $executeRawUnsafe: jest.fn().mockResolvedValue(0),
