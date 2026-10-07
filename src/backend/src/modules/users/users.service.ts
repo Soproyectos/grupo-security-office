@@ -172,6 +172,7 @@ export class UsersService {
       ...(dto.name && { name: dto.name }),
       ...(dto.email && { email: dto.email.toLowerCase() }),
       ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      ...(dto.supervisorId !== undefined && { supervisorId: dto.supervisorId }),
     };
 
     if (dto.password) {
@@ -222,11 +223,13 @@ export class UsersService {
         email: user.email,
         name: user.name,
         isActive: user.isActive,
+        supervisorId: user.supervisorId,
       },
       newValues: {
         ...(dto.name && { name: dto.name }),
         ...(dto.email && { email: dto.email.toLowerCase() }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.supervisorId !== undefined && { supervisorId: dto.supervisorId }),
         roles: updated.roles.map((ur) => ur.role.name),
       },
     });

@@ -6,6 +6,7 @@ import { useQuoteBuilderStore } from '../quotes/store/quote-builder.store'
 
 const navigation = [
   { to: '/sales', label: 'Mi espacio', end: true },
+  { to: '/sales/agenda', label: 'Mi agenda', end: false },
   { to: '/sales/customers', label: 'Mis clientes', end: false },
   { to: '/sales/promotions', label: 'Promociones', end: false },
   { to: '/sales/quotes', label: 'Mis cotizaciones', end: false },

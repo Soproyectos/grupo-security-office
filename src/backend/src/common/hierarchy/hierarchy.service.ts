@@ -54,7 +54,7 @@ export class HierarchyService {
         UNION ALL
         SELECT s."id", anc.depth + 1, anc.path || s."id"
         FROM "users" s
-        JOIN anc ON anc."supervisorId" = s."id"
+        JOIN anc ON s."supervisorId" = anc."id"
         WHERE NOT (s."id" = ANY(anc.path))
           AND anc.depth < 10
       )
