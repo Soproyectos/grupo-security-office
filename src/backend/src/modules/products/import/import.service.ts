@@ -31,6 +31,7 @@ import {
 } from './interfaces/column-mapping';
 import { ColumnMappingDto, SectionDecisionDto } from './dto/preview-import.dto';
 import { generateSlug } from './helpers/text-normalizer';
+import { findProductsBySkus, normalizeSku } from '../helpers/sku-identity';
 
 /**
  * Servicio orquestador del pipeline de importación.
@@ -805,18 +806,14 @@ export class ImportService {
     const skus = rows.map((r) => r.sku);
     if (skus.length === 0) return;
 
-    const existingProducts = await this.prisma.product.findMany({
-      where: { sku: { in: skus } },
-      select: { id: true, sku: true },
-    });
-
-    const skuToId = new Map(existingProducts.map((p) => [p.sku, p.id]));
+    // Identidad por SKU normalizado (mayúsculas, sin espacios), no por SKU exacto.
+    const existingBySku = await findProductsBySkus(this.prisma, skus, { sku: true });
 
     for (const row of rows) {
-      const existingId = skuToId.get(row.sku);
-      if (existingId) {
+      const existing = existingBySku.get(normalizeSku(row.sku));
+      if (existing) {
         row.isUpdate = true;
-        row.existingProductId = existingId;
+        row.existingProductId = existing.id;
       }
     }
   }

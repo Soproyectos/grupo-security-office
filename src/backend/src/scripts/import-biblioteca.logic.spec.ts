@@ -186,6 +186,16 @@ describe('import-biblioteca.logic', () => {
       expect(creates).toHaveLength(1);
       expect(creates[0].referencia).toBe('XYZ-9');
     });
+
+    it('ignora mayúsculas y espacios internos (misma identidad que el índice único de la BD)', () => {
+      const { updates, creates } = matchProducts(
+        [makeFicha({ referencia: 'IDS-E04HQHI-D' }), makeFicha({ referencia: 'DS-2CE16 (2.8MM)' })],
+        ['iDS-E04HQHI-D', 'ds-2ce16(2.8mm)'],
+      );
+
+      expect(creates).toHaveLength(0);
+      expect(updates.map((u) => u.sku)).toEqual(['iDS-E04HQHI-D', 'ds-2ce16(2.8mm)']);
+    });
   });
 
   describe('buildUpdateData', () => {

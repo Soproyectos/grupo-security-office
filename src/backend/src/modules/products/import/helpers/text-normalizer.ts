@@ -31,6 +31,12 @@ export function normalizeText(value: unknown): string {
 
 /**
  * Normaliza un SKU: trim, mayúsculas, sin espacios internos.
+ *
+ * ES LA IDENTIDAD del producto: dos SKUs son el mismo producto si normalizan
+ * igual. Debe coincidir con el índice único de la base de datos
+ * `products_sku_normalized_key` ON (upper(regexp_replace(sku, '\s', '', 'g')))
+ * (migración 20261002200000_products_sku_normalized_unique). Para buscar
+ * productos usar `findProductsBySkus` (modules/products/helpers/sku-identity).
  */
 export function normalizeSku(value: unknown): string {
   if (value === null || value === undefined) return '';

@@ -7,6 +7,15 @@ import { ImportContext } from '../interfaces/import-context';
 
 const mockPrisma = createPrismaMock();
 
+/**
+ * Existing products are resolved by NORMALIZED SKU (findProductsBySkus): a raw
+ * identity query returns the matching ids and product.findMany loads them.
+ */
+const mockExistingProducts = (rows: Array<{ id: string; sku: string; [k: string]: unknown }>) => {
+  mockPrisma.$queryRaw.mockResolvedValue(rows.map((r) => ({ id: r.id, sku: r.sku })));
+  mockPrisma.product.findMany.mockResolvedValue(rows);
+};
+
 describe('BatchExecutorService — Lista destino (listaId)', () => {
   let service: BatchExecutorService;
 
@@ -53,6 +62,7 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
       auditService as unknown as AuditService,
@@ -141,7 +151,7 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
 
   it('actualización con nameIsFallback=true no sobrescribe el nombre real ya guardado (lista sin nombre/descripción)', async () => {
     mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
-    mockPrisma.product.findMany.mockResolvedValue([{ id: 'prod-existente', sku: 'SKU-1' }]);
+    mockExistingProducts([{ id: 'prod-existente', sku: 'SKU-1' }]);
 
     const rowSinNombreReal = { ...normalizedRow, name: 'SKU-1', nameIsFallback: true };
 
@@ -158,7 +168,7 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
 
   it('actualización con nombre real (nameIsFallback=false) sí actualiza el nombre', async () => {
     mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
-    mockPrisma.product.findMany.mockResolvedValue([{ id: 'prod-existente', sku: 'SKU-1' }]);
+    mockExistingProducts([{ id: 'prod-existente', sku: 'SKU-1' }]);
 
     const result = await service.execute([normalizedRow], makeCtx({ listaId: 'lista-x' }));
 
@@ -169,6 +179,57 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
         data: expect.objectContaining({ name: 'Cámara IP' }),
       }),
     );
+  });
+
+  describe('identidad por SKU normalizado', () => {
+    it('una fila IDS-E04HQHI-D actualiza el producto existente iDS-E04HQHI-D (no crea un duplicado)', async () => {
+      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
+      mockExistingProducts([{ id: 'prod-biblioteca', sku: 'iDS-E04HQHI-D', nameLockedAt: null }]);
+
+      const row = { ...normalizedRow, sku: 'IDS-E04HQHI-D' };
+      const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+      expect(result.updated).toBe(1);
+      expect(result.created).toBe(0);
+      expect(mockPrisma.product.create).not.toHaveBeenCalled();
+      expect(mockPrisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'prod-biblioteca' } }),
+      );
+      // The identity lookup is done on the normalized SKU.
+      expect(mockPrisma.$queryRaw.mock.calls[0][0].values[0]).toEqual(['IDS-E04HQHI-D']);
+    });
+
+    it('conserva el nombre curado y bloqueado del producto existente aunque el SKU difiera en mayúsculas', async () => {
+      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
+      mockExistingProducts([
+        {
+          id: 'prod-curado',
+          sku: 'iDS-E04HQHI-D',
+          name: 'DVR 4CH 1080P eSSD 960GB AcuSense',
+          description: null,
+          categoryId: 'cat-1',
+          brandId: 'brand-1',
+          nameLockedAt: new Date('2026-10-02T00:00:00.000Z'),
+        },
+      ]);
+
+      const row = { ...normalizedRow, sku: 'IDS-E04HQHI-D', name: 'DVR 4 CH 1080p DISCO DURO eSSD 960gb' };
+      const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+      expect(result.updated).toBe(1);
+      expect(mockPrisma.product.update.mock.calls[0][0].data).toEqual({ lastSeenAt: expect.any(Date) });
+    });
+
+    it('un SKU con espacios internos también coincide con el existente', async () => {
+      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
+      mockExistingProducts([{ id: 'prod-1', sku: 'DS-2CE16(2.8MM)', nameLockedAt: null }]);
+
+      const row = { ...normalizedRow, sku: 'DS-2CE16 (2.8MM)' };
+      const result = await service.execute([row], makeCtx({ listaId: 'lista-x' }));
+
+      expect(result.updated).toBe(1);
+      expect(mockPrisma.product.create).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -225,6 +286,7 @@ describe('BatchExecutorService — Decisiones de secciones del wizard', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
       auditService as unknown as AuditService,
@@ -385,6 +447,7 @@ describe('BatchExecutorService — Aislamiento de filas con SAVEPOINT', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
       auditService as unknown as AuditService,
@@ -540,6 +603,7 @@ describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)'
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
       auditService as unknown as AuditService,
@@ -564,7 +628,7 @@ describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)'
   });
 
   it('producto bloqueado: NO sobrescribe identidad, SÍ upserta precios y marca lastSeenAt', async () => {
-    mockPrisma.product.findMany.mockResolvedValue([lockedProduct]);
+    mockExistingProducts([lockedProduct]);
 
     const row = makeRow({
       prices: [
@@ -594,7 +658,7 @@ describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)'
   });
 
   it('producto bloqueado con nombre entrante distinto: identityChangesDetected se incrementa y la identidad se conserva', async () => {
-    mockPrisma.product.findMany.mockResolvedValue([lockedProduct]);
+    mockExistingProducts([lockedProduct]);
 
     const row = makeRow({ name: 'Nombre Distinto De La Fila' });
 
@@ -614,7 +678,7 @@ describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)'
   });
 
   it('producto sin bloqueo (nameLockedAt NULL): comportamiento previo (sobrescribe nombre) + lastSeenAt, contador en 0', async () => {
-    mockPrisma.product.findMany.mockResolvedValue([unlockedProduct]);
+    mockExistingProducts([unlockedProduct]);
 
     const row = makeRow({ name: 'Nombre Nuevo De La Fila' });
 

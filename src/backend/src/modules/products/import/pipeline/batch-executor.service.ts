@@ -10,6 +10,7 @@ import {
   ImportContext,
 } from '../interfaces/import-context';
 import { generateSlug } from '../helpers/text-normalizer';
+import { findProductsBySkus, normalizeSku } from '../../helpers/sku-identity';
 
 /**
  * Configuración de batch execution.
@@ -208,11 +209,13 @@ export class BatchExecutorService {
         // marcador nameLockedAt: el guard de identidad bloqueada (ADR-002)
         // los necesita para decidir qué sobrescribir y para detectar diffs
         // entre la fila y la identidad curada almacenada.
-        const skus = batch.map((r) => r.sku);
-        const existingProducts = await tx.product.findMany({
-          where: { sku: { in: skus } },
-          select: {
-            id: true,
+        //
+        // Identidad por SKU normalizado (mayúsculas, sin espacios): "iDS-X" y
+        // "IDS-X" son el mismo producto. El mapa se indexa por SKU normalizado.
+        const existingSkuMap = await findProductsBySkus(
+          tx,
+          batch.map((r) => r.sku),
+          {
             sku: true,
             name: true,
             description: true,
@@ -220,16 +223,7 @@ export class BatchExecutorService {
             brandId: true,
             nameLockedAt: true,
           },
-        });
-        const existingSkuMap = new Map<string, {
-          id: string;
-          sku: string;
-          name: string;
-          description: string | null;
-          categoryId: string;
-          brandId: string;
-          nameLockedAt: Date | null;
-        }>(existingProducts.map((p) => [p.sku, p]));
+        );
 
         for (const row of batch) {
           // Aislamiento por fila con SAVEPOINT: sin esto, un error real de Postgres
@@ -267,7 +261,7 @@ export class BatchExecutorService {
               batchResult.defaults,
             );
 
-            const existingProduct = existingSkuMap.get(row.sku);
+            const existingProduct = existingSkuMap.get(normalizeSku(row.sku));
 
             if (existingProduct) {
               // UPDATE: producto ya existe.
@@ -357,7 +351,7 @@ export class BatchExecutorService {
               // mismo SKU normalizado (no debería pasar tras el fix de validación,
               // pero evita un segundo choque de restricción única si ocurre), la
               // trata como UPDATE en vez de repetir el CREATE.
-              existingSkuMap.set(row.sku, newProduct);
+              existingSkuMap.set(normalizeSku(row.sku), newProduct);
             }
           } catch (error) {
             await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT row_sp');
