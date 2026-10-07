@@ -6,6 +6,7 @@ import {
   BadRequestException,
   Optional,
 } from '@nestjs/common';
+import { primaryImageInclude } from '../products/helpers/primary-image';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
@@ -105,7 +106,7 @@ export class ListasService {
     const include: Record<string, unknown> = {
       category: { select: { id: true, name: true, slug: true } },
       brand: { select: { id: true, name: true, slug: true } },
-      images: { where: { isPrimary: true }, take: 1 },
+      images: primaryImageInclude(),
     };
     if (canSeePrices) {
       include.prices = { include: { priceList: true } };

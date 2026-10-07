@@ -33,6 +33,8 @@ import {
 import { Prisma, Product } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { normalizeText } from './import/helpers/text-normalizer';
+import { findProductBySku, normalizeSku } from './helpers/sku-identity';
+import { pickPrimaryImageByProduct, primaryImageInclude } from './helpers/primary-image';
 
 const ALLOWED_IMAGE_MIMETYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -279,15 +281,15 @@ export class ProductsService {
         const productIds = products.map(p => p.id);
         const [categories, brands, images, prices] = await Promise.all([
           productIds.length > 0 ? this.prisma.category.findMany({
-            where: { id: { in: productIds } },
+            where: { id: { in: [...new Set(products.map(p => p.categoryId))] } },
             select: { id: true, name: true, slug: true }
           }) : [],
           productIds.length > 0 ? this.prisma.brand.findMany({
-            where: { id: { in: productIds } },
+            where: { id: { in: [...new Set(products.map(p => p.brandId))] } },
             select: { id: true, name: true, slug: true }
           }) : [],
           productIds.length > 0 ? this.prisma.productImage.findMany({
-            where: { productId: { in: productIds }, isPrimary: true },
+            where: { productId: { in: productIds } },
             select: { productId: true, url: true, alt: true, type: true, isPrimary: true, sortOrder: true }
           }) : [],
           productIds.length > 0 ? this.prisma.price.findMany({
@@ -298,7 +300,7 @@ export class ProductsService {
 
         const categoryMap = new Map<string, typeof categories[0]>(categories.map(c => [c.id, c] as const));
         const brandMap = new Map<string, typeof brands[0]>(brands.map(b => [b.id, b] as const));
-        const imageMap = new Map<string, typeof images[0]>(images.map(i => [i.productId, i] as const));
+        const imageMap = pickPrimaryImageByProduct(images);
         const pricesByProduct = new Map<string, typeof prices>();
         for (const price of prices) {
           const arr = pricesByProduct.get(price.productId) || [];
@@ -310,7 +312,7 @@ export class ProductsService {
           ...p,
           category: categoryMap.get(p.categoryId) || null,
           brand: brandMap.get(p.brandId) || null,
-          images: imageMap.get(p.productId) ? [imageMap.get(p.productId)!] : [],
+          images: imageMap.get(p.id) ? [imageMap.get(p.id)!] : [],
           prices: pricesByProduct.get(p.productId) || [],
           _similarity: undefined,
         }));
@@ -343,7 +345,7 @@ export class ProductsService {
             include: {
               category: { select: { id: true, name: true, slug: true } },
               brand: { select: { id: true, name: true, slug: true } },
-              images: { where: { isPrimary: true }, take: 1 },
+              images: primaryImageInclude(),
               prices: { include: { priceList: { select: { id: true, name: true, code: true } } } },
             },
           }),
@@ -430,15 +432,15 @@ export class ProductsService {
       const productIds = products.map(p => p.id);
       const [categories, brands, images, prices] = await Promise.all([
         productIds.length > 0 ? this.prisma.category.findMany({
-          where: { id: { in: productIds } },
+          where: { id: { in: [...new Set(products.map(p => p.categoryId))] } },
           select: { id: true, name: true, slug: true }
         }) : [],
         productIds.length > 0 ? this.prisma.brand.findMany({
-          where: { id: { in: productIds } },
+          where: { id: { in: [...new Set(products.map(p => p.brandId))] } },
           select: { id: true, name: true, slug: true }
         }) : [],
         productIds.length > 0 ? this.prisma.productImage.findMany({
-          where: { productId: { in: productIds }, isPrimary: true },
+          where: { productId: { in: productIds } },
           select: { productId: true, url: true, alt: true, type: true, isPrimary: true, sortOrder: true }
         }) : [],
         productIds.length > 0 ? this.prisma.price.findMany({
@@ -449,7 +451,7 @@ export class ProductsService {
 
       const categoryMap = new Map<string, typeof categories[0]>(categories.map(c => [c.id, c] as const));
       const brandMap = new Map<string, typeof brands[0]>(brands.map(b => [b.id, b] as const));
-      const imageMap = new Map<string, typeof images[0]>(images.map(i => [i.productId, i] as const));
+      const imageMap = pickPrimaryImageByProduct(images);
       const pricesByProduct = new Map<string, typeof prices>();
       for (const price of prices) {
         const arr = pricesByProduct.get(price.productId) || [];
@@ -461,7 +463,7 @@ export class ProductsService {
         ...p,
         category: categoryMap.get(p.categoryId) || null,
         brand: brandMap.get(p.brandId) || null,
-        images: imageMap.get(p.productId) ? [imageMap.get(p.productId)!] : [],
+        images: imageMap.get(p.id) ? [imageMap.get(p.id)!] : [],
         prices: pricesByProduct.get(p.productId) || [],
         _similarity: undefined, // remove internal field
       }));
@@ -491,7 +493,7 @@ export class ProductsService {
           include: {
             category: { select: { id: true, name: true, slug: true } },
             brand: { select: { id: true, name: true, slug: true } },
-            images: { where: { isPrimary: true }, take: 1 },
+            images: primaryImageInclude(),
             prices: {
             include: { priceList: { select: { id: true, name: true, code: true } } },
             },
@@ -589,7 +591,8 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto, ctx?: AccessContext) {
-    const existingSku = await this.prisma.product.findUnique({ where: { sku: dto.sku } });
+    // Identidad por SKU normalizado: "abc-1" y "ABC-1" son el mismo producto.
+    const existingSku = await findProductBySku(this.prisma, dto.sku, { sku: true });
     if (existingSku) throw new ConflictException('Ya existe un producto con ese SKU');
 
     const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
@@ -697,9 +700,13 @@ export class ProductsService {
       listaId = newLista.id;
     }
 
-    if (dto.sku && dto.sku !== product.sku) {
-      const existing = await this.prisma.product.findUnique({ where: { sku: dto.sku } });
-      if (existing) throw new ConflictException('Ya existe un producto con ese SKU');
+    // Solo se valida unicidad si cambia la identidad (SKU normalizado); un cambio
+    // de mayúsculas/espacios del propio producto es válido.
+    if (dto.sku && normalizeSku(dto.sku) !== normalizeSku(product.sku)) {
+      const existing = await findProductBySku(this.prisma, dto.sku, { sku: true });
+      if (existing && existing.id !== product.id) {
+        throw new ConflictException('Ya existe un producto con ese SKU');
+      }
     }
 
     if (dto.categoryId) {
@@ -2008,7 +2015,7 @@ export class ProductsService {
         }
 
         // Check if SKU already exists
-        const existingProduct = await this.prisma.product.findUnique({ where: { sku } });
+        const existingProduct = await findProductBySku(this.prisma, sku, { sku: true });
         if (existingProduct) {
           results.errors.push({ row: rowNum, sku, error: 'SKU ya existe' });
           results.skipped++;

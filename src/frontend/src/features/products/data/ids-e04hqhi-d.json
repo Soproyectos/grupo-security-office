@@ -1,0 +1,179 @@
+{
+  "slug": "ids-e04hqhi-d",
+  "brand": "Hikvision",
+  "model": "iDS-E04HQHI-D",
+  "name": "DVR AcuSense de 4 canales, 1080p, 1U, H.265 con eSSD",
+  "status": "active",
+  "badges": ["Destacado"],
+  "breadcrumb": [
+    { "label": "Productos", "href": "/productos" },
+    { "label": "Videovigilancia", "href": "/productos/videovigilancia" },
+    { "label": "DVR", "href": "/productos/videovigilancia/dvr" }
+  ],
+  "image": {
+    "src": "/images/productos/ids-e04hqhi-d.webp",
+    "alt": "DVR Hikvision iDS-E04HQHI-D, vista frontal"
+  },
+  "highlights": [
+    "Impulsado por tecnología eSSD",
+    "Clasificación de personas y vehículos con Detección de movimiento 2.0 basada en aprendizaje profundo",
+    "Protección perimetral basada en aprendizaje profundo",
+    "Compresión de video con control de tasa de bits adaptativo a la escena",
+    "Codificación de hasta 3K/5 MP Lite a 12 fps",
+    "Bajo consumo de energía",
+    "Audio por cable coaxial"
+  ],
+  "features": [
+    { "id": "acusense", "label": "AcuSense", "icon": "person" },
+    { "id": "essd", "label": "eSSD 1 TB", "icon": "storage" },
+    { "id": "h265", "label": "H.265 Pro", "icon": "video" },
+    { "id": "perimeter", "label": "Protección perimetral", "icon": "shield" },
+    { "id": "audio", "label": "Audio por coaxial", "icon": "audio" },
+    { "id": "hik-connect", "label": "Hik-Connect", "icon": "cloud" }
+  ],
+  "availableModels": ["iDS-E04HQHI-D"],
+  "specGroups": [
+    {
+      "id": "proteccion-perimetral",
+      "title": "Protección perimetral",
+      "items": [{ "label": "Análisis de personas/vehículos", "value": "Hasta 2 canales" }]
+    },
+    {
+      "id": "deteccion-movimiento",
+      "title": "Detección de movimiento 2.0",
+      "items": [
+        {
+          "label": "Análisis de personas/vehículos",
+          "value": "Detección de movimiento 2.0 basada en aprendizaje profundo, activada por defecto en todos los canales analógicos. Clasifica personas y vehículos y reduce al mínimo las falsas alarmas causadas por hojas o luces.\nBúsqueda rápida por tipo de objeto o evento."
+        }
+      ]
+    },
+    {
+      "id": "video-audio",
+      "title": "Video y audio",
+      "items": [
+        { "label": "Entrada de video IP", "value": "1 canal\nHasta 6 MP de resolución\nCompatible con cámaras IP H.265+/H.265" },
+        { "label": "Entrada de video analógico", "value": "4 canales\nInterfaz BNC (1.0 Vp-p, 75 Ω), compatible con conexión Coaxitron" },
+        { "label": "Entrada HDTVI", "value": "5 MP@20 fps, 3K@20 fps, 4 MP@30 fps, 4 MP@25 fps, 1080p@30 fps, 1080p@25 fps, 720p@60 fps, 720p@50 fps, 720p@30 fps, 720p@25 fps" },
+        { "label": "Entrada AHD", "value": "4 MP@30 fps, 4 MP@25 fps, 1080p@30 fps, 1080p@25 fps, 720p@30 fps, 720p@25 fps" },
+        { "label": "Entrada HDCVI", "value": "4 MP@30 fps, 4 MP@25 fps, 1080p@30 fps, 1080p@25 fps, 720p@30 fps, 720p@25 fps" },
+        { "label": "Entrada CVBS", "value": "Compatible" },
+        { "label": "Salida HDMI", "value": "1 canal: 1920 × 1080/60 Hz, 1280 × 1024/60 Hz, 1280 × 720/60 Hz" },
+        { "label": "Salida VGA", "value": "1 canal: 1920 × 1080/60 Hz, 1280 × 1024/60 Hz, 1280 × 720/60 Hz" },
+        { "label": "Modo de salida de video", "value": "Salida simultánea HDMI/VGA" },
+        { "label": "Entrada de audio", "value": "4 canales por cable coaxial" },
+        { "label": "Salida de audio", "value": "1 canal por HDMI" },
+        { "label": "Reproducción síncrona", "value": "4 canales" }
+      ]
+    },
+    {
+      "id": "grabacion",
+      "title": "Grabación",
+      "items": [
+        { "label": "Compresión de video", "value": "H.265 Pro/H.265" },
+        {
+          "label": "Resolución de codificación",
+          "value": "Con modo 1080p Lite desactivado: 3K Lite/5 MP Lite/4 MP Lite/1080p/720p/VGA/WD1/4CIF/CIF\nCon modo 1080p Lite activado: 3K Lite/5 MP Lite/4 MP Lite/1080p Lite/720p Lite/VGA/WD1/4CIF/CIF"
+        },
+        {
+          "label": "Cuadros por segundo",
+          "value": "Flujo principal, con modo 1080p Lite desactivado:\n• Flujo 3K: 3K Lite@12 fps; 4 MP Lite/1080p@15 fps; 720p/WD1/4CIF/VGA/CIF@20 fps\n• Flujo 5 MP: 5 MP Lite@12 fps; 4 MP Lite/1080p@15 fps; 720p/WD1/4CIF/VGA/CIF@20 fps\n• Flujo 4 MP: 4 MP Lite/1080p@15 fps; 720p/WD1/4CIF/VGA/CIF@25 fps (P)/30 fps (N)\n• Flujo 1080p: 1080p/720p@15 fps; VGA/WD1/4CIF/CIF@25 fps (P)/30 fps (N)\n• Flujo 720p: 720p/VGA/WD1/4CIF/CIF@25 fps (P)/30 fps (N)\nFlujo principal, con modo 1080p Lite activado: 3K Lite/5 MP Lite@12 fps; 4 MP Lite@15 fps; 1080p Lite/720p Lite/VGA/WD1/4CIF/CIF@25 fps (P)/30 fps (N)\n*3K Lite/5 MP@12 fps solo está disponible en el canal 1.\nSubflujo: WD1/4CIF@12 fps; CIF@25 fps (P)/30 fps (N)"
+        },
+        {
+          "label": "Tasa de bits de video",
+          "value": "Control de tasa de bits adaptativo a la escena: asigna automáticamente la tasa adecuada según la escena para mantener estable el periodo de grabación."
+        },
+        {
+          "label": "Tipo de flujo",
+          "value": "Video; video y audio\nNota: por privacidad, el equipo graba solo video (sin audio) por defecto. Para grabar audio, actívelo manualmente; consulte el manual de usuario."
+        },
+        { "label": "Compresión de audio", "value": "G.711u" },
+        { "label": "Tasa de bits de audio", "value": "64 Kbps" }
+      ]
+    },
+    {
+      "id": "red",
+      "title": "Red",
+      "items": [
+        { "label": "Ancho de banda total", "value": "72 Mbps\nAncho de banda de entrada: 4 Mbps" },
+        { "label": "Conexiones remotas", "value": "32" },
+        { "label": "Protocolos de red", "value": "TCP/IP, DHCP, Hik-Connect, DNS, DDNS, NTP, SADP, SMTP, NFS, UPnP™, HTTPS" },
+        { "label": "Interfaz de red", "value": "1 puerto RJ45 Ethernet 10/100 Mbps autoadaptable" }
+      ]
+    },
+    {
+      "id": "interfaz-auxiliar",
+      "title": "Almacenamiento e interfaces",
+      "items": [
+        {
+          "label": "Capacidad",
+          "value": "eSSD integrado de 1024 GB (960 GB disponibles)\nNota: almacena aprox. 4 semanas de video de 4 cámaras analógicas con los parámetros por defecto. Estimación solo de referencia."
+        },
+        { "label": "Interfaz USB", "value": "Panel trasero: 2 × USB 2.0" },
+        { "label": "Entradas/salidas de alarma", "value": "Opcional: 4/1" }
+      ]
+    },
+    {
+      "id": "general",
+      "title": "General",
+      "items": [
+        { "label": "Alimentación", "value": "12 VDC, 1 A" },
+        { "label": "Consumo", "value": "≤ 5,4 W (con eSSD)" },
+        { "label": "Temperatura de operación", "value": "-10 °C a 45 °C (14 °F a 113 °F)" },
+        { "label": "Humedad de operación", "value": "10 % a 90 %" },
+        { "label": "Dimensiones (an. × prof. × alt.)", "value": "152 × 113 × 46 mm (6,0 × 4,4 × 1,8 in)" },
+        { "label": "Peso", "value": "≤ 0,5 kg con eSSD (1,1 lb)" }
+      ]
+    }
+  ],
+  "specsDisclaimer": "El rendimiento del producto se basa en pruebas en entorno controlado. Los resultados pueden variar según el entorno de instalación.",
+  "documents": [
+    {
+      "id": "datasheet-en",
+      "type": "datasheet",
+      "title": "Ficha técnica",
+      "language": "en",
+      "url": "https://assets.hikvision.com/prd/public/all/doc/m000073230/Datasheet-of-iDS-E04HQHI-D_V4.71.200_20230413.pdf",
+      "fileName": "Datasheet-of-iDS-E04HQHI-D_V4.71.200_20230413.pdf"
+    },
+    {
+      "id": "manual-en",
+      "type": "manual",
+      "title": "Manual de usuario",
+      "language": "en",
+      "url": "https://enpinfodata.hikvision.com/analysisQR/showQR/e30a556b"
+    }
+  ],
+  "firmware": {
+    "note": "Para una mejor experiencia, recomendamos actualizar el equipo al firmware más reciente lo antes posible.",
+    "appliesTo": ["iDS-E04HQHI-D"],
+    "files": [
+      {
+        "id": "fw-europa-4-75-011",
+        "kind": "firmware",
+        "title": "Firmware Europa V4.75.011 (240620)",
+        "version": "V4.75.011",
+        "region": "Europa",
+        "url": "https://assets.hikvision.com/prd/public/all/files/202406/1719705934719/Firmware_Europe_V4.75.011_240620_S3000582893.zip",
+        "requiresLicense": true
+      },
+      {
+        "id": "fw-asia-4-75-011",
+        "kind": "firmware",
+        "title": "Firmware Asia V4.75.011 (240620)",
+        "version": "V4.75.011",
+        "region": "Asia",
+        "url": "https://assets.hikvision.com/prd/public/all/files/202406/1719706284928/Firmware_Asia_V4.75.011_240620_S3000582876.zip",
+        "requiresLicense": true
+      },
+      {
+        "id": "rn-4-75-011",
+        "kind": "release-notes",
+        "title": "Notas de versión Turbo HD DVR V4.75.011, compilación 240620",
+        "version": "V4.75.011",
+        "url": "https://assets.hikvision.com/prd/public/all/files/202407/1719874936621/releasenote%5CTurbo_HD_DVR_V4.75.011_build_240620_Release_Notes.pdf",
+        "requiresLicense": false
+      }
+    ]
+  }
+}

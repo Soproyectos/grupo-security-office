@@ -32,36 +32,3 @@ export interface PublicProductFilters {
   q?: string
   category?: string
 }
-
-export interface PublicCategoryRef {
-  id: string
-  name: string
-  slug: string
-}
-
-export interface PublicTechnicalSpec {
-  key: string
-  value: string
-  unit: string | null
-}
-
-export interface PublicDatasheet {
-  name: string
-  url: string
-}
-
-/** Product sheet (`GET /api/public/products/:id`). The primary image comes first. */
-export interface PublicProductDetail {
-  id: string
-  sku: string
-  name: string
-  description: string | null
-  brand: { name: string; slug: string } | null
-  category: PublicCategoryRef | null
-  /** Ancestors of the category, root first, without the category itself. */
-  breadcrumb: PublicCategoryRef[]
-  images: Array<{ url: string; alt: string | null }>
-  technicalSpecs: PublicTechnicalSpec[]
-  datasheets: PublicDatasheet[]
-  price: PublicPrice | null
-}
