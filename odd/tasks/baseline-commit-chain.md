@@ -94,14 +94,24 @@ no relacionado.
 - Commits por unidad de trabajo, en la rama `feat/storefront-public-pricing`.
   **Sin push, sin PR, sin merge.**
 
-### Quedan fuera de este alcance (sin commitear, decisión del coordinador)
+### Segunda ronda autorizada por el coordinador (2026-10-07, "sí, hazlos")
 
-| Artefacto | Motivo |
+- [x] SBC-10 — Borrar `src/backend/src/test/` y `src/backend/src/test2/`
+      (módulos probe; no estaban trackeados, sólo existían en disco).
+- [x] SBC-11 — `.gitignore`: añadir `.atl/` (caché del skill-registry).
+- [x] SBC-12 — Sacar del índice los 2 zips históricos
+      (`Grupo Security Design System.zip`, `src/frontend/grupo-security-frontend.zip`)
+      con `git rm --cached` + gitignore: quedan en disco, **la historia no se reescribe**. (e7e6ba7)
+- [x] SBC-13 — Actualizar `docs/PROJECT_STATUS.md` y `docs/handoffs/HANDOFF_ACTUAL.md`
+      con estado verificado (Hito 1 cerrado salvo C006, riesgos R007–R011 resueltos,
+      DT002/DT003/DT004/DT007 resueltas, R012/R013 nuevos).
+
+### Pendiente de decisión (no autorizado aún)
+
+| Artefacto | Estado |
 |-----------|--------|
-| `src/backend/src/test/`, `src/backend/src/test2/` | módulos controlador/probe de 1 de octubre; parecen desechables — ¿borrar? |
-| `Cliente — Tienda pública (estilo retail)@2x.png` | imagen de diseño en la raíz; ¿mover a `docs/UI/` o a `public/`? |
-| `.atl/` (skill-registry) | caché de tooling; ¿añadir a `.gitignore`? |
-| `features/users/components/DashboardGrants.tsx` | 2 errores de lint preexistentes, fuera del alcance autorizado |
+| `Cliente — Tienda pública (estilo retail)@2x.png` | captura de diseño 2880×5120 (3.9 MB) en la raíz; el coordinador pidió que se le explique antes de decidir: borrar / mover a `docs/UI/` / ignorar |
+| `features/users/components/DashboardGrants.tsx` | 2 errores de lint preexistentes (fuera del alcance de esta feature) |
 
 ## Criterios de aceptación
 
@@ -123,7 +133,9 @@ no relacionado.
 - 2026-10-07: documento creado; exploración inicial (estado Git, suites, Hito 1 ya
   presente en el árbol).
 - 2026-10-07: **cerrado** — SBC-01..SBC-09 completados. 17 commits en
-  `feat/storefront-public-pricing` (1a35342…361ae05 + este cierre), árbol limpio
-  salvo los 4 artefactos listados en "Fuera de alcance". Siguiente paso pendiente
-  de decisión del coordinador: esos artefactos, la actualización de
-  `docs/PROJECT_STATUS.md` (sigue diciendo "0 tests") y `docs/handoffs/HANDOFF_ACTUAL.md`.
+  `feat/storefront-public-pricing` (1a35342…361ae05 + cierre), árbol limpio.
+- 2026-10-07: **segunda ronda** — SBC-10..SBC-13 completados (probes borrados,
+  `.atl/` ignorado, zips fuera del índice en `e7e6ba7`, PROJECT_STATUS y
+  HANDOFF_ACTUAL actualizados con estado verificado).
+  Siguiente paso pendiente de decisión del coordinador: la captura PNG de la raíz,
+  los 2 errores de lint de `DashboardGrants.tsx`, y push/PR/merge de la rama.

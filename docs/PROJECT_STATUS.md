@@ -9,7 +9,7 @@
 | **Proyecto** | Grupo Security Office / Plataforma Comercial Grupo Security |
 | **Coordinador estratégico** | Usuario + Claude Code |
 | **Ejecutores técnicos** | Sesiones directas dirigidas por humano (Gentle-AI: ODD/SDD/RDD, Engram, CodeGraph) |
-| **Rama Git actual** | `agent/claude/ADOPT-GENTLE-AI-001` (migración Gentle-AI completada 2026-09-21) |
+| **Rama Git actual** | `feat/storefront-public-pricing` (HEAD `e7e6ba7`, 2026-10-07). Migración Gentle-AI en `agent/claude/ADOPT-GENTLE-AI-001` (2026-09-21) |
 
 ## Stack activo
 
@@ -22,7 +22,7 @@
 | Auth | JWT (HttpOnly cookie) + bcrypt (rounds 12) + RBAC (5 roles) + MFA (TOTP modelo listo) |
 | Data Fetching | TanStack Query v5 + Zustand v5 |
 | API docs | Swagger/OpenAPI (`@nestjs/swagger` v11) |
-| Testing | **Jest 30 + ts-jest + Supertest** (configurado, 0 tests escritos) / Vitest 5 (frontend, 0 tests) |
+| Testing | **Jest 30 + ts-jest + Supertest** (backend: 1102 tests / 64 suites) / **Vitest 5** (frontend: 377 tests / 35 archivos) |
 | Contenedores | Docker + Docker Compose (prod: `docker-compose.prod.yml`, imágenes GHCR) |
 | Python | Solo auxiliar (Excel parsing/mapping/import) |
 | ERP | Yéminus (integración PENDIENTE confirmación API) |
@@ -33,11 +33,12 @@
 
 | Campo | Valor |
 |-------|-------|
-| **Fase activa** | **Exploración completa post-migración Gentle-AI (2026-09-30)** → Próximo: **Hito 1 Seguridad dura (C001–C006)** + **Etapa 8.1** |
-| **Última actualización** | 2026-09-30 |
-| **Tests backend** | 0 unitarios, 0 e2e — **Riesgo crítico de regresión** |
-| **Tests frontend** | Config Vitest presente, 0 tests escritos |
-| **Cobertura** | 0% |
+| **Fase activa** | **Cadena de commits de octubre cerrada (2026-10-07)** → Próximo: **Hito 2 Calidad base** + deuda de **Etapa 8.1 / Biblioteca Vitrina** |
+| **Última actualización** | 2026-10-07 |
+| **Tests backend** | 1102 tests / 64 suites — todos verdes (`npx jest`) |
+| **Tests frontend** | 377 tests / 35 archivos — todos verdes (`npx vitest run`) |
+| **Cobertura** | Sin medir (no hay reporte de coverage configurado) |
+| **Typecheck** | Backend `tsc --noEmit` y frontend `tsc -b` limpios (2026-10-07) |
 | **Migración FSM datos legacy** | Pendiente (backup + aprobación explícita requerida) |
 | **Integración ERP Yéminus** | Bloqueada — sin confirmación de API |
 
@@ -49,15 +50,17 @@
 |----|----------------|-----------|-------|
 | R001 | Integración ERP Yéminus sin confirmación de API | Medio | Coordinador — decisión de alcance |
 | R002 | `cleanup-orphaned-list-products.ts` sin validar | **Alto** | Coordinador — **autorizar ejecución solo con tarea explícita y aprobación del usuario** |
-| R003 | Throttler 429 agresivo en login | Bajo | Coordinador — proponer ajuste específico |
+| R003 | Throttler global a 20 req/min (ajustable por env `THROTTLE_*`) | Bajo | Coordinador — proponer ajuste específico si molesta en uso real |
 | R004 | `limit` no válido en `/api/products` (usa `skip`/`take`) | Bajo | Coordinador — normalizar query params |
 | R005 | Scripts residuales `check-*.cjs`/`qa_*.js` en Temp/opencode | Bajo | Coordinador — limpiar post-QA |
-| R006 | Email seed `admin@gruposecurity.co` vs docs `admin@grupo-security.com` | Bajo | Coordinador — alinear en Etapa 8.1 |
-| **R007** | **Tests backend: 0 tests — regresiones no detectadas** | **Crítico** | Backend — **Hito 1: suite P0 (C001)** |
-| **R008** | **JWT_SECRET con fallback hardcodeado** | **Crítico** | Backend — **Hito 1: eliminar fallback (C003)** |
-| **R009** | **Rate limiting login no implementado** | **Crítico** | Backend — **Hito 1: @nestjs/throttler (C002)** |
-| **R010** | **HttpExceptionFilter no registrado globalmente** | **Alto** | Backend — **Hito 1: registrar (C005)** |
-| **R011** | **Contraseña mínima 6 chars en LoginDto** | **Alto** | Backend — **Hito 1: subir a 8 (C004)** |
+| R006 | Email seed `admin@gruposecurity.co` vs docs `admin@grupo-security.com` | Bajo | Coordinador — alinear |
+| ~~R007~~ | ~~Tests backend: 0 tests~~ — **CERRADO 2026-10-07**: 1102 tests / 64 suites | Cerrado | — |
+| ~~R008~~ | ~~`JWT_SECRET` con fallback hardcodeado~~ — **CERRADO**: `auth.module.ts` y `jwt.strategy.ts` lanzan si falta la env var | Cerrado | — |
+| ~~R009~~ | ~~Rate limiting login no implementado~~ — **CERRADO**: `@Throttle({ limit: 5 })` en login/registro + throttler global 20/min | Cerrado | — |
+| ~~R010~~ | ~~`HttpExceptionFilter` no registrado globalmente~~ — **CERRADO**: `main.ts` registra filtro + `TransformInterceptor` | Cerrado | — |
+| ~~R011~~ | ~~Contraseña mínima 6 chars~~ — **CERRADO**: `@MinLength(8)` + `PasswordPolicyService` (zxcvbn) | Cerrado | — |
+| **R012** | **2 errores de lint en `features/users/components/DashboardGrants.tsx`** (preexistentes, `@typescript-eslint/no-unused-expressions`) | Bajo | Frontend — corregir en Hito 2 |
+| **R013** | **`gentle-ai` no está en PATH** en el runtime de estas sesiones → RDD `review assess` no disponible | Medio | Coordinador — reinstalar/verificar el binario |
 
 ---
 
@@ -74,40 +77,43 @@
 | ID | Descripción | Prioridad |
 |----|-------------|-----------|
 | DT001 | Historial de perfiles FINANZAS 1:1 removidos; `finance-orchestrator.md` conservado como inactivo | Baja |
-| DT002 | **Tests backend: 0% cobertura** — sin red de seguridad para refactors | Crítica |
-| DT003 | **Guards duplicados**: `modules/auth/roles.guard.ts` + `permissions.guard.ts` vs `common/guards/` | Alta |
-| DT004 | **process.env directo** en `auth.module.ts` vs `ConfigService` | Alta |
+| ~~DT002~~ | ~~Tests backend 0%~~ — **RESUELTO 2026-10-07**: 1102 tests / 64 suites; **cobertura sin medir** | Resuelta (falta medir cobertura) |
+| ~~DT003~~ | ~~Guards duplicados en `modules/auth/`~~ — **RESUELTO**: sólo existen `common/guards/` (roles + permissions) y `jwt-auth.guard.ts` | Resuelta |
+| ~~DT004~~ | ~~`process.env` directo en `auth.module.ts`~~ — **RESUELTO**: usa `ConfigService` y lanza si falta la variable | Resuelta |
 | DT005 | **parseInt manual** en query params vs DTOs tipados + ValidationPipe | Media |
 | DT006 | **Auditoría manual** en servicios (duplicación, riesgo olvido) | Media |
-| DT007 | **TransformInterceptor no global** — formato respuestas inconsistente | Alta |
+| ~~DT007~~ | ~~`TransformInterceptor` no global~~ — **RESUELTO**: registrado en `main.ts` junto al `HttpExceptionFilter` | Resuelta |
 | DT008 | **ProductImage sin timestamps** | Baja |
-| DT009 | **Migración FSM datos legacy** (544+ productos con estados legacy) | Alta |
+| DT009 | **Migración FSM datos legacy** (544+ productos con estados legacy) — `lifecycleStatus` ya se usa en lecturas/escrituras, falta migrar los datos | Alta |
 | DT010 | **Biblioteca Vitrina (ADR-002)**: 9 acciones pendientes (M001–M007) | Media |
 | DT011 | **Import pipeline bugs** (ADR-001): H-1..H-6 (isUpdate, HeaderDetectionConfig, type-safety, labels duplicados) | Media/Baja |
+| DT012 | **2 errores de lint** en `DashboardGrants.tsx` + 9 warnings (frontend) | Baja |
 
 ---
 
 ## Próximas acciones (priorizadas)
 
-### Hito 1: Seguridad dura (Semana 1)
-1. **C001** Tests backend suite mínima P0: AuthService, JwtAuthGuard, RolesGuard, Auth e2e (~16h)
-2. **C002** Rate limiting login: `@nestjs/throttler` 5 req/min login, 30 global (~2h)
-3. **C003** JWT_SECRET sin fallback: eliminar `'fallback-dev-only'`, exigir env var (~1h)
-4. **C004** LoginDto `@MinLength(8)` (hoy 6) (~0.5h)
-5. **C005** HttpExceptionFilter global en `main.ts` (~0.5h)
-6. **C006** Migración FSM legacy: plan con backup + dry-run + aprobación explícita (~4h)
+### Hito 1: Seguridad dura — ✅ CERRADO 2026-10-07 (salvo C006)
+1. **C001** Tests backend — hecho: 1102 tests / 64 suites (cobertura sin medir)
+2. **C002** Rate limiting login — hecho: `@Throttle({ limit: 5 })` en login, 10 en
+   registro/restauración, throttler global 20/min por env `THROTTLE_*`
+3. **C003** JWT_SECRET sin fallback — hecho: `auth.module.ts` y `jwt.strategy.ts` lanzan
+4. **C004** LoginDto `@MinLength(8)` + `PasswordPolicyService` (zxcvbn) — hecho
+5. **C005** HttpExceptionFilter + TransformInterceptor globales en `main.ts` — hecho
+6. **C006** Migración FSM legacy — **PENDIENTE** (backup + dry-run + aprobación explícita)
 
-### Hito 2: Calidad base (Semana 2)
-7. **H001** TransformInterceptor: decisión global vs manual + ejecutar
-8. **H002** Eliminar guards duplicados (`modules/auth/`)
-9. **H003** Migrar `process.env` → `ConfigService` en auth
+### Hito 2: Calidad base (próximo)
+7. ~~**H001** TransformInterceptor~~ — hecho (global en `main.ts`)
+8. ~~**H002** Eliminar guards duplicados~~ — hecho (sólo `common/guards/`)
+9. ~~**H003** `process.env` → `ConfigService` en auth~~ — hecho
 10. **H004** DTOs query tipados (`skip`/`take`/`search` con `@Type(() => Number)`)
-11. **H005** Account lockout (10 fallos → 15 min)
+11. ~~**H005** Account lockout~~ — hecho: `AccountLockoutService` (5→15 min, 10→60 min, 15→ indefinido)
 12. **H006** Body parser limit 1MB
 13. **H007** Bloquear auto-asignación roles
 14. **H008** Auditoría automática (decorador/interceptor)
 15. **H009** ProductImage `createdAt`
-16. **H010** Tests frontend suite mínima (Login, ProductForm, ImportWizard)
+16. **H010** Ampliar tests frontend (Login, ProductForm, ImportWizard) — hay 377 tests
+17. **H011** Corregir 2 errores de lint en `DashboardGrants.tsx` (DT012/R012)
 
 ### Hito 3: Etapa 8.1 + Biblioteca Vitrina core (Semana 3-4)
 17. **M001** Etapa 8.1: migración lecturas/escrituras a `lifecycleStatus` (no destructiva)
@@ -165,6 +171,7 @@
 
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
+| 2026-10-07 | Cadena de **19 commits por feature** en `feat/storefront-public-pricing` (1a35342…e7e6ba7): seguridad Hito 1, db/pg adapter, Notion auth, notificaciones, team-workflow, portal de clientes, ficha de producto, media, auditoría, storefront, docs. Test-rojo corregido, gitignore de backups, zips fuera del índice, probes `src/test{,2}` borrados. Verificado: jest 1102/1102, vitest 377/377, tsc limpio. Hito 1 cerrado salvo C006 | Usuario + Claude Code (ODD `baseline-commit-chain`) |
 | 2026-09-30 | Exploración completa post-migración; creado `docs/ACTION_ITEMS.md`; actualizado PROJECT_STATUS con riesgos críticos (tests, JWT_SECRET, rate limiting, HttpExceptionFilter, password min), hitos priorizados, deuda técnica expandida, decisiones pendientes | Usuario + Claude Code (sesión exploración) |
 | 2026-09-09 | Reestructuración documentación: coordinador = usuario + Claude Code; OpenCode 11 agentes, Kilo 2 agentes; tablero issues en `docs/agent-coordination/issues/`; Etapa 8.1 como próximo paso; hallazgos menores añadidos a riesgos | Agente Haiku (plan enumerated-whistling-rivest) |
 | 2026-09-03 | Reconciliación de identidad a Grupo Security Office; stack NestJS/Prisma/React; finance-orchestrator inactivo; script Prisma marcado UNVERIFIED | tech-lead-orchestrator |
