@@ -81,3 +81,8 @@ ficha-producto-*.zip
 *-backup-*.dump
 supabase-backup-*.dump
 *.sql.gz
+
+# Paquetes subidos por upload y caches de tooling
+Grupo Security Design System.zip
+src/frontend/grupo-security-frontend.zip
+.atl/
