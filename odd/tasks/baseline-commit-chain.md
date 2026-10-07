@@ -52,15 +52,55 @@ no relacionado.
 
 ## Tasks
 
-- [ ] SBC-01 — `.gitignore`: excluir `*.zip` de despliegue, `*.dump` y artefactos de backup locales.
-- [ ] SBC-02 — Fix del test rojo `account-lockout.service.spec.ts` (corte `since` dentro de la ventana de 24 h).
-- [ ] SBC-03 — Verificación: suite backend verde (1102) + suite frontend verde (377).
-- [ ] SBC-04 — Commit 1: `chore(repo)` gitignore de backups.
-- [ ] SBC-05 — Commit 2: `feat(security)`/`test(security)` bloque de seguridad Hito 1 + specs.
-- [ ] SBC-06 — Commit 3: `feat(db)`/migraciones y módulos backend pendientes agrupados por feature.
-- [ ] SBC-07 — Commit 4: `feat(frontend)` features de UI pendientes agrupadas por feature.
-- [ ] SBC-08 — Commit 5: `docs` documentación y bitácoras pendientes.
-- [ ] SBC-09 — Cierre: `git status` final, conteo de commits, actualización de este documento y del espejo Engram.
+- [x] SBC-01 — `.gitignore`: excluir `*.zip` de despliegue, `*.dump` y artefactos de backup locales. (1a35342)
+- [x] SBC-02 — Fix del test rojo `account-lockout.service.spec.ts` (corte `since` dentro de la ventana de 24 h). (f549bab)
+- [x] SBC-03 — Verificación: suite backend verde (1102) + suite frontend verde (377).
+- [x] SBC-04 — Commit 1: `chore(repo)` gitignore de backups. (1a35342)
+- [x] SBC-05 — Commit 2: `fix(security)` feedback de política de contraseña + fix del test de lockout. (f549bab)
+- [x] SBC-06 — Commits 3-11: `feat(db)`, `feat(auth)`, `feat(notifications)`, `feat(team-workflow)`,
+      `feat(customer-portal)`, `feat(products)`, `fix(import)`, `feat(media)`, `feat(audit)`. (332a2a9…cff42d7)
+- [x] SBC-07 — Commits 12-15: `feat(storefront)`, `feat(app)`, `chore(frontend)`, `chore(tools)`. (1fb02a3…445a89b)
+- [x] SBC-08 — Commit 16: `docs` (ACTION_ITEMS, runbooks, propuestas UI, libretas ODD). (c48b13d)
+- [x] SBC-08b — Commit 17: `fix(types)` typecheck limpio en frontend y backend (361ae05).
+- [x] SBC-09 — Cierre: `git status` sin cambios trackeados; 17 commits; espejo Engram actualizado.
+
+## Evidencia de verificación (2026-10-07)
+
+| Check | Resultado |
+|-------|-----------|
+| `npx jest` (src/backend) | **1102/1102** en 64 suites |
+| `npx vitest run` (src/frontend) | **377/377** en 35 archivos |
+| `tsc --noEmit -p tsconfig.json` (backend) | 0 errores |
+| `tsc -b` (frontend) | 0 errores |
+| `npm run lint` backend | limpio |
+| `npm run lint` frontend | **2 errores preexistentes** en `features/users/components/DashboardGrants.tsx` (archivo no tocado por esta feature) + 9 warnings |
+| `git ls-files \| grep zip/dump` | solo 2 zip históricos ya versionados antes de esta cadena (`Grupo Security Design System.zip`, `src/frontend/grupo-security-frontend.zip`) — **no** subidos aquí |
+| RDD `gentle-ai review assess` | **no disponible**: el binario `gentle-ai` no está en PATH en esta sesión → sin evaluación de riesgo por commit |
+
+### Correcciones adicionales detectadas durante la verificación
+
+- `node_modules/@types/{deep-eql,prop-types,babel__*}` eran **directorios vacíos** y hacían
+  fallar `tsc -b` con TS2688; eliminados del `node_modules` local (no es cambio de repo).
+  Al quitarlos aparecieron **6 errores reales** en el código, corregidos en `fix(types)`.
+
+### Ruta empleada (declaración de triggers)
+
+- Ruta: **inline** en su totalidad. El trigger de mapeo (167 archivos > 4) se resolvió
+  con lecturas de diff en línea en lugar de delegar una exploración: **desviación
+  registrada**. Ninguna decisión de producto abierta; commits autorizados por el coordinador.
+- TDD: modo **desactivado** (resuelto por ausencia de configuración de TDD en el
+  proyecto); corrección del test con RED observado → GREEN observado.
+- Commits por unidad de trabajo, en la rama `feat/storefront-public-pricing`.
+  **Sin push, sin PR, sin merge.**
+
+### Quedan fuera de este alcance (sin commitear, decisión del coordinador)
+
+| Artefacto | Motivo |
+|-----------|--------|
+| `src/backend/src/test/`, `src/backend/src/test2/` | módulos controlador/probe de 1 de octubre; parecen desechables — ¿borrar? |
+| `Cliente — Tienda pública (estilo retail)@2x.png` | imagen de diseño en la raíz; ¿mover a `docs/UI/` o a `public/`? |
+| `.atl/` (skill-registry) | caché de tooling; ¿añadir a `.gitignore`? |
+| `features/users/components/DashboardGrants.tsx` | 2 errores de lint preexistentes, fuera del alcance autorizado |
 
 ## Criterios de aceptación
 
@@ -80,4 +120,9 @@ no relacionado.
 ## Progreso
 
 - 2026-10-07: documento creado; exploración inicial (estado Git, suites, Hito 1 ya
-  presente en el árbol). Siguiente: SBC-01.
+  presente en el árbol).
+- 2026-10-07: **cerrado** — SBC-01..SBC-09 completados. 17 commits en
+  `feat/storefront-public-pricing` (1a35342…361ae05 + este cierre), árbol limpio
+  salvo los 4 artefactos listados en "Fuera de alcance". Siguiente paso pendiente
+  de decisión del coordinador: esos artefactos, la actualización de
+  `docs/PROJECT_STATUS.md` (sigue diciendo "0 tests") y `docs/handoffs/HANDOFF_ACTUAL.md`.
