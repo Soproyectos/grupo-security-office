@@ -73,3 +73,11 @@ tools/enrichment_output/
 *.log
 .pytest_cache/
 .mypy_cache/
+
+# Backups de despliegue y dumps de base de datos (contienen datos reales; NUNCA al repo)
+backend-hostinger-*.zip
+frontend-hostinger-*.zip
+ficha-producto-*.zip
+*-backup-*.dump
+supabase-backup-*.dump
+*.sql.gz
