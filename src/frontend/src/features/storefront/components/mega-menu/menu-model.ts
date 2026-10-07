@@ -43,6 +43,17 @@ export function findRoot(roots: MenuCategory[], rootId: string | null): MenuCate
 }
 
 /**
+ * True while there are covers left to reveal on the right of the circles
+ * track: the row arrow is only rendered in that case, so it never shows up
+ * as an idle button. Exported for the no-DOM test suite.
+ */
+export function hasForwardOverflow(
+  track: Pick<HTMLElement, 'scrollLeft' | 'clientWidth' | 'scrollWidth'>,
+): boolean {
+  return track.scrollLeft + track.clientWidth < track.scrollWidth - 1
+}
+
+/**
  * Covers of the circles row: every featured node below the root (levels 2 and
  * 3) in the order the backend sends them. Featured nodes are the only ones
  * that carry an `imageUrl`, which is exactly what the circles need.

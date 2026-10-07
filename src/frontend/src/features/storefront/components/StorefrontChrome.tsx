@@ -2,30 +2,53 @@ import { Link, useNavigate } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
 import StorefrontFooter from './StorefrontFooter'
-import { SALES_LINE_DISPLAY, SALES_LINE_HREF, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
+import { SALES_LINE_DISPLAY, SALES_LINE_HREF, BUSINESS_HOURS_SHORT, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
 
 type StorefrontChromeProps = { children: React.ReactNode }
 
 const SEARCH_ROUTE = '/catalogo/buscar'
 
+const BAR_LINK =
+  'inline-flex -mx-1 items-center rounded px-1 text-white transition hover:bg-white/15 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+
+/**
+ * The one action of the bar: the white pill is the storefront's highest-contrast
+ * element on this surface, so the direct channel to a human (WhatsApp) is what
+ * the eye lands on. Red on white keeps the same 5.78:1 ratio in reverse.
+ */
+const BAR_PILL =
+  'inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-bold text-[#CE0203] transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+
+function PhoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+      <path d="M6.6 3h2.5l1.6 4-2 1.3a11.4 11.4 0 0 0 5 5l1.3-2 4 1.6v2.5A2.6 2.6 0 0 1 16.4 18 14.6 14.6 0 0 1 4 5.6 2.6 2.6 0 0 1 6.6 3z" />
+    </svg>
+  )
+}
+
 export default function StorefrontChrome({ children }: StorefrontChromeProps) {
   const navigate = useNavigate()
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
-      <div className="hidden bg-[#484748] px-6 py-2 text-xs text-[#FAFAFA] sm:block lg:px-12">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <a href={SALES_LINE_HREF} className="text-[#FAFAFA] transition hover:text-white hover:underline">
-            Línea de ventas: {SALES_LINE_DISPLAY}
-          </a>
-          <div className="flex items-center gap-5">
-            <span>Distribuidor autorizado · marcas líderes en seguridad</span>
+      <div className="bg-[#CE0203] px-6 py-[7px] text-xs text-white lg:px-12">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2">
+
+            <a href={SALES_LINE_HREF} className={BAR_LINK}>
+              <PhoneIcon />
+              <span className="ml-1.5">Línea de ventas: {SALES_LINE_DISPLAY}</span>
+            </a>
+
+          <div className="flex flex-wrap items-center gap-3 sm:ml-auto sm:gap-5">
+            <span className="leading-relaxed">Atención: {BUSINESS_HOURS_SHORT}</span>
             <a
-              href={whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}
+              href={whatsappUrl(WHATSAPP_MESSAGES.contact)}
               target="_blank"
               rel="noreferrer noopener"
-              className="text-[#FAFAFA] transition hover:text-white hover:underline"
+              aria-label="Contáctenos por WhatsApp"
+              className={BAR_PILL}
             >
-              Vende con nosotros
+              Contáctenos
             </a>
           </div>
         </div>

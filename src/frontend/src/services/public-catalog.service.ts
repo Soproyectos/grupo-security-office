@@ -1,7 +1,6 @@
 import api from './api'
 import type { MenuCategory } from '../features/storefront/types/categoryMenu'
 import type {
-  PublicProductDetail,
   PublicProductFilters,
   PublicProductListing,
   PublicProductResult,
@@ -97,26 +96,4 @@ export async function fetchPublicProducts(
 
   const response = await api.get(PRODUCTS_ENDPOINT, { params })
   return toListing(response.data, offset, limit)
-}
-
-/**
- * Product sheet for the public detail page. A missing or unpublished product
- * (404) and a malformed id (400) resolve to `null` so the page can render its
- * "not found" state; every other failure rejects and is offered as a retry.
- */
-export async function fetchPublicProductDetail(id: string): Promise<PublicProductDetail | null> {
-  try {
-    const response = await api.get(`${PRODUCTS_ENDPOINT}/${encodeURIComponent(id)}`)
-    let value: unknown = response.data
-    for (let depth = 0; depth < 2; depth += 1) {
-      if (isRecord(value) && 'id' in value) return value as unknown as PublicProductDetail
-      if (!isRecord(value) || !('data' in value)) return null
-      value = value.data
-    }
-    return isRecord(value) && 'id' in value ? (value as unknown as PublicProductDetail) : null
-  } catch (error) {
-    const status = (error as { response?: { status?: number } }).response?.status
-    if (status === 404 || status === 400) return null
-    throw error
-  }
 }

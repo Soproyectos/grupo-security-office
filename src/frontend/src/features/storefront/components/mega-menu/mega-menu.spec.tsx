@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import type { MenuCategory } from '../../types/categoryMenu'
-import { categoryHref, featuredTiles, navigableRoots, nextRootId, resolveRootId } from './menu-model'
+import { categoryHref, featuredTiles, hasForwardOverflow, navigableRoots, nextRootId, resolveRootId } from './menu-model'
 import { createMegaMenuStore, HOVER_INTENT_MS } from './menu-controller'
 import MegaMenu from './MegaMenu'
 import CategoryMenuContainer from './CategoryMenuContainer'
@@ -391,16 +391,32 @@ describe('mega menu en el escritorio', () => {
     expect(markup).toContain('grid grid-cols-5 gap-x-8')
   })
 
-  it('muestra la fila de círculos con las portadas destacadas y su flecha', () => {
+  it('muestra la fila de círculos con las portadas destacadas', () => {
     const markup = renderMenu()
 
     expect(markup).toContain('hidden items-center gap-3 lg:flex')
     expect(occurrences(markup, 'rounded-full border border-security-500')).toBe(6)
     expect(occurrences(markup, 'snap-x snap-mandatory')).toBe(1)
-    expect(markup).toContain('aria-label="Ver más categorías destacadas"')
     expect(markup).toContain('src="/images/categories/camaras-ip-domo.svg"')
     // The circles are desktop only: the mobile drawer must not carry them.
     expect(occurrences(markup, 'aria-label="Categorías destacadas"')).toBe(1)
+    // The arrow only renders after the browser measures an overflow, so it is
+    // never part of the static markup (and never an idle button).
+    expect(markup).not.toContain('Ver más categorías destacadas')
+  })
+
+  it('la flecha solo aparece mientras quedan círculos por ver', () => {
+    const track = (over: { scrollLeft?: number; clientWidth?: number; scrollWidth?: number }) =>
+      ({ scrollLeft: 0, clientWidth: 400, scrollWidth: 400, ...over }) as HTMLElement
+
+    // Fits on screen: nothing to scroll.
+    expect(hasForwardOverflow(track({}))).toBe(false)
+    // Overflows from the start.
+    expect(hasForwardOverflow(track({ scrollWidth: 900 }))).toBe(true)
+    // Mid scroll: covers still hidden on the right.
+    expect(hasForwardOverflow(track({ scrollWidth: 900, scrollLeft: 400 }))).toBe(true)
+    // End of the row reached: hide the arrow again.
+    expect(hasForwardOverflow(track({ scrollWidth: 900, scrollLeft: 500 }))).toBe(false)
   })
 
   it('ofrece el catálogo completo para las categorías planas que no son familia', () => {
