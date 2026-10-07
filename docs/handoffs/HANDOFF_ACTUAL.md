@@ -6,7 +6,8 @@
 ## Rama activa del checkout principal
 
 - **Rama**: `feat/storefront-public-pricing`
-- **HEAD**: `e7e6ba7` — `chore(repo): stop tracking packaged zips and ignore tooling cache`
+- **Último commit de producto**: `e7e6ba7` — `chore(repo): stop tracking packaged
+  zips and ignore tooling cache`. Los commits posteriores son sólo documentación.
 - **Base**: 19 commits por feature sobre `451393c` (cadena ODD `baseline-commit-chain`,
   2026-10-07). Documentación de la cadena: `odd/tasks/baseline-commit-chain.md`.
 - **Push / PR / merge**: **NO realizados** (no autorizados por el coordinador).
@@ -42,9 +43,10 @@
 
 ## Trabajo sin commitear
 
-- Sólo `Cliente — Tienda pública (estilo retail)@2x.png` (captura de diseño 2880×5120,
-  3.9 MB, 2026-09-29) en la raíz. **Decisión pendiente**: borrar, mover a `docs/UI/`
-  o ignorar.
+- **Ninguno**: `git status --porcelain` quedó vacío el 2026-10-07.
+- La captura `Cliente — Tienda pública (estilo retail)@2x.png` (2880×5120, 3.9 MB)
+  fue **borrada** por decisión del coordinador; los módulos probe
+  `src/backend/src/test/` y `test2/` también.
 - Los zips empaquetados salieron del índice en `e7e6ba7` (siguen en disco, ignorados);
   la historia de Git **no** se reescribió, así que siguen en commits antiguos.
 - Los módulos probe `src/backend/src/test/` y `test2/` fueron **borrados** del disco.

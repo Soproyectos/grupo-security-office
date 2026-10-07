@@ -110,8 +110,11 @@ no relacionado.
 
 | Artefacto | Estado |
 |-----------|--------|
-| `Cliente — Tienda pública (estilo retail)@2x.png` | captura de diseño 2880×5120 (3.9 MB) en la raíz; el coordinador pidió que se le explique antes de decidir: borrar / mover a `docs/UI/` / ignorar |
 | `features/users/components/DashboardGrants.tsx` | 2 errores de lint preexistentes (fuera del alcance de esta feature) |
+
+- 2026-10-07 (3ª ronda): **captura PNG borrada** de la raíz por decisión del
+  coordinador (opción "borrarla": screenshot de 3.9 MB sin uso). `git status`
+  quedó **completamente limpio**.
 
 ## Criterios de aceptación
 
@@ -137,5 +140,6 @@ no relacionado.
 - 2026-10-07: **segunda ronda** — SBC-10..SBC-13 completados (probes borrados,
   `.atl/` ignorado, zips fuera del índice en `e7e6ba7`, PROJECT_STATUS y
   HANDOFF_ACTUAL actualizados con estado verificado).
-  Siguiente paso pendiente de decisión del coordinador: la captura PNG de la raíz,
-  los 2 errores de lint de `DashboardGrants.tsx`, y push/PR/merge de la rama.
+- 2026-10-07: **tercera ronda** — captura PNG de la raíz borrada por decisión del
+  coordinador; `git status` completamente limpio. Siguiente paso pendiente:
+  los 2 errores de lint de `DashboardGrants.tsx` y push/PR/merge de la rama.
