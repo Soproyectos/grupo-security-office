@@ -1,3 +1,4 @@
+import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -18,42 +19,70 @@ const DUMMY_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEe.7ROU8.4uWxTPoqkbnk1k1ZfMCTPQmPu
 export class CustomerPortalService {
   constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService, private readonly config: ConfigService, private readonly audit: AuditService) {}
 
-  /**
-   * Autorregistro público. Toda cuenta nace PENDING; nada se aprueba solo.
-   *
-   * Coincidencia con clientes existentes (decisión ODD): si el NIT o el email
-   * del registro coinciden con un Customer, se ENLAZA (`customerId`) para que
-   * el revisor humano vea la coincidencia en la cola — pero el enlace NO
-   * aprueba nada: la cuenta sigue PENDING hasta revisión. Sin esto, aprobar
-   * crearía un cliente duplicado con el mismo NIT.
-   */
+  /** Public signup always creates an independent basic account. Company identity
+   * is a claim until checked by staff: never auto-link by a submitted NIT. */
   async register(dto: RegisterPortalAccountDto) {
     const email = dto.email.trim().toLowerCase();
-    const documentId = dto.documentId?.trim() || null;
-    const exists = await this.prisma.portalAccount.findUnique({ where: { email }, select: { id: true } });
-    if (exists) throw new ConflictException('Ya existe una solicitud para este correo');
-    const matchedCustomer = await this.findMatchingCustomer(email, documentId);
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-    const account = await this.prisma.portalAccount.create({ data: {
-      email, passwordHash, contactName: dto.contactName.trim(), companyName: dto.companyName.trim(),
-      documentId, phone: dto.phone?.trim() || null, type: dto.type,
-      ...(matchedCustomer ? { customerId: matchedCustomer.id } : {}),
-    }});
-    return { id: account.id, state: account.state, matchedCustomerId: matchedCustomer?.id ?? null, message: 'Solicitud recibida; quedará disponible tras aprobación comercial.' };
+    const exists = await this.prisma.portalAccount.findUnique({where:{email},select:{id:true}});
+    if(exists) throw new ConflictException('Ya existe una cuenta para este correo');
+    const passwordHash = await bcrypt.hash(dto.password,12);
+    try {
+      const account = await this.prisma.portalAccount.create({data:{
+        email,passwordHash,contactName:dto.contactName.trim(),companyName:dto.companyName.trim(),
+        documentId:dto.documentId?.trim()||null,phone:dto.phone?.trim()||null,
+        type:PortalAccountType.FINAL_CUSTOMER,state:PortalAccountState.ACTIVE,
+      }});
+      return {id:account.id,state:account.state,message:'Cuenta creada. Ya puedes ingresar como cliente final.'};
+    } catch(error) {
+      if(error instanceof Prisma.PrismaClientKnownRequestError && error.code==='P2002') throw new ConflictException('Ya existe una cuenta para este correo');
+      throw error;
+    }
   }
 
-  /** Busca un Customer existente por NIT o email (insensible a mayúsculas). */
-  private async findMatchingCustomer(email: string, documentId: string | null) {
-    const orClauses: Prisma.CustomerWhereInput[] = [
-      { email: { equals: email, mode: 'insensitive' } },
-    ];
-    if (documentId) {
-      orClauses.push({ documentId: { equals: documentId } });
+  private async priceMapping(type:PortalAccountType,tierId?:string|null) {
+    if(tierId) {
+      const tier=await this.prisma.portalTier.findUnique({where:{id:tierId},include:{priceList:true}});
+      if(!tier?.isActive) throw new BadRequestException('Tu escalafón comercial no está activo; contacta a tu asesor');
+      if(!tier.priceListId)return null;
+      if(!tier.priceList?.isActive) throw new BadRequestException('La tarifa de tu escalafón no está activa');
+      return {priceListId:tier.priceListId,priceList:tier.priceList};
     }
-    return this.prisma.customer.findFirst({
-      where: { isActive: true, OR: orClauses },
-      select: { id: true },
-    });
+    const mapping=await this.prisma.portalPriceListMapping.findUnique({where:{type},include:{priceList:true}});
+    if(mapping?.priceList.isActive)return mapping;
+    if(type===PortalAccountType.FINAL_CUSTOMER)return null;
+    throw new BadRequestException('No hay una tarifa activa configurada para este tipo de cliente');
+  }
+
+  listAccounts() {
+    return this.prisma.portalAccount.findMany({orderBy:{createdAt:'desc'},take:1000,select:{
+      id:true,email:true,contactName:true,companyName:true,documentId:true,type:true,state:true,
+      tierId:true,tier:{select:{id:true,name:true,isActive:true}},createdAt:true,
+    }});
+  }
+  listTiers() {return this.prisma.portalTier.findMany({orderBy:{name:'asc'},include:{priceList:{select:{id:true,name:true,isActive:true}}}});}
+  async saveTier(dto:PortalTierDto,actorId:string,id?:string) {
+    if(id&&!await this.prisma.portalTier.findUnique({where:{id}}))throw new NotFoundException('Escalafón no encontrado');
+    const duplicate=await this.prisma.portalTier.findFirst({where:{name:{equals:dto.name,mode:'insensitive'},...(id?{id:{not:id}}:{})}});
+    if(duplicate)throw new ConflictException('Ya existe un escalafón con ese nombre');
+    if(dto.priceListId) {
+      const list=await this.prisma.priceList.findUnique({where:{id:dto.priceListId}});
+      if(!list?.isActive)throw new BadRequestException('Selecciona una tarifa activa');
+    }
+    const tier=id?await this.prisma.portalTier.update({where:{id},data:dto}):await this.prisma.portalTier.create({data:dto});
+    await this.audit.log({userId:actorId,action:id?'update':'create',entity:'PortalTier',entityId:tier.id,newValues:{name:tier.name,priceListId:tier.priceListId,isActive:tier.isActive}});
+    return tier;
+  }
+  async assignTier(id:string,dto:AssignPortalTierDto,actorId:string) {
+    if(dto.tierId===undefined)throw new BadRequestException('Indica el escalafón o null para cliente final');
+    const account=await this.prisma.portalAccount.findUnique({where:{id}});
+    if(!account||account.state!=='ACTIVE')throw new BadRequestException('La cuenta debe estar activa');
+    if(dto.tierId) {
+      const tier=await this.prisma.portalTier.findUnique({where:{id:dto.tierId}});
+      if(!tier?.isActive)throw new BadRequestException('Selecciona un escalafón activo');
+    }
+    const updated=await this.prisma.portalAccount.update({where:{id},data:{tierId:dto.tierId,type:PortalAccountType.FINAL_CUSTOMER}});
+    await this.audit.log({userId:actorId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{tierId:account.tierId,type:account.type},newValues:{tierId:updated.tierId,type:updated.type}});
+    return {id:updated.id,tierId:updated.tierId};
   }
 
   async login(emailInput: string, password: string, meta: { ipAddress?: string; userAgent?: string }) {
@@ -75,7 +104,7 @@ export class CustomerPortalService {
 
   async logout(jti: string) { await this.prisma.portalSession.updateMany({ where: { jti, revokedAt: null }, data: { revokedAt: new Date() } }); }
 
-  async getCatalog(query: CatalogQueryDto, accountType?: PortalAccountType) {
+  async getCatalog(query: CatalogQueryDto, accountType?: PortalAccountType, tierId?:string|null) {
     const where: Prisma.ProductWhereInput = {
       lifecycleStatus: 'PUBLISHED', isActive: true, isVisible: true,
       category: { isActive: true }, brand: { isActive: true },
@@ -86,14 +115,13 @@ export class CustomerPortalService {
       ...(query.brand ? { brand: { slug: query.brand, isActive: true } } : {}),
     };
     const [mapping, data, total] = await Promise.all([
-      accountType ? this.prisma.portalPriceListMapping.findUnique({ where: { type: accountType }, include: { priceList: true } }) : null,
+      accountType ? this.priceMapping(accountType,tierId) : null,
       this.prisma.product.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: { name: 'asc' }, include: {
         category: { select: { name: true, slug: true } }, brand: { select: { name: true, slug: true } },
         images: { where: { isPrimary: true }, take: 1, select: { url: true, alt: true } },
       }}),
       this.prisma.product.count({ where }),
     ]);
-    if (accountType && (!mapping || !mapping.priceList.isActive)) throw new BadRequestException('No hay una tarifa activa configurada para este tipo de cliente');
     // Resolución de precios en UNA consulta (no N+1): tarifas vigentes del
     // price list del tipo, mapeadas por producto.
     const now = new Date();
@@ -127,7 +155,7 @@ export class CustomerPortalService {
    * Detail has the same publication boundary as the collection. A missing or
    * unpublished item is deliberately a 404, rather than exposing its state.
    */
-  async getProductDetail(id: string, accountType?: PortalAccountType) {
+  async getProductDetail(id: string, accountType?: PortalAccountType, tierId?:string|null) {
     const product = await this.prisma.product.findFirst({
       where: {
         id,
@@ -157,13 +185,8 @@ export class CustomerPortalService {
     };
     if (!accountType) return detail;
 
-    const mapping = await this.prisma.portalPriceListMapping.findUnique({
-      where: { type: accountType },
-      include: { priceList: true },
-    });
-    if (!mapping || !mapping.priceList.isActive) {
-      throw new BadRequestException('No hay una tarifa activa configurada para este tipo de cliente');
-    }
+    const mapping = await this.priceMapping(accountType,tierId);
+    if(!mapping) {detail.price=null;return detail;}
     const now = new Date();
     const price = await this.prisma.price.findFirst({
       where: {

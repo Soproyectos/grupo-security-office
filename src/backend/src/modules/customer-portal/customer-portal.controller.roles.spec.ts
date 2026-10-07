@@ -23,15 +23,15 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
   // ---------- Rutas internas de revisión: sólo los 3 roles autorizados ----------
 
   it('GET admin/accounts/pending exige exactamente Supervisor, Admin Comercial y Super Admin', () => {
-    expect(rolesOf(proto.pending)).toEqual(['Super Admin', 'Supervisor', 'Admin Comercial']);
+    expect(rolesOf(proto.pending)).toEqual(['Super Admin']);
   });
 
   it('POST admin/accounts/:id/approve exige exactamente los 3 roles de revisión', () => {
-    expect(rolesOf(proto.approve)).toEqual(['Super Admin', 'Supervisor', 'Admin Comercial']);
+    expect(rolesOf(proto.approve)).toEqual(['Super Admin']);
   });
 
   it('POST admin/accounts/:id/reject exige exactamente los 3 roles de revisión', () => {
-    expect(rolesOf(proto.reject)).toEqual(['Super Admin', 'Supervisor', 'Admin Comercial']);
+    expect(rolesOf(proto.reject)).toEqual(['Super Admin']);
   });
 
   it('los endpoints de revisión aplican RolesGuard y JwtAuthGuard (sin él, @Roles es metadata muerta)', () => {
@@ -76,4 +76,11 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
   it('la clase no aplica guards a nivel global (exigiría sesión interna en rutas públicas)', () => {
     expect(Reflect.getMetadata('__guards__', CustomerPortalController)).toBeUndefined();
   });
+  it('escalafones y cuentas son administrables solo por Super Admin',()=>{
+    for(const method of [proto.accounts,proto.tiers,proto.createTier,proto.editTier,proto.assignTier]) {
+      expect(rolesOf(method)).toEqual(['Super Admin']);expect(isPublic(method)).toBe(false);
+      expect(guardsOf(method)).toContain(RolesGuard);expect(guardsOf(method)).toContain(JwtAuthGuard);
+    }
+  });
+
 });

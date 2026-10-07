@@ -6,6 +6,7 @@ import { CustomerPortalService } from './customer-portal.service';
 
 const prisma: any = {
   portalAccount: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  portalTier: {findUnique:jest.fn(),findFirst:jest.fn(),create:jest.fn(),update:jest.fn()},
   portalSession: { create: jest.fn(), updateMany: jest.fn() },
   portalPriceListMapping: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
@@ -28,41 +29,29 @@ describe('CustomerPortalService', () => {
 
   // ---------- Registro ----------
 
-  it('registra una cuenta PENDING normalizada, sin crear usuario interno', async () => {
+  it('registra una cuenta ACTIVE básica normalizada, sin crear usuario interno', async () => {
     prisma.portalAccount.findUnique.mockResolvedValue(null);
     prisma.customer.findFirst.mockResolvedValue(null);
     (bcrypt.hash as jest.Mock).mockResolvedValue('hash');
-    prisma.portalAccount.create.mockResolvedValue({ id: 'p1', state: 'PENDING' });
+    prisma.portalAccount.create.mockResolvedValue({ id: 'p1', state: 'ACTIVE' });
 
     const result = await service.register(REGISTER_DTO);
 
     expect(prisma.portalAccount.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ email: 'sales@acme.co', passwordHash: 'hash', documentId: '900123456', type: 'FINAL_CUSTOMER' }),
     }));
-    expect(result.state).toBe('PENDING');
+    expect(result.state).toBe('ACTIVE');
   });
 
-  it('enlaza el Customer existente cuando el NIT coincide y sigue PENDING', async () => {
+  it('no permite autoseleccionar un escalafón ni vincular un NIT ajeno',async()=>{
     prisma.portalAccount.findUnique.mockResolvedValue(null);
-    prisma.customer.findFirst.mockResolvedValue({ id: 'cust-1' });
     (bcrypt.hash as jest.Mock).mockResolvedValue('hash');
-    prisma.portalAccount.create.mockResolvedValue({ id: 'p1', state: 'PENDING' });
-
-    const result = await service.register(REGISTER_DTO);
-
-    expect(prisma.customer.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        OR: expect.arrayContaining([
-          { email: { equals: 'sales@acme.co', mode: 'insensitive' } },
-          { documentId: { equals: '900123456' } },
-        ]),
-      }),
-    }));
-    expect(prisma.portalAccount.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ customerId: 'cust-1' }),
-    }));
-    expect(result.state).toBe('PENDING');
-    expect(result.matchedCustomerId).toBe('cust-1');
+    prisma.portalAccount.create.mockResolvedValue({id:'p1',state:'ACTIVE'});
+    await service.register({...REGISTER_DTO,type:'INSTALLER'});
+    const data=prisma.portalAccount.create.mock.calls[0][0].data;
+    expect(data.type).toBe('FINAL_CUSTOMER');expect(data.state).toBe('ACTIVE');
+    expect(data).not.toHaveProperty('tierId');expect(data).not.toHaveProperty('customerId');
+    expect(prisma.customer.findFirst).not.toHaveBeenCalled();
   });
 
   it('rechaza con 409 un correo ya registrado en el portal', async () => {
@@ -207,4 +196,38 @@ describe('CustomerPortalService', () => {
     prisma.portalAccount.updateMany.mockResolvedValue({ count: 0 });
     await expect(service.reject('p1', { reason: 'x'.repeat(10) }, 'staff-1')).rejects.toThrow(ConflictException);
   });
+  it('basic customers browse without a configured tariff and never read prices',async()=>{
+    prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
+    prisma.product.findMany.mockResolvedValue([]);prisma.product.count.mockResolvedValue(0);
+    await expect(service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any)).resolves.toEqual(expect.objectContaining({data:[]}));
+    expect(prisma.price.findMany).not.toHaveBeenCalled();
+  });
+  it('an assigned custom tier determines pricing instead of a client-supplied category',async()=>{
+    prisma.portalTier.findUnique.mockResolvedValue({id:'gold',isActive:true,priceListId:'gold-list',priceList:{isActive:true}});
+    prisma.product.findMany.mockResolvedValue([{id:'product-1',name:'Camera',sku:'TEST',images:[],category:{},brand:{}}]);prisma.product.count.mockResolvedValue(1);
+    prisma.price.findMany.mockResolvedValue([]);
+    await service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any,'gold');
+    expect(prisma.price.findMany.mock.calls[0][0].where.priceListId).toBe('gold-list');
+    expect(prisma.portalPriceListMapping.findUnique).not.toHaveBeenCalled();
+  });
+  it('an inactive custom tier cannot reveal its prices',async()=>{
+    prisma.portalTier.findUnique.mockResolvedValue({isActive:false});
+    await expect(service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any,'gold')).rejects.toThrow(BadRequestException);
+    expect(prisma.price.findMany).not.toHaveBeenCalled();
+  });
+  it('requires active tiers when assigning to an account',async()=>{
+    prisma.portalAccount.findUnique.mockResolvedValue({id:'p1',state:'ACTIVE'});
+    prisma.portalTier.findUnique.mockResolvedValue({isActive:false});
+    await expect(service.assignTier('p1',{tierId:'gold'},'staff')).rejects.toThrow(BadRequestException);
+    expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+  });
+  it('assigning a tier changes classification without auto-linking business documents',async()=>{
+    prisma.portalAccount.findUnique.mockResolvedValue({id:'p1',state:'ACTIVE',tierId:null,type:'FINAL_CUSTOMER'});
+    prisma.portalTier.findUnique.mockResolvedValue({isActive:true});
+    prisma.portalAccount.update.mockResolvedValue({id:'p1',tierId:'gold',type:'FINAL_CUSTOMER'});
+    await service.assignTier('p1',{tierId:'gold'},'staff');
+    expect(prisma.portalAccount.update.mock.calls[0][0].data).toEqual({tierId:'gold',type:'FINAL_CUSTOMER'});
+    expect(audit.log).toHaveBeenCalled();
+  });
+
 });

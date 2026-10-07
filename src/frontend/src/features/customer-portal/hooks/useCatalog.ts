@@ -1,3 +1,4 @@
+import { useCustomerPortalAuthStore } from '../../../stores/customer-portal-auth.store'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCustomerCatalog, fetchCustomerCatalogProduct, fetchPublicCatalog, fetchPublicCatalogProduct } from '../../../services/customer-portal.service'
 import type { CatalogFilters } from '../types/customer-portal.types'
@@ -7,7 +8,8 @@ export function usePublicCatalog(filters: CatalogFilters) {
 }
 
 export function useCustomerCatalog(filters: CatalogFilters) {
-  return useQuery({ queryKey: ['customer-portal', 'private-catalog', filters], queryFn: () => fetchCustomerCatalog(filters), retry: false })
+  const account=useCustomerPortalAuthStore(s=>s.account)
+  return useQuery({ queryKey: ['customer-portal', 'private-catalog', account?.id, account?.tier?.id, filters], queryFn: () => fetchCustomerCatalog(filters), retry: false })
 }
 
 export function usePublicCatalogProduct(id?: string) {
@@ -15,5 +17,6 @@ export function usePublicCatalogProduct(id?: string) {
 }
 
 export function useCustomerCatalogProduct(id?: string) {
-  return useQuery({ queryKey: ['customer-portal', 'private-catalog', id], queryFn: () => fetchCustomerCatalogProduct(id!), enabled: Boolean(id), retry: false })
+  const account=useCustomerPortalAuthStore(s=>s.account)
+  return useQuery({ queryKey: ['customer-portal', 'private-catalog', account?.id, account?.tier?.id, id], queryFn: () => fetchCustomerCatalogProduct(id!), enabled: Boolean(id), retry: false })
 }

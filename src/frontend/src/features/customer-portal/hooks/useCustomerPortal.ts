@@ -7,13 +7,15 @@ export function useCustomerPortalSession() {
     queryKey: ['customer-portal', 'session'],
     queryFn: getPortalSession,
     retry: false,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    refetchInterval: 30_000,
   })
 }
 
 export function useCustomerPortalLogin() {
+  const queryClient=useQueryClient()
   const setAccount = useCustomerPortalAuthStore((state) => state.setAccount)
-  return useMutation({ mutationFn: ({ email, password }: { email: string; password: string }) => loginPortal(email, password), onSuccess: setAccount })
+  return useMutation({ mutationFn: ({ email, password }: { email: string; password: string }) => loginPortal(email, password), onSuccess: account=>{queryClient.removeQueries({queryKey:['customer-portal']});setAccount(account)} })
 }
 
 export function useCustomerPortalLogout() {

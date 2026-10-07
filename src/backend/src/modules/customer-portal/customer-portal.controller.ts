@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
@@ -18,7 +19,7 @@ import { UpsertPortalPriceListMappingDto } from './dto/upsert-price-list-mapping
 import { ConfigService } from '@nestjs/config';
 
 /** Revisión de cuentas: única matríz autorizada para aprobar/rechazar (PORTAL-02). */
-const REVIEW_ROLES = [ROLE.SUPER_ADMIN, ROLE.SUPERVISOR, ROLE.ADMIN_COMERCIAL];
+const REVIEW_ROLES = [ROLE.SUPER_ADMIN];
 /** Configuración de tarifas por tipo: queda en manos del área comercial. */
 const MAPPING_ROLES = [ROLE.SUPER_ADMIN, ROLE.ADMIN_COMERCIAL];
 
@@ -70,7 +71,7 @@ export class CustomerPortalController {
   @Public()
   @UseGuards(PortalAuthGuard)
   @Get('auth/me')
-  me(@Req() req: any) { return { account: req.portalAccount }; }
+  me(@Req() req: any) { const {id,email,type,contactName,companyName,tier}=req.portalAccount;return {account:{id,email,type,contactName,companyName,tier}}; }
 
   @Public()
   @UseGuards(PortalAuthGuard)
@@ -85,12 +86,12 @@ export class CustomerPortalController {
   @Public()
   @UseGuards(PortalAuthGuard)
   @Get('customer/catalog/products')
-  customerCatalog(@Query() query: CatalogQueryDto, @Req() req: any) { return this.portal.getCatalog(query, req.portalAccount.type); }
+  customerCatalog(@Query() query: CatalogQueryDto, @Req() req: any) { return this.portal.getCatalog(query, req.portalAccount.type, req.portalAccount.tierId); }
 
   @Public()
   @UseGuards(PortalAuthGuard)
   @Get('customer/catalog/products/:id')
-  customerProductDetail(@Param('id') id: string, @Req() req: any) { return this.portal.getProductDetail(id, req.portalAccount.type); }
+  customerProductDetail(@Param('id') id: string, @Req() req: any) { return this.portal.getProductDetail(id, req.portalAccount.type, req.portalAccount.tierId); }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('admin/accounts/pending')
@@ -121,4 +122,15 @@ export class CustomerPortalController {
   @ApiBearerAuth()
   @Roles(...MAPPING_ROLES)
   mapping(@Body() dto: UpsertPortalPriceListMappingDto, @CurrentUser() user: any) { return this.portal.upsertMapping(dto, user.sub ?? user.id); }
+  @Get('admin/accounts') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
+  accounts() {return this.portal.listAccounts();}
+  @Get('admin/tiers') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
+  tiers() {return this.portal.listTiers();}
+  @Post('admin/tiers') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
+  createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {return this.portal.saveTier(dto,user.sub??user.id);}
+  @Patch('admin/tiers/:id') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
+  editTier(@Param('id') id:string,@Body() dto:PortalTierDto,@CurrentUser() user:any) {return this.portal.saveTier(dto,user.sub??user.id,id);}
+  @Patch('admin/accounts/:id/tier') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
+  assignTier(@Param('id') id:string,@Body() dto:AssignPortalTierDto,@CurrentUser() user:any) {return this.portal.assignTier(id,dto,user.sub??user.id);}
+
 }

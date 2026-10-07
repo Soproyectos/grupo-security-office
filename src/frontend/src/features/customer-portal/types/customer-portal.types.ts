@@ -4,6 +4,9 @@ export interface PortalAccount {
   id: string
   email: string
   type: PortalAccountType
+  contactName?: string
+  companyName?: string
+  tier?: { id: string; name: string; isActive: boolean } | null
 }
 
 export interface CatalogProduct {
@@ -37,7 +40,7 @@ export interface PortalRegistration {
   companyName: string
   documentId?: string
   phone?: string
-  type: PortalAccountType
+  type?: PortalAccountType
 }
 
 export interface PendingPortalAccount extends PortalAccount {

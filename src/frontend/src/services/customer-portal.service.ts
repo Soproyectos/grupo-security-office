@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { CatalogFilters, CatalogProduct, CatalogResponse, PendingPortalAccount, PortalAccount, PortalRegistration } from '../features/customer-portal/types/customer-portal.types'
 
-const portalApi = axios.create({
+export const portalApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },

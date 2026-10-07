@@ -23,13 +23,13 @@ export class PortalAuthGuard implements CanActivate {
     }
 
     const [account, session] = await Promise.all([
-      this.prisma.portalAccount.findUnique({ where: { id: payload.sub } }),
+      this.prisma.portalAccount.findUnique({ where: { id: payload.sub }, include:{tier:{select:{id:true,name:true,isActive:true}}} }),
       this.prisma.portalSession.findUnique({ where: { jti: payload.jti } }),
     ]);
     if (!account || account.state !== 'ACTIVE' || !session || session.accountId !== account.id || session.revokedAt || session.expiresAt <= new Date()) {
       throw new UnauthorizedException('Sesión de cliente finalizada');
     }
-    req.portalAccount = { id: account.id, email: account.email, type: account.type, customerId: account.customerId, jti: payload.jti };
+    req.portalAccount = { id: account.id, email: account.email, type: account.type, customerId: account.customerId, contactName:account.contactName, companyName:account.companyName, tierId:account.tierId, tier:account.tier, jti: payload.jti };
     return true;
   }
 }
