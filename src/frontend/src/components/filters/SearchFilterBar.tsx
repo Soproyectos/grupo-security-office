@@ -16,7 +16,13 @@ export type SearchFilterChip = {
   onRemove: () => void
 }
 
-export type SidebarAccordionId = 'categories' | 'brands' | 'lifecycle' | 'status'
+export type SidebarAccordionId =
+  | 'categories'
+  | 'brands'
+  | 'lifecycle'
+  | 'status'
+  | 'entities'
+  | 'actions'
 
 export type SidebarFilterSection = {
   id: SidebarAccordionId
@@ -145,6 +151,8 @@ export function SearchFilterBar({
     brands: false,
     lifecycle: false,
     status: false,
+    entities: true,
+    actions: false,
   })
 
   const panelId = useId()

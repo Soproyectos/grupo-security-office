@@ -297,7 +297,7 @@ function humanizeKey(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-export function fieldLabel(key: string, entity?: string): string {
+export function fieldLabel(key: string, _entity?: string): string {
   return FIELD_LABELS[key] ?? humanizeKey(key)
 }
 

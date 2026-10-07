@@ -1,5 +1,5 @@
 import { canPublishPromotions } from '../../features/promotions/promotions.service'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -34,7 +34,7 @@ export default function Header() {
   const commercialMenuRef = useRef<HTMLDivElement>(null)
   const userMenuButtonRef = useRef<HTMLDivElement>(null)
   const userMenuRef = useRef<HTMLDivElement>(null)
-  const notificationsButtonRef = useRef<HTMLDivElement>(null)
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const queryClient = useQueryClient()
@@ -214,7 +214,7 @@ export default function Header() {
                   </svg>
                   {(unreadCount ?? 0) > 0 && (
                     <span className="absolute -top-1 -right-1 w-5 h-5 min-w-[18px] bg-[var(--color-error)] text-[var(--color-text-inverse)] text-[10px] font-semibold rounded-full flex items-center justify-center">
-                      {unreadCount > 9 ? '9+' : unreadCount}
+                      {(unreadCount ?? 0) > 9 ? '9+' : unreadCount}
                     </span>
                   )}
                 </div>
