@@ -71,7 +71,7 @@ export default function HomeHero() {
             <img
               src={banner.src}
               alt={slideIndex === index ? banner.alt : ''}
-              className="h-64 w-full object-cover sm:h-80 lg:h-[420px]"
+              className="h-64 w-full object-cover sm:h-80 lg:h-[300px]"
               loading={slideIndex === 0 ? 'eager' : 'lazy'}
             />
           </Link>
