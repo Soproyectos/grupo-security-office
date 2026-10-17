@@ -107,7 +107,11 @@ export default function DashboardGrants({ userId }: { userId: string }) {
       }
 
       const perm = blockPermission(blockId)
-      next.has(perm) ? next.delete(perm) : next.add(perm)
+      if (next.has(perm)) {
+        next.delete(perm)
+      } else {
+        next.add(perm)
+      }
     })
   }
 
@@ -149,7 +153,11 @@ export default function DashboardGrants({ userId }: { userId: string }) {
                   onClick={() =>
                     setExpanded((prev) => {
                       const next = new Set(prev)
-                      next.has(pack.id) ? next.delete(pack.id) : next.add(pack.id)
+                      if (next.has(pack.id)) {
+                        next.delete(pack.id)
+                      } else {
+                        next.add(pack.id)
+                      }
                       return next
                     })
                   }
