@@ -14,6 +14,7 @@ import { validate } from 'class-validator';
 import * as request from 'supertest';
 import { fakePriceFindMany, FakePriceRow } from '../../__test__/helpers/fake-price-db';
 import { PublicCatalogService } from './public-catalog.service';
+import { StorefrontService } from '../storefront/storefront.service';
 import { PublicPricingService } from './public-pricing.service';
 import { PublicProductsController } from './public-products.controller';
 import { PublicProductSearchDto } from './dto/public-product-search.dto';
@@ -217,6 +218,13 @@ describe('PublicCatalogService.search', () => {
 
 describe('PublicProductsController', () => {
   let app: INestApplication;
+  /** Stub de storefront: aplica precios de cliente como identidad (pasa los datos tal cual). */
+  const storefrontService = { applyCustomerPrices: jest.fn(async (data: unknown) => data) };
+  // clearAllMocks borra llamadas pero no implementaciones; reafirmarla por si algún
+  // reset exterior la elimina.
+  beforeEach(() => {
+    storefrontService.applyCustomerPrices.mockImplementation(async (data: unknown) => data);
+  });
   const catalogService = {
     search: jest.fn(),
     getDetail: jest.fn(),
@@ -233,7 +241,10 @@ describe('PublicProductsController', () => {
 
     const moduleFixture = await Test.createTestingModule({
       controllers: [PublicProductsController],
-      providers: [{ provide: PublicCatalogService, useValue: catalogService }],
+      providers: [
+        { provide: PublicCatalogService, useValue: catalogService },
+        { provide: StorefrontService, useValue: storefrontService },
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -268,7 +279,10 @@ describe('PublicProductsController', () => {
     const wrapped = (
       await Test.createTestingModule({
         controllers: [PublicProductsController],
-        providers: [{ provide: PublicCatalogService, useValue: catalogService }],
+        providers: [
+          { provide: PublicCatalogService, useValue: catalogService },
+          { provide: StorefrontService, useValue: storefrontService },
+        ],
       }).compile()
     ).createNestApplication();
     wrapped.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
