@@ -1,0 +1,562 @@
+{
+  "source": "https://gruposecurity.co",
+  "extractedAt": "2026-10-13",
+  "brands": ["Hikvision", "Ezviz", "HiLook", "ZKTeco", "TP-Link", "Yale"],
+  "brandsNote": "Marcas identificables en la franja de logos de la home/nosotros y en el texto institucional. Algunos logos de la franja (imágenes 'Diseno-sin-titulo-18.jpg', 'Diseno-sin-titulo-16.jpg', 'Screenshot_3.jpg', 'Screenshot_4.jpg') no pudieron identificarse por nombre; ver stripFiles en home.brandStrip. AKT aparece únicamente como marca del premio (moto) en la promoción, no como marca de producto de seguridad.",
+  "contacts": {
+    "whatsapp": "3160275100",
+    "whatsappUrl": "https://wa.me/3160275100",
+    "phones": ["3160275100"],
+    "emails": [],
+    "hours": null,
+    "notes": "El único dato de contacto institucional publicado en las páginas extraídas es el enlace WhatsApp del botón 'Conoce más' de la home (https://wa.me/3160275100). No se encontraron correos ni horarios de atención en las páginas institucionales. Las páginas de soporte dirigían a un formulario de contacto (/contacto/) que solo lista direcciones de sedes."
+  },
+  "locations": [
+    { "city": "Pereira", "address": "Calle 16 #5-38 Pereira, Risaralda.", "addressFooter": "Cll 16 # 5-38 Centro.", "mapsUrl": "https://www.google.com/maps?ll=4.815702,-75.691566&z=15&t=m&hl=es-AR&gl=US&mapclient=embed&cid=6540715834851760782" },
+    { "city": "Armenia", "address": "Calle 22 #14-02, Armenia, Quindío", "addressFooter": "Cl. 22 #14 - 02, Centro", "mapsUrl": "https://www.google.com/maps?ll=4.532233,-75.674024&z=15&t=m&hl=es-AR&gl=US&mapclient=embed&cid=9049771797066536516" },
+    { "city": "Manizales", "address": "Cra. 25 # 68-63 Palermo Manizales, Caldas", "addressFooter": "Cra. 25 # 68-63 Palermo", "mapsUrl": "https://www.google.com/maps?ll=5.053522,-75.488066&z=16&t=m&hl=es-AR&gl=US&mapclient=embed&cid=689264418233652958" },
+    { "city": "Cali", "address": "Cra. 8 #18-2, Centro, Cali, Valle del Cauca.", "addressFooter": "Carrera 8va # 18-02 L2 Centro.", "mapsUrl": "https://www.google.com/maps?ll=3.426927,-76.533706&z=16&t=m&hl=es-AR&gl=US&mapclient=embed&cid=13174772175767521144" }
+  ],
+  "locationsNote": "La home y el footer listan las sedes en orden Armenia, Cali, Manizales, Pereira. La página de contacto las lista en orden Pereira, Armenia, Manizales, Cali. Ambas variantes de dirección se conservan tal cual (address = contacto; addressFooter = footer).",
+  "solutions": [
+    { "name": "Cámaras de seguridad", "summary": null, "note": "En la home aparece como tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Sistemas de alarma", "summary": null, "note": "Tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Control de acceso", "summary": null, "note": "Tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Cableado Estructurado", "summary": null, "note": "Tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Parking", "summary": null, "note": "Tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Smart Home", "summary": null, "note": "Tile del bloque 'Seguridad electrónica' sin descripción publicada." },
+    { "name": "Proyectos", "summary": "Seguridad con visión de futuro. Contamos con tecnología de vanguardia, acceso remoto, y protección avanzada que se adapta a tus necesidades. Confía en nosotros para proteger lo que más valoras.", "note": "Bloque adicional en la home, con texto propio." }
+  ],
+  "footerSolutionsList": ["CCTV - Smart Home.", "Control de acceso - Videoportería.", "Alarmas e intrusión.", "Cableado estructurado."],
+  "stats": {
+    "productsSold": 0,
+    "happyClients": 1,
+    "satisfaction": "0 %",
+    "note": "Valores publicados literalmente en el sitio ('Productos vendidos 0', 'Clientes felices 1', 'Rango de satisfacción 0 %') en home y nosotros. Son placeholders/contadores animados, no cifras reales."
+  },
+  "home": {
+    "sourceUrl": "https://gruposecurity.co/",
+    "title": "Grupo Security",
+    "hero": {
+      "headline": "Seguridad electrónica",
+      "subheadline": "Funciones avanzadas para la seguridad de sus instalaciones",
+      "cta": { "label": "Conoce más", "href": "https://wa.me/3160275100" },
+      "bannerImages": [
+        "https://gruposecurity.co/wp-content/uploads/2026/07/BANNERS-PAG-WEB-1500-X-400-PX-22.png",
+        "https://gruposecurity.co/wp-content/uploads/2026/06/BANNERS-PAG-WEB-1500-X-400-PX-19.png"
+      ]
+    },
+    "sections": [
+      {
+        "title": "Seguridad electrónica",
+        "body": "Funciones avanzadas para la seguridad de sus instalaciones",
+        "items": [
+          "Cámaras de seguridad",
+          "Sistemas de alarma",
+          "Control de acceso",
+          "Cableado Estructurado",
+          "Parking",
+          "Smart Home",
+          "Proyectos"
+        ]
+      },
+      {
+        "title": "Proyectos",
+        "body": "Seguridad con visión de futuro. Contamos con tecnología de vanguardia, acceso remoto, y protección avanzada que se adapta a tus necesidades. Confía en nosotros para proteger lo que más valoras."
+      },
+      {
+        "title": "Soluciones personalizadas de seguridad",
+        "body": "Brindamos servicios a tu medida para proteger lo que más te importa; ofrecemos cámaras de vigilancia, sistemas de alarmas y control de acceso.",
+        "items": [
+          { "name": "Protección", "body": "Contamos con equipos avanzados para garantizar tu seguridad." },
+          { "name": "Vigilancia", "body": "Cámaras y monitoreo de alto rendimiento" },
+          { "name": "Control", "body": "Exclusividad de acceso para ti y tu círculo de confianza" }
+        ]
+      },
+      {
+        "title": "Servicios (tarjetas)",
+        "note": "La home muestra 3 tarjetas de servicio enlazadas (no 4). La cuarta tarjeta mencionada en el brief no aparece en el HTML extraído.",
+        "items": [
+          {
+            "title": "Servicio Técnico",
+            "href": "https://gruposecurity.co/punto-de-servicio-tecnico-autorizado-hikvision-pstah/",
+            "body": "Ofrecemos servicio tecnico especializado, ya que contamos con una robusta plantilla de profesionales con amplia trayectoria."
+          },
+          {
+            "title": "Certificaciones",
+            "href": "https://gruposecurity.co/certificaciones/",
+            "body": "Dictamos cursos, capacitaciones y certificaciones en seguridad electrónica. Además brindamos asesorías y consultorías así como diseños de proyectos complejos para empresas"
+          },
+          {
+            "title": "Punto de soporte Hikvision",
+            "href": "https://gruposecurity.co/soporte-tecnico-grupo-security/",
+            "body": "Contamos con el aval y la certificación para ser punto de Servicio Técnico autorizado Hikvision en el eje cafetero y Valle Del Cauca, contamos con sedes en Pereira, Armenia, Manizales y Cali"
+          }
+        ]
+      },
+      {
+        "title": "Hikvision (partner)",
+        "body": "Somos distribuidores oficiales de Hikvision, líder mundial en soluciones de videovigilancia y seguridad.",
+        "subHeading": "Somos expertos en desarrollo de proyectos",
+        "bannerImage": "https://gruposecurity.co/wp-content/uploads/2026/04/Copia-de-Quieres-tener-seguridad-14-1024x170.png"
+      },
+      {
+        "title": "Distribuidores mayoristas de seguridad electrónica.",
+        "body": "Grupo Security además de ser Partner de Hikvision (quien es líder mundial en fabricación de dispositivos de seguridad electrónica) es Especialista en el Diseño de Proyectos, realiza asesorías, consultorías y también dicta cursos, capacitaciones y Certificaciones HCSA.",
+        "stats": {
+          "productsSold": 0,
+          "happyClients": 1,
+          "satisfaction": "0 %"
+        }
+      }
+    ],
+    "brandStrip": {
+      "note": "Franja de logos al pie de la home.",
+      "brands": ["Hikvision", "Ezviz", "ZKTeco", "TP-Link", "Yale"],
+      "stripFiles": [
+        "https://gruposecurity.co/wp-content/uploads/2024/08/Diseno-sin-titulo-10.png",
+        "https://gruposecurity.co/wp-content/uploads/2024/05/hikpng-1024x137.png",
+        "https://gruposecurity.co/wp-content/uploads/2024/08/Diseno-sin-titulo-18.jpg",
+        "https://gruposecurity.co/wp-content/uploads/2024/08/Diseno-sin-titulo-16.jpg",
+        "https://gruposecurity.co/wp-content/uploads/2026/04/Screenshot_4.jpg",
+        "https://gruposecurity.co/wp-content/uploads/2024/05/ZKTECO-LOGO-1024x512.png",
+        "https://gruposecurity.co/wp-content/uploads/2025/11/TPLINK_Logo_2-1024x497.png",
+        "https://gruposecurity.co/wp-content/uploads/2025/11/yale-logo-1024x1024.png",
+        "https://gruposecurity.co/wp-content/uploads/2026/04/Screenshot_3.jpg"
+      ]
+    },
+    "footer": {
+      "tagline": "Distribuidor Autorizado Hikvision - Ezviz.",
+      "sedesHeading": "Nuestras sedes:",
+      "sedes": [
+        "Armenia: Cl. 22 #14 - 02, Centro",
+        "Cali: Carrera 8va # 18-02 L2 Centro.",
+        "Manizales: Cra. 25 # 68-63 Palermo",
+        "Pereira: Cll 16 # 5-38 Centro."
+      ],
+      "solucionesHeading": "Soluciones:",
+      "soluciones": [
+        "CCTV - Smart Home.",
+        "Control de acceso - Videoportería.",
+        "Alarmas e intrusión.",
+        "Cableado estructurado."
+      ],
+      "copyright": "Copyright © 2026 Grupo Security SAS Todos los derechos reservados."
+    }
+  },
+  "pages": [
+    {
+      "slug": "nosotros",
+      "title": "Nosotros",
+      "sourceUrl": "https://gruposecurity.co/about-us/",
+      "sections": [
+        {
+          "heading": "Nosotros",
+          "body": "Grupo Security SAS es una empresa líder en tecnología de seguridad electrónica, con presencia en Pereira, Armenia, Manizales y Cali. Nos destacamos como Distribuidores Autorizados de las principales marcas del sector, siendo socios estratégicos de Hikvision, líder mundial en soluciones de videovigilancia.\nNuestra trayectoria, conocimiento técnico y compromiso con la excelencia nos permiten ofrecer productos confiables, asesoría especializada y un servicio cercano, consolidando relaciones duraderas con clientes y aliados que confían en nuestra experiencia y respaldo."
+        },
+        {
+          "heading": "Equipo (testimonios internos)",
+          "items": [
+            { "name": "Jenifer Loaiza", "role": "Área de compras", "quote": "Ofrecemos productos de seguridad electrónica de alta calidad que se ajustan perfectamente a nuestras necesidades de adquisición." },
+            { "name": "Leydi Colorado", "role": "Área de contabilidad", "quote": "La transparencia y precisión en los registros financieros de Grupo Security SAS hacen que el trabajo sea una experiencia fluida y confiable para nuestro departamento." },
+            { "name": "Milena Monrroy", "role": "Área de marketing", "quote": "La innovación constante y la sólida reputación de Grupo Security SAS nos permiten desarrollar estrategias de marketing efectivas para promover los productos en el mercado." },
+            { "name": "Felipe Giraldo", "role": "Lider de ventas", "quote": "La excelencia en el servicio al cliente y la disponibilidad de productos de vanguardia hacen que recomendar Grupo Security SAS sea una elección fácil para nuestros clientes, impulsando así nuestras ventas" }
+          ]
+        },
+        {
+          "heading": "Somos distribuidores mayoristas de tecnología de seguridad electrónica.",
+          "body": "Grupo Security además de ser Partner de Hikvision (quien es líder mundial en fabricación de dispositivos de seguridad electrónica) es Especialista en el Diseño de Proyectos, realiza asesorías, consultorías y también dicta cursos, capacitaciones y Certificaciones HCSA.",
+          "stats": {
+            "productsSold": 0,
+            "happyClients": 1,
+            "satisfaction": "0 %"
+          }
+        },
+        {
+          "heading": "Conoce nuestra Misión y Visión",
+          "items": [
+            { "name": "Misión", "body": "En Grupo Security trabajamos para ofrecer soluciones integrales en tecnología de seguridad electrónica que garanticen confianza, eficiencia y tranquilidad. Nuestro compromiso es brindar productos de alta calidad y un acompañamiento especializado, respaldado por la experiencia, el conocimiento y la pasión de nuestro equipo, contribuyendo al crecimiento y protección de nuestros clientes y aliados." },
+            { "name": "Visión", "body": "Ser reconocidos a nivel nacional como el aliado estratégico más confiable en soluciones de seguridad electrónica, destacándonos por la innovación, el servicio especializado y el compromiso con la excelencia. Buscamos fortalecer nuestra presencia en el mercado, impulsando el crecimiento tecnológico de nuestros clientes y contribuyendo a construir entornos más seguros, conectados y sostenibles." }
+          ]
+        },
+        {
+          "heading": "Nuestros clientes nos recomiendan",
+          "items": [
+            { "name": "Carla Castro", "role": "Cliente Satisfecho – Empresaria", "quote": "Con Grupo Security todo fue sencillo: consultoría clara y equipos de excelente calidad. Hoy monitorear nuestro negocio es mucho más fácil gracias al software intuitivo.." },
+            { "name": "John Bermúdez", "role": "Cliente Satisfecho – Empleado", "quote": "Como instalador, uno valora cuando encuentra un proveedor que realmente sabe lo que hace. En Grupo Security siempre recibo una asesoría clara, productos de muy buena calidad y precios muy competitivos" }
+          ]
+        },
+        {
+          "heading": "Conoce a nuestros líderes en Ventas",
+          "items": [
+            { "name": "Alexandra González", "role": "Líder de ventas Pereira" },
+            { "name": "Elisa Rozo", "role": "Líder de ventas Manizales" },
+            { "name": "Gloria Herrán", "role": "Líder de ventas Armenia" },
+            { "name": "Laura Moreno", "role": "Lider de ventas Cali" }
+          ]
+        }
+      ],
+      "brandStrip": {
+        "brands": ["Ezviz", "Hikvision", "TP-Link", "ZKTeco", "Yale"],
+        "stripFiles": [
+          "https://gruposecurity.co/wp-content/uploads/2024/05/ezviz-logo-png-1024x276-e1494948063828.png",
+          "https://gruposecurity.co/wp-content/uploads/2024/05/hikpng-1024x137.png",
+          "https://gruposecurity.co/wp-content/uploads/2025/11/Diseno-sin-titulo.png",
+          "https://gruposecurity.co/wp-content/uploads/2025/11/TPLINK_Logo_2-1024x497.png",
+          "https://gruposecurity.co/wp-content/uploads/2024/05/ZKTECO-LOGO-1024x512.png",
+          "https://gruposecurity.co/wp-content/uploads/2025/11/yale-logo-1024x1024.png"
+        ]
+      }
+    },
+    {
+      "slug": "servicios",
+      "title": "Servicios",
+      "sourceUrl": "https://gruposecurity.co/servicios/",
+      "sections": [
+        {
+          "heading": "Portafolio de Servicios",
+          "body": "Conoce nuestro Portafolio de Servicios. Descarga nuestro portafolio de servicios.",
+          "downloads": [
+            { "label": "Descargar", "href": "https://gruposecurity.co/wp-content/uploads/2026/06/Portafolio-de-servicios-2026.pdf" }
+          ],
+          "note": "El contenido textual de esta página es mínimo; el detalle está en el PDF del portafolio, no extraído aquí."
+        }
+      ]
+    },
+    {
+      "slug": "servicio-pstah-hikvision",
+      "title": "Punto de Servicio Técnico Autorizado Hikvision (PSTAH)",
+      "sourceUrl": "https://gruposecurity.co/punto-de-servicio-tecnico-autorizado-hikvision-pstah/",
+      "sections": [
+        {
+          "heading": "Bienvenida",
+          "body": "Bienvenido a nuestro servicio técnico autorizado respaldado por Hikvision, Hilook y Ezviz.\nContamos con un equipo altamente calificado dispuesto a solucionar de manera eficiente y confiable tus necesidades de mantenimiento y reparación de equipos."
+        },
+        {
+          "heading": "Servicio Técnico Autorizado",
+          "body": "Para realizar un ingreso por garantía, te ofrecemos un proceso rápido y sencillo:",
+          "items": [
+            "Encuentra nuestra sede más cercana en Armenia, Cali, Manizales o Pereira.",
+            "Lleva tu equipo junto con todos sus accesorios.",
+            "Permite que nuestro personal realice el diagnóstico y la reparación si es necesario.",
+            "Recoge tu equipo una vez completado el proceso y continúa disfrutando de los beneficios de su instalación."
+          ]
+        },
+        {
+          "heading": "Nuestros servicios incluyen:",
+          "items": [
+            "Atención a garantías.",
+            "Asistencia técnica profesional especializada.",
+            "Mantenimiento preventivo y correctivo.",
+            "Diagnóstico y reparación integral.",
+            "Actualizaciones de firmware.",
+            "Desvinculación de dispositivos.",
+            "Restablecimiento de contraseñas."
+          ]
+        },
+        {
+          "heading": "Compromiso",
+          "body": "Nuestro compromiso es ofrecerle la mejor solución garantizando la calidad, eficacia y la atención que solo el personal capacitado y certificado por Hikvision puede brindar. Trabajamos para mantener tus equipos en perfecto estado de funcionamiento."
+        }
+      ]
+    },
+    {
+      "slug": "soporte-tecnico",
+      "title": "Soporte Técnico Grupo Security",
+      "sourceUrl": "https://gruposecurity.co/soporte-tecnico-grupo-security/",
+      "sections": [
+        {
+          "heading": "Soporte Técnico Especializado",
+          "body": "Ofrecemos Soporte Técnico Especializado, ya que contamos con una robusta plantilla de profesionales con amplia trayectoria y las certificaciones correspondientes, lo cual es garantía que sus equipos están en las mejores manos.\nEn Grupo Security SAS contamos con profesionales capacitados y certificados para brindarte asesoría confiable en seguridad electrónica.\nTe acompañamos sin costo adicional en la configuración, puesta en marcha y correcto funcionamiento de los productos adquiridos con nosotros.\nNuestro personal altamente capacitado está disponible para atenderte y guiarte."
+        },
+        {
+          "heading": "Nuestro Soporte",
+          "items": [
+            "Restablecimiento de Contraseñas.",
+            "Actualizaciones de Firmware.",
+            "Soporte o asistencia presencial y telefónica para todas las marcas y categorías adquiridas.",
+            "Capacitaciones sobre el correcto manejo de los equipos, incluyendo la manipulación adecuada y puesta en funcionamiento.",
+            "Pruebas diagnósticas.",
+            "Pruebas de compatibilidad y funcionamiento."
+          ]
+        },
+        {
+          "heading": "Contacto",
+          "body": "Contactar al personal de Soporte Técnico",
+          "link": "https://gruposecurity.co/contacto/"
+        }
+      ]
+    },
+    {
+      "slug": "certificaciones",
+      "title": "Certificaciones",
+      "sourceUrl": "https://gruposecurity.co/certificaciones/",
+      "sections": [
+        {
+          "heading": "Certificaciones HCSA Hikvision.",
+          "body": "Desde Grupo Security SAS queremos impulsar el crecimiento profesional para asesores comerciales, técnicos, instaladores, o integradores de seguridad electrónica. A través nuestro programa integral de certificaciones, nos enfocamos en brindar conocimientos teóricos y prácticos sobre productos de seguridad, garantizando así niveles óptimos de desempeño en la implementación y operación."
+        },
+        {
+          "heading": "Certificaciones",
+          "body": "El portafolio de Certificaciones abarca los siguientes temas:",
+          "items": [
+            "CCTV",
+            "Sistema de alarmas",
+            "Intercomunicaciones",
+            "Control de Acceso",
+            "Manejo de software de gestión Hik-central."
+          ]
+        },
+        {
+          "heading": "Cierre",
+          "body": "Los diferentes tópicos brindan la posibilidad de adquirir habilidades especializadas en diferentes áreas de la seguridad electrónica, favoreciendo escenarios laborales en donde se potencia la posibilidad de abordar proyectos más complejos y diversos.\nSi deseas conocer nuestro calendario de certificaciones comunícate con nosotros:"
+        }
+      ]
+    },
+    {
+      "slug": "desarrollo-de-proyectos",
+      "title": "Desarrollo de Proyectos",
+      "sourceUrl": "https://gruposecurity.co/diseno-de-proyectos/",
+      "sections": [
+        {
+          "heading": "Desarrollo de Proyectos",
+          "body": "Grupo Security SAS es una empresa líder en tecnología y seguridad electrónica con una presencia significativa en varias regiones del país. Con cuatro sedes estratégicamente ubicadas en Pereira, Armenia, Manizales y Cali, la empresa garantiza una cobertura amplia y eficiente para atender las necesidades de sus clientes en diferentes áreas."
+        },
+        {
+          "heading": "CONVENIOS DE DISTRIBUCIÓN",
+          "body": "Contamos con convenios de distribución con las marcas líderes en el mercado de productos de seguridad, como Hikvision y Ezviz. Estos acuerdos nos permiten ofrecer a nuestros clientes lo último en tecnología de seguridad, garantizando productos de alta calidad y con las certificaciones necesarias."
+        },
+        {
+          "heading": "PERSONAL IDÓNEO Y PROYECTOS A MEDIDA",
+          "body": "En Grupo Security SAS, nos enorgullecemos de contar con un equipo de profesionales altamente capacitados y especializados en el desarrollo de proyectos de seguridad. Ofrecemos soluciones a medida que se adaptan a las necesidades específicas de cada cliente, abarcando desde pequeñas empresas hasta grandes corporaciones. Nuestro enfoque integral nos permite:",
+          "items": [
+            { "name": "Evaluación y Consultoría", "body": "Analizamos las necesidades y los riesgos específicos de cada cliente para diseñar una solución de seguridad personalizada." },
+            { "name": "Diseño e Implementación", "body": "Desarrollamos proyectos que integran las tecnologías más avanzadas del mercado, asegurando una instalación eficiente y efectiva." },
+            { "name": "Mantenimiento y Soporte", "body": "Proveemos un servicio continuo de mantenimiento y soporte técnico, garantizando el funcionamiento óptimo de todos los sistemas instalados." },
+            { "name": "Atención al Cliente", "body": "Además de la venta y distribución de productos de seguridad, brindamos una atención personalizada en nuestras tiendas físicas, donde los clientes pueden recibir asesoramiento experto y soluciones adaptadas a sus necesidades. Nuestro compromiso con la satisfacción del cliente es primordial, y trabajamos constantemente para ofrecer el mejor servicio en cada interacción." }
+          ]
+        },
+        {
+          "heading": "Innovación y Futuro",
+          "body": "Grupo Security SAS se mantiene a la vanguardia de la innovación en seguridad electrónica, explorando continuamente nuevas tecnologías y métodos para mejorar nuestros servicios. Estamos comprometidos con la excelencia y la seguridad de nuestros clientes, y nuestro objetivo es seguir liderando el mercado con soluciones seguras, confiables y efectivas"
+        }
+      ]
+    },
+    {
+      "slug": "soluciones",
+      "title": "Soluciones",
+      "sourceUrl": "https://gruposecurity.co/soluciones/",
+      "sections": [
+        {
+          "heading": "Add Your Heading Text Here",
+          "body": null,
+          "note": "La página no tiene contenido institucional real: muestra dos encabezados placeholder 'Add Your Heading Text Here' junto a imágenes. No se fabricó texto."
+        }
+      ],
+      "placeholder": true
+    },
+    {
+      "slug": "contacto",
+      "title": "Contacto",
+      "sourceUrl": "https://gruposecurity.co/contacto/",
+      "sections": [
+        {
+          "heading": "Conoce nuestras sedes",
+          "items": [
+            { "name": "SEDE PEREIRA", "body": "Calle 16 #5-38 Pereira, Risaralda.", "mapsUrl": "https://www.google.com/maps?ll=4.815702,-75.691566&z=15&t=m&hl=es-AR&gl=US&mapclient=embed&cid=6540715834851760782" },
+            { "name": "SEDE ARMENIA", "body": "Calle 22 #14-02, Armenia, Quindío", "mapsUrl": "https://www.google.com/maps?ll=4.532233,-75.674024&z=15&t=m&hl=es-AR&gl=US&mapclient=embed&cid=9049771797066536516" },
+            { "name": "SEDE MANIZALES", "body": "Cra. 25 # 68-63 Palermo Manizales, Caldas", "mapsUrl": "https://www.google.com/maps?ll=5.053522,-75.488066&z=16&t=m&hl=es-AR&gl=US&mapclient=embed&cid=689264418233652958" },
+            { "name": "SEDE CALI", "body": "Cra. 8 #18-2, Centro, Cali, Valle del Cauca.", "mapsUrl": "https://www.google.com/maps?ll=3.426927,-76.533706&z=16&t=m&hl=es-AR&gl=US&mapclient=embed&cid=13174772175767521144" }
+          ]
+        }
+      ],
+      "note": "No se encontraron teléfonos, correos ni formulario con campos en el HTML extraído; solo direcciones y enlaces de mapas."
+    },
+    {
+      "slug": "politica-garantias-cambios-devolucion",
+      "title": "Política de garantías, cambios y devolución",
+      "sourceUrl": "https://gruposecurity.co/politica-de-garantias-cambios-y-devolucion/",
+      "sections": [
+        {
+          "heading": "Nuestras Políticas.",
+          "body": "En Grupo Security, nos comprometemos a brindarte la mejor experiencia posible. Nuestra garantía de satisfacción significa que haremos todo lo posible para asegurar que estés completamente satisfecho con tu compra. Ofrecemos cambios gratuitos y devoluciones flexibles, para que puedas comprar con confianza.",
+          "downloads": [
+            { "label": "Políticas de Garantía", "href": "https://gruposecurity.co/wp-content/uploads/2024/05/Politica-de-garantia-cambio-y-devolucion-Grupo-Security-SAS-1.pdf" },
+            { "label": "Formulario", "href": "https://gruposecurity.co/wp-content/uploads/2024/05/formulario-cambo-de-mercancia.pdf" }
+          ]
+        },
+        {
+          "heading": "CONDICIONES DE GARANTIAS",
+          "body": "Grupo Security SAS presenta las CONDICIONES DE GARANTIA, donde se informa a nuestros clientes de forma clara y precisa los derechos y deberes que tienen al momento de adquirir alguno de nuestros productos. Teniendo en cuenta lo establecido por la **ley 1480 de 2011, citamos algunos puntos de interés general establecidos en dicho estatuto con el fin de proteger la integridad de nuestros clientes como consumidores."
+        },
+        {
+          "heading": "DEFINICIONES",
+          "items": [
+            { "name": "Garantía", "body": "Obligación temporal, solidaria a cargo del productor y el proveedor, de responder por el buen estado del producto y la conformidad del mismo con las condiciones de idoneidad, calidad y seguridad legalmente exigibles o las ofrecidas. La garantía legal no tendrá contraprestación adicional al precio del producto." },
+            { "name": "Garantía legal", "body": "Es la obligación, en los términos de esta ley, a cargo de todo productor y/o proveedor de responder por la calidad, idoneidad, seguridad y el buen estado y funcionamiento de los productos. En la prestación de servicios en el que el prestador tiene una obligación de medio, la garantía está dada, no por el resultado, sino por las condiciones de calidad en la prestación del servicio, según las condiciones establecidas en normas de carácter obligatorio, en las ofrecidas o en las ordinarias y habituales del mercado." },
+            { "name": "Promociones y ofertas", "body": "Ofrecimiento temporal de productos en condiciones especiales favorables o de manera gratuita como incentivo para el consumidor. Se tendrá también por promoción, el ofrecimiento de productos con un contenido adicional a la presentación habitual, en forma gratuita o a precio reducido, así como el que se haga por el sistema de incentivos al consumidor, tales como rifas, sorteos, concursos y otros similares, en dinero, en especie o con acumulación de puntos." },
+            { "name": "Derecho de retracto", "body": "este se concibe en el artículo 47 de la ley 1480 de 2011 como una potestad unilateral del consumidor de terminar un contrato de compraventa a su arbitrio y sin que el proveedor deba estar de acuerdo o se lo permita, es decir, es una facultad para que usted como comprador pueda arrepentirse después de la compra de un producto o de un servicio. Si en embargo, este no se puede ejercer en todas las condiciones las cuales están contempladas en dicho artículo." }
+          ]
+        },
+        {
+          "heading": "GARANTÍA",
+          "body": "La garantía para los productos ofrecidos por GRUPO SECURITY SAS, como cámaras de VIDEOVIGILANCIA, NVR, DVR, SISTEMAS DE VIDEO PORTERO O DE CONTROL DE ACCESO, MONITORES, y demás elementos de seguridad electrónica, tienen vigencia de 1 año a partir de la fecha de entrega del producto al comprador.\nLos accesorios como, cables, baterías, fuentes de poder, multitomas, productos con electroimanes, y demás accesorios que se puedan utilizar en instalaciones de seguridad electrónica que funcionen con corriente eléctrica tendrán una garantía de 3 meses a partir de la fecha de entrega del producto al comprador.\nEsta garantía cubre daños o mal funcionamiento del producto y sus accesorios, originados por defectos de fabricación."
+        },
+        {
+          "heading": "ASPECTOS INCLUIDOS EN LA GARANTÍA LEGAL.",
+          "items": [
+            "Como regla general, reparación totalmente gratuita de los defectos del bien, así como su transporte, de ser necesario, y el suministro oportuno de los repuestos. Si el bien no admite reparación, se procederá a su reposición o a la devolución del dinero.",
+            "En caso de repetirse la falla y atendiendo a la naturaleza del bien y a las características del defecto, se procederá a una nueva reparación o al cambio parcial o total del bien por otro de la misma especie, similares características o especificaciones técnicas, las cuales en ningún caso podrán ser inferiores a las del producto que dio lugar a la garantía.",
+            "Suministrar las instrucciones para la instalación, mantenimiento y utilización de los productos de acuerdo con la naturaleza de estos.",
+            "Disponer de asistencia técnica para la instalación, mantenimiento de los productos y su utilización, de acuerdo con la naturaleza de estos. La asistencia técnica podrá tener un costo adicional al precio.",
+            "Las partes, insumos, accesorios o componentes adheridos a los bienes inmuebles que deban ser cambiados por efectividad de garantía, podrán ser de igual o mejor calidad, sin embargo, no necesariamente idénticos a los originalmente instalados."
+          ]
+        },
+        {
+          "heading": "CONSTANCIAS DE RECIBO Y REPARACIÓN.",
+          "body": "Cuando se entregue un producto para hacer efectiva la garantía, Grupo Security SAS en su nombre deberá expedir una constancia de recibo conforme con las reglas previstas para la prestación de servicios que suponen la entrega de un bien, e indicará los motivos de la reclamación.\nCuando el producto sea reparado en cumplimiento de una garantía legal, Grupo Security SAS en su nombre estará obligado a entregar al integrador constancia de reparación indicando lo siguiente:",
+          "items": [
+            "Descripción de la reparación efectuada.",
+            "Las piezas reemplazadas o reparadas.",
+            "La fecha en que el consumidor hizo entrega del producto.",
+            "La fecha de devolución del producto."
+          ]
+        },
+        {
+          "heading": "EXONERACIÓN DE RESPONSABILIDAD DE LA GARANTÍA.",
+          "body": "Grupo Security SAS se exonerará de la responsabilidad que se deriva de la garantía, cuando demuestre que el defecto proviene de:",
+          "items": [
+            "Fuerza mayor o caso fortuito; (descarga eléctrica, inundaciones, etc.)",
+            "El hecho de un tercero.",
+            "El uso indebido del bien por parte del cliente. (mala instalación)",
+            "Que el cliente no atendió las instrucciones de instalación, uso o mantenimiento indicadas en el manual del producto y en la garantía. El contenido del manual de instrucciones deberá estar acorde con la complejidad del producto. Esta causal no podrá ser alegada si no se ha suministrado manual de instrucciones de instalación, uso o mantenimiento en idioma castellano.",
+            "Que el *sello de garantía se encuentre roto o presente alteraciones en la fecha allí plasmada"
+          ]
+        },
+        {
+          "heading": "RETRACTO",
+          "body": "El término máximo para ejercer el derecho de retracto será de cinco (5) días hábiles contados a partir de la entrega del bien o de la celebración del contrato en caso de la prestación de servicios.\nEl cliente deberá devolver el producto a GRUPO SECURITY SAS por los mismos medios y en las mismas condiciones en que lo recibió. Los costos de transporte y los demás que conlleve la devolución del bien serán cubiertos por el cliente.\nEl derecho de retracto aplica para los bienes o servicios adquiridos mediante financiación, ventas por internet, televisión o catálogos y métodos no tradicionales por ejemplo ventas puerta a puerta o por fuera del establecimiento de comercio. Los productos que usted compre en un establecimiento de comercio seguirán el trámite de cambio.\nSe exceptúan del derecho de retracto, los siguientes casos:",
+          "items": [
+            "En los contratos de prestación de servicios cuya prestación haya comenzado con el acuerdo del consumidor.",
+            "Contratos de suministro de bienes o servicios, en donde el precio este sujeto a cambios, por las variaciones del mercado financiero el cual GRUPO SECURITY S.A.S no pueda controlar.",
+            "En los contratos de suministro de bienes donde el cliente tuvo contacto directo con la tienda y el producto en el cual se utilizó medio de pago tradicional o efectivo.",
+            "En los contratos de adquisición de bienes cuyo producto no estaba en nuestro inventario y son solicitados bajo pedido directo con orden de compra, cotización firmada o por escrito por medio de cualquier medio de mensajería electrónica (WhatsApp, correo, etc.) del comprador."
+          ]
+        },
+        {
+          "heading": "Devolución de dinero (retracto)",
+          "body": "GRUPO SECURITY SAS deberá devolverle en dinero al consumidor todas las sumas pagadas sin que proceda a hacer descuentos o retenciones por concepto alguno. En todo caso la devolución del dinero al consumidor no podrá exceder de treinta (30) días calendario desde el momento en que ejerció el derecho."
+        },
+        {
+          "heading": "POLÍTICA DE CAMBIO",
+          "body": "Salvo que en las condiciones particulares de venta se establezca lo contrario, todos los Productos comprados en GRUPO SECURITY SAS podrán tener cambio, siempre que el Cliente comunique por escrito a GRUPO SECURITY SAS su intención, dentro de un plazo máximo de 3 (tres) días hábiles contados a partir de la fecha de entrega y siempre que el Usuario cumpla con el resto de requerimientos establecidas en este documento. Para dicho procedimiento debe diligenciar el *FORMULARIO CAMBIO DE MERCANCIA y enviarlo junto con el número de la factura de compra a los canales establecidos como correo electrónico, WhatsApp o nuestra página web.\nGRUPO SECURITY SAS contará con 3 (tres) días hábiles a partir de la recepción del *FORMULARIO CAMBIO DE MERCANCIA para dar aprobación o no de este procedimiento.\nCuando la devolución se solicita, siendo un error de orden de compra o cotización firmada por parte del cliente, GRUPO SECURITY SAS se reserva el derecho de aceptar o no dicho procedimiento."
+        },
+        {
+          "heading": "Causales de no aceptación de solicitud de devolución.",
+          "items": [
+            "No se hará devolución por ningún motivo si el producto es solicitado bajo pedido a nuestro proveedor por orden de compra del cliente; es decir, que NO era parte del stock de rotación al momento de recibir el pedido.",
+            "Cuando el producto presenta señales de mala manipulación (rayones, huellas de uso de herramientas, sucio etc.), con embalaje deteriorado y/o que no contengan todos los accesorios entregados, incluidos los manuales y la documentación de registro.",
+            "Que se haya adquirido por oferta o promoción.",
+            "Cuando las causas, sea por fallas del producto, en este caso se procederá con la garantía legal.",
+            "Cuando el cliente ha cambiado de opinión y ya no desea dicho producto.",
+            "Que el *sello de garantía se encuentre roto o presente alteraciones en la fecha allí plasmada."
+          ]
+        },
+        {
+          "heading": "Nota crédito",
+          "body": "Bajo ningún concepto se hará devolución de dinero. Se generará una nota crédito a favor del cliente que podrá reducir su cuenta por pagar, o servirá de anticipo para su próxima compra; esta tendrá validez por un año a partir de su elaboración.\nUna vez finalizado el plazo de 3 (tres) días hábiles, GRUPO SECURITY SAS no aceptará devoluciones ni cancelaciones por compras de Productos incorrectos o cancelaciones de servicios."
+        },
+        {
+          "heading": "Producto dañado durante el envío.",
+          "body": "Si recibe el producto dañado durante su envío, puede devolverlo en un plazo de 2 (dos) días hábiles a partir de la fecha de recepción del pedido. Debe revisar el paquete y su contenido al momento de la llegada. no acepte la entrega en caso de notar el empaque en mal estado o abierto, algún daño o piezas faltantes, ya que con su firma ACEPTA la llegada en orden al servicio de correspondencia y no podrá ser válido el seguro de la misma.\nProducto incorrecto. Puede devolver el producto si no coincide con su pedido en un plazo de 2 (dos) días hábiles a partir de la fecha de recepción del pedido.\nSi se presenta devolución por producto dañado durante el envío o producto incorrecto, deberá presentar el *FORMULARIO CAMBIO DE MERCANCIA y GRUPO SECURITY S.A.S hará reposición de la mercancía."
+        },
+        {
+          "heading": "Cierre",
+          "body": "Nos reservamos el derecho de realizar cambios al presente documento en el momento que sea requerido."
+        }
+      ]
+    },
+    {
+      "slug": "terminos-promociones",
+      "title": "Términos y condiciones de promociones",
+      "sourceUrl": "https://gruposecurity.co/terminos-y-condiciones-de-promociones/",
+      "sections": [
+        {
+          "heading": "Nuestras Políticas.",
+          "body": null
+        },
+        {
+          "heading": "Términos y condiciones de la promoción Acumula y Gana Hikvision moto CR4 125cc. AKT.",
+          "body": "Términos y Condiciones – Promoción “Acumula y Gana”"
+        },
+        {
+          "heading": "1. Organizadores",
+          "body": "La presente promoción es organizada por Grupo Security S.A.S., con sedes en Pereira, Armenia y Manizales, en alianza con las marcas Hikvision y Hilook."
+        },
+        {
+          "heading": "2. Vigencia de la promoción",
+          "body": "La promoción estará vigente desde su lanzamiento hasta el 20 de diciembre de 2025 a las 6:00 p.m."
+        },
+        {
+          "heading": "3. Participantes",
+          "items": [
+            "Podrán participar exclusivamente integradores de seguridad electrónica registrados y vinculados comercialmente a Grupo Security S.A.S.",
+            "No participan clientes finales, personas naturales sin registro de integrador, ni funcionarios internos de Grupo Security S.A.S."
+          ]
+        },
+        {
+          "heading": "4. Mecánica de participación",
+          "items": [
+            "Por cada compra realizada en productos Hikvision y Hilook en las sedes de Pereira, Armenia y Manizales, el valor de la factura se acumulará al historial de compras del integrador participante.",
+            "Al cierre de la promoción, el integrador que haya acumulado el mayor valor total de compras será declarado ganador de la motocicleta AKT CR4 125 0 KM.",
+            "El cálculo será realizado con base en las facturas emitidas dentro del plazo de la promoción y que estén debidamente canceladas o dentro de los términos de pago acordados."
+          ]
+        },
+        {
+          "heading": "5. Premio",
+          "items": [
+            "El premio consiste en una (1) motocicleta AKT CR4 125 0 KM, la cual será entregada en el concesionario autorizado de AKT ubicado en Carrera 10 #14-71, Centro, Pereira, Risaralda.",
+            "El ganador deberá asumir en su totalidad el costo del SOAT y la matrícula de la motocicleta, de acuerdo con la tarifa oficial vigente en el municipio de Dosquebradas, Risaralda, al momento de la entrega."
+          ]
+        },
+        {
+          "heading": "6. Entrega del premio",
+          "body": "Una vez anunciado el ganador, este contará con un (1) día hábil para presentarse en el concesionario AKT mencionado con el fin de:\na) Completar el alistamiento y entrega de la motocicleta.\nb) Radicar el traspaso y registro de la motocicleta a su nombre, requisito indispensable para la entrega.\nEn caso de no presentarse en el tiempo establecido, el ganador perderá el derecho sobre el premio y Grupo Security S.A.S. se reserva la facultad de asignarlo al siguiente participante con mayor acumulado de compras."
+        },
+        {
+          "heading": "7. Condiciones adicionales",
+          "items": [
+            "El premio es personal e intransferible y no podrá ser canjeado por dinero ni por otro bien o servicio.",
+            "Grupo Security S.A.S. no se hace responsable por gastos adicionales, mantenimientos, seguros, accidentes, ni cualquier otra obligación derivada de la propiedad y uso de la motocicleta.",
+            "La responsabilidad de Grupo Security S.A.S. se limita a la entrega material del bien objeto del premio, bajo las condiciones aquí estipuladas."
+          ]
+        },
+        {
+          "heading": "8. Aceptación de condiciones",
+          "body": "La participación en la presente promoción implica la aceptación expresa y total de estos Términos y Condiciones por parte de los integradores participantes."
+        },
+        {
+          "heading": "9. Publicidad y uso de imagen",
+          "body": "El ganador autoriza a Grupo Security S.A.S. a utilizar su nombre, imagen y datos básicos de identificación en piezas publicitarias relacionadas con esta promoción, sin que ello genere compensación adicional distinta al premio recibido."
+        },
+        {
+          "heading": "10. Normatividad aplicable",
+          "body": "Este concurso se regula bajo las disposiciones del Código de Comercio colombiano y las normas civiles aplicables. En lo no previsto, se aplicarán las reglas generales sobre concursos promocionales en el territorio nacional."
+        },
+        {
+          "heading": "Descarga",
+          "body": "Descarga los términos y condiciones",
+          "note": "El enlace de descarga de los términos y condiciones no exponía una URL directa en el HTML extraído."
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Contenido extraído solo de páginas institucionales. Se EXCLUYÓ por completo la sección 'Lista de Precios' (enlace externo a gruposecurity.com.co), el catálogo/shop de productos y cualquier precio o listado de productos.",
+    "Placeholders detectados: (1) contadores de estadísticas en home y nosotros ('Productos vendidos 0', 'Clientes felices 1', 'Rango de satisfacción 0 %'); (2) la página /soluciones/ solo contiene encabezados placeholder 'Add Your Heading Text Here'.",
+    "La home muestra 3 tarjetas de servicio, no 4 como indicaba el brief; la cuarta no existe en el HTML extraído.",
+    "No se encontraron teléfonos de sede, correos corporativos ni horarios de atención en las páginas institucionales; el único canal publicado fue el WhatsApp 3160275100.",
+    "El contenido de 'Servicios' es mínimo; el detalle vive en el PDF 'Portafolio-de-servicios-2026.pdf', no extraído aquí.",
+    "PHP/WooCommerce: los enlaces de navegación incluyen 'Productos' (/shop/) y 'Lista de Precios' externos, deliberadamente no extraídos por la restricción de la tarea."
+  ]
+}

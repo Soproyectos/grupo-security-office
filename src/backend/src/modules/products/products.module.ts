@@ -1,4 +1,5 @@
-﻿import { Module } from '@nestjs/common';
+﻿import { StorefrontModule } from '../storefront/storefront.module';
+import { Module } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { ProductsController } from './products.controller';
 import { ListasPublicationController } from './products.controller';
@@ -16,7 +17,7 @@ import { ImportModule } from './import/import.module';
 import { FilesModule } from '../files/files.module';
 
 @Module({
-  imports: [PrismaModule, AclModule, AuditModule, ImportModule, FilesModule],
+  imports: [StorefrontModule, PrismaModule, AclModule, AuditModule, ImportModule, FilesModule],
   controllers: [ProductsController, ListasPublicationController, PublicProductsController, PublicProductDetailController, ProductSheetController],
   providers: [ProductsService, PublicPricingService, PublicCatalogService, PublicProductDetailService, ProductSheetService],
   exports: [ProductsService, PublicProductDetailService],

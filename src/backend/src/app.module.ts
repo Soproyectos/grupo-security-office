@@ -1,3 +1,4 @@
+import { StorefrontModule } from './modules/storefront/storefront.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 import { WorkflowModule } from './modules/team-workflow/workflow.module';
 import { Module } from '@nestjs/common';
@@ -75,6 +76,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     PromotionsModule,
     WorkflowModule,
     CustomerPortalModule,
+    StorefrontModule,
   ],
   providers: [
     {

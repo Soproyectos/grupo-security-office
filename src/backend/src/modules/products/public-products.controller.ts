@@ -1,4 +1,6 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { StorefrontService } from '../storefront/storefront.service';
+import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
@@ -14,7 +16,7 @@ import { PublicProductParamsDto } from './dto/public-product-params.dto';
 @ApiTags('Public Products')
 @Controller('api/public/products')
 export class PublicProductsController {
-  constructor(private readonly catalog: PublicCatalogService) {}
+  constructor(private readonly catalog: PublicCatalogService, private readonly customers: StorefrontService) {}
 
   /**
    * Búsqueda y listado por categoría, paginados. Responde `{ data, meta }` con
@@ -33,8 +35,10 @@ export class PublicProductsController {
   @ApiQuery({ name: 'category', required: false, type: String, description: 'Slug de categoría (incluye subcategorías); desconocido = lista vacía' })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Productos a omitir (default 0)' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Cantidad máxima de resultados (default 24, tope 48)' })
-  search(@Query() query: PublicProductSearchDto) {
-    return this.catalog.search(query);
+  async search(@Query() query: PublicProductSearchDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    res.setHeader('Cache-Control', 'private, no-store'); res.vary('Cookie');
+    const result = await this.catalog.search(query);
+    return { ...result, data: await this.customers.applyCustomerPrices(result.data, req.cookies?.gs_customer_session) };
   }
 
   /**
@@ -46,7 +50,9 @@ export class PublicProductsController {
   @Get(':id')
   @ApiOperation({ summary: 'Detalle público de un producto publicado (storefront)' })
   @ApiResponse({ status: 404, description: 'El producto no existe o no está publicado' })
-  detail(@Param() params: PublicProductParamsDto) {
-    return this.catalog.getDetail(params.id);
+  async detail(@Param() params: PublicProductParamsDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    res.setHeader('Cache-Control', 'private, no-store'); res.vary('Cookie');
+    const result = await this.catalog.getDetail(params.id);
+    return (await this.customers.applyCustomerPrices([result], req.cookies?.gs_customer_session))[0];
   }
 }

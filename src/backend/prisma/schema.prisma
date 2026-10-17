@@ -321,6 +321,7 @@ model UploadedFile {
 }
 
 model PriceList {
+  customerAccounts CustomerAccount[]
   portalTiers             PortalTier[]
   id                      String                   @id @default(uuid())
   name                    String
@@ -586,6 +587,7 @@ model ImportSession {
 /// lead→cliente no copia filas ni rompe referencias de cotizaciones).
 /// `city` es texto libre por decisión de producto (no se modelan sedes/ciudades).
 model Customer {
+  webAccount CustomerAccount?
   id             String          @id @default(uuid())
   code           String          @unique
   name           String
@@ -940,3 +942,85 @@ model PortalTier {
   @@index([priceListId])
   @@map("portal_tiers")
 }
+
+model CustomerAccount {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  name            String
+  company         String?
+  profile         String
+  passwordHash    String?
+  status          String   @default("UNVERIFIED")
+  emailVerifiedAt DateTime?
+  consentAt       DateTime
+  consentVersion  String
+  reviewedAt      DateTime?
+  reviewedById    String?
+  reviewReason    String?
+  priceListId     String?
+  priceList       PriceList? @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  customerId      String? @unique
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  failedLogins    Int      @default(0)
+  lockedUntil     DateTime?
+  sessions        CustomerSession[]
+  tokens          CustomerAccessToken[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@map("customer_accounts")
+}
+
+model CustomerSession {
+  id        String @id @default(uuid())
+  accountId String
+  account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([expiresAt])
+  @@map("customer_sessions")
+}
+
+model CustomerAccessToken {
+  id        String @id @default(uuid())
+  accountId String
+  account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  purpose   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([accountId, purpose])
+  @@index([expiresAt])
+  @@map("customer_access_tokens")
+}
+
+model StorefrontInquiry {
+  id        String @id @default(uuid())
+  name      String
+  email     String
+  topic     String
+  message   String
+  productId String?
+  status    String @default("OPEN")
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  resolvedById String?
+
+  @@index([status, createdAt])
+  @@map("storefront_inquiries")
+}
+
+model StorefrontSettings {
+  id        String @id @default("default")
+  data      Json @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@map("storefront_settings")
+}
+
