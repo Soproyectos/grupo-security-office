@@ -1,0 +1,2579 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-14",
+  "scope": [
+    "Comercial",
+    "Catálogo y precios",
+    "Importación de precios"
+  ],
+  "baseline": {
+    "workspace": "worktree local 25d1",
+    "headObserved": "5449ecb2c5b93c42fcb662127d430fdc4b5f5dbb",
+    "note": "HEAD no incluye los cambios previos sin commit. BASE-01 debe registrar esos cambios antes de editar."
+  },
+  "firstTask": "BASE-01",
+  "execution": "secuencial con auditoría entre pasos",
+  "tasks": [
+    {
+      "id": "BASE-01",
+      "lane": "base",
+      "title": "Fijar inventario y versión de trabajo",
+      "dependsOn": [],
+      "references": [
+        {
+          "path": "docs/COMPARACION-10-PANELES-2026-10-13.md",
+          "section": "S3/S4/local y diferencias de módulos"
+        },
+        {
+          "path": "docs/IMPLEMENTACION-REVISION-PRECIOS-2026-10-14.md",
+          "section": "Estado y evidencia del preview"
+        }
+      ],
+      "readPaths": [
+        "AGENTS.md",
+        "src/backend/src/app.module.ts",
+        "src/frontend/src/App.tsx",
+        "src/backend/prisma/schema.prisma"
+      ],
+      "rules": [
+        "Local es el checkout autorizado. Registrar HEAD y cambios previos sin reset/clean; HEAD no describe por sí solo el árbol sucio.",
+        "No fusionar ni reemplazar S3/S4. Elaborar lista de funciones que deben conservarse y dónde se verificaron.",
+        "No consultar clientes, usuarios ni credenciales. Diferenciar hechos observados, informes anteriores y propuestas."
+      ],
+      "cases": [
+        "El inventario distingue preview temporal de aplicación de precios.",
+        "Agenda/promociones/ficha técnica de S3 no se declaran presentes localmente por documentación.",
+        "Una propuesta de consolidación preserva IDs, medios y funciones públicas; deja las diferencias sin resolver explícitas."
+      ],
+      "steps": [
+        {
+          "id": "inventario",
+          "goal": "Guardar inventario corto pantalla/API/modelo/permiso/prueba y propuesta de base, con rutas y evidencia verificable. Solo documentación.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/BASE-01.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "El inventario distingue preview temporal de aplicación de precios.",
+            "Agenda/promociones/ficha técnica de S3 no se declaran presentes localmente por documentación.",
+            "Una propuesta de consolidación preserva IDs, medios y funciones públicas; deja las diferencias sin resolver explícitas."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BASE-02",
+      "lane": "access",
+      "title": "Cerrar contratos de paquetes, acciones y alcances",
+      "dependsOn": [
+        "BASE-01"
+      ],
+      "references": [
+        {
+          "path": "docs/PANELES-Y-PERMISOS.md",
+          "section": "acciones y alcances por usuario; hijos Vendedor/Supervisor/Gestión y Catálogo"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/common/security/access-catalog.ts",
+        "src/backend/src/common/security/access-assignments.service.ts",
+        "src/backend/src/common/security/data-scope.ts",
+        "src/backend/src/modules/users/dto/assign-access.dto.ts",
+        "src/frontend/src/features/users/components/UserAccessAssignments.tsx"
+      ],
+      "rules": [
+        "Diseñar concesiones independientes: editar propios y leer equipo no equivale a editar equipo.",
+        "Precisar dependencias y migración; no crear permisos nuevos ni modificar usuarios en este paso.",
+        "La selección de paquete muestra acciones concretas/versionadas. Mi resumen/Agenda permanecen personales."
+      ],
+      "cases": [
+        "Mismo cargo con dos asignaciones distintas.",
+        "Retirar una concesión conserva otra vigente del mismo permiso.",
+        "Revocación con JWT anterior y usuario sin paneles; ninguna dependencia global silenciosa."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar acciones y alcances por usuario; hijos Vendedor/Supervisor/Gestión y Catálogo. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/BASE-02.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BASE-03",
+      "lane": "base",
+      "title": "Integrar una Agenda y tareas compartida",
+      "dependsOn": [
+        "BASE-01",
+        "BASE-02"
+      ],
+      "references": [
+        {
+          "path": "docs/COMPARACION-10-PANELES-2026-10-13.md",
+          "section": "recuperar contrato de agenda S3 y separar funciones propias/de equipo"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/app.module.ts",
+        "src/frontend/src/App.tsx",
+        "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md"
+      ],
+      "rules": [
+        "Primero comparar el módulo S3 documentado; no inventar compatibilidad ni crear una agenda por panel.",
+        "Separar creador, asignado y actor del cambio. Propias y equipo son incrementos separados si el diff crece.",
+        "Tarea/enlace no concede acceso al recurso; historial no se borra al completar."
+      ],
+      "cases": [
+        "Usuario A no lee/completa/reasigna actividad B por ID.",
+        "Asignar fuera del equipo se rechaza; asignar no concede completar ajenas.",
+        "Repetir completar no duplica evento; recurso revocado oculta sus detalles."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar recuperar contrato de agenda S3 y separar funciones propias/de equipo. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/BASE-03.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-propias",
+          "goal": "Integrar actividades propias e historial del contrato S3 reconciliado.",
+          "writePaths": [
+            "src/backend/src/modules/team-workflow/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Leer/crear/completar propias; ID ajeno denegado; reintento no duplica."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-propias",
+          "goal": "Conectar una Agenda personal única e historial.",
+          "writePaths": [
+            "src/frontend/src/features/agenda/**",
+            "src/frontend/src/services/agenda.service.ts",
+            "src/frontend/src/services/agenda.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx",
+            "src/frontend/src/components/layout/AdminLayout.tsx",
+            "src/frontend/src/components/layout/AdminLayout.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Crear/completar/recargar conserva actividades sin entradas duplicadas por panel."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-equipo",
+          "goal": "Añadir consulta/asignación de equipo con concesiones distintas.",
+          "writePaths": [
+            "src/backend/src/modules/team-workflow/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Fuera del equipo se rechaza; asignar no concede completar ajenas."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-equipo",
+          "goal": "Conectar consulta/asignación de equipo según permiso.",
+          "writePaths": [
+            "src/frontend/src/features/agenda/**",
+            "src/frontend/src/services/agenda.service.ts",
+            "src/frontend/src/services/agenda.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx",
+            "src/frontend/src/components/layout/AdminLayout.tsx",
+            "src/frontend/src/components/layout/AdminLayout.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Solo Agenda propia no muestra equipo; botones y API concuerdan."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-vinculos",
+          "goal": "Proteger recursos enlazados y conversión explícita de incidencias en tareas.",
+          "writePaths": [
+            "src/backend/src/modules/team-workflow/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Revocación oculta detalles; conversión explícita deduplica producto+regla+revisión."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-vinculos",
+          "goal": "Mostrar enlaces/tareas relacionadas con acceso vigente.",
+          "writePaths": [
+            "src/frontend/src/features/agenda/**",
+            "src/frontend/src/services/agenda.service.ts",
+            "src/frontend/src/services/agenda.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx",
+            "src/frontend/src/components/layout/AdminLayout.tsx",
+            "src/frontend/src/components/layout/AdminLayout.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "agenda-base"
+          ],
+          "acceptance": [
+            "Un enlace no revela recurso ajeno ni concede permisos."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "BASE-04",
+      "lane": "access",
+      "title": "Resolver acción y alcance por concesión individual",
+      "dependsOn": [
+        "BASE-02"
+      ],
+      "references": [
+        {
+          "path": "docs/PANELES-Y-PERMISOS.md",
+          "section": "acciones y alcances por usuario; hijos Vendedor/Supervisor/Gestión y Catálogo"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/common/security/data-scope.ts",
+        "src/backend/src/common/security/access-assignments.service.ts",
+        "src/backend/src/common/security/live-admin-identity.service.ts",
+        "src/backend/src/common/acl/acl.service.ts"
+      ],
+      "rules": [
+        "Resolver el alcance por acción; lectura de equipo no amplía edición propia.",
+        "Entregar contexto efectivo a módulos consumidores, que lo aplicarán en sus propias tareas.",
+        "No migrar cuentas reales ni autoconceder permisos; excepciones explícitas de Super Admin/cuenta propia."
+      ],
+      "cases": [
+        "El resolver devuelve lectura de equipo y edición propia para acciones distintas. La denegación HTTP al editar un compañero se acredita después en COM-02/COM-03.",
+        "Retirar una concesión conserva otra vigente; retiro total afecta JWT anterior.",
+        "Scope recibido del navegador no sustituye concesiones del servidor."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Cerrar concesiones/esquema/contexto por acción, compatibilidad y migración local; registrar incrementos de implementación.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/BASE-04.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Implementar resolución/contexto y pruebas; los módulos consumidores se adaptan en sus tareas.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/data-scope.ts",
+            "src/backend/src/common/security/data-scope.spec.ts",
+            "src/backend/src/common/security/access-assignments.service.ts",
+            "src/backend/src/common/security/access-assignments.service.spec.ts",
+            "src/backend/src/common/security/live-admin-identity.service.ts",
+            "src/backend/src/common/security/live-admin-identity.service.spec.ts",
+            "src/backend/src/common/security/user-permissions.service.ts",
+            "src/backend/src/common/security/user-permissions.service.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/src/common/acl/acl.service.ts",
+            "src/backend/src/common/acl/acl.service.spec.ts",
+            "src/backend/src/modules/auth/jwt.strategy.ts",
+            "src/backend/src/modules/auth/jwt.strategy.spec.ts",
+            "src/backend/src/modules/users/dto/assign-access.dto.ts",
+            "src/backend/src/modules/users/dto/assign-access.dto.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "El resolver devuelve lectura de equipo y edición propia para acciones distintas. La denegación HTTP al editar un compañero se acredita después en COM-02/COM-03.",
+            "Retirar una concesión conserva otra vigente; retiro total afecta JWT anterior.",
+            "Scope recibido del navegador no sustituye concesiones del servidor."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IMP-01",
+      "lane": "imports",
+      "title": "Probar el preview existente con PostgreSQL desechable",
+      "dependsOn": [
+        "BASE-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "verificación real del preview local y sus límites"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/prices/import/",
+        "src/backend/src/common/security/admin-access.postgres.spec.ts",
+        "docs/IMPLEMENTACION-REVISION-PRECIOS-2026-10-14.md"
+      ],
+      "rules": [
+        "No rehacer parser, contenedor, ACL ni interfaz que ya funcionan en pruebas simuladas.",
+        "La base debe ser desechable con fixtures ficticios y URL explícita de pruebas, nunca la de operación.",
+        "Si falta el entorno, documentar ese límite; no declarar el paso aceptado por ejecutar solo mocks."
+      ],
+      "cases": [
+        "Precios anteriores provienen de consultas Prisma reales sin escrituras de negocio.",
+        "Lista ajena/restricción PRODUCT y revocación rechazan datos.",
+        "Las tarifas exactas, relaciones y decimales reales producen el mismo comparador."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar verificación real del preview local y sus límites. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-01.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/price-import.postgres.spec.ts",
+            "src/backend/scripts/verify-price-preview.cjs"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Precios anteriores provienen de consultas Prisma reales sin escrituras de negocio.",
+            "Lista ajena/restricción PRODUCT y revocación rechazan datos.",
+            "Las tarifas exactas, relaciones y decimales reales producen el mismo comparador."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IMP-02",
+      "lane": "imports",
+      "title": "Descargar la misma plantilla desde la web",
+      "dependsOn": [
+        "BASE-02",
+        "IMP-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "descarga vacía o con referencias autorizadas; seleccionar tarifas"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/prices/import/",
+        "src/frontend/src/features/price-import/",
+        "docs/plantillas/generar_plantilla_precios.py"
+      ],
+      "rules": [
+        "Generar archivo nuevo sin filas comerciales del Excel editado por el usuario; no sobrescribir sus plantillas.",
+        "PRECIOS e INSTRUCCIONES, columnas exactas IVA; no ofrecer mapeo ni tarifas inventadas.",
+        "Descargar referencias/precios requiere acciones y alcance definidos; separar plantilla de exportación completa."
+      ],
+      "cases": [
+        "XLSX descargado se rellena y el preview actual lo acepta sin modificación de hojas.",
+        "Usuario no descarga referencias ni precios de otra lista.",
+        "ORO_IVA no se sustituye por DPP_ORO_IVA; columnas no seleccionadas se omiten."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar descarga vacía o con referencias autorizadas; seleccionar tarifas. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-02.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "XLSX descargado se rellena y el preview actual lo acepta sin modificación de hojas.",
+            "Usuario no descarga referencias ni precios de otra lista.",
+            "ORO_IVA no se sustituye por DPP_ORO_IVA; columnas no seleccionadas se omiten."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/price-import/**",
+            "src/frontend/src/services/price-import.service.ts",
+            "src/frontend/src/services/price-import.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "XLSX descargado se rellena y el preview actual lo acepta sin modificación de hojas.",
+            "Usuario no descarga referencias ni precios de otra lista.",
+            "ORO_IVA no se sustituye por DPP_ORO_IVA; columnas no seleccionadas se omiten."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IMP-03",
+      "lane": "imports",
+      "title": "Unificar COP de carga y edición manual",
+      "dependsOn": [
+        "BASE-02",
+        "IMP-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "límite numérico, redondeo y validación común antes de aplicar"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/prices/prices.service.ts",
+        "src/backend/src/modules/products/dto/price-input.dto.ts",
+        "src/backend/src/modules/prices/import/price-template.ts"
+      ],
+      "rules": [
+        "El contrato debe resolver la diferencia entre límite del preview y validadores manuales existentes.",
+        "COP final entero con Decimal y HALF_UP; no migrar históricos ni imponer precisión COP a USD.",
+        "La regla nueva con IVA no borra ni convierte tarifas históricas sin IVA."
+      ],
+      "cases": [
+        "Mismo valor se acepta/redondea igual por API manual y plantilla.",
+        "0.49, 0.50, negativos, límite y desbordamiento tras redondear.",
+        "Factura/cotización histórica conserva importes capturados."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar límite numérico, redondeo y validación común antes de aplicar. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-03.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/prices/**",
+            "src/backend/src/modules/products/dto/price-input.dto.ts",
+            "src/backend/src/modules/products/dto/price-input.dto.spec.ts",
+            "src/backend/src/common/money/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Mismo valor se acepta/redondea igual por API manual y plantilla.",
+            "0.49, 0.50, negativos, límite y desbordamiento tras redondear.",
+            "Factura/cotización histórica conserva importes capturados."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IMP-04",
+      "lane": "imports",
+      "title": "Guardar una revisión de precios recuperable",
+      "dependsOn": [
+        "IMP-03"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "modelo de revisión, archivo, filas y versiones de precios"
+        }
+      ],
+      "readPaths": [
+        "src/backend/prisma/schema.prisma",
+        "src/backend/src/modules/prices/import/"
+      ],
+      "rules": [
+        "Contrato de retención/tamaño/esquema y recuperación auditado antes de migraciones.",
+        "Revisión guarda autor, hash, lista, tarifas, versiones, recibido/normalizado/anterior y pendientes.",
+        "Persistir no modifica Price ni identidad; separar este historial del evento resumido del preview."
+      ],
+      "cases": [
+        "Cerrar pestaña/reiniciar no pierde revisión.",
+        "Otro usuario sin alcance no consulta archivo ni filas.",
+        "Guardar dos veces con la misma clave no duplica revisión; fallar no deja datos comerciales parciales."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar modelo de revisión, archivo, filas y versiones de precios. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-04.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-esquema",
+          "goal": "Crear esquema/migración de revisión y filas en base desechable.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Índices/relaciones/retención auditados; migrar/revertir preserva Price e identidad."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-revisiones",
+          "goal": "Guardar revisión con archivo/hash, autor, valores y versiones.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Persistir no aplica precios; duplicados y alcance comprobados."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-recuperacion",
+          "goal": "Consultar revisión/filas autorizadas y recuperar tras reinicio.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Otro usuario no lee archivo/filas; cerrar navegador no pierde pendientes."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "IMP-05",
+      "lane": "imports",
+      "title": "Aplicar precios de una revisión exacta",
+      "dependsOn": [
+        "IMP-04",
+        "CAT-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "transacción, concurrencia, idempotencia y permiso separado de aplicar"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/prices/import/",
+        "src/backend/src/common/security/access-catalog.ts",
+        "src/backend/src/modules/audit/audit.service.ts"
+      ],
+      "rules": [
+        "Revalidar actor/sesión, alcance, pertenencia única, tarifa, versiones y precios anteriores al ejecutar.",
+        "No confiar en filas/precios del navegador ni llamar al ejecutor legacy de productos.",
+        "Decidir atomicidad y límites en contrato. Precio+historial/evento confirmados coherentemente; solo precios, sin cambios de identidad."
+      ],
+      "cases": [
+        "Revocar entre revisar/aplicar bloquea; cambio de precio produce conflicto.",
+        "Dos revisiones simultáneas no pisan cambios; dos listas no toman el mismo producto.",
+        "Reintento no duplica operación/eventos; fallo intermedio revierte; histórico comercial intacto."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar transacción, concurrencia, idempotencia y permiso separado de aplicar. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-05.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-transaccion",
+          "goal": "Aplicar precios y eventos/historial con atomicidad y versión esperada.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Cambio concurrente/otra lista/fallo intermedio no deja escritura parcial."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-reintentos",
+          "goal": "Implementar idempotencia y revalidación al reintentar.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Misma operación no duplica cambios/eventos; revocar bloquea JWT anterior."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-api",
+          "goal": "Exponer confirmación/resultado por ID con permiso separado.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "No confía en precios del cliente; HTTP directo permitido/denegado; históricos intactos."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "IMP-06",
+      "lane": "imports",
+      "title": "Conectar Aplicar e historial en la pantalla",
+      "dependsOn": [
+        "IMP-05",
+        "IMP-02"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "comparador persistido, confirmación y resultado por fila"
+        }
+      ],
+      "readPaths": [
+        "src/frontend/src/features/price-import/",
+        "src/frontend/src/pages/ListaDetailPage.tsx",
+        "src/backend/src/modules/prices/import/"
+      ],
+      "rules": [
+        "Revisar y Aplicar se muestran según acciones distintas; el servidor mantiene ambos controles.",
+        "Errores no se descartan silenciosamente; selección/exclusión explícita y cantidades pendientes.",
+        "Historial limitado a lista sin exigir auditoría global; no conservar el botón CSV como supuesta nueva plantilla."
+      ],
+      "cases": [
+        "Navegador: descargar, rellenar fixture, revisar, confirmar y consultar resultado tras recargar.",
+        "Doble clic/reenvío no duplica; conflicto muestra corrección sin falso éxito.",
+        "Usuario de listas opera sin Biblioteca; pantalla móvil conserva comparación ordenada."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar comparador persistido, confirmación y resultado por fila. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-06.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Navegador: descargar, rellenar fixture, revisar, confirmar y consultar resultado tras recargar.",
+            "Doble clic/reenvío no duplica; conflicto muestra corrección sin falso éxito.",
+            "Usuario de listas opera sin Biblioteca; pantalla móvil conserva comparación ordenada."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/price-import/**",
+            "src/frontend/src/services/price-import.service.ts",
+            "src/frontend/src/services/price-import.service.spec.ts",
+            "src/frontend/src/pages/ListaDetailPage.tsx",
+            "src/frontend/src/pages/ListaDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Navegador: descargar, rellenar fixture, revisar, confirmar y consultar resultado tras recargar.",
+            "Doble clic/reenvío no duplica; conflicto muestra corrección sin falso éxito.",
+            "Usuario de listas opera sin Biblioteca; pantalla móvil conserva comparación ordenada."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IMP-07",
+      "lane": "imports",
+      "title": "Perfiles de proveedor y exportación de listas",
+      "dependsOn": [
+        "IMP-06"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+          "section": "extender perfiles completos sin volver al mapeo obligatorio"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/products/import/",
+        "src/frontend/src/services/import-presets.service.ts",
+        "src/frontend/src/pages/ListaDetailPage.tsx"
+      ],
+      "rules": [
+        "Separar en subentregas exportación actual y perfiles de proveedor; contrato versionado antes de cada una.",
+        "Perfil fija proveedor, hoja, fila, separadores, moneda, equivalencias y tarifas; cambio de estructura exige revisión.",
+        "Ambas entradas usan el motor exclusivo de precios; no reactivar escritura de identidad ni inferencias por fila."
+      ],
+      "cases": [
+        "Mismo proveedor repetido no pide mapear de nuevo.",
+        "Encabezado cambiado no carga en tarifa parecida; referencia externa ambigua queda pendiente.",
+        "Exportar selección/toda lista solo incluye datos/tarifas autorizados."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar extender perfiles completos sin volver al mapeo obligatorio. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/IMP-07.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/prices/import/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Mismo proveedor repetido no pide mapear de nuevo.",
+            "Encabezado cambiado no carga en tarifa parecida; referencia externa ambigua queda pendiente.",
+            "Exportar selección/toda lista solo incluye datos/tarifas autorizados."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/price-import/**",
+            "src/frontend/src/services/price-import.service.ts",
+            "src/frontend/src/services/price-import.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Mismo proveedor repetido no pide mapear de nuevo.",
+            "Encabezado cambiado no carga en tarifa parecida; referencia externa ambigua queda pendiente.",
+            "Exportar selección/toda lista solo incluye datos/tarifas autorizados."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-01",
+      "lane": "catalog",
+      "title": "Conservar Biblioteca al operar sobre listas",
+      "dependsOn": [
+        "BASE-02"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "duplicar, archivar, desvincular y eliminar sin perder fichas"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/listas/listas.service.ts",
+        "src/backend/src/modules/products/import/pipeline/batch-executor.service.ts",
+        "src/backend/prisma/schema.prisma"
+      ],
+      "rules": [
+        "Riesgo observado: borrar lista hoy elimina productos/medios. Cerrar conservación y referencias históricas antes de cambiarlo.",
+        "Duplicar copia configuración sin pertenencias; archivar no libera SKU. Vincular/desvincular exige acción específica.",
+        "Product.listaId cero/uno; resolver Price.listaId coherentemente; sin muchos-a-muchos, clones o reasignación implícita."
+      ],
+      "cases": [
+        "Eliminar/desvincular/archivar conserva identidad, medios e históricos.",
+        "Carga a otra lista, incluida archivada, no mueve producto.",
+        "Concurrencia entre vínculo manual/cargas conserva unicidad y eventos."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar duplicar, archivar, desvincular y eliminar sin perder fichas. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-01.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/listas/**",
+            "src/backend/src/modules/products/import/pipeline/batch-executor.service.ts",
+            "src/backend/src/modules/products/import/pipeline/batch-executor.service.spec.ts",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Eliminar/desvincular/archivar conserva identidad, medios e históricos.",
+            "Carga a otra lista, incluida archivada, no mueve producto.",
+            "Concurrencia entre vínculo manual/cargas conserva unicidad y eventos."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/pages/ListasPage.tsx",
+            "src/frontend/src/pages/ListasPage.spec.tsx",
+            "src/frontend/src/pages/ListaDetailPage.tsx",
+            "src/frontend/src/pages/ListaDetailPage.spec.tsx",
+            "src/frontend/src/services/listas.service.ts",
+            "src/frontend/src/services/listas.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Eliminar/desvincular/archivar conserva identidad, medios e históricos.",
+            "Carga a otra lista, incluida archivada, no mueve producto.",
+            "Concurrencia entre vínculo manual/cargas conserva unicidad y eventos."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-02",
+      "lane": "catalog",
+      "title": "Separar borrador y revisión pública de producto",
+      "dependsOn": [
+        "CAT-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "snapshots, versión esperada y lectura pública compatible"
+        }
+      ],
+      "readPaths": [
+        "src/backend/prisma/schema.prisma",
+        "src/backend/src/modules/products/products.service.ts",
+        "src/backend/src/modules/products/public-products.controller.ts",
+        "src/backend/src/modules/storefront/"
+      ],
+      "rules": [
+        "Contrato SQL y migración reversible en base desechable antes del código.",
+        "La lectura pública conserva el contrato de datos/presentación de producto y usa solo revisión publicada.",
+        "Enrutar edición e importadores alternativos por mismas revisiones; notas internas separadas; marcas/categorías no filtran cambios indirectos."
+      ],
+      "cases": [
+        "Editar nombre/descripcion/marca/imagen conserva exactamente versión pública anterior.",
+        "Dos editores con versión anterior no se sobrescriben.",
+        "Acceso público por URL/API no expone borrador, notas ni archivos privados."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar snapshots, versión esperada y lectura pública compatible. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-02.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-esquema",
+          "goal": "Crear revisiones y referencia pública con migración ensayada.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/products/**",
+            "src/backend/src/modules/storefront/storefront.service.ts",
+            "src/backend/src/modules/storefront/storefront.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Backfill preserva IDs/datos/medios; recuperación probada."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-borradores",
+          "goal": "Guardar borradores versionados con notas y activos protegidos.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/products/**",
+            "src/backend/src/modules/storefront/storefront.service.ts",
+            "src/backend/src/modules/storefront/storefront.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Editar no cambia publicado; dos editores no se pisan."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-publico",
+          "goal": "Adaptar lecturas públicas reales conservando respuesta/presentación.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/products/**",
+            "src/backend/src/modules/storefront/storefront.service.ts",
+            "src/backend/src/modules/storefront/storefront.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "storefront.service y controlador público no filtran borrador por ID/slug/listado."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-alternativas",
+          "goal": "Enrutar edición y cargas legacy por la política de revisiones.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/products/**",
+            "src/backend/src/modules/storefront/storefront.service.ts",
+            "src/backend/src/modules/storefront/storefront.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Ruta antigua/marca/categoría no cambia snapshot público indirectamente."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "CAT-03",
+      "lane": "catalog",
+      "title": "Editar los apartados de la ficha",
+      "dependsOn": [
+        "CAT-02"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "Información general, Identidad, Destacados, Características, Especificaciones, Notas y Atributos"
+        }
+      ],
+      "readPaths": [
+        "src/frontend/src/features/products/components/ProductFormModal.tsx",
+        "src/frontend/src/pages/ProductDetailPage.tsx",
+        "src/backend/src/modules/products/"
+      ],
+      "rules": [
+        "Contrato evita duplicar campos entre secciones y divide interfaz por incrementos pequeños.",
+        "Destacados son puntos fuertes. Modelos conserva compatibilidad existente y se amplía después, sin variantes nuevas.",
+        "No rediseñar ficha pública ni imponer PDF; cambiar revisión deja validación pendiente."
+      ],
+      "cases": [
+        "Editor de ficha no publica ni altera otras áreas sin permiso.",
+        "Notas no salen al API público ni a exportación ordinaria.",
+        "Guardar/recargar mantiene apartados; conflicto concurrente no pierde cambios."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar Información general, Identidad, Destacados, Características, Especificaciones, Notas y Atributos. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-03.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Exponer lectura/guardado de apartados de borrador.",
+          "writePaths": [
+            "src/backend/src/modules/products/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Notas privadas, campos sin duplicar, edición no publica."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-identidad",
+          "goal": "Conectar Información general e Identidad.",
+          "writePaths": [
+            "src/frontend/src/features/products/**",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx",
+            "src/frontend/src/services/product-detail.service.ts",
+            "src/frontend/src/services/product-detail.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Guardar/recargar conserva campos; conflicto no pierde cambios."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-beneficios",
+          "goal": "Conectar Destacados y Características.",
+          "writePaths": [
+            "src/frontend/src/features/products/**",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx",
+            "src/frontend/src/services/product-detail.service.ts",
+            "src/frontend/src/services/product-detail.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Destacados son beneficios; cambio invalida validación."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-tecnicos",
+          "goal": "Conectar Especificaciones, Atributos y Notas; preservar Modelos.",
+          "writePaths": [
+            "src/frontend/src/features/products/**",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx",
+            "src/frontend/src/services/product-detail.service.ts",
+            "src/frontend/src/services/product-detail.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Notas no públicas; sin variantes nuevas ni PDF obligatorio."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "CAT-04",
+      "lane": "catalog",
+      "title": "Versionar imágenes, documentos y firmware",
+      "dependsOn": [
+        "CAT-02"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "activos por revisión, bytes y compatibilidad existente"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/files/",
+        "src/backend/prisma/schema.prisma",
+        "src/frontend/src/features/products/"
+      ],
+      "rules": [
+        "Reutilizar UploadedFile/bytes PostgreSQL inicialmente; no introducir otra cuenta de almacenamiento.",
+        "Tipo real/tamaño/hash y autorización de descarga; distinguir imagen, documento y firmware.",
+        "No borrar bytes referenciados por otra revisión. Modelos/firmware ampliados son baja prioridad y necesitan contrato específico."
+      ],
+      "cases": [
+        "Sustituir imagen no rompe la revisión pública anterior.",
+        "Medio privado inaccesible por ID/URL directa y exportación no autorizada.",
+        "Archivos inválidos se rechazan; fallo de asociación no deja publicación parcial."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar activos por revisión, bytes y compatibilidad existente. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-04.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-activos",
+          "goal": "Versionar activos/descargas con bytes PostgreSQL existentes.",
+          "writePaths": [
+            "src/backend/src/modules/files/**",
+            "src/backend/src/modules/products/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Medio privado inaccesible; no elimina bytes referenciados por otras revisiones."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-imagenes",
+          "goal": "Conectar fotos por revisión sin rediseñar ficha pública.",
+          "writePaths": [
+            "src/frontend/src/features/products/**",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Vista/guardado de borrador conserva imagen publicada anterior."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-documentos",
+          "goal": "Conectar documentos y preservar compatibilidad/firmware existentes.",
+          "writePaths": [
+            "src/frontend/src/features/products/**",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "PDF opcional; descarga autorizada. Ampliaciones de Modelos/firmware se posponen, sin bloquear publicar."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "CAT-05",
+      "lane": "catalog",
+      "title": "Validar productos con reglas compartidas",
+      "dependsOn": [
+        "CAT-03",
+        "CAT-04"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "reglas por categoría y validación individual/selección"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/products/products.service.ts",
+        "src/frontend/src/pages/ProductsPage.tsx"
+      ],
+      "rules": [
+        "Reglas versionadas de servidor; incidencias campo/código/severidad/revisión/solución.",
+        "PDF ausente solo aviso; categorías no pueden convertirlo en obligatorio.",
+        "Guardar cambios invalida validación anterior; publicación reutiliza el mismo motor."
+      ],
+      "cases": [
+        "Validar ficha, selección y filtros respeta alcance y detecta pendientes reales.",
+        "Imagen/precio inválido bloquea según contrato; PDF ausente no bloquea.",
+        "Editar después de validar impide usar resultado obsoleto."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar reglas por categoría y validación individual/selección. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-05.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-reglas",
+          "goal": "Implementar reglas por categoría y resultados versionados.",
+          "writePaths": [
+            "src/backend/src/modules/products/validation/**",
+            "src/backend/src/modules/products/products.service.ts",
+            "src/backend/src/modules/products/products.service.spec.ts",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/src/modules/products/products.module.ts",
+            "src/backend/src/modules/products/products.module.spec.ts",
+            "src/backend/src/modules/products/products.controller.ts",
+            "src/backend/src/modules/products/products.controller.spec.ts"
+          ],
+          "requiredDecisions": [
+            "campos-categoria"
+          ],
+          "acceptance": [
+            "PDF ausente solo aviso; campos/precio/imagen según contrato."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-api",
+          "goal": "Montar API de validación individual/selección e incidencias.",
+          "writePaths": [
+            "src/backend/src/modules/products/validation/**",
+            "src/backend/src/modules/products/products.service.ts",
+            "src/backend/src/modules/products/products.service.spec.ts",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/src/modules/products/products.module.ts",
+            "src/backend/src/modules/products/products.module.spec.ts",
+            "src/backend/src/modules/products/products.controller.ts",
+            "src/backend/src/modules/products/products.controller.spec.ts"
+          ],
+          "requiredDecisions": [
+            "campos-categoria"
+          ],
+          "acceptance": [
+            "Controller/module conectados; alcance e invalidación tras editar."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar botones de validación e incidencias.",
+          "writePaths": [
+            "src/frontend/src/features/catalog-validation/**",
+            "src/frontend/src/pages/ProductsPage.tsx",
+            "src/frontend/src/pages/ProductsPage.spec.tsx",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "campos-categoria"
+          ],
+          "acceptance": [
+            "Enlaces según permisos; trabajo de filtros completos usa CAT-07."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "CAT-06",
+      "lane": "catalog",
+      "title": "Publicar la revisión exacta y gestionar bandeja",
+      "dependsOn": [
+        "CAT-05"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "Pendientes, Con problemas, Publicados, Historial y scheduler"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/products/lifecycle.types.ts",
+        "src/backend/src/modules/products/products.service.ts",
+        "src/frontend/src/pages/ProductsPage.tsx"
+      ],
+      "rules": [
+        "Preparar/validar/publicar/retirar/programar tienen contrato de acciones; mismo servicio desde ficha, Biblioteca, rutas antiguas y scheduler.",
+        "No usar fallback de otra lista/tarifa para habilitar oferta pública.",
+        "Estado de vida y estado de validación son distintos; publicar una selección informa resultado por revisión."
+      ],
+      "cases": [
+        "Programación publica revisión programada, no el borrador posterior.",
+        "Revisión/precio/regla cambiado antes de publicar produce nueva comprobación.",
+        "Fallo no deja mezcla de archivos/datos; usuario editor sin publicar no publica."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar Pendientes, Con problemas, Publicados, Historial y scheduler. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-06.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/products/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "tarifa-publica",
+            "stock-publico"
+          ],
+          "acceptance": [
+            "Programación publica revisión programada, no el borrador posterior.",
+            "Revisión/precio/regla cambiado antes de publicar produce nueva comprobación.",
+            "Fallo no deja mezcla de archivos/datos; usuario editor sin publicar no publica."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/catalog-publication/**",
+            "src/frontend/src/pages/ProductsPage.tsx",
+            "src/frontend/src/pages/ProductsPage.spec.tsx",
+            "src/frontend/src/pages/ProductDetailPage.tsx",
+            "src/frontend/src/pages/ProductDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "tarifa-publica",
+            "stock-publico"
+          ],
+          "acceptance": [
+            "Programación publica revisión programada, no el borrador posterior.",
+            "Revisión/precio/regla cambiado antes de publicar produce nueva comprobación.",
+            "Fallo no deja mezcla de archivos/datos; usuario editor sin publicar no publica."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-07",
+      "lane": "catalog",
+      "title": "Trabajos persistidos e historial por recurso",
+      "dependsOn": [
+        "IMP-04",
+        "CAT-05"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "trabajador PostgreSQL, checkpoints, reintentos y estadísticas"
+        }
+      ],
+      "readPaths": [
+        "src/backend/prisma/schema.prisma",
+        "src/backend/src/modules/audit/",
+        "src/backend/src/modules/listas/listas.service.ts"
+      ],
+      "rules": [
+        "Contrato común para validación/exportación/importación; evitar tablas y colas duplicadas por función.",
+        "Reclamar/arrendar trabajo en PostgreSQL; progreso, cancelación y retención definidos. No agregar Redis/otro stack sin necesidad aprobada.",
+        "Permisos al ejecutar, no solo al encolar. Historial de recurso no exige acceso global a auditoría."
+      ],
+      "cases": [
+        "Reinicio recupera checkpoint; mismo item/operación no duplica cambios ni conteos.",
+        "Revocar mientras espera impide ejecución; trabajo ajeno no revela datos.",
+        "Selección por filtro cubre todo lo autorizado más allá de la página visible."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar trabajador PostgreSQL, checkpoints, reintentos y estadísticas. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-07.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/modules/catalog-jobs/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Reinicio recupera checkpoint; mismo item/operación no duplica cambios ni conteos.",
+            "Revocar mientras espera impide ejecución; trabajo ajeno no revela datos.",
+            "Selección por filtro cubre todo lo autorizado más allá de la página visible."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/catalog-jobs/**",
+            "src/frontend/src/pages/ListaDetailPage.tsx",
+            "src/frontend/src/pages/ListaDetailPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Reinicio recupera checkpoint; mismo item/operación no duplica cambios ni conteos.",
+            "Revocar mientras espera impide ejecución; trabajo ajeno no revela datos.",
+            "Selección por filtro cubre todo lo autorizado más allá de la página visible."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-08",
+      "lane": "catalog",
+      "title": "Exportar Biblioteca y sus medios",
+      "dependsOn": [
+        "CAT-04",
+        "CAT-07"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "paquete versionado, selección de productos/apartados y manifiesto"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/files/",
+        "src/frontend/src/pages/ProductsPage.tsx"
+      ],
+      "rules": [
+        "Contrato v1 antes de implementar: datos estructurados, archivo de consulta/edición y bytes reales con manifiesto/hash.",
+        "Un producto/selección/todos autorizados, apartados seleccionables y datos mínimos explicados.",
+        "Notas y datos comerciales privados requieren permisos/selección explícitos; descargar no publica."
+      ],
+      "cases": [
+        "Paquete incluye medios y hash correctos, no solo URLs.",
+        "Medio faltante produce resultado parcial claro; no afirmar exportación completa.",
+        "ZIP, descarga expirable y alcance de recurso impiden datos ajenos."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar paquete versionado, selección de productos/apartados y manifiesto. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-08.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/library-packages/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Paquete incluye medios y hash correctos, no solo URLs.",
+            "Medio faltante produce resultado parcial claro; no afirmar exportación completa.",
+            "ZIP, descarga expirable y alcance de recurso impiden datos ajenos."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/library-packages/**",
+            "src/frontend/src/pages/ProductsPage.tsx",
+            "src/frontend/src/pages/ProductsPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Paquete incluye medios y hash correctos, no solo URLs.",
+            "Medio faltante produce resultado parcial claro; no afirmar exportación completa.",
+            "ZIP, descarga expirable y alcance de recurso impiden datos ajenos."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-09",
+      "lane": "catalog",
+      "title": "Reimportar el paquete de Biblioteca",
+      "dependsOn": [
+        "CAT-08"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+          "section": "previsualizar mismo formato, conservar apartados omitidos y guardar borradores"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/library-packages/",
+        "src/backend/src/modules/products/",
+        "src/frontend/src/features/library-packages/"
+      ],
+      "rules": [
+        "Mismo contrato v1 de exportación; omitir no equivale a borrar; borrado exige instrucción/acción explícitas.",
+        "Hash autentica integridad, no al autor. Importar no concede permisos ni publica.",
+        "No evadir revisiones, pertenencia única ni trabajos comunes. Resolver divergencia entre representaciones antes de aplicar."
+      ],
+      "cases": [
+        "Exportar→reimportar en base desechable recupera datos y bytes.",
+        "Ruta peligrosa, ZIP excesivo, hash incorrecto o privilegio falso no aplica.",
+        "Conflicto de revisión o permiso revocado conserva datos y permite resultado/reintento trazable."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar previsualizar mismo formato, conservar apartados omitidos y guardar borradores. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/CAT-09.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/library-packages/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Exportar→reimportar en base desechable recupera datos y bytes.",
+            "Ruta peligrosa, ZIP excesivo, hash incorrecto o privilegio falso no aplica.",
+            "Conflicto de revisión o permiso revocado conserva datos y permite resultado/reintento trazable."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/library-packages/**",
+            "src/frontend/src/pages/ProductsPage.tsx",
+            "src/frontend/src/pages/ProductsPage.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Exportar→reimportar en base desechable recupera datos y bytes.",
+            "Ruta peligrosa, ZIP excesivo, hash incorrecto o privilegio falso no aplica.",
+            "Conflicto de revisión o permiso revocado conserva datos y permite resultado/reintento trazable."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-01",
+      "lane": "commercial",
+      "title": "Habilitar Vendedor, Supervisor y Gestión comercial",
+      "dependsOn": [
+        "BASE-04"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "paquetes/versiones y navegación según acciones individuales"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/common/security/access-assignments.service.ts",
+        "src/frontend/src/components/layout/CommercialLayout.tsx",
+        "src/frontend/src/App.tsx",
+        "src/frontend/src/features/users/components/UserAccessAssignments.tsx"
+      ],
+      "rules": [
+        "Paquete no equivale a rol; selección muestra acciones/alcances concretos. No migrar cuentas existentes automáticamente.",
+        "Configurar web no pertenece a Comercial. Mi resumen/Agenda una sola vez fuera de paneles.",
+        "Preservar navegación de los otros paneles; no consolidar ramas por reemplazo masivo."
+      ],
+      "cases": [
+        "Dos vendedores mismo rol con acciones distintas.",
+        "Sin paquetes no hay datos internos por URL/API; propia cuenta sigue disponible.",
+        "Revocar una acción actualiza navegación y API sin cerrar sesión."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar paquetes/versiones y navegación según acciones individuales. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-01.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/common/security/access-assignments.service.ts",
+            "src/backend/src/common/security/access-assignments.service.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Dos vendedores mismo rol con acciones distintas.",
+            "Sin paquetes no hay datos internos por URL/API; propia cuenta sigue disponible.",
+            "Revocar una acción actualiza navegación y API sin cerrar sesión."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/users/components/UserAccessAssignments.tsx",
+            "src/frontend/src/features/users/components/UserAccessAssignments.spec.tsx",
+            "src/frontend/src/components/layout/CommercialLayout.tsx",
+            "src/frontend/src/components/layout/CommercialLayout.spec.tsx",
+            "src/frontend/src/components/layout/AdminLayout.tsx",
+            "src/frontend/src/components/layout/AdminLayout.spec.tsx",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Dos vendedores mismo rol con acciones distintas.",
+            "Sin paquetes no hay datos internos por URL/API; propia cuenta sigue disponible.",
+            "Revocar una acción actualiza navegación y API sin cerrar sesión."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-02",
+      "lane": "commercial",
+      "title": "Separar datos de cliente y gestión de cartera",
+      "dependsOn": [
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "contactos/notas, responsable, estado y alcances propios/equipo"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/customers/",
+        "src/frontend/src/pages/CustomersPage.tsx"
+      ],
+      "rules": [
+        "DTO de edición general no debe conceder ownerId/estado por tener edición de datos.",
+        "Reasignación/cartera/conversión con acciones y alcances del contrato.",
+        "Evitar permiso global para que supervisor vea equipo y vendedor edite propios."
+      ],
+      "cases": [
+        "Petición de contacto+ownerId sin reasignar rechazada sin cambio parcial.",
+        "Lectura equipo no concede editar equipo.",
+        "Responsable nuevo, actor y antes/después quedan trazados sin PII innecesaria."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar contactos/notas, responsable, estado y alcances propios/equipo. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-02.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/customers/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Petición de contacto+ownerId sin reasignar rechazada sin cambio parcial.",
+            "Lectura equipo no concede editar equipo.",
+            "Responsable nuevo, actor y antes/después quedan trazados sin PII innecesaria."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/pages/CustomersPage.tsx",
+            "src/frontend/src/pages/CustomersPage.spec.tsx",
+            "src/frontend/src/services/customers.service.ts",
+            "src/frontend/src/services/customers.service.spec.ts",
+            "src/frontend/src/features/customers/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Petición de contacto+ownerId sin reasignar rechazada sin cambio parcial.",
+            "Lectura equipo no concede editar equipo.",
+            "Responsable nuevo, actor y antes/después quedan trazados sin PII innecesaria."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-03",
+      "lane": "commercial",
+      "title": "Cotizaciones con acciones claras",
+      "dependsOn": [
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "líneas, cantidades, estados y regla de descuentos"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/quotes/",
+        "src/frontend/src/pages/QuoteDetailPage.tsx"
+      ],
+      "rules": [
+        "Cambiar estado no introduce aprobación de venta ni emite factura ERP.",
+        "Separar autorización de descuentos ya contemplada en el diseño; editar cantidades no concede cambiar descuentos. Límites/condiciones se elaboran en COM-09.",
+        "Conservar descuentos y precios capturados; no recalcular históricos ni esperar nuevos porcentajes para adaptar estados/alcance.",
+        "Producto/lista/tarifa autorizado al agregar líneas."
+      ],
+      "cases": [
+        "Editar cantidad no introduce descuento nuevo no autorizado ni borra descuento previo autorizado.",
+        "Producto/tarifa ajeno se rechaza.",
+        "Ganada conserva pedido interno idempotente sin contar factura inexistente."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar líneas, cantidades, estados y regla de descuentos. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-03.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/quotes/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Editar cantidad no introduce descuento nuevo no autorizado ni borra descuento previo autorizado.",
+            "Producto/tarifa ajeno se rechaza.",
+            "Ganada conserva pedido interno idempotente sin contar factura inexistente."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/pages/QuotesPage.tsx",
+            "src/frontend/src/pages/QuotesPage.spec.tsx",
+            "src/frontend/src/pages/QuoteDetailPage.tsx",
+            "src/frontend/src/pages/QuoteDetailPage.spec.tsx",
+            "src/frontend/src/features/quotes/**",
+            "src/frontend/src/services/quotes.service.ts",
+            "src/frontend/src/services/quotes.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Editar cantidad no introduce descuento nuevo no autorizado ni borra descuento previo autorizado.",
+            "Producto/tarifa ajeno se rechaza.",
+            "Ganada conserva pedido interno idempotente sin contar factura inexistente."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-04",
+      "lane": "commercial",
+      "title": "Metas y seguimiento del equipo con trazabilidad",
+      "dependsOn": [
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "metas por integrante/periodo y responsables de sus cambios"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/sales-targets/",
+        "src/frontend/src/pages/AssignedTargetsPage.tsx"
+      ],
+      "rules": [
+        "Reutilizar consulta/upsert actual; añadir auditoría coherente y antes/después.",
+        "Vendedor consulta propia meta; solo asignación explícita permite gestión de equipo.",
+        "Periodo Bogotá y moneda explícitos; meta y avance facturado son medidas diferentes."
+      ],
+      "cases": [
+        "Lector no escribe; editor no cambia integrantes ajenos.",
+        "Reintento/mes no duplica objetivo ni auditoría de operación confirmada.",
+        "Recargar conserva cambios y fuente real."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar metas por integrante/periodo y responsables de sus cambios. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-04.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/sales-targets/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Lector no escribe; editor no cambia integrantes ajenos.",
+            "Reintento/mes no duplica objetivo ni auditoría de operación confirmada.",
+            "Recargar conserva cambios y fuente real."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/pages/AssignedTargetsPage.tsx",
+            "src/frontend/src/pages/AssignedTargetsPage.spec.tsx",
+            "src/frontend/src/services/dashboard-insights.service.ts",
+            "src/frontend/src/services/dashboard-insights.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Lector no escribe; editor no cambia integrantes ajenos.",
+            "Reintento/mes no duplica objetivo ni auditoría de operación confirmada.",
+            "Recargar conserva cambios y fuente real."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-05",
+      "lane": "commercial",
+      "title": "Resumen e indicadores con fuente visible",
+      "dependsOn": [
+        "COM-01",
+        "COM-04"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "clientes/cotizaciones/pendientes y fuente real de facturación"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/dashboard/dashboard.service.ts",
+        "src/frontend/src/pages/AssignedReportsPage.tsx",
+        "src/frontend/src/pages/AssignedHome.tsx"
+      ],
+      "rules": [
+        "Datos actuales con referencia manual de factura no se presentan como sincronización Yéminus.",
+        "Separar cero ventas de fuente todavía no conectada. No ejemplos ficticios en pantalla operativa.",
+        "No contar dos veces cotización ganada, pedido e invoice; métricas propias/equipo según acción."
+      ],
+      "cases": [
+        "Ganada sin factura no sube facturación real.",
+        "Rango/monedas/equipo no mezclan datos ajenos.",
+        "Sin fuente no aparece un cero que simule consulta ERP exitosa."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar clientes/cotizaciones/pendientes y fuente real de facturación. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-05.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/dashboard/**"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Ganada sin factura no sube facturación real.",
+            "Rango/monedas/equipo no mezclan datos ajenos.",
+            "Sin fuente no aparece un cero que simule consulta ERP exitosa."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/pages/AssignedReportsPage.tsx",
+            "src/frontend/src/pages/AssignedReportsPage.spec.tsx",
+            "src/frontend/src/pages/AssignedHome.tsx",
+            "src/frontend/src/pages/AssignedHome.spec.tsx",
+            "src/frontend/src/services/dashboard-insights.service.ts",
+            "src/frontend/src/services/dashboard-insights.service.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Ganada sin factura no sube facturación real.",
+            "Rango/monedas/equipo no mezclan datos ajenos.",
+            "Sin fuente no aparece un cero que simule consulta ERP exitosa."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-06",
+      "lane": "commercial",
+      "title": "Pedidos por falta de stock y Excel Pedidos",
+      "dependsOn": [
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "solicitudes propias/equipo, estados y contrato Excel saneado"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/sales-orders/",
+        "src/backend/prisma/schema.prisma"
+      ],
+      "rules": [
+        "No reutilizar SalesOrder ligado obligatoriamente a Quote como solicitud sin stock.",
+        "Primero obtener estructura saneada del Excel, responsables, estados y política de duplicados/actualización.",
+        "Registrar/actualizar/cancelar propias autorizadas; importar/exportar es acción distinta."
+      ],
+      "cases": [
+        "Solicitud no genera venta, factura, reserva ni salida de stock.",
+        "Cambiar ID/owner no permite editar ajenas.",
+        "Reimportar Excel no duplica solicitud; errores no se descartan.",
+        "Atención parcial por línea conserva solicitado/atendido/pendiente, autor, motivo e historial.",
+        "Disponibilidad de fuente autorizada; atender no inventa stock.",
+        "Importar/exportar solo filas autorizadas, sin duplicar ni descartar errores."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar solicitudes propias/equipo, estados y contrato Excel saneado. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-06.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-solicitudes",
+          "goal": "Crear solicitudes sin stock propias/equipo separadas de SalesOrder.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/stock-requests/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Sin venta/factura/reserva; alta/actualización/cancelación autorizadas."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-solicitudes",
+          "goal": "Conectar solicitudes e historial propio/equipo.",
+          "writePaths": [
+            "src/frontend/src/features/stock-requests/**",
+            "src/frontend/src/services/stock-requests.service.ts",
+            "src/frontend/src/services/stock-requests.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "No modifica ajenas; cambios persisten y estados visibles."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-atencion",
+          "goal": "Resolver parcialmente por línea con disponibilidad autorizada.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/stock-requests/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "stock-solicitudes"
+          ],
+          "acceptance": [
+            "Solicitado/atendido/pendiente/motivo/historial preservados, sin inventar stock."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-atencion",
+          "goal": "Mostrar cantidades y seguimiento de atención.",
+          "writePaths": [
+            "src/frontend/src/features/stock-requests/**",
+            "src/frontend/src/services/stock-requests.service.ts",
+            "src/frontend/src/services/stock-requests.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "stock-solicitudes"
+          ],
+          "acceptance": [
+            "Alcance y botones correctos; pendientes y parciales distinguibles."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-excel",
+          "goal": "Importar/exportar Excel Pedidos del contrato confirmado.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/stock-requests/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "excel-pedidos"
+          ],
+          "acceptance": [
+            "Claves y errores explícitos; reimportar no duplica; exportación respeta alcance."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-excel",
+          "goal": "Conectar revisión y resultado del Excel Pedidos.",
+          "writePaths": [
+            "src/frontend/src/features/stock-requests/**",
+            "src/frontend/src/services/stock-requests.service.ts",
+            "src/frontend/src/services/stock-requests.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "excel-pedidos"
+          ],
+          "acceptance": [
+            "Selección explícita; filas con problemas no se descartan."
+          ],
+          "requiresPackages": []
+        }
+      ]
+    },
+    {
+      "id": "COM-07",
+      "lane": "commercial",
+      "title": "Conectar facturas reales de Yéminus",
+      "dependsOn": [
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "adaptador ERP, vendedores, facturas, anulaciones y sincronización"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/sales-orders/",
+        "src/backend/src/modules/dashboard/",
+        "src/backend/prisma/schema.prisma"
+      ],
+      "rules": [
+        "No inventar endpoints, credenciales, IDs ni reglas del ERP; contrato oficial/sandbox antes del código de integración.",
+        "Factura vendedor sin aprobación adicional; técnico de sincronización separado del vendedor responsable.",
+        "ID factura origen+estado evita duplicados; anulaciones/ajustes conservan trazabilidad; no emitir facturas en producción."
+      ],
+      "cases": [
+        "Reintento/webhook/import repetido no duplica facturación.",
+        "Anulación/ajuste produce avance correcto sin modificar captura histórica indebidamente.",
+        "Fallo ERP no inventa ventas; vendedores/equipos solo consultan lo autorizado."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar adaptador ERP, vendedores, facturas, anulaciones y sincronización. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-07.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend-sincronizacion",
+          "goal": "Implementar adaptador/registro ERP con IDs y ajustes acordados.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/erp-sales/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/src/modules/dashboard/**",
+            "src/backend/src/modules/commercial/sales-targets/**"
+          ],
+          "requiredDecisions": [
+            "api-yeminus"
+          ],
+          "acceptance": [
+            "Reintentos/anulaciones no duplican; error no inventa venta."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "frontend-facturas",
+          "goal": "Consultar facturas por vendedor/equipo y mostrar fuente/sincronización.",
+          "writePaths": [
+            "src/frontend/src/features/erp-sales/**",
+            "src/frontend/src/services/erp-sales.service.ts",
+            "src/frontend/src/services/erp-sales.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx",
+            "src/frontend/src/pages/AssignedReportsPage.tsx",
+            "src/frontend/src/pages/AssignedReportsPage.spec.tsx",
+            "src/frontend/src/pages/AssignedTargetsPage.tsx",
+            "src/frontend/src/pages/AssignedTargetsPage.spec.tsx",
+            "src/frontend/src/pages/AssignedHome.tsx",
+            "src/frontend/src/pages/AssignedHome.spec.tsx",
+            "src/frontend/src/services/dashboard-insights.service.ts",
+            "src/frontend/src/services/dashboard-insights.service.spec.ts"
+          ],
+          "requiredDecisions": [
+            "api-yeminus"
+          ],
+          "acceptance": [
+            "Datos propios/equipo autorizados; sin aprobación adicional."
+          ],
+          "requiresPackages": []
+        },
+        {
+          "id": "backend-indicadores",
+          "goal": "Conectar avance/resúmenes/metas a facturas ERP sustituyendo fuente manual.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/erp-sales/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts",
+            "src/backend/src/modules/dashboard/**",
+            "src/backend/src/modules/commercial/sales-targets/**"
+          ],
+          "requiredDecisions": [
+            "api-yeminus"
+          ],
+          "acceptance": [
+            "Anulaciones y ajustes correctos; factura contada una vez."
+          ],
+          "requiresPackages": [
+            "COM-05"
+          ]
+        },
+        {
+          "id": "frontend-indicadores",
+          "goal": "Actualizar metas/resúmenes/informes tras sincronización real.",
+          "writePaths": [
+            "src/frontend/src/features/erp-sales/**",
+            "src/frontend/src/services/erp-sales.service.ts",
+            "src/frontend/src/services/erp-sales.service.spec.ts",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx",
+            "src/frontend/src/pages/AssignedReportsPage.tsx",
+            "src/frontend/src/pages/AssignedReportsPage.spec.tsx",
+            "src/frontend/src/pages/AssignedTargetsPage.tsx",
+            "src/frontend/src/pages/AssignedTargetsPage.spec.tsx",
+            "src/frontend/src/pages/AssignedHome.tsx",
+            "src/frontend/src/pages/AssignedHome.spec.tsx",
+            "src/frontend/src/services/dashboard-insights.service.ts",
+            "src/frontend/src/services/dashboard-insights.service.spec.ts"
+          ],
+          "requiredDecisions": [
+            "api-yeminus"
+          ],
+          "acceptance": [
+            "Recargar muestra avance ERP y alcance vigente."
+          ],
+          "requiresPackages": [
+            "COM-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-08",
+      "lane": "commercial",
+      "title": "Avisos y promociones comerciales internos",
+      "dependsOn": [
+        "BASE-01",
+        "BASE-02",
+        "COM-01"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "recuperar promociones S3 y separar preparar/publicar/audiencia"
+        }
+      ],
+      "readPaths": [
+        "docs/COMPARACION-10-PANELES-2026-10-13.md",
+        "src/backend/src/modules/storefront/banners.service.ts"
+      ],
+      "rules": [
+        "Reconciliar módulo S3 existente antes de crearlo localmente.",
+        "Aviso interno no es banner público ni descuento de e-commerce.",
+        "Borrador/edición/publicación/retirada/audiencia/fechas con acciones separadas; preparar no publica."
+      ],
+      "cases": [
+        "Aviso vencido/de otro equipo no aparece.",
+        "Editor sin publicar no activa; retirada exige permiso.",
+        "Aviso interno no cambia slider ni precios públicos."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Concretar recuperar promociones S3 y separar preparar/publicar/audiencia. Fijar campos, rutas, acciones, alcance, errores y pruebas antes de implementar.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-08.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Completar el alcance de servidor de este paso y sus pruebas. Si no cabe en una entrega revisable, el coordinador registra todos los subpasos antes de delegar código.",
+          "writePaths": [
+            "src/backend/src/modules/promotions/**",
+            "src/backend/prisma/schema.prisma",
+            "src/backend/prisma/migrations/**",
+            "src/backend/src/app.module.ts",
+            "src/backend/src/app.module.spec.ts",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "promociones-base"
+          ],
+          "acceptance": [
+            "Aviso vencido/de otro equipo no aparece.",
+            "Editor sin publicar no activa; retirada exige permiso.",
+            "Aviso interno no cambia slider ni precios públicos."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Conectar la interfaz al contrato de servidor auditado y verificar su recorrido; sin cambiar reglas desde el navegador.",
+          "writePaths": [
+            "src/frontend/src/features/promotions/**",
+            "src/frontend/src/App.tsx",
+            "src/frontend/src/App.spec.tsx"
+          ],
+          "requiredDecisions": [
+            "promociones-base"
+          ],
+          "acceptance": [
+            "Aviso vencido/de otro equipo no aparece.",
+            "Editor sin publicar no activa; retirada exige permiso.",
+            "Aviso interno no cambia slider ni precios públicos."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-09",
+      "lane": "commercial",
+      "title": "Límites y configuración de descuentos",
+      "dependsOn": [
+        "COM-03",
+        "IMP-03"
+      ],
+      "references": [
+        {
+          "path": "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md",
+          "section": "líneas, cantidades, estados y regla de descuentos"
+        }
+      ],
+      "readPaths": [
+        "src/backend/src/modules/commercial/quotes/",
+        "src/frontend/src/pages/QuoteDetailPage.tsx"
+      ],
+      "rules": [
+        "La separación del permiso ya está decidida; aquí faltan límites/condiciones comerciales con evidencia.",
+        "No elegir porcentaje arbitrario ni convertir edición general en autorización de descuento.",
+        "Precio de catálogo y descuento de cotización son contratos distintos."
+      ],
+      "cases": [
+        "Sin permiso no acepta descuento por API.",
+        "Fuera de límite se rechaza; editar cantidad conserva descuento previo autorizado.",
+        "Gestionar límites no concede acceso global a cartera."
+      ],
+      "steps": [
+        {
+          "id": "contrato",
+          "goal": "Cerrar límites, condiciones, acciones y auditoría de descuentos.",
+          "writePaths": [
+            "docs/ejecucion-paneles/contratos/COM-09.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Contrato consistente con dependencias y decisiones pendientes explícitas.",
+            "Todos los incrementos están registrados con objetivo, archivos y aceptación propios antes de delegar código."
+          ]
+        },
+        {
+          "id": "backend",
+          "goal": "Implementar límites y controles de descuentos del contrato auditado.",
+          "writePaths": [
+            "src/backend/src/modules/commercial/quotes/**",
+            "src/backend/src/common/security/access-catalog.ts",
+            "src/backend/src/common/security/access-catalog.spec.ts"
+          ],
+          "requiredDecisions": [
+            "regla-descuentos"
+          ],
+          "acceptance": [
+            "Sin permiso no acepta descuento por API.",
+            "Fuera de límite se rechaza; editar cantidad conserva descuento previo autorizado.",
+            "Gestionar límites no concede acceso global a cartera."
+          ]
+        },
+        {
+          "id": "frontend",
+          "goal": "Implementar límites y controles de descuentos del contrato auditado.",
+          "writePaths": [
+            "src/frontend/src/pages/QuotesPage.tsx",
+            "src/frontend/src/pages/QuotesPage.spec.tsx",
+            "src/frontend/src/pages/QuoteDetailPage.tsx",
+            "src/frontend/src/pages/QuoteDetailPage.spec.tsx",
+            "src/frontend/src/features/quotes/**",
+            "src/frontend/src/services/quotes.service.ts",
+            "src/frontend/src/services/quotes.service.spec.ts"
+          ],
+          "requiredDecisions": [
+            "regla-descuentos"
+          ],
+          "acceptance": [
+            "Sin permiso no acepta descuento por API.",
+            "Fuera de límite se rechaza; editar cantidad conserva descuento previo autorizado.",
+            "Gestionar límites no concede acceso global a cartera."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "QA-01",
+      "lane": "audit",
+      "actor": "coordinador",
+      "title": "Auditoría integral de los dos paneles e importación",
+      "dependsOn": [
+        "BASE-01",
+        "BASE-02",
+        "BASE-03",
+        "BASE-04",
+        "IMP-01",
+        "IMP-02",
+        "IMP-03",
+        "IMP-04",
+        "IMP-05",
+        "IMP-06",
+        "IMP-07",
+        "CAT-01",
+        "CAT-02",
+        "CAT-03",
+        "CAT-04",
+        "CAT-05",
+        "CAT-06",
+        "CAT-07",
+        "CAT-08",
+        "CAT-09",
+        "COM-01",
+        "COM-02",
+        "COM-03",
+        "COM-04",
+        "COM-05",
+        "COM-06",
+        "COM-07",
+        "COM-08",
+        "COM-09"
+      ],
+      "references": [
+        {
+          "path": "docs/ejecucion-paneles/AUDITOR.md",
+          "section": "Al recibir implementación y veredicto"
+        }
+      ],
+      "readPaths": [
+        "docs/ejecucion-paneles/estado.json",
+        "docs/ejecucion-paneles/resultados/"
+      ],
+      "rules": [
+        "Auditar versión integrada real; revisar pruebas positivas/negativas y regresiones de los flujos antiguos.",
+        "Base PostgreSQL desechable y navegador con sesiones de prueba. Sin datos/clientes/credenciales de producción.",
+        "Una aceptación de pruebas no publica ni autoriza cambiar cuentas reales. Dependencias externas faltantes impiden declarar alcance completo funcional."
+      ],
+      "cases": [
+        "Usuario nuevo sin paneles; mismo rol/diferentes acciones; recurso ajeno; revocación entre pasos y tareas pendientes.",
+        "Precio/lista/concurrencia/reintento/rollback; producto publicado conserva revisión; ZIP ida/vuelta.",
+        "Vendedor no requiere aprobación; ventas ERP sin duplicados; pedidos sin stock separados; agenda y avisos con alcance."
+      ],
+      "steps": [
+        {
+          "id": "auditoria",
+          "goal": "Emitir informe de integración con evidencia, defectos pendientes y alcance exactamente comprobado. Preparar un plan de publicación separado si todo lo obligatorio pasa.",
+          "writePaths": [
+            "docs/ejecucion-paneles/resultados/QA-01-auditoria.md"
+          ],
+          "requiredDecisions": [],
+          "acceptance": [
+            "Usuario nuevo sin paneles; mismo rol/diferentes acciones; recurso ajeno; revocación entre pasos y tareas pendientes.",
+            "Precio/lista/concurrencia/reintento/rollback; producto publicado conserva revisión; ZIP ida/vuelta.",
+            "Vendedor no requiere aprobación; ventas ERP sin duplicados; pedidos sin stock separados; agenda y avisos con alcance."
+          ]
+        }
+      ]
+    }
+  ]
+}

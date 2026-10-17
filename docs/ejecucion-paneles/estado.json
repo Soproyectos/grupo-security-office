@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-14",
+  "reviews": {
+    "BASE-01/inventario": {
+      "verdict": "aceptada",
+      "reviewer": "coordinador",
+      "report": "docs/ejecucion-paneles/resultados/BASE-01-inventario-auditoria.md",
+      "scope": "inventario documental en S3; no base consolidada ni implementación",
+      "contractSha256": "a4d8fa12ab1ee3678e87b1316bc9c0bf4b297078f5c81b99a74a9277851f6fc7",
+      "deliverySha256": "49770eb06833c162ff72a6df515e2a6902500fb8521ae56bad47d036f66be2f4"
+    }
+  },
+  "decisions": {}
+}

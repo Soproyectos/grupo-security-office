@@ -1,0 +1,14 @@
+{
+  "before": {
+    "docs/PROPUESTA-ARBOL-PANELES-2026-10-13.md": "91ff16cfbb4f7ca9f45b76f7194f210f10daa97681a0c9026db721edec261375",
+    "docs/COMPARACION-10-PANELES-2026-10-13.md": "11e600a80fedc5b1fa16b58de8b11e05e049d3a776b8e2484ccc5d67019fb3ef",
+    "docs/adr/ADR-20261013-paneles-y-paquetes-de-trabajo.md": "8fc64fc2f4b185e2184f9679895f54031c4a498b8009470da2fcc5707369bd31"
+  },
+  "after": {
+    "docs/PROPUESTA-ARBOL-PANELES-2026-10-13.md": "17f26d72cfd7151d729ac20f97f6cb1d48b23d997cb8dd7ca59c4ed01faf2b03",
+    "docs/COMPARACION-10-PANELES-2026-10-13.md": "819d99e94b36e85c0e60d92a35d35a095b88853c0bab52c6cbaae8ebbc502049",
+    "docs/adr/ADR-20261013-paneles-y-paquetes-de-trabajo.md": "1ab58e8e0eea00235783abbb2ba5169761ab80b4c3c1ab154fa861626bee106c",
+    "docs/DISENO-PANEL-COMERCIAL-2026-10-13.md": "3b45c68a230df7ef2364216393d9159579993405a3e821b4ab015b96bbaf5c4a"
+  },
+  "reason": "Detalle de Comercial y regla confirmada por el usuario: ventas en Yeminus sin aprobacion; Excel Pedidos sin stock"
+}
