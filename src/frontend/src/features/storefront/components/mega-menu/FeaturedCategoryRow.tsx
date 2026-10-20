@@ -1,6 +1,6 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { categoryHref } from './menu-model'
+import { categoryHref, hasForwardOverflow } from './menu-model'
 import type { MenuCategory } from '../../types/categoryMenu'
 
 export interface FeaturedCategoryRowProps {
@@ -29,11 +29,31 @@ function ChevronRight() {
  * scroll container with scroll snapping (no carousel library), and the arrow
  * button scrolls it with the native `scrollBy`.
  *
+ * The arrow is rendered only while the track actually overflows, measured
+ * after mount: with few categories there is nothing to scroll, and a
+ * permanently idle arrow reads as a broken button.
+ *
  * `hidden lg:flex`: the circles are a desktop affordance, the mobile drawer
  * lists the same categories as a drill-down instead.
  */
 export default function FeaturedCategoryRow({ nodes, onNavigate }: FeaturedCategoryRowProps) {
   const trackRef = useRef<HTMLUListElement>(null)
+  const [canScrollForward, setCanScrollForward] = useState(false)
+
+  useEffect(() => {
+    const track = trackRef.current
+    if (!track) return
+    const update = () => setCanScrollForward(hasForwardOverflow(track))
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(track)
+    track.addEventListener('scroll', update, { passive: true })
+    return () => {
+      observer.disconnect()
+      track.removeEventListener('scroll', update)
+    }
+  }, [nodes.length])
 
   if (nodes.length === 0) return null
 
@@ -77,14 +97,16 @@ export default function FeaturedCategoryRow({ nodes, onNavigate }: FeaturedCateg
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={() => scroll(1)}
-        aria-label="Ver más categorías destacadas"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-surface-200 bg-white text-ink-500 transition hover:border-security-500 hover:text-security-500"
-      >
-        <ChevronRight />
-      </button>
+      {canScrollForward && (
+        <button
+          type="button"
+          onClick={() => scroll(1)}
+          aria-label="Ver más categorías destacadas"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-surface-200 bg-white text-ink-500 transition hover:border-security-500 hover:text-security-500"
+        >
+          <ChevronRight />
+        </button>
+      )}
     </div>
   )
 }

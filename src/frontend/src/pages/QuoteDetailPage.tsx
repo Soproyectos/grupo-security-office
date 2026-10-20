@@ -6,15 +6,15 @@ import QuoteItemsTable from '../features/quotes/components/QuoteItemsTable'
 import AddQuoteItemModal from '../features/quotes/components/AddQuoteItemModal'
 import SalesOrderSection from '../features/quotes/components/SalesOrderSection'
 import { useQuote } from '../features/quotes/hooks/useQuotes'
-import {
-  extractBackendMessage,
-  useQuoteMutations,
-} from '../features/quotes/hooks/useQuoteMutations'
+import { useQuoteMutations } from '../features/quotes/hooks/useQuoteMutations'
+import { quoteErrorMessage } from '../services/quotes.service'
 import { formatMoney } from '../features/quotes/lib/money'
 import {
   allowedTransitions,
   areItemsEditable,
 } from '../features/quotes/lib/quote-status'
+import { quotesAccess } from '../features/quotes/access'
+import { useAuthStore } from '../stores/auth.store'
 import type { QuoteStatus } from '../features/quotes/types/quote.types'
 
 const TRANSITION_LABELS: Record<QuoteStatus, string> = {
@@ -55,10 +55,14 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function QuoteDetailPage() {
+export default function QuoteDetailPage({
+  personal = false,
+  quotesPath = '/commercial/quotes',
+}: { personal?: boolean; quotesPath?: string }) {
   const { id } = useParams<{ id: string }>()
   const { quote, isLoading, error } = useQuote(id)
   const { updateStatus } = useQuoteMutations()
+  const currentUser = useAuthStore((state) => state.user)
 
   const [statusError, setStatusError] = useState<string | null>(null)
   const [pendingStatus, setPendingStatus] = useState<QuoteStatus | null>(null)
@@ -85,7 +89,7 @@ export default function QuoteDetailPage() {
           No se pudo cargar la cotización. Intenta de nuevo.
         </p>
         <Link
-          to="/commercial/quotes"
+          to={quotesPath}
           className="text-sm font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]"
         >
           Volver a cotizaciones
@@ -95,8 +99,12 @@ export default function QuoteDetailPage() {
   }
 
   const transitions = allowedTransitions(quote.status)
+    .filter(status => !personal || status !== 'ganada')
   const itemsEditable = areItemsEditable(quote.status)
   const currency = quote.currency
+  // Criterio client-side (UX) del editor de descuento; el servidor manda
+  // (`quotes:discount` resuelto por petición) y su 403 se pinta tal cual.
+  const { canEditDiscount } = quotesAccess(currentUser)
 
   const doTransition = async (status: QuoteStatus, reason?: string) => {
     setStatusError(null)
@@ -108,8 +116,10 @@ export default function QuoteDetailPage() {
       setPendingStatus(null)
       setLostReason('')
     } catch (err) {
-      // Mensaje del backend (p. ej. transición inválida) mostrado tal cual.
-      setStatusError(extractBackendMessage(err))
+      // Mensaje del backend tal cual: transición inválida y doble ganada
+      // llegan como 409 (COM-03 §6/F7) — el refetch del 409 ya dejó en caché
+      // el estado y el pedido REALES (un solo pedido, sin duplicados).
+      setStatusError(quoteErrorMessage(err))
     }
   }
 
@@ -126,7 +136,7 @@ export default function QuoteDetailPage() {
     <div className="space-y-6">
       <nav aria-label="Ruta de navegación" className="text-sm">
         <Link
-          to="/commercial/quotes"
+          to={quotesPath}
           className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]"
         >
           Cotizaciones
@@ -235,7 +245,11 @@ export default function QuoteDetailPage() {
             </Button>
           )}
         </div>
-        <QuoteItemsTable quote={quote} editable={itemsEditable} />
+        <QuoteItemsTable
+          quote={quote}
+          editable={itemsEditable}
+          canEditDiscount={canEditDiscount}
+        />
       </Card>
 
       {/* Totales: strings del backend, solo presentación (nunca calculados). */}

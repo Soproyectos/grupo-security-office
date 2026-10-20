@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import api from '../services/api'
 import { canViewUsers, hasRole } from '../lib/rbac'
 import { ROLES } from '../lib/roles'
-import { getApiErrorMessage } from '../lib/apiError'
+import { getApiErrorFeedback, getApiErrorMessage } from '../lib/apiError'
 import {
   updateUserSupervisor,
 } from '../services/users.service'
@@ -271,19 +271,19 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div className="mt-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">
-                      Supervisor:{' '}
-                      <span className="text-gray-700">
-                        {user.supervisorId
-                          ? (users?.data?.find((u: User) => u.id === user.supervisorId)?.name ?? '— Sin asignar —')
-                          : '— Sin asignar —'}
-                      </span>
-                    </p>
-                    {canAssignSupervisor && (
+                  {canAssignSupervisor && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        Supervisor:{' '}
+                        <span className="text-gray-700">
+                          {user.supervisorId
+                            ? (users?.data?.find((u: User) => u.id === user.supervisorId)?.name ?? '— Sin asignar —')
+                            : '— Sin asignar —'}
+                        </span>
+                      </p>
                       <SupervisorSelect user={user} users={users?.data ?? []} />
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   <div className="mt-3 flex items-center justify-between">
                     <div className="flex gap-1.5 flex-wrap">
@@ -449,6 +449,10 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
     },
     onSuccess,
   })
+  const errorMessage = mutation.isError
+    ? getApiErrorMessage(mutation.error, user ? 'No se pudo actualizar el usuario' : 'No se pudo crear el usuario')
+    : null
+  const errorFeedback = mutation.isError ? getApiErrorFeedback(mutation.error) : []
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -493,9 +497,14 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
-              {...(!user ? { required: true, minLength: 8 } : { minLength: 8 })}
-              placeholder={user ? '••••••••' : 'Mínimo 8 caracteres'}
+              {...(!user ? { required: true, minLength: 12 } : { minLength: 12 })}
+              placeholder={user ? '••••••••' : 'Mínimo 12 caracteres'}
+              aria-describedby="user-password-hint"
             />
+            <p id="user-password-hint" className="mt-1.5 text-xs text-gray-500">
+              Mínimo 12 caracteres y difícil de adivinar. Una frase de varias palabras funciona bien
+              (ej. Camara-Roja-Puerta-2026!). No uses el nombre ni el email. Los roles con privilegios exigen una contraseña más fuerte.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Roles</label>
@@ -530,6 +539,16 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
               <span className="text-sm font-medium text-gray-700">Usuario activo</span>
             </label>
           </div>
+          {errorMessage && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <p className="font-medium">{errorMessage}</p>
+              {errorFeedback.length > 0 && (
+                <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                  {errorFeedback.map((hint) => <li key={hint}>{hint}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
             <button type="button" onClick={onClose} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors">
               Cancelar

@@ -12,33 +12,28 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { CustomersService } from './customers.service';
+import { CustomersService, CustomersAccessContext } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { ReassignCustomerDto } from './dto/reassign-customer.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
-import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../../common/guards/roles.guard';
-import { AccessContext } from '../../../common/acl/acl.service';
-import { COMMERCIAL_READ_ROLES, COMMERCIAL_WRITE_ROLES } from '../../../common/rbac/roles.constants';
-
-const READ_ROLES = COMMERCIAL_READ_ROLES;
-const WRITE_ROLES = COMMERCIAL_WRITE_ROLES;
 
 @ApiTags('Commercial - Customers')
 @ApiBearerAuth()
 @Controller('api/commercial/customers')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
-  private ctx(user: any): AccessContext {
-    return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
+  private ctx(user: any): CustomersAccessContext {
+    // `jti` alimenta la identidad de `resolveAccess` (customers:edit /
+    // customers:reassign); la sesión ya fue validada por JwtStrategy.
+    return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [], jti: user?.jti };
   }
 
   @Get()
-  @Roles(...READ_ROLES)
   @ApiOperation({
     summary: 'Listar clientes/leads (filtros: search, status, ownerId; paginado)',
   })
@@ -47,7 +42,6 @@ export class CustomersController {
   }
 
   @Get(':id')
-  @Roles(...READ_ROLES)
   @ApiOperation({ summary: 'Detalle de un cliente/lead' })
   @ApiResponse({ status: 404, description: 'No existe o fuera del scope del usuario' })
   findOne(@CurrentUser() user: any, @Param('id') id: string) {
@@ -55,7 +49,6 @@ export class CustomersController {
   }
 
   @Post()
-  @Roles(...WRITE_ROLES)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear cliente/lead (ownerId por defecto = creador)' })
   @ApiResponse({ status: 409, description: 'Documento duplicado' })
@@ -64,7 +57,6 @@ export class CustomersController {
   }
 
   @Patch(':id')
-  @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Actualizar un cliente/lead' })
   update(
     @CurrentUser() user: any,
@@ -75,15 +67,28 @@ export class CustomersController {
   }
 
   @Patch(':id/convert')
-  @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Convertir manualmente LEAD → CLIENTE (setea convertedAt)' })
   @ApiResponse({ status: 409, description: 'El registro no está en status LEAD' })
   convert(@CurrentUser() user: any, @Param('id') id: string) {
     return this.customersService.convert(id, this.ctx(user));
   }
 
+  @Patch(':id/reassign')
+  @ApiOperation({
+    summary:
+      'Reasignar responsable del cliente (requiere customers:reassign con alcance team/global)',
+  })
+  @ApiResponse({ status: 403, description: 'Sin customers:reassign que cubra el cliente' })
+  @ApiResponse({ status: 404, description: 'No existe o fuera del scope del usuario' })
+  reassign(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: ReassignCustomerDto,
+  ) {
+    return this.customersService.reassign(id, dto, this.ctx(user));
+  }
+
   @Delete(':id')
-  @Roles(...WRITE_ROLES)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Eliminar (soft delete, isActive = false)' })
   @ApiResponse({ status: 204, description: 'Cliente desactivado' })

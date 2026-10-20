@@ -6,7 +6,7 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 
 vi.mock('./api', () => ({ default: { get } }))
 
-import { fetchCategoryMenu, searchPublicProducts } from './public-catalog.service'
+import { fetchCategoryMenu, fetchPublicProducts } from './public-catalog.service'
 
 // ---------------------------------------------------------------------------
 // Covered scenarios:
@@ -27,6 +27,7 @@ const menu: MenuCategory[] = [
     iconUrl: '/images/categories/icons/videovigilancia.svg',
     isFeatured: false,
     sortOrder: 10,
+    productCount: 0,
     children: [
       {
         id: 'child-1',
@@ -36,6 +37,7 @@ const menu: MenuCategory[] = [
         iconUrl: null,
         isFeatured: true,
         sortOrder: 0,
+        productCount: 0,
         children: [
           {
             id: 'grandchild-1',
@@ -45,6 +47,7 @@ const menu: MenuCategory[] = [
             iconUrl: null,
             isFeatured: false,
             sortOrder: 0,
+            productCount: 0,
             children: [],
           },
         ],
@@ -59,6 +62,7 @@ const menu: MenuCategory[] = [
     iconUrl: null,
     isFeatured: false,
     sortOrder: 20,
+    productCount: 0,
     children: [],
   },
 ]
@@ -131,7 +135,7 @@ describe('fetchCategoryMenu', () => {
   })
 })
 
-describe('searchPublicProducts', () => {
+describe('fetchPublicProducts', () => {
   beforeEach(() => {
     get.mockReset()
   })
@@ -139,50 +143,76 @@ describe('searchPublicProducts', () => {
   const results: PublicProductResult[] = [
     {
       id: 'prod-1',
+      sku: 'CAM-4K',
       name: 'Cámara Domo 4K',
       imageUrl: '/api/files/img-1',
       categoryName: 'Cámaras IP',
       categorySlug: 'camaras-ip',
+      brandName: 'Hikvision',
+      price: { value: 118258.8, currency: 'COP' },
     },
     {
       id: 'prod-2',
+      sku: 'LEC-01',
       name: 'Lector biométrico',
       imageUrl: null,
       categoryName: 'Control de Acceso',
       categorySlug: 'control-de-acceso',
+      brandName: null,
+      price: null,
     },
   ]
+  const meta = { total: 40, offset: 0, limit: 24 }
 
-  it('pide el endpoint público de productos con el término y el límite', async () => {
-    get.mockResolvedValue({ data: { data: results } })
+  it('pide el endpoint público con el término, la categoría, el offset y el límite', async () => {
+    get.mockResolvedValue({ data: { data: results, meta } })
 
-    await searchPublicProducts('cámara')
+    await fetchPublicProducts({ q: 'cámara', category: 'camaras-ip' }, 24)
 
     expect(get).toHaveBeenCalledTimes(1)
     expect(get).toHaveBeenCalledWith('/public/products', {
-      params: { q: 'cámara', limit: 24 },
+      params: { q: 'cámara', category: 'camaras-ip', offset: 24, limit: 24 },
     })
   })
 
-  it('desenvuelve el payload doble envuelto y devuelve los resultados completos', async () => {
-    get.mockResolvedValue({ data: { data: results } })
+  it('omite los filtros vacíos', async () => {
+    get.mockResolvedValue({ data: { data: [], meta: { total: 0, offset: 0, limit: 24 } } })
 
-    const result = await searchPublicProducts('cámara')
+    await fetchPublicProducts({ q: '' })
 
-    expect(Array.isArray(result)).toBe(true)
-    expect(result).toEqual(results)
+    expect(get).toHaveBeenCalledWith('/public/products', { params: { offset: 0, limit: 24 } })
+  })
+
+  it('desenvuelve el payload doble envuelto y devuelve items y total', async () => {
+    get.mockResolvedValue({ data: { data: { data: results, meta } } })
+
+    await expect(fetchPublicProducts({ q: 'cámara' })).resolves.toEqual({
+      items: results,
+      total: 40,
+      offset: 0,
+      limit: 24,
+    })
   })
 
   it('resuelve también la forma que entrega el interceptor del cliente', async () => {
-    get.mockResolvedValue({ data: results })
+    get.mockResolvedValue({ data: { data: results, meta } })
 
-    await expect(searchPublicProducts('cámara')).resolves.toEqual(results)
+    const page = await fetchPublicProducts({ q: 'cámara' })
+
+    expect(page.items).toEqual(results)
+    expect(page.total).toBe(40)
   })
 
-  it('devuelve un arreglo vacío cuando la búsqueda no trae productos', async () => {
-    get.mockResolvedValue({ data: { data: [] } })
+  it('usa la cantidad de items como total cuando falta meta', async () => {
+    get.mockResolvedValue({ data: results })
 
-    await expect(searchPublicProducts('xyz-sin-resultados')).resolves.toEqual([])
+    await expect(fetchPublicProducts({ q: 'cámara' })).resolves.toMatchObject({ total: 2 })
+  })
+
+  it('devuelve un listado vacío cuando la búsqueda no trae productos', async () => {
+    get.mockResolvedValue({ data: { data: [], meta: { total: 0, offset: 0, limit: 24 } } })
+
+    await expect(fetchPublicProducts({ q: 'xyz' })).resolves.toMatchObject({ items: [], total: 0 })
   })
 
   const invalidPayloads: [string, unknown][] = [
@@ -192,18 +222,16 @@ describe('searchPublicProducts', () => {
     ['con data que no es arreglo', { data: { unexpected: true } }],
   ]
 
-  it.each(invalidPayloads)('devuelve resultados vacíos si el payload es %s', async (_caso: string, payload: unknown) => {
+  it.each(invalidPayloads)('devuelve un listado vacío si el payload es %s', async (_caso: string, payload: unknown) => {
     get.mockResolvedValue(payload)
 
-    await expect(searchPublicProducts('cámara')).resolves.toEqual([])
+    await expect(fetchPublicProducts({ q: 'cámara' })).resolves.toMatchObject({ items: [], total: 0 })
   })
 
   it('propaga el error HTTP para que la página pueda ofrecer reintentar', async () => {
-    const failure = Object.assign(new Error('Network Error'), {
-      response: undefined,
-    })
+    const failure = Object.assign(new Error('Network Error'), { response: undefined })
     get.mockRejectedValue(failure)
 
-    await expect(searchPublicProducts('cámara')).rejects.toBe(failure)
+    await expect(fetchPublicProducts({ q: 'cámara' })).rejects.toBe(failure)
   })
 })

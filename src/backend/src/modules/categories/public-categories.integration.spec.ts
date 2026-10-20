@@ -26,6 +26,7 @@ describe('PublicCategoriesController', () => {
       iconUrl: '/images/categories/cctv.svg',
       isFeatured: true,
       sortOrder: 0,
+      productCount: 3,
       children: [],
     },
   ];

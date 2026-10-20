@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { NotionAuthModule } from './notion-auth.module';
 
 @Module({
   imports: [
@@ -28,9 +29,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
       },
       inject: [ConfigService],
     }),
+    NotionAuthModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, NotionAuthModule],
 })
 export class AuthModule {}

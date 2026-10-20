@@ -1,13 +1,20 @@
 import { useState } from 'react'
 import { Button, Table } from '../../../components/ui'
 import { formatMoney } from '../lib/money'
-import { extractBackendMessage, useQuoteMutations } from '../hooks/useQuoteMutations'
+import { useQuoteMutations } from '../hooks/useQuoteMutations'
+import { quoteErrorMessage } from '../../../services/quotes.service'
 import type { Quote, QuoteItem } from '../types/quote.types'
 
 interface QuoteItemsTableProps {
   quote: Quote
   /** true solo si el estado permite mutar ítems (borrador/enviada/negociacion). */
   editable: boolean
+  /**
+   * Criterio client-side (UX) para ofrecer el editor de descuento
+   * (`features/quotes/access.ts`); el servidor sigue siendo la autoridad de
+   * `quotes:discount` y pinta su 403 con su mensaje.
+   */
+  canEditDiscount?: boolean
 }
 
 /**
@@ -15,9 +22,18 @@ interface QuoteItemsTableProps {
  * lineTotal) se muestran tal como llegan del backend (strings); NUNCA se
  * recalcula nada en el cliente — cantidad/descuento editados se envían al
  * backend y la tabla se refresca con los totales recalculados del servidor.
+ *
+ * COM-03 §3: la cantidad viaja por la vía GENERAL (`PATCH .../items/:itemId`,
+ * solo `{ quantity }` — nunca `discountPct`) y el descuento por la operación
+ * DEDICADA (`PATCH .../items/:itemId/discount`). Editar cantidad no cambia
+ * descuentos desde esta tabla.
  */
-export default function QuoteItemsTable({ quote, editable }: QuoteItemsTableProps) {
-  const { updateItem, removeItem } = useQuoteMutations()
+export default function QuoteItemsTable({
+  quote,
+  editable,
+  canEditDiscount = false,
+}: QuoteItemsTableProps) {
+  const { updateItem, updateItemDiscount, removeItem } = useQuoteMutations()
   const [rowError, setRowError] = useState<string | null>(null)
 
   const items = quote.items ?? []
@@ -35,7 +51,7 @@ export default function QuoteItemsTable({ quote, editable }: QuoteItemsTableProp
         payload: { quantity },
       })
     } catch (err) {
-      setRowError(extractBackendMessage(err))
+      setRowError(quoteErrorMessage(err))
     }
   }
 
@@ -43,13 +59,16 @@ export default function QuoteItemsTable({ quote, editable }: QuoteItemsTableProp
     if (raw === item.discountPct) return
     setRowError(null)
     try {
-      await updateItem.mutateAsync({
+      await updateItemDiscount.mutateAsync({
         quoteId: quote.id,
         itemId: item.id,
-        payload: { discountPct: raw || '0' },
+        discountPct: raw || '0',
       })
     } catch (err) {
-      setRowError(extractBackendMessage(err))
+      // 403 sin quotes:discount → mensaje del servidor (o la reserva clara de
+      // F1); el editor sigue en pantalla y la fila conserva el último valor
+      // autorizado por el servidor (no hubo refetch en el error).
+      setRowError(quoteErrorMessage(err))
     }
   }
 
@@ -59,11 +78,12 @@ export default function QuoteItemsTable({ quote, editable }: QuoteItemsTableProp
     try {
       await removeItem.mutateAsync({ quoteId: quote.id, itemId: item.id })
     } catch (err) {
-      setRowError(extractBackendMessage(err))
+      setRowError(quoteErrorMessage(err))
     }
   }
 
-  const busy = updateItem.isPending || removeItem.isPending
+  const busy = updateItem.isPending || updateItemDiscount.isPending || removeItem.isPending
+  const discountEditable = editable && canEditDiscount
 
   return (
     <div className="space-y-2">
@@ -119,7 +139,7 @@ export default function QuoteItemsTable({ quote, editable }: QuoteItemsTableProp
             key: 'discountPct',
             header: 'Dto. %',
             render: (item: QuoteItem) =>
-              editable ? (
+              discountEditable ? (
                 <input
                   type="number"
                   min={0}

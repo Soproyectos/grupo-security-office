@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   bogotaYearMonth,
@@ -13,10 +14,21 @@ import {
   normalizeLevel,
 } from '../../common/acl/acl.service';
 import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
+import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
+import { resolveAccess } from '../../common/security/data-scope';
+import type { AccessIdentity } from '../../common/security/data-scope';
 
 export const MY_LISTAS_DEFAULT_TAKE = 12;
 export const RECENT_ACTIVITY_TAKE = 10;
 export const RECENT_ACTIVITY_WINDOW_DAYS = 30;
+
+export interface PersonalSalesGoal {
+  period: string;
+  target: MoneyAmount | null;
+  invoiced: InvoicedAmount;
+  remaining: MoneyAmount | null;
+  progressPercent: number | null;
+}
 
 export interface MyListaSummary {
   id: string;
@@ -43,11 +55,26 @@ export interface MoneyAmount {
   currency: string;
 }
 
+/**
+ * COM-05 §3 — facturación con procedencia visible: la fuente actual es la
+ * REFERENCIA MANUAL de factura (`externalInvoiceNumber`), nunca una
+ * sincronización Yéminus (regla 1), y `sourceStatus` permite distinguir un
+ * cero medido de una fuente ERP no conectada (regla 2).
+ */
+export const INVOICE_SOURCE = 'invoice-reference-manual';
+export const INVOICE_SOURCE_STATUS = 'erp-not-connected';
+
+export interface InvoicedAmount extends MoneyAmount {
+  mixedCurrency: boolean;
+  source: typeof INVOICE_SOURCE;
+  sourceStatus: typeof INVOICE_SOURCE_STATUS;
+}
+
 export interface MyCommercialWorkspace {
   /** Meta del mes actual (Bogotá); null si el usuario no tiene meta fijada. */
   target: MoneyAmount | null;
   /** Facturado del mes: pedidos con externalInvoiceNumber registrado este mes. */
-  invoiced: MoneyAmount & { mixedCurrency: boolean };
+  invoiced: InvoicedAmount;
   /** target - invoiced; null cuando no hay meta. */
   remaining: MoneyAmount | null;
   /** Quotes abiertas (enviada/negociacion) en la moneda de referencia. */
@@ -66,7 +93,7 @@ export interface TeamMemberSummary {
   userId: string;
   name: string;
   target: MoneyAmount | null;
-  invoiced: MoneyAmount & { mixedCurrency: boolean };
+  invoiced: InvoicedAmount;
   remaining: MoneyAmount | null;
   pipeline: { amount: string; count: number };
   customers: { total: number; leads: number; clientes: number };
@@ -77,7 +104,7 @@ export interface MyTeamBlock {
   members: TeamMemberSummary[];
   totals: {
     target: MoneyAmount & { mixedCurrency: boolean };
-    invoiced: MoneyAmount & { mixedCurrency: boolean };
+    invoiced: InvoicedAmount;
   };
 }
 
@@ -114,7 +141,42 @@ export class DashboardService {
     private prisma: PrismaService,
     private acl: AclService,
     private hierarchy: HierarchyService,
+    /**
+     * COM-05: concesiones vigentes para `teamInsights:read`. Opcional para
+     * conservar la construcción de 3 argumentos de los specs preexistentes;
+     * Nest lo inyecta desde el SecurityModule `@Global`.
+     */
+    private grants?: AccessAssignmentsService,
   ) {}
+
+  /**
+   * COM-05 §4 / decisión H3: ver bloques o datos de equipo exige la acción
+   * `teamInsights:read` cuando el usuario YA tiene concesiones en el sistema.
+   * Usuarios LEGADOS sin ninguna concesión conservan la capa rol+jerarquía
+   * vigente (transición BASE-01 §8 / D5): la jerarquía acota a subordinados y
+   * la ruta ya pasó `@Roles`. Super Admin es excepción EXPLÍCITA dentro de
+   * `resolveAccess` (patrón `permissions.guard.ts:60`). La identidad se arma
+   * con los flags que `JwtStrategy` atestigua en cada petición (patrón
+   * COM-02/COM-03); no resources → basta la concesión de la acción.
+   */
+  private async canSeeTeam(
+    userId: string | undefined,
+    roles: string[],
+  ): Promise<boolean> {
+    if (!userId) return false;
+    const grants = (await this.grants?.grantsForUser(userId)) ?? [];
+    if (grants.length === 0) return true; // transición D5: capa rol+jerarquía
+    const identity: AccessIdentity = {
+      userId,
+      verified: true,
+      active: true,
+      sessionValid: true,
+      sessionUserId: userId,
+      superAdmin: roles.includes('Super Admin'),
+    };
+    return resolveAccess({ identity, actionId: 'teamInsights:read', grants })
+      .allowed;
+  }
 
   /**
    * Resumen del espacio de trabajo del usuario autenticado, resuelto en una sola
@@ -125,6 +187,48 @@ export class DashboardService {
    * Admin Comercial, que ven todas), `ASSIGNED` para el resto, que solo ve las
    * Listas donde tiene un assignment activo (directo o por rol).
    */
+  /** Personal KPI: no team, catalog, hierarchy or other users' aggregates. */
+  async getPersonalSalesGoal(ctx: AccessContext): Promise<PersonalSalesGoal> {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    const at = new Date();
+    const { year, month } = bogotaYearMonth(at);
+    const period = `${year}-${String(month).padStart(2, '0')}`;
+    const range = currentMonthRangeBogota(at);
+    const [target, orders] = await Promise.all([
+      this.prisma.salesTarget.findUnique({
+        where: { userId_period: { userId: ctx.userId, period: periodStartFromString(period) } },
+        select: { amount: true, currency: true },
+      }),
+      this.prisma.salesOrder.findMany({
+        where: {
+          ownerId: ctx.userId,
+          externalInvoiceNumber: { not: null },
+          externalInvoiceDate: { gte: range.start, lt: range.end },
+        },
+        select: { total: true, currency: true },
+      }),
+    ]);
+    const currency = target?.currency ?? 'COP';
+    const mixedCurrency = orders.some(order => order.currency !== currency);
+    const total = orders.reduce(
+      (sum, order) => order.currency === currency ? sum.plus(order.total) : sum,
+      new Prisma.Decimal(0),
+    );
+    const goal = target ? new Prisma.Decimal(target.amount) : null;
+    const comparable = !!goal && !mixedCurrency;
+    return {
+      period,
+      target: goal ? { amount: goal.toFixed(2), currency } : null,
+      invoiced: { amount: total.toFixed(2), currency, mixedCurrency, source: INVOICE_SOURCE, sourceStatus: INVOICE_SOURCE_STATUS },
+      remaining: comparable
+        ? { amount: Prisma.Decimal.max(goal!.minus(total), 0).toFixed(2), currency }
+        : null,
+      progressPercent: comparable && goal!.greaterThan(0)
+        ? total.div(goal!).times(100).toDecimalPlaces(1).toNumber()
+        : null,
+    };
+  }
+
   async getMyWorkspace(
     ctx: AccessContext,
     params: { take?: number } = {},
@@ -160,7 +264,7 @@ export class DashboardService {
           this.getRecentActivityCount(userId, since),
           this.getRecentActivity(userId),
           this.getCommercialBlock(userId, scope),
-          this.getTeamBlock(userId),
+          this.getTeamBlock(userId, ctx.roles),
         ]);
       return {
         scope,
@@ -208,7 +312,7 @@ export class DashboardService {
       this.getRecentActivityCount(userId, since),
       this.getRecentActivity(userId),
       this.getCommercialBlock(userId, scope),
-      this.getTeamBlock(userId),
+      this.getTeamBlock(userId, ctx.roles),
     ]);
 
     const listaIds = listas.map((l) => l.id);
@@ -386,6 +490,8 @@ export class DashboardService {
       amount: fmt(invoicedTotal),
       currency: refCurrency,
       mixedCurrency,
+      source: INVOICE_SOURCE,
+      sourceStatus: INVOICE_SOURCE_STATUS,
     };
     const targetBlock: MoneyAmount | null = target
       ? { amount: target.amount.toString(), currency: target.currency }
@@ -425,11 +531,16 @@ export class DashboardService {
    */
   private async getTeamBlock(
     userId: string | undefined,
+    roles: string[] = [],
   ): Promise<MyTeamBlock | undefined> {
     if (!userId) return undefined;
 
     const subordinateIds = await this.hierarchy.getSubordinateIds(userId);
     if (subordinateIds.length === 0) return undefined;
+
+    // COM-05 §4/H3: sin `teamInsights:read` vigente (cuando hay concesiones)
+    // el bloque se OMITE — no se consulta ningún dato de equipo.
+    if (!(await this.canSeeTeam(userId, roles))) return undefined;
 
     const range = currentMonthRangeBogota();
     const { year, month } = bogotaYearMonth();
@@ -588,6 +699,8 @@ export class DashboardService {
           amount: fmt(invoicedTotal),
           currency: totalsCurrency,
           mixedCurrency: invoicedMixed,
+          source: INVOICE_SOURCE,
+          sourceStatus: INVOICE_SOURCE_STATUS,
         },
       },
     };
@@ -606,6 +719,14 @@ export class DashboardService {
     targetUserId: string,
   ): Promise<MyCommercialWorkspace> {
     await this.hierarchy.assertCanViewUser(ctx, targetUserId);
+    // COM-05 §4: jerarquía + `teamInsights:read` (concesión cuando existe;
+    // capa rol+jerarquía en usuarios legados — transición D5). Super Admin
+    // pasa por la excepción explícita de resolveAccess.
+    if (!(await this.canSeeTeam(ctx.userId, ctx.roles))) {
+      throw new ForbiddenException(
+        'Sin permiso teamInsights:read sobre datos de equipo',
+      );
+    }
     // El scope ASSIGNED es una propiedad del caller, no del objetivo: aquí
     // pedimos el bloque del USUARIO OBJETIVO sin importar el scope del viewer.
     const block = await this.getCommercialBlock(targetUserId, 'ASSIGNED');

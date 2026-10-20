@@ -8,6 +8,13 @@ import { createPrismaMock } from '../../__test__/mocks/prisma.mock';
 
 const mockPrisma = createPrismaMock();
 
+// Delegados locales (el mock compartido no los incluye): las concesiones
+// legacy se revalidan contra UserPermission GRANT + permisos de rol.
+const mockUserPermission = { findMany: jest.fn() };
+const mockRolePermission = { findMany: jest.fn() };
+(mockPrisma as Record<string, unknown>).userPermission = mockUserPermission;
+(mockPrisma as Record<string, unknown>).rolePermission = mockRolePermission;
+
 jest.mock('../../prisma/prisma.service', () => ({
   PrismaService: jest.fn().mockImplementation(() => mockPrisma),
 }));
@@ -65,6 +72,7 @@ describe('JwtStrategy', () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         id: validPayload.sub,
         isActive: true,
+        roles: [{ role: { name: 'Super Admin' } }],
       });
 
       const result = await jwtStrategy.validate(validPayload);
@@ -78,7 +86,11 @@ describe('JwtStrategy', () => {
       });
       expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: validPayload.sub },
-        select: { id: true, isActive: true },
+        select: {
+          id: true,
+          isActive: true,
+          roles: { select: { role: { select: { name: true } } } },
+        },
       });
     });
 
@@ -105,6 +117,148 @@ describe('JwtStrategy', () => {
       await expect(jwtStrategy.validate(validPayload)).rejects.toThrow(
         'Usuario no encontrado o inactivo',
       );
+    });
+  });
+
+  describe('D3 — revalidación de concesiones por petición (BASE-04 §7.2b)', () => {
+    const concessionPayload = {
+      sub: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      email: 'vendedor@grupo-security.com',
+      name: 'Vendedor Demo',
+      roles: ['Vendedor'],
+      permissions: ['products:read', 'dashboard:pack:ventas'],
+      jti: 'jti-1',
+    };
+
+    beforeEach(() => {
+      // Sesión viva por defecto para esta suite (igual que el suite principal).
+      const sessionService = (jwtStrategy as unknown as { sessions: { isActive: jest.Mock } })
+        .sessions;
+      sessionService.isActive.mockResolvedValue(true);
+    });
+
+    function stubActiveUser() {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: concessionPayload.sub,
+        isActive: true,
+        roles: [{ role: { name: 'Vendedor' } }],
+      });
+    }
+
+    it('concesión presente en UserPermission GRANT → el JWT sigue siendo válido', async () => {
+      stubActiveUser();
+      mockUserPermission.findMany.mockResolvedValue([
+        { permission: 'dashboard:pack:ventas' },
+      ]);
+
+      const result = await jwtStrategy.validate(concessionPayload);
+
+      expect(result.permissions).toEqual(concessionPayload.permissions);
+      expect(mockUserPermission.findMany).toHaveBeenCalledWith({
+        where: { userId: concessionPayload.sub, effect: 'GRANT' },
+        select: { permission: true },
+      });
+    });
+
+    it('concesión presente en permisos de ROL (seed) → el JWT sigue siendo válido', async () => {
+      stubActiveUser();
+      mockUserPermission.findMany.mockResolvedValue([]);
+      mockRolePermission.findMany.mockResolvedValue([
+        { permission: 'dashboard:pack:ventas' },
+      ]);
+
+      const result = await jwtStrategy.validate(concessionPayload);
+
+      expect(result.permissions).toEqual(concessionPayload.permissions);
+      expect(mockRolePermission.findMany).toHaveBeenCalled();
+    });
+
+    it('concesión retirada de UserPermission y del rol → 401 (retiro total afecta al JWT anterior)', async () => {
+      stubActiveUser();
+      mockUserPermission.findMany.mockResolvedValue([]);
+      mockRolePermission.findMany.mockResolvedValue([]);
+
+      await expect(jwtStrategy.validate(concessionPayload)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(jwtStrategy.validate(concessionPayload)).rejects.toThrow(
+        /concesiones retiradas|vuelva a iniciar sesión/i,
+      );
+    });
+
+    it('sin concesiones en el payload no se consulta UserPermission (los JWT antiguos sin packs pasan)', async () => {
+      stubActiveUser();
+
+      const result = await jwtStrategy.validate({
+        ...concessionPayload,
+        permissions: ['products:read'],
+      });
+
+      expect(result.permissions).toEqual(['products:read']);
+      expect(mockUserPermission.findMany).not.toHaveBeenCalled();
+      expect(mockRolePermission.findMany).not.toHaveBeenCalled();
+    });
+
+    it('una concesión retirada y otra vigente → 401 por la retirada (la viva no oculta la retirada)', async () => {
+      stubActiveUser();
+      mockUserPermission.findMany.mockResolvedValue([
+        { permission: 'dashboard:pack:compras' }, // sigue vigente
+        // ventas fue retirada
+      ]);
+      mockRolePermission.findMany.mockResolvedValue([]);
+
+      await expect(jwtStrategy.validate(concessionPayload)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('roles vigentes por petición', () => {
+    const staleSuperAdminToken = {
+      sub: 'account-1',
+      email: 'admin@example.test',
+      name: 'Operador',
+      roles: ['Super Admin'],
+      permissions: [],
+      jti: 'jti-live-role',
+    };
+
+    it('retira Super Admin de un JWT viejo cuando ya no está asignado en BD', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'account-1', isActive: true, roles: [] });
+
+      const result = await jwtStrategy.validate(staleSuperAdminToken);
+
+      expect(result.roles).toEqual([]);
+      expect(mockRolePermission.findMany).not.toHaveBeenCalled();
+    });
+
+    it('refleja un rol asignado después de emitir el JWT', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'account-1', isActive: true, roles: [{ role: { name: 'Super Admin' } }],
+      });
+
+      const result = await jwtStrategy.validate({ ...staleSuperAdminToken, roles: [] });
+
+      expect(result.roles).toEqual(['Super Admin']);
+    });
+
+    it('consulta permisos de rol solo con los roles vigentes, no con los claims del JWT', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'account-1', isActive: true, roles: [{ role: { name: 'Operador' } }],
+      });
+      mockUserPermission.findMany.mockResolvedValue([]);
+      mockRolePermission.findMany.mockResolvedValue([{ permission: 'dashboard:pack:ventas' }]);
+
+      await jwtStrategy.validate({
+        ...staleSuperAdminToken,
+        roles: ['Super Admin'],
+        permissions: ['dashboard:pack:ventas'],
+      });
+
+      expect(mockRolePermission.findMany).toHaveBeenCalledWith({
+        where: { role: { name: { in: ['Operador'] } } },
+        select: { permission: true },
+      });
     });
   });
 

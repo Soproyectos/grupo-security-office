@@ -3,11 +3,18 @@ import type { MenuCategory } from '../../types/categoryMenu'
 /** Landing route of a category, rendered by the category page (MENU-05). */
 export const CATEGORY_ROUTE = '/catalogo/categoria'
 
+/** Public product sheet route, rendered by the storefront product page. */
+export const PRODUCT_ROUTE = '/catalogo/productos'
+
 /** Id of the region the trigger controls, referenced by `aria-controls`. */
 export const MENU_PANEL_ID = 'category-mega-menu'
 
 export function categoryHref(slug: string): string {
   return `${CATEGORY_ROUTE}/${slug}`
+}
+
+export function productHref(id: string): string {
+  return `${PRODUCT_ROUTE}/${id}`
 }
 
 /**
@@ -33,6 +40,17 @@ export function resolveRootId(roots: MenuCategory[], preferredId: string | null)
 export function findRoot(roots: MenuCategory[], rootId: string | null): MenuCategory | null {
   if (rootId === null) return null
   return roots.find((root) => root.id === rootId) ?? null
+}
+
+/**
+ * True while there are covers left to reveal on the right of the circles
+ * track: the row arrow is only rendered in that case, so it never shows up
+ * as an idle button. Exported for the no-DOM test suite.
+ */
+export function hasForwardOverflow(
+  track: Pick<HTMLElement, 'scrollLeft' | 'clientWidth' | 'scrollWidth'>,
+): boolean {
+  return track.scrollLeft + track.clientWidth < track.scrollWidth - 1
 }
 
 /**

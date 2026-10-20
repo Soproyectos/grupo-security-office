@@ -1,3 +1,6 @@
+import { StorefrontModule } from './modules/storefront/storefront.module';
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { WorkflowModule } from './modules/team-workflow/workflow.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -9,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { ProductsModule } from './modules/products/products.module';
+import { CatalogJobsModule } from './modules/catalog-jobs/catalog-jobs.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
@@ -25,6 +29,8 @@ import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-orders.module';
 import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-targets.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -53,6 +59,8 @@ import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-tar
     UsersModule,
     RolesModule,
     ProductsModule,
+    // CAT-07: trabajador común en PostgreSQL (sin broker); registra su @Cron.
+    CatalogJobsModule,
     CategoriesModule,
     BrandsModule,
     AssignmentsModule,
@@ -67,6 +75,11 @@ import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-tar
     QuotesModule,
     SalesOrdersModule,
     SalesTargetsModule,
+    NotificationsModule,
+    PromotionsModule,
+    WorkflowModule,
+    CustomerPortalModule,
+    StorefrontModule,
   ],
   providers: [
     {

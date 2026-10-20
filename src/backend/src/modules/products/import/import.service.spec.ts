@@ -47,6 +47,7 @@ describe('ImportService — Lista destino (listaId)', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
 
     const excelAdapter = {
       parse: jest.fn().mockReturnValue({
@@ -337,6 +338,22 @@ describe('ImportService — Lista destino (listaId)', () => {
     });
   });
 
+  describe('resolveExistingProductFlags (identidad por SKU normalizado)', () => {
+    it('marca como actualización la fila IDS-E04HQHI-D cuando existe iDS-E04HQHI-D', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'p-1', sku: 'iDS-E04HQHI-D' }]);
+      mockPrisma.product.findMany.mockResolvedValue([{ id: 'p-1', sku: 'iDS-E04HQHI-D' }]);
+      const rows = [
+        { sku: 'IDS-E04HQHI-D', isUpdate: false, existingProductId: undefined },
+        { sku: 'IDS-NUEVO', isUpdate: false, existingProductId: undefined },
+      ];
+
+      await (service as any).resolveExistingProductFlags(rows);
+
+      expect(rows[0]).toMatchObject({ isUpdate: true, existingProductId: 'p-1' });
+      expect(rows[1]).toMatchObject({ isUpdate: false, existingProductId: undefined });
+    });
+  });
+
   describe('getCurrentPriceBySku (wizard de precios)', () => {
     it('devuelve data null cuando no existe producto para el SKU', async () => {
       mockPrisma.product.findMany.mockResolvedValue([]);
@@ -592,6 +609,7 @@ describe('ImportService — savePreset (normalización de mapping 500)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockPrisma.$queryRaw.mockResolvedValue([]);
 
     mockPrismaLocal = createPrismaMock();
     mockPrismaLocal.importMapping = {

@@ -1,8 +1,11 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool, neonConfig } from '@neondatabase/serverless';
+import { Pool as PgPool } from 'pg';
 import ws from 'ws';
+import { buildPgPoolConfig } from './prisma-pg-config';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -11,13 +14,24 @@ neonConfig.webSocketConstructor = ws;
 // hosting compartido (ver comentario en schema.prisma). Pool (no el
 // cliente HTTP-only `neon()`) para soportar $transaction interactivo,
 // usado por el pipeline de importación (SAVEPOINT por fila).
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaNeon(pool);
+//
+// El adapter de Neon habla el protocolo WebSocket serverless de Neon, así que
+// SOLO funciona contra endpoints neon.tech. Contra un Postgres propio (Docker
+// local, LAN, servidor) hay que usar el motor nativo en Rust, que conecta por
+// TCP normal. Por eso el adapter se elige según la URL y no se fija a ciegas:
+// con un Postgres local el `All attempts to open a WebSocket ... failed` dejaba
+// la app en `status: degraded` con la BD inaccesible.
+const databaseUrl = process.env.DATABASE_URL ?? '';
+const adapter = process.env.DATABASE_DRIVER === 'pg'
+  ? new PrismaPg(new PgPool(buildPgPoolConfig(databaseUrl, process.env.DATABASE_SSL_CA_BASE64)))
+  : databaseUrl.includes('neon.tech')
+    ? new PrismaNeon(new Pool({ connectionString: databaseUrl }))
+    : undefined;
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
-    super({ adapter });
+    super(adapter ? { adapter } : undefined);
   }
 
   async onModuleInit() {

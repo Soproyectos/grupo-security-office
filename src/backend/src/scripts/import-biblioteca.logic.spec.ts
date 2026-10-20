@@ -42,7 +42,7 @@ describe('import-biblioteca.logic', () => {
       ).toBe('falta "referencia" (string no vacío)');
 
       const sinVitrina = makeFicha();
-      delete (sinVitrina as Record<string, unknown>).nombre_vitrina;
+      delete (sinVitrina as unknown as Record<string, unknown>).nombre_vitrina;
       expect(validateFicha(sinVitrina)).toBe('falta "nombre_vitrina.valor" (string no vacío)');
       expect(
         validateFicha({ referencia: 'R', nombre_vitrina: { valor: '' }, estado: 'verificado' }),
@@ -50,11 +50,11 @@ describe('import-biblioteca.logic', () => {
     });
 
     it('rechaza fichas con estado inválido', () => {
-      expect(validateFicha(makeFicha({ estado: 'bogus' } as Partial<BibliotecaFicha>))).toContain(
+      expect(validateFicha(makeFicha({ estado: 'bogus' } as unknown as Partial<BibliotecaFicha>))).toContain(
         '"estado" ausente o inválido',
       );
       const sinEstado = makeFicha();
-      delete (sinEstado as Record<string, unknown>).estado;
+      delete (sinEstado as unknown as Record<string, unknown>).estado;
       expect(validateFicha(sinEstado)).toContain('"estado" ausente o inválido');
     });
 
@@ -185,6 +185,16 @@ describe('import-biblioteca.logic', () => {
       expect(updates[0].ficha.referencia).toBe('ABC-1');
       expect(creates).toHaveLength(1);
       expect(creates[0].referencia).toBe('XYZ-9');
+    });
+
+    it('ignora mayúsculas y espacios internos (misma identidad que el índice único de la BD)', () => {
+      const { updates, creates } = matchProducts(
+        [makeFicha({ referencia: 'IDS-E04HQHI-D' }), makeFicha({ referencia: 'DS-2CE16 (2.8MM)' })],
+        ['iDS-E04HQHI-D', 'ds-2ce16(2.8mm)'],
+      );
+
+      expect(creates).toHaveLength(0);
+      expect(updates.map((u) => u.sku)).toEqual(['iDS-E04HQHI-D', 'ds-2ce16(2.8mm)']);
     });
   });
 

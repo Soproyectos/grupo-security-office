@@ -11,6 +11,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
+      const feedback = typeof exceptionResponse === 'object' ? (exceptionResponse as any).feedback : undefined;
 
       response.status(status).json({
         statusCode: status,
@@ -19,6 +20,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: typeof exceptionResponse === 'string'
           ? exceptionResponse
           : (exceptionResponse as any).message || 'Error',
+        // User-facing hints (e.g. password policy); only plain string lists are forwarded.
+        ...(Array.isArray(feedback) && feedback.every((f) => typeof f === 'string') ? { feedback } : {}),
       });
     } else {
       const message = exception instanceof Error ? exception.message : 'Error interno del servidor';

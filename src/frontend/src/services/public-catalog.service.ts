@@ -1,12 +1,13 @@
 import api from './api'
 import type { MenuCategory } from '../features/storefront/types/categoryMenu'
-import type { PublicProductResult } from '../features/storefront/types/publicProduct'
+import type {
+  PublicProductFilters,
+  PublicProductListing,
+  PublicProductResult,
+} from '../features/storefront/types/publicProduct'
 
 const MENU_ENDPOINT = '/public/categories/menu'
-const SEARCH_ENDPOINT = '/public/products'
-
-/** Default cap of the search results, mirroring the backend limit. */
-export const SEARCH_RESULTS_LIMIT = 24
+const PRODUCTS_ENDPOINT = '/public/products'
 
 /**
  * The endpoint arrives DOUBLE wrapped: the controller returns `{ data: [...] }`
@@ -46,24 +47,53 @@ function toMenuArray(payload: unknown): MenuCategory[] {
   return toDataArray(payload) as MenuCategory[]
 }
 
-function toProductArray(payload: unknown): PublicProductResult[] {
-  return toDataArray(payload) as PublicProductResult[]
-}
-
 export async function fetchCategoryMenu(): Promise<MenuCategory[]> {
   const response = await api.get(MENU_ENDPOINT)
   return toMenuArray(response.data)
 }
 
+/** Page size of the storefront listings, mirroring the backend default. */
+export const PRODUCT_PAGE_SIZE = 24
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /**
- * Public product search of the storefront (`/catalogo/buscar`). Only HTTP
- * failures reject, so the results page can offer a retry; an unexpected
- * payload shape is an empty result set, not a crash (same contract as
- * `fetchCategoryMenu`).
+ * Finds the `{ data: [...], meta }` envelope of the listing. Same tolerance as
+ * `toDataArray`: the payload may arrive double wrapped or already peeled by the
+ * client interceptor. An unexpected shape is an empty listing, not a crash.
  */
-export async function searchPublicProducts(q: string): Promise<PublicProductResult[]> {
-  const response = await api.get(SEARCH_ENDPOINT, {
-    params: { q, limit: SEARCH_RESULTS_LIMIT },
-  })
-  return toProductArray(response.data)
+function toListing(payload: unknown, offset: number, limit: number): PublicProductListing {
+  let value = payload
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (Array.isArray(value)) return { items: value as PublicProductResult[], total: value.length, offset, limit }
+    if (!isRecord(value) || !('data' in value)) break
+    if (Array.isArray(value.data)) {
+      const items = value.data as PublicProductResult[]
+      const meta = isRecord(value.meta) ? value.meta : {}
+      return { items, total: typeof meta.total === 'number' ? meta.total : items.length, offset, limit }
+    }
+    value = value.data
+  }
+
+  return { items: [], total: 0, offset, limit }
+}
+
+/**
+ * Public product listing of the storefront (search and category pages). Only
+ * HTTP failures reject, so the page can offer a retry.
+ */
+export async function fetchPublicProducts(
+  filters: PublicProductFilters,
+  offset = 0,
+  limit = PRODUCT_PAGE_SIZE,
+): Promise<PublicProductListing> {
+  const params: Record<string, string | number> = { offset, limit }
+  if (filters.q) params.q = filters.q
+  if (filters.category) params.category = filters.category
+
+  const response = await api.get(PRODUCTS_ENDPOINT, { params })
+  return toListing(response.data, offset, limit)
 }

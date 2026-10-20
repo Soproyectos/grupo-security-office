@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { MenuCategory } from '../types/categoryMenu'
+import type { PublicProductResult } from '../types/publicProduct'
 import CategoryPage from './CategoryPage'
 
 /**
@@ -22,6 +23,19 @@ const menuMock = vi.hoisted(() => ({ status: 'ready', categories: [] as MenuCate
 // The page reads the session store of `useCategoryMenu`, a module level
 // singleton shared by every test of this file, so it is replaced by a fixed
 // value to render the three states independently.
+const productsMock = vi.hoisted(() => ({
+  status: 'ready',
+  items: [] as PublicProductResult[],
+  total: 0,
+  hasMore: false,
+  loadingMore: false,
+  loadMoreError: false,
+  loadMore: vi.fn(),
+  retry: vi.fn(),
+}))
+
+vi.mock('../hooks/usePublicProductListing', () => ({ usePublicProductListing: () => productsMock }))
+
 vi.mock('../hooks/useCategoryMenu', () => ({ useCategoryMenu: () => menuMock }))
 
 // ---------------------------------------------------------------------------
@@ -42,6 +56,7 @@ function node(
     iconUrl: options.iconUrl ?? null,
     isFeatured: options.isFeatured ?? false,
     sortOrder: options.sortOrder ?? 0,
+    productCount: 0,
     children: options.children ?? [],
   }
 }
@@ -95,7 +110,22 @@ function occurrences(markup: string, needle: string): number {
   return markup.split(needle).length - 1
 }
 
+const product: PublicProductResult = {
+  id: 'prod-1',
+  sku: 'DS-2CD2143',
+  name: 'Cámara Domo 4K',
+  imageUrl: null,
+  categoryName: 'Cámaras IP',
+  categorySlug: 'camaras-ip',
+  brandName: 'Hikvision',
+  price: { value: 118258.8, currency: 'COP' },
+}
+
 beforeEach(() => {
+  productsMock.status = 'ready'
+  productsMock.items = []
+  productsMock.total = 0
+  productsMock.hasMore = false
   menuMock.status = 'ready'
   menuMock.categories = menu
   retryMock.mockReset()
@@ -164,7 +194,7 @@ describe('categoría conocida', () => {
     const markup = renderPage('camaras-ip')
 
     expect(markup).toContain('aria-label="Ruta de navegación"')
-    expect(markup).toContain('href="/"')
+    expect(markup).toContain('href="/tienda"')
     expect(markup).toContain('href="/catalogo"')
     expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
     expect(markup).toContain('Videovigilancia')
@@ -210,18 +240,51 @@ describe('categoría conocida', () => {
     expect(occurrences(markup, 'bg-surface-100')).toBe(1)
   })
 
-  it('anuncia que los productos de la categoría están por llegar', () => {
+  it('muestra la grilla de productos con su precio y el conteo', () => {
+    productsMock.items = [product]
+    productsMock.total = 30
     const markup = renderPage('camaras-ip')
 
-    expect(markup).toContain('Productos próximamente')
-    expect(markup).toContain('Estamos preparando el inventario de esta categoría')
+    expect(markup).toContain('aria-labelledby="categoria-productos"')
+    expect(markup).toContain('Cámara Domo 4K')
+    expect(markup).toContain('$ 118.259')
+    expect(markup).toContain('30</span> productos')
+    expect(markup).not.toContain('Productos próximamente')
   })
 
-  it('avisa cuando la categoría no tiene subcategorías', () => {
+  it('muestra el esqueleto mientras cargan los productos', () => {
+    productsMock.status = 'loading'
+    productsMock.items = []
+
+    const markup = renderPage('camaras-ip')
+
+    expect(markup).toContain('Cargando productos')
+    expect(markup).not.toContain('Cámara Domo 4K')
+  })
+
+  it('muestra el estado vacío solo cuando el total es cero', () => {
+    productsMock.items = []
+    productsMock.total = 0
+
+    const markup = renderPage('camaras-ip')
+
+    expect(markup).toContain('Aún no hay productos en esta categoría')
+  })
+
+  it('ofrece reintentar cuando fallan los productos, sin tumbar la página', () => {
+    productsMock.status = 'error'
+    productsMock.items = []
+
+    const markup = renderPage('camaras-ip')
+
+    expect(markup).toContain('No pudimos cargar los productos')
+    expect(markup).toContain('>Cámaras IP</h1>')
+  })
+
+  it('no imprime avisos ni sección cuando la categoría no tiene subcategorías', () => {
     const markup = renderPage('grabadores')
 
-    expect(markup).toContain('todavía no tiene subcategorías')
-    expect(markup).toContain('Productos próximamente')
+    expect(markup).not.toContain('subcategorías')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
   })
 
@@ -233,8 +296,7 @@ describe('categoría conocida', () => {
     // No family in the trail: the breadcrumb stops at Catálogo.
     expect(markup).toContain('Catálogo')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
-    expect(markup).toContain('todavía no tiene subcategorías')
-    expect(markup).toContain('Productos próximamente')
+    expect(markup).not.toContain('todavía no tiene subcategorías')
   })
 
   it('se renderiza dentro del chrome de la tienda', () => {
@@ -268,7 +330,9 @@ describe('categoría desconocida y error', () => {
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
   })
 
-  it('no deja un esqueleto en el DOM cuando el árbol está listo', () => {
+  it('no deja un esqueleto en el DOM cuando el árbol y los productos están listos', () => {
+    productsMock.items = [product]
+    productsMock.total = 1
     expect(renderPage('videovigilancia')).not.toContain('role="status"')
   })
 })

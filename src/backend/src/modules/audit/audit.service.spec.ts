@@ -165,6 +165,27 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
       expect(mockPrisma.auditLog.findMany).not.toHaveBeenCalled();
     });
 
+    it('devuelve actorName (solo el nombre) y no expone el objeto user ni su email', async () => {
+      const res = await service.findByEntity('Product', 'p1', COMERCIAL);
+      expect(res.data[0]).toEqual(expect.objectContaining({ actorName: 'Compras', userId: 'user-1' }));
+      expect(res.data[0]).not.toHaveProperty('user');
+      expect(JSON.stringify(res.data)).not.toContain('compras@gruposecurity.co');
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ include: { user: { select: { name: true } } } }),
+      );
+    });
+
+    it('actorName es null cuando el usuario ya no existe o no hay actor', async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValue([
+        { ...LOG, id: 'log-2', user: null },
+        { ...LOG, id: 'log-3', userId: null, user: null },
+      ]);
+      const res = await service.findByEntity('Product', 'p1', COMERCIAL);
+      expect(res.data.map((l) => l.actorName)).toEqual([null, null]);
+      expect(res.data[0].userId).toBe('user-1');
+      expect(res.data[1].userId).toBeNull();
+    });
+
     it('C9: entity=Lista se normaliza a LISTA en findByEntity', async () => {
       const res = await service.findByEntity('Lista', 'list-1', COMERCIAL);
       expect(res.data).toHaveLength(1);

@@ -76,6 +76,7 @@ export const createPrismaMock = () => ({
   },
   product: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -201,8 +202,15 @@ export const createPrismaMock = () => ({
   },
   uploadedFile: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
     delete: jest.fn(),
+  },
+  productCatalogResource: {
+    findMany: jest.fn(),
+    count: jest.fn(),
   },
   salesTarget: {
     findUnique: jest.fn(),
@@ -223,6 +231,7 @@ export const createPrismaMock = () => ({
     delete: jest.fn(),
     count: jest.fn(),
   },
+  $queryRaw: jest.fn().mockResolvedValue([]),
   $queryRawUnsafe: jest.fn(),
   $executeRaw: jest.fn().mockResolvedValue(0),
   $executeRawUnsafe: jest.fn().mockResolvedValue(0),

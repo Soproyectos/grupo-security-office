@@ -24,7 +24,10 @@ export interface AuditLog {
   oldValues: Record<string, unknown> | null
   newValues: Record<string, unknown> | null
   createdAt: string
-  user?: { id: string; name: string | null; email: string } | null
+  /** Display name resolved by the server; null for system entries or deleted users. */
+  actorName?: string | null
+  /** Legacy shape from older servers; prefer `actorName`. */
+  user?: { name?: string | null } | null
 }
 
 function asList(res: unknown): any[] {

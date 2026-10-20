@@ -1,7 +1,9 @@
-﻿import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UploadedFile, UseInterceptors, GoneException, HttpCode, HttpStatus } from '@nestjs/common';
+﻿import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UploadedFile, UseInterceptors, GoneException, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
+import { ProductRevisionsService } from './product-revisions.service';
+import { SaveProductDraftDto } from './dto/save-product-draft.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
@@ -20,21 +22,23 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('Products')
 @ApiBearerAuth()
 @Controller('api/products')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly productRevisionsService: ProductRevisionsService,
+  ) {}
 
   private ctx(user: any): AccessContext {
     return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
   }
 
   @Get('trending')
-  @Public()
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener productos tendencia' })
   findTrending(
     @Query('take') take?: number,
@@ -104,6 +108,22 @@ export class ProductsController {
   @ApiOperation({ summary: 'Actualizar producto' })
   update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() user: any) {
     return this.productsService.update(id, dto, this.ctx(user));
+  }
+
+  @Get(':id/revisions')
+  @Roles('Super Admin', 'Admin Comercial')
+  @ApiOperation({ summary: 'Versiones de revisión del producto (resumen, sin contenido)' })
+  listRevisions(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.productRevisionsService.listRevisions(id, this.ctx(user));
+  }
+
+  @Patch(':id/revision/draft')
+  @Roles('Super Admin', 'Admin Comercial')
+  @ApiOperation({
+    summary: 'Guardar borrador versionado (CAT-02) — no toca la revisión publicada ni los activos',
+  })
+  saveDraft(@Param('id') id: string, @Body() dto: SaveProductDraftDto, @CurrentUser() user: any) {
+    return this.productRevisionsService.saveDraft(id, dto, this.ctx(user));
   }
 
   @Patch(':id/toggle-visibility')
@@ -231,6 +251,37 @@ export class ProductsController {
     @Body('isPrimary') isPrimary?: string,
   ) {
     return this.productsService.uploadImage(id, file, isPrimary === 'true', this.ctx(user));
+  }
+
+  @Post(':id/assets')
+  @Roles('Super Admin', 'Admin Comercial')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 16 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'Subir un activo verificado de producto (IMAGE o DOCUMENT)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        kind: { type: 'string', enum: ['IMAGE', 'DOCUMENT', 'FIRMWARE'], default: 'DOCUMENT' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Activo almacenado con su registro (tamaño, sha256, tipo real)' })
+  @ApiResponse({ status: 400, description: 'Tipo real no coincidente, tamaño excedido o FIRMWARE (alcance diferido: insumo externo, diseño :267)' })
+  @ApiResponse({ status: 403, description: 'Sin products:write o ACL insuficiente' })
+  @ApiResponse({ status: 404, description: 'Producto no encontrado' })
+  uploadAsset(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
+    @Body('kind') kind?: string,
+  ) {
+    const wanted = (kind ?? 'DOCUMENT').toUpperCase();
+    if (wanted !== 'IMAGE' && wanted !== 'DOCUMENT' && wanted !== 'FIRMWARE') {
+      throw new BadRequestException('kind debe ser IMAGE, DOCUMENT o FIRMWARE');
+    }
+    return this.productsService.uploadAsset(id, wanted as 'IMAGE' | 'DOCUMENT' | 'FIRMWARE', file, this.ctx(user));
   }
 
   @Delete('images/:imageId')

@@ -1,372 +1,128 @@
 import { createPrismaMock } from '../../__test__/mocks/prisma.mock';
 
 const mockPrisma = createPrismaMock();
+(mockPrisma as any).accessGrant = { findMany: jest.fn() };
 
 jest.mock('../../prisma/prisma.service', () => ({
   PrismaService: jest.fn().mockImplementation(() => mockPrisma),
 }));
 
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AclService, LEVEL_RANK, normalizeLevel, ROLE_ASSIGNMENT_PREFIX } from './acl.service';
+import { AclService, LEVEL_RANK, normalizeLevel } from './acl.service';
 
 const LISTA_ID = 'list-1';
-const LISTA_2_ID = 'list-2';
+const OTHER_LISTA_ID = 'list-2';
+const USER = { userId: 'user-1', roles: ['Admin Comercial'] };
 
-interface AssignmentFixture {
-  userId: string;
-  resourceType: string;
-  resourceId: string;
-  level: string;
-  isActive: boolean;
+type GrantFixture = {
+  sourceId: string;
+  actionId: string;
+  scopeKind: 'list' | 'product' | 'global' | 'own' | 'team';
+  resourceId: string | null;
+};
+
+const grant = (
+  actionId: string,
+  scopeKind: GrantFixture['scopeKind'] = 'list',
+  resourceId: string | null = LISTA_ID,
+  sourceId = `source-${actionId}`,
+): GrantFixture => ({ sourceId, actionId, scopeKind, resourceId });
+
+function setGrants(rows: GrantFixture[]) {
+  (mockPrisma as any).accessGrant.findMany.mockResolvedValue(rows);
 }
 
-function buildAssignmentMock(assignments: AssignmentFixture[]) {
-  mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
-    const w = args?.where ?? {};
-    let out = assignments.filter((a) => {
-      if (w.userId !== undefined && a.userId !== w.userId) return false;
-      if (w.resourceType !== undefined && a.resourceType !== w.resourceType) return false;
-      if (w.resourceId !== undefined) {
-        if (w.resourceId && w.resourceId.in) {
-          if (!w.resourceId.in.includes(a.resourceId)) return false;
-        } else if (Array.isArray(w.resourceId)) {
-          if (!w.resourceId.includes(a.resourceId)) return false;
-        } else if (a.resourceId !== w.resourceId) return false;
-      }
-      if (w.isActive !== undefined && a.isActive !== w.isActive) return false;
-      if (w.level?.in && !w.level.in.includes(a.level)) return false;
-      return true;
-    });
-    return out;
-  });
-}
-
-describe('AclService (TANDA 1B)', () => {
+describe('AclService action and scope authorization', () => {
   let acl: AclService;
-
-  const VIEWER = { userId: 'pepito-1', roles: ['Operador'] };
-  // Niveles vía assignments: el rol NO es Admin Comercial (deny-by-default de la política
-  // nueva aplica); el nivel lo dan los assignments del fixture, no el rol.
-  const EDIT_PRICES = { userId: 'price-editor', roles: ['Operador'] };
-  const SUPER = { userId: 'admin-1', roles: ['Super Admin'] };
-  const NOAUTH = { userId: 'none-1', roles: ['Operador'] };
 
   beforeEach(() => {
     jest.resetAllMocks();
     acl = new AclService(mockPrisma as any);
-
-    mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-    mockPrisma.lista.findUnique.mockResolvedValue({
-      id: LISTA_ID,
-      isActive: true,
-      archivedAt: null,
-    });
-    mockPrisma.lista.findMany.mockResolvedValue([
-      { id: LISTA_ID },
-      { id: LISTA_2_ID },
-    ]);
+    (mockPrisma as any).accessGrant.findMany.mockResolvedValue([]);
+    mockPrisma.product.findUnique.mockResolvedValue({ id: 'product-1', listaId: LISTA_ID });
+    mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, isActive: true, archivedAt: null });
+    mockPrisma.assignment.findMany.mockResolvedValue([]);
   });
 
-  describe('niveles reales (checklist 29/30)', () => {
-    it('LEVEL_RANK ordena view < view_prices < edit_prices < edit_products < manage < manage_access', () => {
-      expect(LEVEL_RANK.view).toBe(0);
-      expect(LEVEL_RANK.view_prices).toBe(1);
-      expect(LEVEL_RANK.edit_prices).toBe(2);
-      expect(LEVEL_RANK.edit_products).toBe(3);
-      expect(LEVEL_RANK.manage).toBe(4);
-      expect(LEVEL_RANK.manage_access).toBe(5);
-      expect(LEVEL_RANK.edit).toBe(3); // alias legacy
-    });
-
-    it('normalizeLevel: edit → edit_products, niveles válidos intactos, inválidos null', () => {
-      expect(normalizeLevel('edit')).toBe('edit_products');
-      expect(normalizeLevel('view')).toBe('view');
-      expect(normalizeLevel('manage_access')).toBe('manage_access');
-      expect(normalizeLevel('bogus')).toBeNull();
-      expect(normalizeLevel(null)).toBeNull();
-    });
-
-    it('levelsAtLeast devuelve el nivel y todos los superiores', () => {
-      const result = acl.levelsAtLeast('edit_prices');
-      expect(result).toContain('edit_prices');
-      expect(result).toContain('edit_products');
-      expect(result).toContain('manage_access');
-      expect(result).not.toContain('view');
-    });
+  it('retains legacy level parsing without using role assignments as grants', () => {
+    expect(LEVEL_RANK.edit).toBe(LEVEL_RANK.edit_products);
+    expect(normalizeLevel('edit')).toBe('edit_products');
+    expect(normalizeLevel('invalid')).toBeNull();
   });
 
-  describe('assertProductAccess (checklist 17/31)', () => {
-    it('404 si el producto no existe o no tiene Lista dueña', async () => {
-      mockPrisma.product.findUnique.mockResolvedValueOnce(null);
-      await expect(acl.assertProductAccess('no-existe', VIEWER)).rejects.toThrow(NotFoundException);
-
-      mockPrisma.product.findUnique.mockResolvedValueOnce({ id: 'prod-1', listaId: null });
-      await expect(acl.assertProductAccess('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
-    });
-
-    it('RESTRICCIÓN EXPLÍCITA prevalece: assignment PRODUCT isActive=false → 403 aunque la Lista permita', async () => {
-      buildAssignmentMock([
-        { userId: VIEWER.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage', isActive: true },
-        { userId: VIEWER.userId, resourceType: 'PRODUCT', resourceId: 'prod-1', level: 'view', isActive: false },
-      ]);
-
-      await expect(acl.assertProductAccess('prod-1', VIEWER)).rejects.toThrow(ForbiddenException);
-    });
-
-    it('excepción positiva: assignment PRODUCT activo permite aunque la Lista deniegue', async () => {
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'PRODUCT', resourceId: 'prod-1', level: 'edit_prices', isActive: true },
-      ]);
-
-      const res = await acl.assertProductAccess('prod-1', EDIT_PRICES, 'view');
-      expect(res.listaId).toBe(LISTA_ID);
-    });
-
-    it('excepción positiva con nivel insuficiente → cae a Lista (404 si sin assignment)', async () => {
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'PRODUCT', resourceId: 'prod-1', level: 'view', isActive: true },
-      ]);
-
-      await expect(acl.assertProductAccess('prod-1', EDIT_PRICES, 'edit_prices')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('sin excepción por producto → usa acceso de la Lista dueña', async () => {
-      buildAssignmentMock([
-        { userId: VIEWER.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'view', isActive: true },
-      ]);
-
-      const res = await acl.assertProductAccess('prod-1', VIEWER, 'view');
-      expect(res.listaId).toBe(LISTA_ID);
-    });
-
-    it('sin assignment → 404 (no revela existencia)', async () => {
-      buildAssignmentMock([]);
-      await expect(acl.assertProductAccess('prod-1', NOAUTH)).rejects.toThrow(NotFoundException);
-    });
+  it('denies a user with no grants, including Admin Comercial', async () => {
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:read')).rejects.toBeInstanceOf(NotFoundException);
+    expect(await acl.can(LISTA_ID, USER, 'view')).toBe(false);
+    expect(await acl.getAllowedListaIds(USER.userId, USER.roles)).toEqual([]);
   });
 
-  describe('grants por rol (ROLE:{nombre})', () => {
-    it('getAllowedListaIds: grant por rol con nivel suficiente → TODAS las Listas activas', async () => {
-      const ROLE_USER = { userId: 'comercial-1', roles: ['Operador'] };
-      buildAssignmentMock([
-        {
-          userId: 'admin-1', // actor que creó el grant
-          resourceType: 'LISTA',
-          resourceId: `${ROLE_ASSIGNMENT_PREFIX}Operador`,
-          level: 'manage',
-          isActive: true,
-        },
-      ]);
-
-      const ids = await acl.getAllowedListaIds(ROLE_USER.userId, ROLE_USER.roles, 'view');
-
-      expect(ids).toContain(LISTA_ID);
-      expect(ids).toContain(LISTA_2_ID);
-    });
-
-    it('getAllowedListaIds: grant por rol con nivel insuficiente NO abre todas las Listas', async () => {
-      const ROLE_USER = { userId: 'comercial-1', roles: ['Operador'] };
-      buildAssignmentMock([
-        {
-          userId: 'admin-1',
-          resourceType: 'LISTA',
-          resourceId: `${ROLE_ASSIGNMENT_PREFIX}Operador`,
-          level: 'view',
-          isActive: true,
-        },
-        {
-          userId: ROLE_USER.userId,
-          resourceType: 'LISTA',
-          resourceId: LISTA_ID,
-          level: 'manage',
-          isActive: true,
-        },
-      ]);
-
-      const ids = await acl.getAllowedListaIds(ROLE_USER.userId, ROLE_USER.roles, 'edit_prices');
-
-      expect(ids).toEqual([LISTA_ID]);
-      expect(ids).not.toContain(LISTA_2_ID);
-    });
-
-    it('getUserLevel toma el nivel máximo entre assignments del usuario y grants por rol', async () => {
-      const ROLE_USER = { userId: 'comercial-1', roles: ['Operador'] };
-      buildAssignmentMock([
-        {
-          userId: ROLE_USER.userId,
-          resourceType: 'LISTA',
-          resourceId: LISTA_ID,
-          level: 'view',
-          isActive: true,
-        },
-        {
-          userId: 'admin-1',
-          resourceType: 'LISTA',
-          resourceId: `${ROLE_ASSIGNMENT_PREFIX}Operador`,
-          level: 'manage_access',
-          isActive: true,
-        },
-      ]);
-
-      const level = await acl.getUserLevel(ROLE_USER.userId, LISTA_ID, ROLE_USER.roles);
-
-      expect(level).toBe('manage_access');
-    });
+  it('keeps Super Admin as the only global role exception', async () => {
+    const superAdmin = { userId: 'root', roles: ['Super Admin'] };
+    await expect(acl.assertListaAction(LISTA_ID, superAdmin, 'listas:read')).resolves.toBeUndefined();
+    expect(await acl.getAllowedListaIds(superAdmin.userId, superAdmin.roles)).toBeNull();
+    expect((mockPrisma as any).accessGrant.findMany).not.toHaveBeenCalled();
   });
 
-  describe('assertListaAccess con niveles', () => {
-    it('nivel insuficiente → 403', async () => {
-      buildAssignmentMock([
-        { userId: VIEWER.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'view', isActive: true },
-      ]);
-
-      await expect(acl.assertListaAccess(LISTA_ID, VIEWER, 'edit_prices')).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('sin assignment → 404', async () => {
-      buildAssignmentMock([]);
-      await expect(acl.assertListaAccess(LISTA_ID, NOAUTH)).rejects.toThrow(NotFoundException);
-    });
-
-    it('Lista inactiva/archivada → 404 para no-admin', async () => {
-      buildAssignmentMock([
-        { userId: VIEWER.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage', isActive: true },
-      ]);
-      mockPrisma.lista.findUnique.mockResolvedValueOnce({ id: LISTA_ID, isActive: false, archivedAt: null });
-
-      await expect(acl.assertListaAccess(LISTA_ID, VIEWER)).rejects.toThrow(NotFoundException);
-    });
+  it('allows a matching list grant and denies a different list', async () => {
+    setGrants([grant('listas:read')]);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:read')).resolves.toBeUndefined();
+    await expect(acl.assertListaAction(OTHER_LISTA_ID, USER, 'listas:read')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  describe('gestión de accesos (anti-escalada soporte)', () => {
-    it('canAdministerAccessOnLista: manage → true, edit → false', async () => {
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage', isActive: true },
-      ]);
-      expect(await acl.canAdministerAccessOnLista(LISTA_ID, EDIT_PRICES)).toBe(true);
-
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'edit', isActive: true },
-      ]);
-      expect(await acl.canAdministerAccessOnLista(LISTA_ID, EDIT_PRICES)).toBe(false);
-    });
-
-    it('canManageAccessOnLista: manage_access → true, manage → false', async () => {
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage_access', isActive: true },
-      ]);
-      expect(await acl.canManageAccessOnLista(LISTA_ID, EDIT_PRICES)).toBe(true);
-
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage', isActive: true },
-      ]);
-      expect(await acl.canManageAccessOnLista(LISTA_ID, EDIT_PRICES)).toBe(false);
-    });
-
-    it('canManageAccessOnProduct resuelve vía la Lista dueña', async () => {
-      buildAssignmentMock([
-        { userId: EDIT_PRICES.userId, resourceType: 'LISTA', resourceId: LISTA_ID, level: 'manage_access', isActive: true },
-      ]);
-      expect(await acl.canManageAccessOnProduct('prod-1', EDIT_PRICES)).toBe(true);
-    });
+  it('allows global scope for that action only', async () => {
+    setGrants([grant('listas:read', 'global', null)]);
+    expect(await acl.getAllowedListaIds(USER.userId, USER.roles)).toBeNull();
+    await expect(acl.assertListaAction(OTHER_LISTA_ID, USER, 'listas:read')).resolves.toBeUndefined();
+    await expect(acl.assertListaAction(OTHER_LISTA_ID, USER, 'listas:archive')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  describe('actionsForLevel (matrix viewer)', () => {
-    it('view: solo ver', () => {
-      const a = acl.actionsForLevel('view');
-      expect(a.ver).toBe(true);
-      expect(a.verPrecios).toBe(false);
-      expect(a.editarPrecios).toBe(false);
-      expect(a.editarProductos).toBe(false);
-      expect(a.administrarAccesos).toBe(false);
-    });
-
-    it('view_prices: ver + ver precios, SIN editar precios', () => {
-      const a = acl.actionsForLevel('view_prices');
-      expect(a.ver).toBe(true);
-      expect(a.verPrecios).toBe(true);
-      expect(a.editarPrecios).toBe(false);
-      expect(a.editarProductos).toBe(false);
-      expect(a.administrar).toBe(false);
-      expect(a.administrarAccesos).toBe(false);
-    });
-
-    it('edit_prices: ver + ver precios + editar precios, sin editar productos', () => {
-      const a = acl.actionsForLevel('edit_prices');
-      expect(a.ver).toBe(true);
-      expect(a.verPrecios).toBe(true);
-      expect(a.editarPrecios).toBe(true);
-      expect(a.editarProductos).toBe(false);
-    });
-
-    it('manage_access: todas las acciones', () => {
-      const a = acl.actionsForLevel('manage_access');
-      expect(a.ver).toBe(true);
-      expect(a.verPrecios).toBe(true);
-      expect(a.editarProductos).toBe(true);
-      expect(a.administrar).toBe(true);
-      expect(a.administrarAccesos).toBe(true);
-    });
-
-    it('sin nivel: sin acciones', () => {
-      const a = acl.actionsForLevel(null);
-      expect(a.ver).toBe(false);
-      expect(a.administrarAccesos).toBe(false);
-    });
+  it('lets a list grant cover its products, while a product grant stays on one product', async () => {
+    setGrants([grant('products:read')]);
+    await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
+    setGrants([grant('products:read', 'product', 'product-1')]);
+    await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
+    await expect(acl.assertProductAccess('product-2', USER)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  describe('Super Admin', () => {
-    it('assertListaAccess nunca bloquea a Super Admin', async () => {
-      mockPrisma.lista.findUnique.mockResolvedValueOnce({ id: LISTA_ID, isActive: false, archivedAt: null });
-      await expect(acl.assertListaAccess(LISTA_ID, SUPER, 'manage_access')).resolves.toBeUndefined();
-    });
-
-    it('getAllowedListaIds devuelve null (sin filtro) para Super Admin', async () => {
-      expect(await acl.getAllowedListaIds(SUPER.userId, SUPER.roles, 'view')).toBeNull();
-    });
+  it('requires the exact requested action; update does not authorize archive', async () => {
+    setGrants([grant('listas:update')]);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:update')).resolves.toBeUndefined();
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:archive')).rejects.toBeInstanceOf(NotFoundException);
+    expect(await acl.can(LISTA_ID, USER, 'manage')).toBe(true);
   });
 
-  describe('Admin Comercial (isListasAdmin — contenedor de compras)', () => {
-    const COMERCIAL = { userId: 'comercial-1', roles: ['Admin Comercial'] };
+  it('requires dependencies at the same resource scope', async () => {
+    setGrants([grant('products:write'), grant('products:read', 'list', OTHER_LISTA_ID)]);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'products:write')).rejects.toBeInstanceOf(NotFoundException);
 
-    it('isListasAdmin es true para Admin Comercial y false para otros roles no-admin', () => {
-      expect(acl.isListasAdmin(['Admin Comercial'])).toBe(true);
-      expect(acl.isListasAdmin(['Operador'])).toBe(false);
-      expect(acl.isListasAdmin(undefined)).toBe(false);
-    });
+    setGrants([grant('products:write'), grant('products:read')]);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'products:write')).resolves.toBeUndefined();
+  });
 
-    it('getAllowedListaIds devuelve null (ve TODAS las listas) sin consultar assignments', async () => {
-      expect(await acl.getAllowedListaIds(COMERCIAL.userId, COMERCIAL.roles, 'view')).toBeNull();
-      expect(mockPrisma.assignment.findMany).not.toHaveBeenCalled();
-    });
+  it('allows only the exact management action; the legacy manage adapter no longer requires sibling actions', async () => {
+    setGrants([grant('listas:update'), grant('listas:archive')]);
+    expect(await acl.can(LISTA_ID, USER, 'manage')).toBe(true);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:delete')).rejects.toBeInstanceOf(NotFoundException);
+  });
 
-    it('assertListaAccess no bloquea a Admin Comercial (incluida Lista inactiva/archivada)', async () => {
-      mockPrisma.lista.findUnique.mockResolvedValueOnce({ id: LISTA_ID, isActive: false, archivedAt: null });
-      await expect(acl.assertListaAccess(LISTA_ID, COMERCIAL, 'manage_access')).resolves.toBeUndefined();
-    });
+  it('honors revocation immediately by reading current grants on each check', async () => {
+    (mockPrisma as any).accessGrant.findMany
+      .mockResolvedValueOnce([grant('listas:read')])
+      .mockResolvedValueOnce([]);
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:read')).resolves.toBeUndefined();
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:read')).rejects.toBeInstanceOf(NotFoundException);
+  });
 
-    it('assertListaRestoreAccess no bloquea a Admin Comercial', async () => {
-      mockPrisma.lista.findUnique.mockResolvedValueOnce({ id: LISTA_ID });
-      await expect(
-        acl.assertListaRestoreAccess(LISTA_ID, COMERCIAL, 'manage'),
-      ).resolves.toBeUndefined();
-    });
+  it('checks list activity after authorization and permits explicit restore access', async () => {
+    setGrants([grant('listas:update')]);
+    mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, isActive: false, archivedAt: new Date() });
+    await expect(acl.assertListaAction(LISTA_ID, USER, 'listas:update')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(acl.assertListaRestoreAccess(LISTA_ID, USER, 'manage')).resolves.toBeUndefined();
+  });
 
-    it('assertProductAccess permite a Admin Comercial sobre cualquier producto', async () => {
-      const res = await acl.assertProductAccess('prod-1', COMERCIAL, 'manage_access');
-      expect(res.listaId).toBe(LISTA_ID);
-    });
-
-    it('can / canManageAccessOnLista / canManageAccessOnProduct / canAdministerAccessOnLista → true sin assignments', async () => {
-      expect(await acl.can(LISTA_ID, COMERCIAL, 'manage_access')).toBe(true);
-      expect(await acl.canManageAccessOnLista(LISTA_ID, COMERCIAL)).toBe(true);
-      expect(await acl.canManageAccessOnProduct('prod-1', COMERCIAL)).toBe(true);
-      expect(await acl.canAdministerAccessOnLista(LISTA_ID, COMERCIAL)).toBe(true);
-      expect(mockPrisma.assignment.findMany).not.toHaveBeenCalled();
-    });
+  it('rejects unknown legacy levels instead of broadening authorization', async () => {
+    setGrants([grant('listas:read', 'global', null)]);
+    await expect(acl.assertListaAccess(LISTA_ID, USER, 'unknown')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await acl.can(LISTA_ID, USER, 'unknown')).toBe(false);
   });
 });

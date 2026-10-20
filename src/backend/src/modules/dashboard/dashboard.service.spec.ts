@@ -56,6 +56,61 @@ describe('DashboardService', () => {
     jest.spyOn(acl, 'getAllowedListaIds').mockResolvedValue(['lista-1']);
   };
 
+  describe('getPersonalSalesGoal', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-01T02:00:00Z'));
+    });
+    afterEach(() => jest.useRealTimers());
+
+    it('consulta solo el vendedor y el mes de Bogotá, sin equipo', async () => {
+      prisma.salesTarget.findUnique.mockResolvedValue({ amount: '100.00', currency: 'COP' });
+      prisma.salesOrder.findMany.mockResolvedValue([{ total: '60.00', currency: 'COP' }]);
+      const result = await service.getPersonalSalesGoal({ userId: 'seller', roles: ['Vendedor'] });
+      expect(result).toEqual({
+        period: '2026-10', target: { amount: '100.00', currency: 'COP' },
+        invoiced: { amount: '60.00', currency: 'COP', mixedCurrency: false , source: 'invoice-reference-manual', sourceStatus: 'erp-not-connected' },
+        remaining: { amount: '40.00', currency: 'COP' }, progressPercent: 60,
+      });
+      expect(prisma.salesTarget.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+        where: { userId_period: { userId: 'seller', period: new Date('2026-10-01T00:00:00Z') } },
+      }));
+      expect(prisma.salesOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { ownerId: 'seller', externalInvoiceNumber: { not: null },
+          externalInvoiceDate: { gte: new Date('2026-10-01T05:00:00Z'), lt: new Date('2026-11-01T05:00:00Z') } },
+      }));
+      expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
+
+    it.each([null, '0'])('no calcula porcentaje si la meta es %s', async (amount) => {
+      prisma.salesTarget.findUnique.mockResolvedValue(amount === null ? null : { amount, currency: 'COP' });
+      expect((await service.getPersonalSalesGoal(COMERCIAL)).progressPercent).toBeNull();
+    });
+
+    it('mantiene precisión decimal y permite superar la meta sin faltante negativo', async () => {
+      prisma.salesTarget.findUnique.mockResolvedValue({ amount: '0.20', currency: 'COP' });
+      prisma.salesOrder.findMany.mockResolvedValue([{ total: '0.10', currency: 'COP' }, { total: '0.20', currency: 'COP' }]);
+      const result = await service.getPersonalSalesGoal(COMERCIAL);
+      expect(result.invoiced.amount).toBe('0.30');
+      expect(result.progressPercent).toBe(150);
+      expect(result.remaining?.amount).toBe('0.00');
+    });
+
+    it('no compara ni suma monedas diferentes', async () => {
+      prisma.salesTarget.findUnique.mockResolvedValue({ amount: '100', currency: 'COP' });
+      prisma.salesOrder.findMany.mockResolvedValue([{ total: '40', currency: 'COP' }, { total: '200', currency: 'USD' }]);
+      const result = await service.getPersonalSalesGoal(COMERCIAL);
+      expect(result.invoiced).toEqual({ amount: '40.00', currency: 'COP', mixedCurrency: true, source: 'invoice-reference-manual', sourceStatus: 'erp-not-connected' });
+      expect(result.remaining).toBeNull();
+      expect(result.progressPercent).toBeNull();
+    });
+
+    it('rechaza identidad ausente antes de consultar datos', async () => {
+      await expect(service.getPersonalSalesGoal({ roles: ['Vendedor'] })).rejects.toThrow('Usuario sin identificar');
+      expect(prisma.salesOrder.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getMyWorkspace', () => {
     it('scope GLOBAL para admin de Listas y sin filtro por id', async () => {
       const res = await service.getMyWorkspace(ADMIN);
@@ -244,6 +299,8 @@ describe('DashboardService', () => {
         amount: '500000.00',
         currency: 'COP',
         mixedCurrency: false,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       expect(res.commercial!.remaining).toEqual({
         amount: '500000.00',
@@ -282,6 +339,8 @@ describe('DashboardService', () => {
         amount: '400000.00',
         currency: 'COP',
         mixedCurrency: true,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       // remaining sigue calculado solo sobre montos en la moneda de la meta.
       expect(res.commercial!.remaining!.amount).toBe('600000.00');
@@ -356,6 +415,8 @@ describe('DashboardService', () => {
         amount: '600000.00',
         currency: 'COP',
         mixedCurrency: false,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       expect(ana.remaining).toEqual({ amount: '400000.00', currency: 'COP' });
       expect(ana.pipeline).toEqual({ amount: '200000.00', count: 1 });
@@ -373,6 +434,8 @@ describe('DashboardService', () => {
           amount: '700000.00',
           currency: 'COP',
           mixedCurrency: false,
+        source: 'invoice-reference-manual',
+        sourceStatus: 'erp-not-connected',
         },
       });
     });
@@ -421,6 +484,8 @@ describe('DashboardService', () => {
         amount: '600000.00',
         currency: 'COP',
         mixedCurrency: true,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
     });
 

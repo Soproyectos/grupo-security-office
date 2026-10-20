@@ -8,11 +8,12 @@ describe('ComercialDeletes — Admin Comercial puede eliminar todo el área come
   const rolesOf = (method: Function): string[] =>
     Reflect.getMetadata(ROLES_KEY, method) ?? [];
 
-  const expectsCommercialDelete = (method: Function, endpoint: string) => {
+  const expectsCommercialDelete = (method: Function, endpoint: string, actionGuarded = false) => {
     const roles = rolesOf(method);
     expect(roles).toContain('Super Admin');
     expect(roles).toContain('Admin Comercial');
-    expect(roles).toEqual(['Super Admin', 'Admin Comercial']);
+    if (!actionGuarded) expect(roles).toEqual(['Super Admin', 'Admin Comercial']);
+    else expect(roles).toContain('Operador'); // PriceActionGuard exige además prices:apply vigente.
   };
 
   it('DELETE /api/categories/:id incluye Admin Comercial y Super Admin', () => {
@@ -24,11 +25,11 @@ describe('ComercialDeletes — Admin Comercial puede eliminar todo el área come
   });
 
   it('DELETE /api/prices/lists/:id incluye Admin Comercial y Super Admin (price list)', () => {
-    expectsCommercialDelete(PricesController.prototype.removePriceList, 'DELETE /api/prices/lists/:id');
+    expectsCommercialDelete(PricesController.prototype.removePriceList, 'DELETE /api/prices/lists/:id', true);
   });
 
   it('DELETE /api/prices/:id incluye Admin Comercial y Super Admin (precio)', () => {
-    expectsCommercialDelete(PricesController.prototype.removePrice, 'DELETE /api/prices/:id');
+    expectsCommercialDelete(PricesController.prototype.removePrice, 'DELETE /api/prices/:id', true);
   });
 
   it('DELETE de usuarios sigue siendo SOLO Super Admin (no se abre al contenedor comercial)', () => {

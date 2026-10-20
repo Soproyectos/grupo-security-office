@@ -4,10 +4,12 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 /**
  * Body del DELETE físico de una Lista.
  *
- * `removeLista` borra en cascada los productos huérfanos que quedarían tras
- * borrar la Lista (con sus precios, imágenes e inventario) — es destructivo e
- * irreversible, igual que el borrado físico de un producto. `confirm` sigue
- * el mismo patrón que `DeleteProductDto`: sin ella, 400 y ninguna escritura.
+ * CAT-01 §3: el borrado solo elimina la FILA de la Lista. Los productos, sus
+ * imágenes (filas y bytes) y sus precios sobreviven con IDs intactos y
+ * `Product.listaId` queda `null` (FK SET NULL); los accesos de la Lista se
+ * retiran. `confirm` sigue el mismo patrón que `DeleteProductDto`: sin ella,
+ * 400 y ninguna escritura. Una Lista con cotizaciones se rechaza con 409
+ * (FK RESTRICT de `Quote.listaId`).
  */
 export class DeleteListaDto {
   @ApiPropertyOptional({

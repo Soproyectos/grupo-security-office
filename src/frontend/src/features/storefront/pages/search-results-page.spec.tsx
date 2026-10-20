@@ -16,28 +16,40 @@ import SearchResultsPage from './SearchResultsPage'
  */
 
 const retryMock = vi.hoisted(() => vi.fn())
+const loadMoreMock = vi.hoisted(() => vi.fn())
 const searchMock = vi.hoisted(() => ({
   status: 'ready',
-  results: [] as PublicProductResult[],
+  items: [] as PublicProductResult[],
+  total: 0,
+  hasMore: false,
+  loadingMore: false,
+  loadMoreError: false,
+  loadMore: loadMoreMock,
   retry: retryMock,
 }))
 
-vi.mock('../hooks/usePublicProductSearch', () => ({ usePublicProductSearch: () => searchMock }))
+vi.mock('../hooks/usePublicProductListing', () => ({ usePublicProductListing: () => searchMock }))
 
 const results: PublicProductResult[] = [
   {
     id: 'prod-1',
+    sku: 'CAM-4K',
     name: 'Cámara Domo 4K',
     imageUrl: '/api/files/img-1',
     categoryName: 'Cámaras IP',
     categorySlug: 'camaras-ip',
+    brandName: 'Hikvision',
+    price: { value: 118258.8, currency: 'COP' },
   },
   {
     id: 'prod-2',
+    sku: 'LEC-01',
     name: 'Lector biométrico',
     imageUrl: null,
     categoryName: 'Control de Acceso',
     categorySlug: 'control-de-acceso',
+    brandName: 'ZKTeco',
+    price: null,
   },
 ]
 
@@ -66,25 +78,39 @@ function occurrences(markup: string, needle: string): number {
 
 beforeEach(() => {
   searchMock.status = 'ready'
-  searchMock.results = results
+  searchMock.items = results
+  searchMock.total = results.length
+  searchMock.hasMore = false
+  searchMock.loadingMore = false
+  searchMock.loadMoreError = false
+  loadMoreMock.mockReset()
   retryMock.mockReset()
 })
 
 describe('resultados de búsqueda', () => {
-  it('muestra una tarjeta por producto con nombre, imagen y link a su categoría', () => {
+  it('muestra una tarjeta por producto con nombre, precio, imagen y link', () => {
     const markup = renderPage('cámara')
 
     expect(markup).toContain('Cámara Domo 4K')
     expect(markup).toContain('Lector biométrico')
-    expect(markup).toContain('href="/catalogo/categoria/camaras-ip"')
-    expect(markup).toContain('href="/catalogo/categoria/control-de-acceso"')
+    expect(markup).toContain('href="/catalogo/productos/prod-1"')
+    expect(markup).toContain('href="/catalogo/productos/prod-2"')
     // The image of the first product, resolved against the backend origin
     // (dev: relative, served by the Vite proxy).
     expect(markup).toContain('src="/api/files/img-1"')
+    expect(markup).toContain('$ 118.259')
+    expect(markup).toContain('Precio a consultar')
+  })
+
+  it('muestra la cantidad de resultados junto al término buscado', () => {
+    searchMock.total = 40
+
+    expect(renderPage('cámara')).toContain('40 resultados')
   })
 
   it('no pinta un <img> para un resultado sin imagen', () => {
-    searchMock.results = [results[1]!]
+    searchMock.items = [results[1]!]
+    searchMock.total = 1
 
     const markup = renderPage('biométrico')
 
@@ -112,17 +138,19 @@ describe('resultados de búsqueda', () => {
 
 describe('estado vacío', () => {
   it('avisa que no hubo resultados para el término buscado', () => {
-    searchMock.results = []
+    searchMock.items = []
+    searchMock.total = 0
 
     const markup = renderPage('candado-ineexistente')
 
     expect(markup).toContain('No encontramos resultados para')
     expect(markup).toContain('«candado-ineexistente»')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
+    expect(markup).not.toContain('href="/catalogo/productos/')
   })
 
   it('ofrece explorar categorías cuando no hay resultados', () => {
-    searchMock.results = []
+    searchMock.items = []
+    searchMock.total = 0
 
     const markup = renderPage('candado-ineexistente')
 
@@ -132,7 +160,8 @@ describe('estado vacío', () => {
 
   it('muestra una guía cuando el header llegó sin término', () => {
     searchMock.status = 'idle'
-    searchMock.results = []
+    searchMock.items = []
+    searchMock.total = 0
 
     const markup = renderPage()
 
@@ -151,7 +180,7 @@ describe('estado de carga', () => {
     expect(markup).toContain('Cargando resultados')
     expect(occurrences(markup, 'animate-pulse')).toBeGreaterThan(0)
     // The skeleton keeps the shape of the grid: 8 cards.
-    expect(occurrences(markup, 'h-40 w-full animate-pulse bg-surface-200')).toBe(8)
+    expect(occurrences(markup, 'data-testid="product-skeleton-card"')).toBe(8)
     // ...and no real content yet.
     expect(markup).not.toContain('Cámara Domo 4K')
     expect(markup).not.toContain('No encontramos resultados para')
@@ -164,6 +193,36 @@ describe('estado de carga', () => {
   })
 })
 
+describe('paginación', () => {
+  it('ofrece cargar más cuando quedan productos por mostrar', () => {
+    searchMock.total = 60
+    searchMock.hasMore = true
+
+    const markup = renderPage('cámara')
+
+    expect(markup).toContain('Mostrando 2 de 60 productos')
+    expect(markup).toContain('Cargar más')
+  })
+
+  it('oculta el botón cuando ya se mostró todo', () => {
+    const markup = renderPage('cámara')
+
+    expect(markup).toContain('Mostrando 2 de 2 productos')
+    expect(markup).not.toContain('Cargar más')
+  })
+
+  it('avisa cuando falló la carga de la siguiente página sin perder los productos', () => {
+    searchMock.total = 60
+    searchMock.hasMore = true
+    searchMock.loadMoreError = true
+
+    const markup = renderPage('cámara')
+
+    expect(markup).toContain('No pudimos cargar más productos')
+    expect(markup).toContain('Cámara Domo 4K')
+  })
+})
+
 describe('error de conexión', () => {
   it('muestra el mensaje y el botón de reintentar', () => {
     searchMock.status = 'error'
@@ -173,7 +232,7 @@ describe('error de conexión', () => {
     expect(markup).toContain('No pudimos cargar los resultados')
     expect(markup).toContain('Revisa tu conexión e inténtalo de nuevo.')
     expect(markup).toContain('Intentar de nuevo')
-    expect(markup).not.toContain('href="/catalogo/categoria/')
+    expect(markup).not.toContain('href="/catalogo/productos/')
   })
 })
 

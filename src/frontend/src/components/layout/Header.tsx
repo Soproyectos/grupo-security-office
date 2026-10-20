@@ -1,14 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
-import { canViewAudit, canViewUsers } from '../../lib/rbac'
-
-const COMMERCIAL_ITEMS = [
-  { to: '/commercial/products', label: 'Productos' },
-  { to: '/commercial/lists', label: 'Listas' },
-  { to: '/commercial/settings', label: 'Configuración' },
-]
+import { canAdministerAccess, hasAssignedAction, useOwnUserAccess, usePanelAccess } from '../../features/users/access'
+import {
+  fetchNotifications,
+  fetchUnreadCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  type Notification,
+  getNotificationTypeLabel,
+  getNotificationColor,
+} from '../../services/notifications.service'
 
 export default function Header() {
   const { user, logout } = useAuthStore()
@@ -16,13 +20,63 @@ export default function Header() {
   const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const [commercialOpen, setCommercialOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [menuLeft, setMenuLeft] = useState(0)
   const commercialButtonRef = useRef<HTMLDivElement>(null)
   const commercialMenuRef = useRef<HTMLDivElement>(null)
+  const userMenuButtonRef = useRef<HTMLDivElement>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null)
+  const notificationsRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
+  const queryClient = useQueryClient()
+  const commercial = usePanelAccess('commercial')
+  const catalog = usePanelAccess('catalog')
+  const { access, status } = useOwnUserAccess()
+  const allowed = (action: string) => hasAssignedAction({ roles: user?.roles, grants: access?.grants, status }, [action])
+  const isSuperAdmin = canAdministerAccess(user?.roles)
 
-  const isCommercialActive =
-    location.pathname === '/commercial' || location.pathname.startsWith('/commercial/')
+  // Notificaciones: fetch automático + refetch al abrir dropdown
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => fetchNotifications({ take: 10 }),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
+
+  const { data: unreadCount } = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: fetchUnreadCount,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchInterval: 60_000, // poll cada minuto para el badge
+  })
+
+  const markAsReadMutation = useMutation({
+    mutationFn: markNotificationAsRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
+    },
+  })
+
+  const markAllAsReadMutation = useMutation({
+    mutationFn: markAllNotificationsAsRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
+    },
+  })
+
+  // Refetch notificaciones al abrir el dropdown
+  useEffect(() => {
+    if (notificationsOpen) {
+      refetchNotifications()
+    }
+  }, [notificationsOpen, refetchNotifications])
+
+  const isCommercialActive = commercial.tabs.some((tab) => location.pathname.startsWith(tab.to))
 
   const openMenu = () => {
     const btn = commercialButtonRef.current
@@ -39,19 +93,45 @@ export default function Header() {
   }
 
   useEffect(() => {
-    if (!commercialOpen) return
+    if (!commercialOpen && !userMenuOpen && !notificationsOpen) return
     const onClickOutside = (e: MouseEvent) => {
-      if (
-        commercialMenuRef.current &&
-        !commercialMenuRef.current.contains(e.target as Node) &&
-        commercialButtonRef.current &&
-        !commercialButtonRef.current.contains(e.target as Node)
-      ) {
-        setCommercialOpen(false)
+      if (commercialOpen) {
+        if (
+          commercialMenuRef.current &&
+          !commercialMenuRef.current.contains(e.target as Node) &&
+          commercialButtonRef.current &&
+          !commercialButtonRef.current.contains(e.target as Node)
+        ) {
+          setCommercialOpen(false)
+        }
+      }
+      if (userMenuOpen) {
+        if (
+          userMenuRef.current &&
+          !userMenuRef.current.contains(e.target as Node) &&
+          userMenuButtonRef.current &&
+          !userMenuButtonRef.current.contains(e.target as Node)
+        ) {
+          setUserMenuOpen(false)
+        }
+      }
+      if (notificationsOpen) {
+        if (
+          notificationsRef.current &&
+          !notificationsRef.current.contains(e.target as Node) &&
+          notificationsButtonRef.current &&
+          !notificationsButtonRef.current.contains(e.target as Node)
+        ) {
+          setNotificationsOpen(false)
+        }
       }
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCommercialOpen(false)
+      if (e.key === 'Escape') {
+        setCommercialOpen(false)
+        setUserMenuOpen(false)
+        setNotificationsOpen(false)
+      }
     }
     document.addEventListener('click', onClickOutside)
     document.addEventListener('mousedown', onClickOutside)
@@ -61,7 +141,7 @@ export default function Header() {
       document.removeEventListener('mousedown', onClickOutside)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [commercialOpen])
+  }, [commercialOpen, userMenuOpen, notificationsOpen])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,7 +170,7 @@ export default function Header() {
           </div>
 
           {/* Centro: Buscador global */}
-          <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
+          {allowed('products:read') && <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
             <div className="relative">
               <input
                 type="text"
@@ -109,53 +189,207 @@ export default function Header() {
                 </svg>
               </button>
             </div>
-          </form>
+          </form>}
 
           {/* Derecha: Notificaciones + User menu */}
           <div className="flex items-center gap-2 pl-1 border-l border-[var(--color-border)]">
             {/* Notificaciones */}
-            <button
-              type="button"
-              className="min-w-[40px] min-h-[40px] flex items-center justify-center p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)]"
-              title="Notificaciones"
-            >
-              <div className="relative">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <span className="absolute -top-1 -right-1 w-2 h-2 bg-[var(--color-error)] rounded-full"></span>
-              </div>
-            </button>
+            <div className="relative">
+              <button
+                ref={notificationsButtonRef}
+                type="button"
+                onClick={() => setNotificationsOpen(!notificationsOpen)}
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)]"
+                title="Notificaciones"
+                aria-haspopup="menu"
+                aria-expanded={notificationsOpen}
+                aria-controls="notifications-menu"
+              >
+                <div className="relative">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  {(unreadCount ?? 0) > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 min-w-[18px] bg-[var(--color-error)] text-[var(--color-text-inverse)] text-[10px] font-semibold rounded-full flex items-center justify-center">
+                      {(unreadCount ?? 0) > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {notificationsOpen && (
+                <div
+                  ref={notificationsRef}
+                  id="notifications-menu"
+                  role="menu"
+                  aria-label="Notificaciones"
+                  className="absolute right-0 top-full z-[60] mt-1.5 w-[320px] bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-lg"
+                >
+                  <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Notificaciones</h3>
+                    {(unreadCount ?? 0) > 0 && (
+                      <button
+                        role="menuitem"
+                        tabIndex={0}
+                        onClick={() => markAllAsReadMutation.mutate()}
+                        disabled={markAllAsReadMutation.isPending}
+                        className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+                      >
+                        Marcar todas como leídas
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {notificationsData?.data?.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-[var(--color-text-tertiary)] text-sm">
+                        No hay notificaciones nuevas
+                      </div>
+                    ) : (
+                      (notificationsData?.data ?? []).map((notification: Notification) => (
+                        <button
+                          key={notification.id}
+                          role="menuitem"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (!notification.readAt) {
+                              markAsReadMutation.mutate(notification.id)
+                            }
+                            // TODO: navegar según notification.data (ej. quoteId, productId, etc.)
+                            setNotificationsOpen(false)
+                          }}
+                          className={`w-full px-3 py-3 text-left hover:bg-[var(--color-bg-primary)] transition-colors border-b border-[var(--color-border)] last:border-0 ${
+                            !notification.readAt
+                              ? 'bg-[var(--color-primary-bg-subtle)]'
+                              : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <span
+                              className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs ${getNotificationColor(
+                                notification.type,
+                              )}`}
+                            >
+                              {getNotificationTypeLabel(notification.type).charAt(0)}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium ${!notification.readAt ? 'font-semibold' : ''} text-[var(--color-text-primary)]`}>
+                                {notification.title}
+                              </p>
+                              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">
+                                {notification.message}
+                              </p>
+                              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-1">
+                                {new Date(notification.createdAt).toLocaleString('es-CO', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                          </div>
+</button>
+                      )))}
+                  </div>
+                  <div className="px-3 py-2 border-t border-[var(--color-border)]">
+                    <button
+                      role="menuitem"
+                      tabIndex={0}
+                      onClick={() => {
+                        setNotificationsOpen(false)
+                        navigate('/notifications')
+                      }}
+                      className="w-full px-3 py-2 text-sm text-center text-[var(--color-primary)] hover:bg-[var(--color-primary-bg-subtle)] rounded transition-colors"
+                    >
+                      Ver todas las notificaciones
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Separador vertical */}
             <div className="h-6 w-px bg-[var(--color-border)]"></div>
 
             {/* User menu */}
             <div className="flex items-center gap-1.5 text-[var(--color-text-primary)]">
-              <div className="flex items-center gap-1.5 cursor-pointer group">
-                <div className="w-8 h-8 bg-[var(--color-primary-bg-subtle)] rounded-full flex items-center justify-center text-[var(--color-primary)]">
-                  <span className="text-xs font-semibold">
-                    {user?.name?.charAt(0).toUpperCase() || 'U'}
-                  </span>
+              <div className="relative">
+                <div
+                  ref={userMenuButtonRef}
+                  className="flex items-center gap-1.5 cursor-pointer group"
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                >
+                  <div className="w-8 h-8 bg-[var(--color-primary-bg-subtle)] rounded-full flex items-center justify-center text-[var(--color-primary)]">
+                    <span className="text-xs font-semibold">
+                      {user?.name?.charAt(0).toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                  <div className="hidden sm:block text-right">
+                    <p className="text-xs font-medium leading-tight group-hover:text-[var(--color-primary)] transition-colors">{user?.name}</p>
+                    <p className="text-[10px] text-[var(--color-text-secondary)] leading-tight">{user?.roles?.[0] || 'Usuario'}</p>
+                  </div>
+                  <svg
+                    className={`w-3.5 h-3.5 text-[var(--color-text-tertiary)] transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
-                <div className="hidden sm:block text-right">
-                  <p className="text-xs font-medium leading-tight group-hover:text-[var(--color-primary)] transition-colors">{user?.name}</p>
-                  <p className="text-[10px] text-[var(--color-text-secondary)] leading-tight">{user?.roles?.[0] || 'Usuario'}</p>
-                </div>
+
+                {userMenuOpen && (
+                  <div
+                    ref={userMenuRef}
+                    role="menu"
+                    aria-label="Menú de usuario"
+                    className="absolute right-0 top-full z-[60] mt-1.5 min-w-[200px] py-1 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-lg"
+                  >
+                    <div className="px-3 py-2 border-b border-[var(--color-border)]">
+                      <p className="text-xs font-medium text-[var(--color-text-primary)]">{user?.name}</p>
+                      <p className="text-[11px] text-[var(--color-text-secondary)]">{user?.email}</p>
+                      <p className="text-[11px] text-[var(--color-text-tertiary)] capitalize">{user?.roles?.[0]?.toLowerCase() || 'usuario'}</p>
+                    </div>
+                    <button
+                      role="menuitem"
+                      tabIndex={0}
+                      onClick={() => {
+                        setUserMenuOpen(false)
+                        navigate('/profile')
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-bg-subtle)] transition-colors"
+                    >
+                      Mi perfil
+                    </button>
+                    <button
+                      role="menuitem"
+                      tabIndex={0}
+                      onClick={() => {
+                        setUserMenuOpen(false)
+                        navigate('/settings')
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-bg-subtle)] transition-colors"
+                    >
+                      Configuración
+                    </button>
+                    <hr className="my-1 border-[var(--color-border)]" />
+                    <button
+                      role="menuitem"
+                      tabIndex={0}
+                      onClick={async () => {
+                        setUserMenuOpen(false)
+                        try { await api.post('/auth/logout') } catch {}
+                        logout()
+                        navigate('/login', { replace: true })
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left text-[var(--color-error)] hover:bg-[var(--color-error-bg-subtle)] transition-colors"
+                    >
+                      Cerrar sesión
+                    </button>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={async () => {
-                  try { await api.post('/auth/logout') } catch {}
-                  logout()
-                  navigate('/login', { replace: true })
-                }}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)]"
-                title="Cerrar sesión"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-              </button>
             </div>
           </div>
         </div>
@@ -166,14 +400,16 @@ export default function Header() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin py-2">
             <div className="flex-shrink-0">
-              <NavItem to="/" label="Dashboard" />
+              <NavItem to="/" label="Mi resumen" />
             </div>
-            <div className="relative flex-shrink-0">
+            <div className="flex-shrink-0"><NavItem to="/agenda" label="Agenda y tareas" /></div>
+            {catalog.tabs[0] && <div className="flex-shrink-0"><NavItem to={catalog.tabs[0]?.to ?? '/commercial/lists'} label="Catálogo y precios" /></div>}
+            {commercial.tabs[0] && <div className="relative flex-shrink-0">
               <div ref={commercialButtonRef} className="flex items-center">
                 <NavLink
-                  to="/commercial/products"
+                  to={commercial.tabs[0]?.to ?? '/commercial/customers'}
                   onClick={() => setCommercialOpen(false)}
-                  aria-label="Comercial: Productos"
+                  aria-label="Panel Comercial"
                   className={`flex items-center px-3 py-1.5 text-sm font-condensed font-semibold whitespace-nowrap transition-all tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] rounded ${
                     isCommercialActive
                       ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)]'
@@ -206,13 +442,14 @@ export default function Header() {
                   </svg>
                 </button>
               </div>
-            </div>
-            {canViewUsers() && (
+            </div>}
+            {isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /><NavItem to="/users/access" label="Asignar paneles" /></div>}
+            {allowed('users:read') && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
               </div>
             )}
-            {canViewAudit() && (
+            {allowed('audit:read') && (
               <div className="flex-shrink-0">
                 <NavItem to="/audit" label="Auditoría" />
               </div>
@@ -220,7 +457,7 @@ export default function Header() {
           </div>
         </div>
 
-        {commercialOpen && (
+        {commercialOpen && commercial.hasAnyPanel && (
           <div
             ref={commercialMenuRef}
             id="comercial-menu"
@@ -229,7 +466,7 @@ export default function Header() {
             style={{ left: menuLeft }}
             className="absolute top-full z-[60] mt-1 min-w-[180px] py-1 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-lg"
           >
-            {COMMERCIAL_ITEMS.map((item) => (
+            {commercial.tabs.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

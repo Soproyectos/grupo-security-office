@@ -101,10 +101,13 @@ describe('AccountLockoutService', () => {
      * pero siguen en la tabla como rastro de auditoría.
      */
     it('reinicia el contador tras un acceso correcto', async () => {
-      // Fecha FIJA, no relativa a Date.now(): construir el valor esperado en
-      // una linea distinta a la del mock produce dos Date con milisegundos
-      // distintos, y el test falla de forma intermitente.
-      const ultimoAcceso = new Date('2026-09-21T10:00:00.000Z');
+      // Un UNICO Date construido una sola vez y reutilizado en el mock y en la
+      // asercion: asi no hay dos instancias con milisegundos distintos. Ademas
+      // debe caer dentro de la ventana de 24 h (FAILURE_WINDOW_MINUTES), porque
+      // un ultimo acceso correcto mas viejo que la ventana se descarta y el
+      // corte vuelve a ser windowStart(). Una fecha fija en el pasado cumplia
+      // eso al escribirse y dejo de cumplirlo con el tiempo.
+      const ultimoAcceso = new Date(Date.now() - 60_000);
 
       mockPrisma.loginAttempt.findFirst.mockResolvedValue({
         createdAt: ultimoAcceso,

@@ -31,6 +31,7 @@ const menu: MenuCategory[] = [
     iconUrl: '/images/categories/icons/videovigilancia.svg',
     isFeatured: false,
     sortOrder: 10,
+    productCount: 0,
     children: [
       {
         id: 'child-1',
@@ -40,6 +41,7 @@ const menu: MenuCategory[] = [
         iconUrl: null,
         isFeatured: true,
         sortOrder: 0,
+        productCount: 0,
         children: [],
       },
     ],
@@ -52,6 +54,7 @@ const menu: MenuCategory[] = [
     iconUrl: null,
     isFeatured: false,
     sortOrder: 20,
+    productCount: 0,
     children: [],
   },
 ]
@@ -65,6 +68,7 @@ const otroMenu: MenuCategory[] = [
     iconUrl: null,
     isFeatured: false,
     sortOrder: 30,
+    productCount: 0,
     children: [],
   },
 ]

@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   generateSlug,
+  normalizeSku,
   truncateProductName,
 } from '../modules/products/import/helpers/text-normalizer';
 
@@ -228,19 +229,20 @@ export interface MatchResult {
 }
 
 /**
- * Match de SKU case-insensitive (uppercase por ambos lados, trim). Las
- * fichas sin match van a creates (conservan su referencia como sku).
+ * Match por SKU normalizado (mayúsculas y sin espacios por ambos lados,
+ * misma regla que el índice único products_sku_normalized_key). Las fichas
+ * sin match van a creates (conservan su referencia como sku).
  */
 export function matchProducts(fichas: BibliotecaFicha[], existingSkus: string[]): MatchResult {
   const byNorm = new Map<string, string>();
   for (const sku of existingSkus) {
-    const norm = sku.trim().toUpperCase();
+    const norm = normalizeSku(sku);
     if (norm && !byNorm.has(norm)) byNorm.set(norm, sku);
   }
   const updates: MatchedProduct[] = [];
   const creates: BibliotecaFicha[] = [];
   for (const ficha of fichas) {
-    const sku = byNorm.get(ficha.referencia.trim().toUpperCase());
+    const sku = byNorm.get(normalizeSku(ficha.referencia));
     if (sku) updates.push({ ficha, sku });
     else creates.push(ficha);
   }

@@ -126,14 +126,29 @@ export interface CreateQuotePayload {
   notes?: string
 }
 
+/**
+ * Wire shape documentado del DTO de alta de línea. `discountPct` quedó FUERA
+ * del contrato general en COM-03 §3: el servidor responde 400
+ * `discount-not-allowed-in-add` si aparece. El servicio exporta
+ * `QuoteItemAddPayload = Omit<…, 'discountPct'>` como firma real de envío y
+ * retira el campo antes de mandarlo (defensa en capa servicio).
+ */
 export interface AddQuoteItemPayload {
   productId: string
   quantity: number
+  /** Prohibido en la vía general (400); ver `updateQuoteItemDiscount`. */
   discountPct?: string
 }
 
+/**
+ * Wire shape documentado del DTO de edición general de línea. COM-03 §3: la
+ * edición general es SOLO `quantity`; el descuento viaja por
+ * `PATCH /:id/items/:itemId/discount` (el servicio firma con
+ * `QuoteItemEditPayload = Omit<…, 'discountPct'>`).
+ */
 export interface UpdateQuoteItemPayload {
   quantity?: number
+  /** Prohibido en la vía general (400 `discount-not-allowed-in-general-edit`). */
   discountPct?: string
 }
 

@@ -1,5 +1,16 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { decideCatalogResourceAccessFromGrants } from '../security/catalog-resource-access';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ACCESS_CATALOG_VERSION,
+  getActionDefinition,
+} from '../security/access-catalog';
+import {
+  resolveAccess,
+  type AccessDecision,
+  type AccessIdentity,
+  type ScopedGrant,
+} from '../security/data-scope';
 
 /**
  * Niveles de acceso reales (checklist 29/30) y su ranking.
@@ -78,7 +89,8 @@ export class AclService {
    * gestiona recursos globales (usuarios, roles, grants por rol, tipos legacy).
    */
   isListasAdmin(roles: string[] | undefined): boolean {
-    return this.isSuperAdmin(roles) || !!roles?.includes('Admin Comercial');
+    // El cargo Admin Comercial no sustituye asignaciones individuales.
+    return this.isSuperAdmin(roles);
   }
 
   /** Niveles con ranking >= al nivel solicitado. */
@@ -89,7 +101,12 @@ export class AclService {
 
   /**
    * IDs de Listas a las que el usuario puede acceder con nivel >= `level`.
-   * Devuelve `null` para Super Admin (sin filtro) o un arreglo (posiblemente vacío).
+   * Tres resultados DISTINTOS (enmienda de seguridad 2026-10-18, hallazgo 2):
+   *  - `null` → acceso global reservado a Super Admin.
+   *  - `[ids]` → alcance restringido a esas Listas (puede ser `[]`).
+   *  - La AUSENCIA de identidad NUNCA equivale a "sin filtro": se devuelve
+   *    `[]` (cero listas = denegado). Un llamador no debe interpretar `null`
+   *    como "mostrar todo" sin haber autenticado identidad con rol global.
    * Incluye los grants por rol ('ROLE:{rol}') del usuario.
    */
   async getAllowedListaIds(
@@ -97,49 +114,19 @@ export class AclService {
     roles: string[],
     level: string = 'view',
   ): Promise<string[] | null> {
-    if (!userId || this.isListasAdmin(roles)) return null;
-
-    const levels = this.levelsAtLeast(level);
-    const roleResourceIds = roles.map((r) => `${ROLE_ASSIGNMENT_PREFIX}${r}`);
-
-    const [userAssignments, roleAssignments] = await Promise.all([
-      this.prisma.assignment.findMany({
-        where: {
-          userId,
-          resourceType: 'LISTA',
-          isActive: true,
-          level: { in: levels },
-        },
-        select: { resourceId: true },
-      }),
-      roleResourceIds.length
-        ? this.prisma.assignment.findMany({
-            where: {
-              resourceType: 'LISTA',
-              isActive: true,
-              level: { in: levels },
-            },
-            select: { resourceId: true },
-          })
-        : Promise.resolve([]),
-    ]);
-
-    const ids = userAssignments.map((a) => a.resourceId);
-
-    // Grant global por rol: si el usuario tiene un assignment ROLE:{rol} con nivel
-    // suficiente, accede a TODAS las Listas activas a ese nivel.
-    const hasRoleGrant = roleAssignments.some((a) =>
-      roleResourceIds.includes(a.resourceId),
-    );
-    if (hasRoleGrant) {
-      const all = await this.prisma.lista.findMany({
-        where: { isActive: true, archivedAt: null },
-        select: { id: true },
-      });
-      return all.map((l) => l.id);
-    }
-
-    return ids;
+    if (!userId?.trim()) return [];
+    if (this.isSuperAdmin(roles)) return null;
+    const grants = await this.currentGrants(userId);
+    const actions = level === 'view' ? ['listas:read'] : this.actionsAtLevel(level);
+    const context = { userId, roles };
+    const candidates = grants.filter((g) => actions.includes(g.actionId));
+    const canRead = (id: string) => actions.some((actionId) =>
+      decideCatalogResourceAccessFromGrants(grants, actionId, context,
+        { id, kind: 'lista', listId: id }).allowed);
+    const global = candidates.some((g) => g.scope === 'global' && canRead('__global_scope_probe__'));
+    if (global) return null;
+    const listIds = [...new Set(candidates.filter((g) => g.scope === 'list' && g.resourceId).map((g) => g.resourceId!))];
+    return listIds.filter(canRead);
   }
 
   /**
@@ -151,42 +138,44 @@ export class AclService {
     listaId: string,
     roles: string[] = [],
   ): Promise<string | null> {
-    const roleResourceIds = roles.map((r) => `${ROLE_ASSIGNMENT_PREFIX}${r}`);
+    if (!userId?.trim()) return null;
+    if (this.isSuperAdmin(roles)) return 'manage_access';
+    const grants = await this.currentGrants(userId);
+    const context = { userId, roles };
+    for (const level of [...LEVEL_ORDER].reverse()) {
+      if (this.actionsAtLevel(level).some((actionId) =>
+        decideCatalogResourceAccessFromGrants(grants, actionId, context,
+          { id: listaId, kind: 'lista', listId: listaId }).allowed)) return level;
+    }
+    return null;
+  }
 
-    const [userLevels, roleLevels] = await Promise.all([
-      this.prisma.assignment.findMany({
-        where: {
-          userId,
-          resourceType: 'LISTA',
-          resourceId: listaId,
-          isActive: true,
-        },
-        select: { level: true },
-      }),
-      roleResourceIds.length
-        ? this.prisma.assignment.findMany({
-            where: {
-              resourceType: 'LISTA',
-              resourceId: { in: roleResourceIds },
-              isActive: true,
-            },
-            select: { level: true },
-          })
-        : Promise.resolve([]),
-    ]);
+  private actionsAtLevel(level: string): string[] {
+    switch (normalizeLevel(level)) {
+      case 'view': return ['listas:read'];
+      case 'view_prices': return ['prices:read'];
+      case 'edit_prices': return ['prices:apply'];
+      case 'edit_products': return ['products:write'];
+      // Legacy level adapter represents one action only. Callers that perform
+      // another operation must authorize its own action ID.
+      case 'manage': return ['listas:update'];
+      case 'manage_access': return ['assignments:manage'];
+      default: return [];
+    }
+  }
 
-    const all = [...userLevels, ...roleLevels];
-    if (all.length === 0) return null;
-
-    return all.reduce<string>((best, a) => {
-      const bestRank = LEVEL_RANK[best] ?? 0;
-      const curRank = LEVEL_RANK[a.level] ?? 0;
-      return curRank > bestRank ? a.level : best;
-    }, all[0].level);
+  private async currentGrants(userId: string): Promise<ScopedGrant[]> {
+    const rows = await this.prisma.accessGrant.findMany({
+      where: { source: { userId } },
+      select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
+    });
+    return rows.map((row) => ({ sourceId: row.sourceId, actionId: row.actionId,
+      scope: row.scopeKind as ScopedGrant['scope'], resourceId: row.resourceId ?? undefined }));
   }
 
   /**
-   * Verifica acceso a una Lista concreta exigiendo `level` (default view).
+   * Verifica acceso a una Lista concreta por las acciones exactas del nivel
+   * solicitado. Los niveles legacy no implican acciones hermanas.
    * - Super Admin: siempre autorizado (ve incluso Listas inactivas/archivadas).
    * - Sin assignment activo → NotFoundException (se oculta la existencia).
    * - Assignment activo pero nivel insuficiente → ForbiddenException.
@@ -197,23 +186,32 @@ export class AclService {
     ctx: AccessContext,
     level: string = 'view',
   ): Promise<void> {
+    const actions = this.actionsAtLevel(level);
+    if (actions.length !== 1) throw new ForbiddenException('Nivel ACL inválido');
+    return this.assertListaAction(listaId, ctx, actions[0]);
+  }
+
+  /** Authorizes one exact catalog action on a server-resolved Lista. */
+  async assertListaAction(
+    listaId: string,
+    ctx: AccessContext,
+    actionId: string,
+    options: { allowInactive?: boolean } = {},
+  ): Promise<void> {
+    if (!ctx.userId?.trim()) throw new NotFoundException('Lista no encontrada');
     if (this.isListasAdmin(ctx.roles)) return;
 
-    const userLevel = await this.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    if (!userLevel) {
-      throw new NotFoundException('Lista no encontrada');
-    }
-
-    if ((LEVEL_RANK[userLevel] ?? 0) < (LEVEL_RANK[level] ?? 0)) {
-      throw new ForbiddenException('No tienes permisos suficientes sobre esta Lista');
-    }
+    const grants = await this.currentGrants(ctx.userId!);
+    const resource = { id: listaId, kind: 'lista' as const, listId: listaId };
+    const decision = decideCatalogResourceAccessFromGrants(grants, actionId, ctx, resource);
+    if (!decision.allowed) throw new NotFoundException('Lista no encontrada');
 
     const lista = await this.prisma.lista.findUnique({
       where: { id: listaId },
       select: { isActive: true, archivedAt: true },
     });
     if (!lista) throw new NotFoundException('Lista no encontrada');
-    if (!lista.isActive || lista.archivedAt) {
+    if (!options.allowInactive && (!lista.isActive || lista.archivedAt)) {
       throw new NotFoundException('Lista no encontrada');
     }
   }
@@ -233,22 +231,11 @@ export class AclService {
     ctx: AccessContext,
     level: string = 'manage',
   ): Promise<void> {
+    if (!ctx.userId?.trim()) throw new NotFoundException('Lista no encontrada');
     if (this.isListasAdmin(ctx.roles)) return;
-
-    const lista = await this.prisma.lista.findUnique({
-      where: { id: listaId },
-      select: { id: true },
-    });
-    if (!lista) throw new NotFoundException('Lista no encontrada');
-
-    const userLevel = await this.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    if (!userLevel) {
-      throw new NotFoundException('Lista no encontrada');
-    }
-
-    if ((LEVEL_RANK[userLevel] ?? 0) < (LEVEL_RANK[level] ?? 0)) {
-      throw new ForbiddenException('No tienes permisos suficientes sobre esta Lista');
-    }
+    const actions = this.actionsAtLevel(level);
+    if (actions.length !== 1) throw new ForbiddenException('Nivel ACL inválido');
+    await this.assertListaAction(listaId, ctx, actions[0], { allowInactive: true });
   }
 
   /**
@@ -268,12 +255,12 @@ export class AclService {
     ctx: AccessContext,
     level: string = 'view',
   ): Promise<{ listaId: string | null }> {
+    if (!ctx.userId?.trim()) throw new NotFoundException('Producto no encontrado');
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: { listaId: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    if (!product.listaId) throw new NotFoundException('Producto no encontrado');
 
     if (this.isListasAdmin(ctx.roles)) return { listaId: product.listaId };
 
@@ -292,21 +279,12 @@ export class AclService {
       throw new ForbiddenException('Acceso restringido a este producto');
     }
 
-    // 3. Excepción positiva: assignment PRODUCT activo con el nivel más alto.
-    const best = productAssignments
-      .filter((a) => a.isActive)
-      .reduce<string | null>((b, a) => {
-        const cur = LEVEL_RANK[a.level] ?? 0;
-        const bestRank = b ? LEVEL_RANK[b] ?? 0 : -1;
-        return cur > bestRank ? a.level : b;
-      }, null);
-
-    if (best && (LEVEL_RANK[best] ?? 0) >= (LEVEL_RANK[level] ?? 0)) {
-      return { listaId: product.listaId };
-    }
-
-    // 4. Sin excepción por producto → acceso de la Lista dueña (legacy + grants por rol).
-    await this.assertListaAccess(product.listaId, ctx, level);
+    const grants = await this.currentGrants(ctx.userId);
+    const requestedActions = level === 'view' ? ['products:read'] : this.actionsAtLevel(level);
+    const allowed = requestedActions.length > 0 && requestedActions.every((actionId) =>
+      decideCatalogResourceAccessFromGrants(grants, actionId, ctx,
+        { id: productId, kind: 'product', productId, listId: product.listaId ?? undefined }).allowed);
+    if (!allowed) throw new NotFoundException('Producto no encontrado');
     return { listaId: product.listaId };
   }
 
@@ -336,10 +314,13 @@ export class AclService {
     ctx: AccessContext,
     level: string,
   ): Promise<boolean> {
+    if (!ctx.userId?.trim()) return false;
     if (this.isListasAdmin(ctx.roles)) return true;
-    const userLevel = await this.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    if (!userLevel) return false;
-    return (LEVEL_RANK[userLevel] ?? 0) >= (LEVEL_RANK[level] ?? 0);
+    const grants = await this.currentGrants(ctx.userId!);
+    const actions = this.actionsAtLevel(level);
+    if (actions.length !== 1) return false;
+    const resource = { id: listaId, kind: 'lista' as const, listId: listaId };
+    return decideCatalogResourceAccessFromGrants(grants, actions[0], ctx, resource).allowed;
   }
 
   /**
@@ -350,12 +331,9 @@ export class AclService {
     listaId: string,
     ctx: AccessContext,
   ): Promise<boolean> {
+    if (!ctx.userId?.trim()) return false;
     if (this.isListasAdmin(ctx.roles)) return true;
-    const userLevel = await this.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    return (
-      !!userLevel &&
-      (LEVEL_RANK[userLevel] ?? 0) >= (LEVEL_RANK['manage_access'] ?? 0)
-    );
+    return this.can(listaId, ctx, 'manage_access');
   }
 
   /**
@@ -366,6 +344,7 @@ export class AclService {
     productId: string,
     ctx: AccessContext,
   ): Promise<boolean> {
+    if (!ctx.userId?.trim()) return false;
     if (this.isListasAdmin(ctx.roles)) return true;
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
@@ -383,12 +362,9 @@ export class AclService {
     listaId: string,
     ctx: AccessContext,
   ): Promise<boolean> {
+    if (!ctx.userId?.trim()) return false;
     if (this.isListasAdmin(ctx.roles)) return true;
-    const userLevel = await this.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    return (
-      !!userLevel &&
-      (LEVEL_RANK[userLevel] ?? 0) >= (LEVEL_RANK['manage'] ?? 0)
-    );
+    return this.can(listaId, ctx, 'manage');
   }
 
   /** Acciones permitidas para un nivel efectivo (matrix viewer). */
@@ -404,4 +380,38 @@ export class AclService {
       administrarAccesos: at('manage_access'),
     };
   }
+
+  /**
+   * Puente ACL (niveles por Lista) → resolver BASE-04 (acción+alcance).
+   *
+   * Traduce el nivel efectivo del usuario sobre una Lista concreta en el grant
+   * de alcance `list` que el resolver entiende, y delega en `resolveAccess`
+   * para que las reglas duras (identidad, acción deshabilitada, dependencias,
+   * scope del navegador irrelevante) se apliquen en un solo sitio.
+   *
+   * - Super Admin o Admin Comercial → grant `global` con procedencia
+   *   `acl:listas-admin` (la excepción es explícita y auditable).
+   * - Con assignment activo de nivel >= view → grant `list` con
+   *   `resourceId = listaId`.
+   * - Sin nivel → el resolver devuelve `no-covering-grant`; el consumidor lo
+   *   traduce a 404/403 como ya hace `assertListaAccess`.
+   */
+  async resolveListaAction(
+    actionId: string,
+    listaId: string,
+    identity: AccessIdentity,
+    roles: string[],
+  ): Promise<AccessDecision> {
+    const resource = { id: listaId, kind: 'lista' as const, listId: listaId };
+    const definition = getActionDefinition(actionId);
+
+    // Acción desconocida o deshabilitada: se deniega sin tocar la BD.
+    if (!definition || !definition.enabled) {
+      return resolveAccess({ identity, actionId, grants: [], resource });
+    }
+
+    const grants = await this.currentGrants(identity.userId);
+    return resolveAccess({ identity: { ...identity, superAdmin: this.isSuperAdmin(roles) && Boolean(identity.userId) }, actionId, grants, resource });
+  }
+
 }

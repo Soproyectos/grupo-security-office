@@ -28,4 +28,10 @@ export class HealthController {
       environment: this.configService.get<string>('NODE_ENV') || 'development',
     };
   }
+
+  @Public()
+  @Get('ping')
+  ping() {
+    return { pong: true, timestamp: new Date().toISOString() };
+  }
 }

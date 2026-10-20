@@ -75,6 +75,9 @@ describe('ProductsService', () => {
   beforeEach(async () => {
     jest.resetAllMocks();
 
+    // Sin coincidencias de SKU normalizado por defecto (helper findProductsBySkus).
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+
     // Fallback LISTA-GENERAL para crear/update sin listaId explícito.
     mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', code: 'LISTA-GENERAL', defaultVisibility: false });
 
@@ -156,7 +159,8 @@ describe('ProductsService', () => {
     });
 
     it('debe rechazar SKU duplicado con ConflictException', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue(mockProduct);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: mockProduct.id, sku: mockProduct.sku }]);
+      mockPrisma.product.findMany.mockResolvedValue([mockProduct]);
 
       const dto = {
         sku: 'CAM-001',
@@ -166,6 +170,17 @@ describe('ProductsService', () => {
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
       await expect(service.create(dto)).rejects.toThrow('Ya existe un producto con ese SKU');
+    });
+
+    it('rechaza crear un producto cuyo SKU solo difiere en mayúsculas/espacios de uno existente', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: mockProduct.id, sku: mockProduct.sku }]);
+      mockPrisma.product.findMany.mockResolvedValue([mockProduct]);
+
+      await expect(
+        service.create({ sku: 'cam- 001', name: 'Duplicado', categoryId: 'cat-1', brandId: 'brand-1' }),
+      ).rejects.toThrow('Ya existe un producto con ese SKU');
+      expect(mockPrisma.$queryRaw.mock.calls[0][0].values[0]).toEqual(['CAM-001']);
+      expect(mockPrisma.product.create).not.toHaveBeenCalled();
     });
 
     it('debe lanzar NotFoundException si la categoría no existe', async () => {
@@ -412,6 +427,26 @@ describe('ProductsService', () => {
       mockPrisma.product.findUnique.mockResolvedValue(null);
 
       await expect(service.update('no-existe', { name: 'Nope' })).rejects.toThrow(NotFoundException);
+    });
+
+    it('rechaza cambiar el SKU a uno que solo difiere en mayúsculas de otro producto', async () => {
+      mockPrisma.product.findUnique.mockResolvedValueOnce(mockProduct);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'otro', sku: 'CAM-777' }]);
+      mockPrisma.product.findMany.mockResolvedValue([{ id: 'otro', sku: 'CAM-777' }]);
+
+      await expect(service.update('prod-1', { sku: 'cam-777' })).rejects.toThrow(ConflictException);
+    });
+
+    it('permite cambiar solo las mayúsculas del SKU del propio producto', async () => {
+      mockPrisma.product.findUnique.mockResolvedValueOnce(mockProduct);
+      mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
+      mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
+      mockPrisma.product.update.mockResolvedValue({ ...mockProductWithRelations, sku: 'cam-001' });
+
+      await service.update('prod-1', { sku: 'cam-001' });
+
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.product.update).toHaveBeenCalled();
     });
 
     it('debe actualizar extraAttributes y hacer upsert de precios', async () => {
@@ -1016,6 +1051,56 @@ describe('ProductsService', () => {
       expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
     });
 
+    it('findAll: card image falls back to the first image when none is flagged primary', async () => {
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      await service.findAll({ skip: 0, take: 20 });
+
+      const call = mockPrisma.product.findMany.mock.calls[0][0];
+      expect(call.include.images).toEqual({
+        orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+        take: 1,
+      });
+      // No `where: { isPrimary: true }` filter: a product with photos must never lose its card image.
+      expect(call.include.images).not.toHaveProperty('where');
+    });
+
+    it('findAll (fuzzy search): attaches the product image by product id, primary first, with fallback', async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ count: BigInt(2) }])
+        .mockResolvedValueOnce([
+          { id: 'p-a', sku: 'A', categoryId: 'cat-1', brandId: 'brand-1' },
+          { id: 'p-b', sku: 'B', categoryId: 'cat-1', brandId: 'brand-1' },
+        ]);
+      mockPrisma.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'CCTV', slug: 'cctv' }]);
+      mockPrisma.brand.findMany.mockResolvedValue([{ id: 'brand-1', name: 'Hikvision', slug: 'hikvision' }]);
+      mockPrisma.productImage.findMany.mockResolvedValue([
+        // p-a: no image flagged primary -> lowest sortOrder wins
+        { productId: 'p-a', url: '/api/files/a2', isPrimary: false, sortOrder: 1 },
+        { productId: 'p-a', url: '/api/files/a1', isPrimary: false, sortOrder: 0 },
+        // p-b: primary wins over a lower sortOrder
+        { productId: 'p-b', url: '/api/files/b2', isPrimary: false, sortOrder: 0 },
+        { productId: 'p-b', url: '/api/files/b1', isPrimary: true, sortOrder: 5 },
+      ]);
+      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.stock.findMany.mockResolvedValue([]);
+      mockPrisma.assignment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({ search: 'DVR turbo' });
+
+      const byId = Object.fromEntries(result.data.map((p: any) => [p.id, p]));
+      expect(byId['p-a'].images.map((i: any) => i.url)).toEqual(['/api/files/a1']);
+      expect(byId['p-b'].images.map((i: any) => i.url)).toEqual(['/api/files/b1']);
+      // Category and brand are looked up by their own ids, not by product ids.
+      expect(byId['p-a'].category).toEqual({ id: 'cat-1', name: 'CCTV', slug: 'cctv' });
+      expect(byId['p-a'].brand?.name).toBe('Hikvision');
+      expect(mockPrisma.category.findMany.mock.calls[0][0].where).toEqual({ id: { in: ['cat-1'] } });
+      expect(mockPrisma.productImage.findMany.mock.calls[0][0].where).toEqual({
+        productId: { in: ['p-a', 'p-b'] },
+      });
+    });
+
     it('findAll filtra por isVisible e isActive', async () => {
       mockPrisma.product.findMany.mockResolvedValue([]);
       mockPrisma.product.count.mockResolvedValue(0);
@@ -1186,6 +1271,48 @@ describe('ProductsService', () => {
 
       expect(mockPrisma.product.findMany).toHaveBeenCalledTimes(2);
     });
+
+    describe('fuzzy search con categoryId (parámetro enlazado, sin inyección SQL)', () => {
+      const injectedCategoryId = "cat-1' OR '1'='1";
+
+      beforeEach(() => {
+        mockPrisma.$queryRawUnsafe
+          .mockResolvedValueOnce([{ count: BigInt(0) }])
+          .mockResolvedValueOnce([]);
+        mockPrisma.category.findMany.mockResolvedValue([]);
+        mockPrisma.brand.findMany.mockResolvedValue([]);
+        mockPrisma.productImage.findMany.mockResolvedValue([]);
+        mockPrisma.price.findMany.mockResolvedValue([]);
+      });
+
+      it('enlaza categoryId como $3 en el SELECT y $2 en el COUNT, sin interpolarlo en el SQL', async () => {
+        await service.findTrending({ take: 5, search: 'camara', categoryId: injectedCategoryId });
+
+        expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+        const [countSql, ...countArgs] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+        const [selectSql, ...selectArgs] = mockPrisma.$queryRawUnsafe.mock.calls[1];
+
+        expect(countSql).toContain('"categoryId" = $2');
+        expect(countSql).not.toContain(injectedCategoryId);
+        expect(countArgs).toEqual(['camara', injectedCategoryId]);
+
+        expect(selectSql).toContain('"categoryId" = $3');
+        expect(selectSql).not.toContain(injectedCategoryId);
+        expect(selectArgs).toEqual(['camara', 5, injectedCategoryId]);
+      });
+
+      it('sin categoryId no agrega filtro de categoría ni parámetros extra', async () => {
+        await service.findTrending({ take: 5, search: 'camara' });
+
+        const [countSql, ...countArgs] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+        const [selectSql, ...selectArgs] = mockPrisma.$queryRawUnsafe.mock.calls[1];
+
+        expect(countSql).not.toContain('"categoryId"');
+        expect(countArgs).toEqual(['camara']);
+        expect(selectSql).not.toContain('"categoryId"');
+        expect(selectArgs).toEqual(['camara', 5]);
+      });
+    });
   });
 
   describe('importFromExcel', () => {
@@ -1251,8 +1378,9 @@ describe('ProductsService', () => {
       expect(result.errors[0].error).toBe('Nombre vacío');
     });
 
-    it('salta SKU ya existente', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'existing', sku: 'SKU-1' });
+    it('salta SKU ya existente (aunque difiera en mayúsculas)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'existing', sku: 'sku-1' }]);
+      mockPrisma.product.findMany.mockResolvedValue([{ id: 'existing', sku: 'sku-1' }]);
 
       const buffer = buildXlsxBuffer([
         ['SKU', 'Nombre', 'Categoría', 'Marca'],
@@ -1380,11 +1508,10 @@ describe('ProductsService', () => {
     });
 
     it('no reemplaza el nombre de un SKU ya existente (la fila se omite y no se actualiza)', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({
-        id: 'existing-1',
-        sku: 'SKU-1',
-        name: 'Nombre Pre-existente',
-      });
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'existing-1', sku: 'SKU-1' }]);
+      mockPrisma.product.findMany.mockResolvedValue([
+        { id: 'existing-1', sku: 'SKU-1', name: 'Nombre Pre-existente' },
+      ]);
 
       const buffer = buildXlsxBuffer([
         ['SKU', 'Descripción', 'Categoría', 'Marca'],
@@ -1430,6 +1557,13 @@ describe('ProductsService', () => {
     let svc: ProductsService;
 
     beforeEach(() => {
+      (mockPrisma as any).accessGrant = { findMany: jest.fn(async (args: any) =>
+        args?.where?.source?.userId === VIEWER.userId
+          ? ['listas:read', 'products:read'].map((actionId) => ({
+              sourceId: 'viewer-grant', actionId, scopeKind: 'list', resourceId: LISTA_ID,
+            }))
+          : [],
+      ) };
       acl = new AclService(mockPrisma as any);
       svc = new ProductsService(mockPrisma as any, acl, mockAudit as any, mockFiles as any);
       mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
@@ -1484,24 +1618,24 @@ describe('ProductsService', () => {
       expect(res.id).toBe('prod-1');
     });
 
-    it('view no edita (toggleVisibility de publicado exige publish:manage â†’ 403)', async () => {
+    it('view no edita (toggleVisibility exige permiso de publicación y oculta la Lista)', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({
         ...mockProduct,
         listaId: LISTA_ID,
         publishStatus: 'publicado',
         isVisible: true,
         lifecycleStatus: 'PUBLISHED'});
-      await expect(svc.toggleVisibility('prod-1', VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.toggleVisibility('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
     });
 
-    it('create: usuario view sobre la Lista no puede crear producto (403, falta edit)', async () => {
+    it('create: usuario view sobre la Lista no puede crear producto sin escritura', async () => {
       mockPrisma.product.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
       mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
       mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
 
       const dto = { sku: 'NEW-1', name: 'X', categoryId: 'cat-1', brandId: 'brand-1', listaId: LISTA_ID };
-      await expect(svc.create(dto as any, VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.create(dto as any, VIEWER)).rejects.toThrow(NotFoundException);
     });
   });
 

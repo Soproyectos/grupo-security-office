@@ -1,42 +1,64 @@
+import {
+  BUSINESS_HOURS,
+  CUSTOMER_SERVICE_EMAIL,
+  SALES_LINE_DISPLAY,
+  SALES_LINE_HREF,
+  SALES_PHONE_DISPLAY,
+  SALES_PHONE_HREF,
+  WHATSAPP_MESSAGES,
+  whatsappUrl,
+} from '../constants/contact'
+
 /**
- * As HOM-03 defines it, the full footer of the storefront (Homecenter style):
- * dark background with the red accent, responsive link columns, demo contact
- * info and a bottom row with the copyright, the demo NIT and social icons.
+ * Full footer of the storefront: dark background with the red accent,
+ * responsive link columns, contact info and a bottom row with the copyright and
+ * social icons.
  *
- * The destinations of the internal links are intended routes that do not exist
- * yet (no route was created in this task): they use plain `<a href>` so a
- * visitor without JavaScript still sees where each link leads. When the routes
- * land, each anchor can be swapped for a `Link` from react-router.
+ * The link lists are data: an entry without `href` has no destination yet (its
+ * page does not exist) and is not rendered, and a column or the social row with
+ * nothing to show disappears. Giving an entry its `href` is all it takes to
+ * publish it. Contact data comes from `constants/contact.ts` (DEMO values).
  */
 
-type FooterLink = { label: string; href: string; external?: boolean }
+type FooterLink = { label: string; href?: string; external?: boolean }
+type FooterColumn = { title: string; links: FooterLink[] }
 
-const CUSTOMER_SERVICE_LINKS: FooterLink[] = [
-  { label: 'Preguntas frecuentes', href: '/preguntas-frecuentes' },
-  { label: 'Rastrea tu pedido', href: '/rastrea-tu-pedido' },
-  { label: 'Cambios y devoluciones', href: '/cambios-y-devoluciones' },
-  { label: 'Centro de ayuda', href: '/centro-de-ayuda' },
+const COLUMNS: FooterColumn[] = [
+  {
+    title: 'Servicio al cliente',
+    links: [
+      { label: 'Preguntas frecuentes' },
+      { label: 'Rastrea tu pedido' },
+      { label: 'Cambios y devoluciones' },
+      { label: 'Centro de ayuda' },
+    ],
+  },
+  {
+    title: 'Compañía',
+    links: [
+      { label: 'Sobre nosotros' },
+      { label: 'Vende con nosotros', href: whatsappUrl(WHATSAPP_MESSAGES.sellWithUs), external: true },
+      { label: 'Trabaja con nosotros' },
+      { label: 'Mapa del sitio' },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Términos y condiciones' },
+      { label: 'Política de protección de datos' },
+      { label: 'Estatuto del consumidor', href: 'https://www.sic.gov.co/', external: true },
+    ],
+  },
 ]
 
-const COMPANY_LINKS: FooterLink[] = [
-  { label: 'Sobre nosotros', href: '/sobre-nosotros' },
-  { label: 'Vende con nosotros', href: '/vende-con-nosotros' },
-  { label: 'Trabaja con nosotros', href: '/trabaja-con-nosotros' },
-  { label: 'Mapa del sitio', href: '/mapa-del-sitio' },
-]
-
-const LEGAL_LINKS: FooterLink[] = [
-  { label: 'Términos y condiciones', href: '/terminos-y-condiciones' },
-  { label: 'Política de protección de datos', href: '/politica-proteccion-datos' },
-  { label: 'Estatuto del consumidor', href: 'https://www.sic.gov.co/', external: true },
-]
-
+// Only real URLs are listed: the brand has not published its profiles yet.
 const SOCIAL_LINKS: FooterLink[] = [
-  { label: 'Facebook', href: '#' },
-  { label: 'Instagram', href: '#' },
-  { label: 'X', href: '#' },
-  { label: 'YouTube', href: '#' },
-  { label: 'WhatsApp', href: '#' },
+  { label: 'Facebook' },
+  { label: 'Instagram' },
+  { label: 'X' },
+  { label: 'YouTube' },
+  { label: 'WhatsApp', href: whatsappUrl(), external: true },
 ]
 
 const SOCIAL_ICONS: Record<string, React.ReactNode> = {
@@ -69,7 +91,22 @@ const SOCIAL_ICONS: Record<string, React.ReactNode> = {
   ),
 }
 
-function FooterLinkList({ title, links }: { title: string; links: FooterLink[] }) {
+function hasHref(link: FooterLink): link is FooterLink & { href: string } {
+  return link.href !== undefined
+}
+
+const LINK_FOCUS =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+
+const GRID_BY_COLUMNS: Record<number, string> = {
+  0: 'sm:grid-cols-1 lg:grid-cols-1',
+  1: 'sm:grid-cols-2 lg:grid-cols-2',
+  2: 'sm:grid-cols-2 lg:grid-cols-3',
+  3: 'sm:grid-cols-2 lg:grid-cols-4',
+  4: 'sm:grid-cols-2 lg:grid-cols-5',
+}
+
+function FooterLinkList({ title, links }: { title: string; links: Array<FooterLink & { href: string }> }) {
   return (
     <nav aria-labelledby={`footer-${title}-title`}>
       <h2 id={`footer-${title}-title`} className="mb-4 text-sm font-bold text-white">
@@ -80,7 +117,7 @@ function FooterLinkList({ title, links }: { title: string; links: FooterLink[] }
           <li key={link.label}>
             <a
               href={link.href}
-              className="text-sm text-slate-300 transition hover:text-[#CE0203]"
+              className={`inline-flex min-h-6 items-center text-sm text-slate-300 transition hover:text-white hover:underline ${LINK_FOCUS}`}
               {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             >
               {link.label}
@@ -93,36 +130,42 @@ function FooterLinkList({ title, links }: { title: string; links: FooterLink[] }
 }
 
 export default function StorefrontFooter() {
+  const columns = COLUMNS.map((column) => ({ title: column.title, links: column.links.filter(hasHref) })).filter(
+    (column) => column.links.length > 0,
+  )
+  const socials = SOCIAL_LINKS.filter(hasHref)
+
   return (
     <footer className="bg-[#1A1A1A] px-5 py-10 text-slate-300 lg:px-12">
       <div className="mx-auto max-w-7xl">
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          <FooterLinkList title="Servicio al cliente" links={CUSTOMER_SERVICE_LINKS} />
-          <FooterLinkList title="Compañía" links={COMPANY_LINKS} />
-          <FooterLinkList title="Legal" links={LEGAL_LINKS} />
+        <div className={`grid grid-cols-1 gap-8 ${GRID_BY_COLUMNS[columns.length] ?? GRID_BY_COLUMNS[3]}`}>
+          {columns.map((column) => (
+            <FooterLinkList key={column.title} title={column.title} links={column.links} />
+          ))}
           <div aria-labelledby="footer-contacto-title">
             <h2 id="footer-contacto-title" className="mb-4 text-sm font-bold text-white">
               Contacto
             </h2>
             <ul className="space-y-2.5 text-sm">
               <li>
-                <a href="tel:+5761234567" className="transition hover:text-[#CE0203]">
-                  Línea de ventas: (6) 123 4567
+                <a href={SALES_LINE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
+                  Línea de ventas: {SALES_LINE_DISPLAY}
                 </a>
               </li>
               <li>
-                <a href="tel:+576011234567" className="transition hover:text-[#CE0203]">
-                  Línea nacional: (601) 123 4567
+                <a href={SALES_PHONE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
+                  Línea nacional: {SALES_PHONE_DISPLAY}
                 </a>
               </li>
               <li>
-                <a href="mailto:serviciocliente@gruposecurity.example" className="transition hover:text-[#CE0203]">
-                  serviciocliente@gruposecurity.example
+                <a
+                  href={`mailto:${CUSTOMER_SERVICE_EMAIL}`}
+                  className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}
+                >
+                  {CUSTOMER_SERVICE_EMAIL}
                 </a>
               </li>
-              <li>
-                Horario de atención: lunes a sábado de 7:00 a.m. a 7:00 p.m. · domingos y festivos de 8:00 a.m. a 2:00 p.m.
-              </li>
+              <li>Horario de atención: {BUSINESS_HOURS}</li>
             </ul>
           </div>
         </div>
@@ -130,21 +173,24 @@ export default function StorefrontFooter() {
           <p>
             © {new Date().getFullYear()} Grupo Security S.A.S. Todos los derechos reservados. · NIT 900.000.000-0 (demo)
           </p>
-          <ul className="flex items-center gap-4">
-            {SOCIAL_LINKS.map((social) => (
-              <li key={social.label}>
-                <a
-                  href={social.href}
-                  aria-label={social.label}
-                  title={social.label}
-                  className="block text-slate-300 transition hover:text-[#CE0203]"
-                >
-                  <span className="sr-only">{social.label}</span>
-                  {SOCIAL_ICONS[social.label]}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {socials.length > 0 && (
+            <ul className="flex items-center gap-2">
+              {socials.map((social) => (
+                <li key={social.label}>
+                  <a
+                    href={social.href}
+                    aria-label={social.label}
+                    title={social.label}
+                    className={`flex h-11 w-11 items-center justify-center text-slate-300 transition hover:text-white ${LINK_FOCUS}`}
+                    {...(social.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                  >
+                    <span className="sr-only">{social.label}</span>
+                    {SOCIAL_ICONS[social.label]}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </footer>

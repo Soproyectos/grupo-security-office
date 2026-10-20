@@ -9,6 +9,9 @@ import {
   toggleListaActive,
   archiveLista,
   restoreLista,
+  deleteLista,
+  listaErrorMessage,
+  LISTA_DELETE_CONSERVATION_NOTICE,
   fetchListaProducts,
   fetchListaPrices,
   fetchListaAssignments,
@@ -17,6 +20,7 @@ import {
   downloadListaTemplateCsv,
   type Lista,
   type ListaPayload,
+  type ListaServiceError,
 } from '../services/listas.service'
 import { canCreateLista, canDeleteLista, canManageListas, hasPermission } from '../lib/rbac'
 import { getApiErrorMessage } from '../lib/apiError'
@@ -102,8 +106,10 @@ function StatusBadge({ isActive, archived }: { isActive: boolean; archived: bool
 
 // ============================================================
 // COMPONENTE DeleteConfirmModal - Confirmación simple sin clave maestra
+// CAT-01: el aviso es CONSERVACIONISTA — el servidor solo borra la Lista;
+// productos, imágenes y precios sobreviven con listaId = null.
 // ============================================================
-function DeleteConfirmModal({
+export function DeleteConfirmModal({
   listas,
   ids,
   onClose,
@@ -141,7 +147,7 @@ function DeleteConfirmModal({
             {listNames || 'Seleccionadas'}
           </p>
           <p className="text-xs text-red-600 font-medium">
-            ⚠️ Esta acción no se puede deshacer. Todos los productos y datos asociados se eliminarán.
+            ⚠️ {LISTA_DELETE_CONSERVATION_NOTICE} Esta acción no se puede deshacer.
           </p>
 
           <label className="flex items-start gap-2 cursor-pointer">
@@ -152,7 +158,8 @@ function DeleteConfirmModal({
               className="mt-0.5 w-4 h-4 text-[var(--color-primary)] border-neutral-300 rounded focus:ring-[var(--color-primary-focus-ring)]"
             />
             <span className="text-sm text-neutral-700">
-              Confirmo que entiendo que esta acción elimina las listas y sus datos asociados de forma permanente.
+              Confirmo que entiendo que esta acción elimina las listas de forma permanente y que
+              sus productos, imágenes y precios se conservan.
             </span>
           </label>
 
@@ -349,7 +356,7 @@ export default function ListasPage() {
       invalidate()
       setActionError(null)
     },
-    onError: (err) => setActionError(getApiErrorMessage(err, 'No se pudo archivar la Lista')),
+    onError: (err) => setActionError(listaErrorMessage(err, 'No se pudo archivar la Lista')),
   })
 
   const restoreMutation = useMutation({
@@ -359,7 +366,7 @@ export default function ListasPage() {
       setActionError(null)
       setActionNotice('Lista restaurada como Inactiva. Activala para volver a usarla.')
     },
-    onError: (err) => setActionError(getApiErrorMessage(err, 'No se pudo restaurar la Lista')),
+    onError: (err) => setActionError(listaErrorMessage(err, 'No se pudo restaurar la Lista')),
   })
 
   const batchMutation = useMutation({
@@ -377,7 +384,7 @@ export default function ListasPage() {
       setSelectedIds([])
       setActionError(null)
     },
-    onError: (err) => setActionError(getApiErrorMessage(err, 'No se pudo completar la acción masiva')),
+    onError: (err) => setActionError(listaErrorMessage(err, 'No se pudo completar la acción masiva')),
   })
 
   const duplicateMutation = useMutation({
@@ -397,36 +404,45 @@ export default function ListasPage() {
   })
 
   const deleteMutation = useMutation({
-    // El backend exige `confirm: true` para el borrado físico (igual que un
-    // producto individual); esta mutación solo se dispara después de que el
-    // usuario marcó la casilla de confirmación en el modal, así que siempre
-    // se envía en true.
+    // CAT-01: borrado CONSERVACIONISTA — `deleteLista` envía `confirm: true`
+    // (siempre tras la casilla del modal) y el servidor responde
+    // `productosConservados`; los 400/403/409 llegan tipados con su motivo
+    // (p. ej. el 409 de cotizaciones) que se muestra en el banner.
     mutationFn: async ({ ids }: { ids: string[] }) => {
       const results = await Promise.allSettled(
-        ids.map((id) => api.delete(`/listas/${id}`, { data: { confirm: true } }))
+        ids.map((id) => deleteLista(id, { confirm: true }))
       )
       let deleted = 0
       let blocked = 0
       let pending = 0
+      let productosConservados = 0
       let deleteBlockedMessage: string | null = null
       for (const r of results) {
         if (r.status === 'fulfilled') {
           deleted += 1
+          productosConservados += r.value.productosConservados
           continue
         }
-        const status = (r.reason as { response?: { status?: number } })?.response?.status
+        const status =
+          (r.reason as ListaServiceError)?.status ??
+          (r.reason as { response?: { status?: number } })?.response?.status
         if (status === 400 || status === 403 || status === 409) {
           blocked += 1
-          deleteBlockedMessage = getApiErrorMessage(r.reason, 'No se pudo eliminar la Lista')
+          deleteBlockedMessage = listaErrorMessage(r.reason, 'No se pudo eliminar la Lista')
         } else if (status === 404 || status === 405 || status === 501) {
           pending += 1
         }
       }
-      return { deleted, blocked, pending, deleteBlockedMessage }
+      return { deleted, blocked, pending, productosConservados, deleteBlockedMessage }
     },
     onSuccess: (result) => {
       if (result.blocked > 0) {
-        setDeleteImpactError(result.deleteBlockedMessage ?? 'No se pudo eliminar la Lista.')
+        // El motivo del servidor (409 cotizaciones / 400 / 403) se muestra
+        // SIEMPRE en el banner de la página; el estado del modal legacy se
+        // mantiene por si vuelve a abrirse.
+        const message = result.deleteBlockedMessage ?? 'No se pudo eliminar la Lista.'
+        setActionError(message)
+        setDeleteImpactError(message)
         return
       }
       invalidate()
@@ -435,11 +451,17 @@ export default function ListasPage() {
       setDeleteImpactError(null)
       setActionError(null)
       const parts: string[] = []
-      if (result.deleted > 0) parts.push(`${result.deleted} Lista(s) eliminada(s)`)
+      if (result.deleted > 0) {
+        const conservados =
+          result.productosConservados > 0
+            ? ` · ${result.productosConservados} producto(s) conservados (ficha, imágenes y precios intactos)`
+            : ''
+        parts.push(`${result.deleted} Lista(s) eliminada(s)${conservados}`)
+      }
       if (result.pending > 0) parts.push('la eliminación de algunas Listas estará disponible próximamente')
       setActionNotice(parts.length > 0 ? parts.join('. ') : 'No se eliminó ninguna Lista')
     },
-    onError: (err) => setActionError(getApiErrorMessage(err, 'No se pudo eliminar las Listas seleccionadas')),
+    onError: (err) => setActionError(listaErrorMessage(err, 'No se pudo eliminar las Listas seleccionadas')),
   })
 
   const runBatchDelete = () => {
@@ -860,6 +882,14 @@ export default function ListasPage() {
                         </div>
                         <div className="flex flex-col items-end gap-2 flex-shrink-0">
                           <StatusBadge isActive={lista.isActive} archived={lista.archivedAt !== null} />
+                          {lista.deletionStatus === 'PENDING_DELETION' && (
+                            <span
+                              className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700"
+                              title="Solicitud de eliminación pendiente"
+                            >
+                              En eliminación
+                            </span>
+                          )}
                           {lista.isExpiringSoon && (
                             <span className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-700">
                               Por vencer
