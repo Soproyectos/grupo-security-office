@@ -646,8 +646,10 @@ export class ProductsService {
     // Deny-by-default con restricción explícita por producto (checklist 17/31):
     // assertProductAccess evalúa assignments PRODUCT (deny prevalece) y cae a la
     // Lista dueña si no hay excepción por producto.
+    // A product WITHOUT lista (for example a hidden draft created from a price import)
+    // is decided by the same check: only a GLOBAL-scope `products:read` grant covers it,
+    // lista-scoped grants still get 404 (see AclService.assertProductAccess).
     if (ctx) {
-      if (!product.listaId) throw new NotFoundException('Producto no encontrado');
       await this.acl.assertProductAccess(id, ctx, 'view');
     }
 
@@ -658,6 +660,78 @@ export class ProductsService {
       stockStatus: stock ? (stock.availableQty > 0 ? 'in_stock' : 'out_of_stock') : 'no_stock_data',
       ...(allowed ? { allowedActions: allowed } : {}),
     };
+  }
+
+  /**
+   * R2 (price import): creates a HIDDEN draft for an unknown SKU, marked "pending ficha",
+   * through the caller's transaction so it commits or rolls back with the price rows and
+   * the resolution of the import row. Deliberately NOT `create()`: no LISTA-GENERAL
+   * fallback (`listaId` stays null), no lista ACL (the caller authorizes with GLOBAL
+   * grants), and it writes history and audit inside `tx`.
+   *
+   * The draft carries `importStatus: 'pending_enrichment'` and NO `biblioteca` key, so
+   * PUBLIC_CATALOG_VISIBILITY (PUBLISHED or library-informational) never exposes it.
+   * Throws `SKU_EXISTS` (409) when the normalized SKU already exists; a concurrent insert
+   * surfaces as the unique-index violation, which the caller maps to the same code.
+   */
+  async createPendingSheetDraft(
+    tx: Prisma.TransactionClient,
+    input: { sku: string; name: string; brandId: string; categoryId: string; sourceRevisionId: string },
+    ctx: { userId?: string | null },
+  ): Promise<Product> {
+    const sku = input.sku?.trim();
+    const name = input.name?.trim();
+    if (!sku) throw new BadRequestException({ code: 'INVALID_SKU', message: 'La referencia está vacía.' });
+    if (!name || name.length > 255) {
+      throw new BadRequestException({ code: 'INVALID_NAME', message: 'El nombre debe tener entre 1 y 255 caracteres.' });
+    }
+    if (await findProductBySku(tx, sku, { id: true })) {
+      throw new ConflictException({ code: 'SKU_EXISTS', message: 'Ya existe un producto con ese SKU.' });
+    }
+    if (!(await tx.brand.findUnique({ where: { id: input.brandId }, select: { id: true } }))) {
+      throw new NotFoundException({ code: 'BRAND_NOT_FOUND', message: 'Marca no encontrada.' });
+    }
+    if (!(await tx.category.findUnique({ where: { id: input.categoryId }, select: { id: true } }))) {
+      throw new NotFoundException({ code: 'CATEGORY_NOT_FOUND', message: 'Categoría no encontrada.' });
+    }
+
+    const product = await tx.product.create({
+      data: {
+        sku,
+        name,
+        brandId: input.brandId,
+        categoryId: input.categoryId,
+        listaId: null,
+        lifecycleStatus: 'DRAFT',
+        publishStatus: 'borrador',
+        isActive: false,
+        isVisible: false,
+        extraAttributes: {
+          importStatus: 'pending_enrichment',
+          pendingReason: 'created_from_price_import',
+          sourceRevisionId: input.sourceRevisionId,
+        },
+      },
+    });
+
+    const meta = {
+      productId: product.id, sku: product.sku, source: 'PRICE_IMPORT' as const,
+      sourceRef: input.sourceRevisionId, actorId: ctx.userId ?? null,
+    };
+    await this.changes.record(tx, [
+      { ...meta, field: 'created', oldValue: null, newValue: 'pending_enrichment' },
+      ...diffFields(null, product, ['sku', 'name', 'brandId', 'categoryId'], meta),
+    ]);
+    await this.audit.logTx(tx, {
+      userId: ctx.userId ?? undefined,
+      action: 'price-import-create-draft',
+      entity: 'Product',
+      entityId: product.id,
+      productId: product.id,
+      newValues: { sku: product.sku, name: product.name, brandId: product.brandId, categoryId: product.categoryId, revisionId: input.sourceRevisionId, listaId: null },
+      result: 'SUCCESS',
+    });
+    return product;
   }
 
   async create(dto: CreateProductDto, ctx?: AccessContext) {

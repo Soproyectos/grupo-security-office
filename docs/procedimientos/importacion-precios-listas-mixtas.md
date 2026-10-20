@@ -1,6 +1,6 @@
 # Importación de precios con listas mixtas
 
-Estado: backend implementado en la rama `feat/price-import-rules-2` (2026-10-20). La pantalla de 3 pasos y el panel de compras llegan en un bloque posterior. Decisiones de producto: `odd/tasks/price-import-rules.md` y la enmienda de `docs/adr/ADR-20261014-producto-una-sola-lista.md`.
+Estado: backend implementado en las ramas `feat/price-import-rules-2` (cruce, alerta, aplicación) y `feat/price-import-rules-3` (referencias desconocidas e historial de cambios) (2026-10-20). La pantalla de 3 pasos y el panel de compras llegan en un bloque posterior. Decisiones de producto: `odd/tasks/price-import-rules.md` y la enmienda de `docs/adr/ADR-20261014-producto-una-sola-lista.md`.
 
 ## Cruce por SKU, sin lista destino (R1)
 
@@ -63,6 +63,55 @@ Límites conocidos:
 - El controlador conserva `@Roles('Super Admin', 'Supervisor', 'Admin Comercial')` a nivel de clase: quien solo tiene el paquete de compras sin uno de esos roles no llega a estos endpoints. No se cambia en este bloque.
 - La aplicación escribe precio por precio dentro de la transacción (hasta 5.000 filas por 5 tarifas). El tiempo máximo de la transacción es de 120 s.
 - El archivo guardado se identifica por su hash; descartar una revisión borra ese archivo aunque otra revisión use el mismo contenido.
+
+## Referencias desconocidas: crear borrador u omitir (R2)
+
+Se resuelven DESPUÉS de aplicar la revisión (estado `APLICADA`). Un SKU desconocido nunca crea un producto durante la vista previa, el guardado ni la aplicación.
+
+`GET /api/prices/import/revisions/:id/unknown-references?page=&pageSize=`
+
+- Devuelve las filas `PENDING_PRODUCT` con código `UNKNOWN_REFERENCE`: `rowNumber`, `sku`, precios recibidos por tarifa (`received`, `value` ya redondeado) y `canCreate`. Nunca devuelve filas `LISTA_FORBIDDEN`.
+- `defaults.brandId` y `defaults.categoryId` sugieren "Sin marca" y "Sin categoría" (se buscan por nombre; no se crean aquí).
+- Exige `prices:read` y `listas:read`, y haber creado la revisión o tener `prices:read` sobre todas sus listas (misma regla que el archivo original).
+- `canCreate` es verdadero solo si la revisión está `APLICADA` y la persona tiene `products:write` Y `prices:apply` con alcance GLOBAL (incluida la cadena de dependencias de cada acción).
+
+`POST /api/prices/import/revisions/:id/unknown-references/resolve`
+
+```json
+{ "items": [
+  { "rowNumber": 3, "action": "CREATE", "name": "Cámara domo 4MP", "brandId": "<uuid>", "categoryId": "<uuid>" },
+  { "rowNumber": 4, "action": "SKIP" }
+] }
+```
+
+- Máximo 200 filas por solicitud, sin filas repetidas; `name` recortado de 1 a 255 caracteres; `brandId` y `categoryId` deben existir.
+- `CREATE` exige `products:write` y `prices:apply` GLOBALES (403 para toda la solicitud si faltan). `SKIP` solo exige el acceso de lectura a la revisión. Revisión no aplicada: 409 `REVISION_NOT_APPLIED`.
+- Una transacción POR fila; la respuesta es parcial: `{ revisionId, results: [{ rowNumber, status: CREATED | SKIPPED | FAILED, code?, message?, productId? }] }`. Un fallo no deshace las otras filas.
+- Códigos de fallo: `SKU_EXISTS` (alguien creó ese SKU entre tanto; no se duplica y la fila sigue pendiente), `TARIFF_UNAVAILABLE`, `INVALID_PRICE`, `NO_PRICES`, `BRAND_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `ROW_NOT_PENDING`, `ROW_NOT_FOUND`.
+- Idempotente: la fila se reclama con `updateMany where resolution = PENDING_PRODUCT`; repetir la solicitud (o dos solicitudes simultáneas) devuelve el resultado anterior y no crea nada más.
+
+Qué crea `CREATE` (`ProductsService.createPendingSheetDraft`, dentro de la transacción de la fila):
+
+- Producto sin lista (`listaId = null`, sin el respaldo LISTA-GENERAL), `lifecycleStatus = DRAFT`, `publishStatus = borrador`, `isActive = false`, `isVisible = false`, y `extraAttributes = { importStatus: "pending_enrichment", pendingReason: "created_from_price_import", sourceRevisionId }` SIN la clave `biblioteca`, por lo que `PUBLIC_CATALOG_VISIBILITY` lo excluye de la búsqueda y del detalle públicos.
+- Los precios guardados de esa fila (se revalidan con la política COP y la tarifa debe seguir activa, vigente y en COP) como `Price` sin lista; no existe valor anterior, así que no hay conflicto `PRICE_CHANGED`.
+- Historial `ProductChange` (origen `PRICE_IMPORT`, `sourceRef` = id de la revisión): `created`, `sku`, `name`, `brandId`, `categoryId` y `price:<TARIFA>`; y la auditoría `price-import-create-draft` con `productId`.
+- La fila queda `PRODUCT_CREATED` con `productId`, `resolvedAt` y `resolvedById`; `SKIP` la deja `SKIPPED`. Los SKU omitidos no se recuerdan para la próxima importación.
+
+El controlador de resolución solo usa `JwtAuthGuard` (sin `@Roles`): quien tenga las concesiones adecuadas llega aunque su rol no esté en la lista del controlador de importación; toda la decisión se toma en el servicio con las concesiones vigentes.
+
+Apertura del borrador: `GET /api/products/:id` ahora decide los productos sin lista con la misma comprobación de concesiones que la ficha de vitrina (`AclService.assertProductAccess`): una concesión GLOBAL de `products:read` permite abrirlos; con solo concesiones por lista sigue respondiendo 404. La ficha de vitrina y los paquetes de biblioteca ya tomaban la decisión con `listId` indefinido para estos productos.
+
+## Historial por producto (R4)
+
+`GET /api/products/:id/changes` lista el historial. Desde este bloque se registra, dentro de la MISMA transacción que la mutación:
+
+- Aplicación de la importación de precios y creación de borradores desde la importación (`PRICE_IMPORT`).
+- Precios manuales: crear, editar y eliminar (`MANUAL`, campo `price:<TARIFA>`, `sourceRef` = id del precio) y los precios enviados al crear o editar un producto.
+- Creación y edición de productos (`MANUAL`: `sku`, `name`, `description`, `categoryId`, `brandId`, `listaId`, y `lifecycleStatus` inicial).
+- Transiciones de ciclo de vida, programación y cancelación de programación (`LIFECYCLE`: `lifecycleStatus`, `publishStatus`, `isActive`, `isVisible`, `publishAt`).
+- Solo se guardan los campos que cambian; si no cambia nada no se escribe nada, y si la mutación falla no queda historial.
+
+Siguen sin registrarse (y la API lo declara en `coverage.notRecorded`): imágenes, ficha de vitrina, importación de productos anterior, importación de Biblioteca, eliminación definitiva y desvinculación de lista. Tampoco se registran los cambios de `technicalSpecs`, `extraAttributes` ni `documents` al editar un producto.
 
 ## Respuestas de error
 
