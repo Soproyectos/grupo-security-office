@@ -1,5 +1,7 @@
 # Runbook: PostgreSQL containerizado en Hostinger
 
+> **Reemplazado por el despliegue en el VPS:** el runbook [deploy-vps.md](deploy-vps.md) sustituye este procedimiento para producción, que ahora usa `postgres:18-alpine` (no 16) con el volumen montado en `/var/lib/postgresql`. Este documento se conserva solo como referencia histórica.
+
 Procedimiento acotado para pasar la API de una URL externa a la base PostgreSQL del servicio `db` de producción. Las acciones contra Hostinger, la exportación/importación de datos y el cambio de credenciales deben ejecutarse únicamente desde un entorno autorizado.
 
 ## Lo que ya existe

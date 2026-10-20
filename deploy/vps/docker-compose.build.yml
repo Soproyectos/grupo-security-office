@@ -1,0 +1,24 @@
+# Manual fallback: build the images on the VPS instead of pulling from GHCR.
+# Use it as a third file, then bring the stack up with the same IMAGE_TAG:
+#   export IMAGE_TAG=local-$(git rev-parse --short=8 HEAD)
+#   docker compose -p grupo-security \
+#     -f docker-compose.prod.yml -f deploy/vps/docker-compose.override.yml \
+#     -f deploy/vps/docker-compose.build.yml build
+#   docker compose -p grupo-security \
+#     -f docker-compose.prod.yml -f deploy/vps/docker-compose.override.yml \
+#     -f deploy/vps/docker-compose.build.yml up -d --no-deps api frontend
+# GS_SOURCE_DIR is the checkout that holds src/backend and src/frontend.
+services:
+  api:
+    image: gs-api:${IMAGE_TAG:-local}
+    pull_policy: build
+    build:
+      context: ${GS_SOURCE_DIR:-/home/dev/grupo-security-office}/src/backend
+      dockerfile: Dockerfile
+
+  frontend:
+    image: gs-frontend:${IMAGE_TAG:-local}
+    pull_policy: build
+    build:
+      context: ${GS_SOURCE_DIR:-/home/dev/grupo-security-office}/src/frontend
+      dockerfile: Dockerfile

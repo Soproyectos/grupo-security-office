@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Grupo Security IP certificate
+Wants=network-online.target
+After=network-online.target docker.service nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gs-renew-ip-cert
