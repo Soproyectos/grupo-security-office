@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACRC4S",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "RIEL EN C PARA MOTOR SCORPION 1800. 4 METROS DE RIEL. VIENE EN SECCIONES DE 1 METRO. INCLUYE TROLLEY Y CONECTORES",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Riel en C para Motor Scorpion 1800 de 4 Metros",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, con palabras de la propia descripcion"
+  }
+}

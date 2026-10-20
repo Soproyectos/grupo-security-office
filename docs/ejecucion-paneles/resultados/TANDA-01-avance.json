@@ -1,0 +1,1390 @@
+{
+  "tanda": "TANDA-01",
+  "titulo": "Dos paneles e importación (Comercial, Catálogo y precios, importación)",
+  "modalidad": "tanda continua (TANDA-COMPLETA.md); auditoría final única del coordinador (QA-01 reservado)",
+  "generado": "2026-10-15",
+  "fuente": "docs/ejecucion-paneles/tareas.json (30 paquetes / 99 pasos)",
+  "entorno": {
+    "copia_aislada": "/home/soporte/office_ai/gs-tanda-01",
+    "base_desechable": "gs-tanda-db (postgres:16, puerto 54331) — BDs: grupo_security_tanda (API revisión 3001), grupo_security_tanda_t05 (migraciones)",
+    "api_revision": "http://localhost:3001",
+    "frontend_revision": "http://localhost:5180 (vite.review.config.ts → proxy 127.0.0.1:3001)",
+    "s3_intacto": "gs-api:3000, gs-frontend:5173, gs-db:5432 — sin tocar"
+  },
+  "decisiones_tecnicas": [
+    {
+      "id": "agenda-base",
+      "resuelta_en": "2026-10-15",
+      "decision": "Extender TeamActivity/TeamRequest del módulo team-workflow de S3 como base de la Agenda (modelo único, sin agenda por panel); añadir estados/prioridad/comentarios/enlaces/historial por incrementos BASE-03.",
+      "reversibilidad": "Total: solo en la copia aislada con BD desechable; ninguna fila migrada.",
+      "clasificacion": "decisión técnica reversible (TANDA-COMPLETA §16), PROP sujeta a auditoría; NO es decisión empresarial aprobada",
+      "afecta": [
+        "BASE-03:backend-propias",
+        "BASE-03:frontend-propias",
+        "BASE-03:backend-equipo",
+        "BASE-03:frontend-equipo",
+        "BASE-03:backend-vinculos",
+        "BASE-03:frontend-vinculos"
+      ]
+    },
+    {
+      "id": "D3-jwt-concesiones",
+      "resuelta_en": "2026-10-15",
+      "decision": "Revalidación de concesiones por petición en jwt.strategy (401 con JWT anterior si la concesión fue retirada, sin cerrar la sesión del servidor).",
+      "reversibilidad": "Técnica, en la copia.",
+      "clasificacion": "decisión técnica reversible registrada en BASE-04 §6 como pendiente; aquí resuelta para implementar",
+      "afecta": [
+        "BASE-04:backend",
+        "COM-01:backend"
+      ]
+    }
+  ],
+  "bloqueos_externos": [
+    {
+      "id": "IMP-01-preview",
+      "estado": "resuelto_2026-10-16",
+      "motivo": "La pieza preview de L fue RECIBIDA (fuente preview-L-20261015.zip, MANIFEST 29/29) e INTEGRADA por merge en IMP-01/IMP-02; el 404 del preview quedó resuelto. Ya no bloquea."
+    },
+    {
+      "id": "COM-06-excel-pedidos",
+      "estado": "bloqueado_externo",
+      "motivo": "Requiere formato saneado del Excel «Pedidos» (decisión/insumo del coordinador). Bloqueo EXTERNO real, no dependencia."
+    },
+    {
+      "id": "COM-07-yeminus",
+      "estado": "bloqueado_externo",
+      "motivo": "Requiere contrato/API y datos reales de integración Yéminus (decisión externa). Bloqueo EXTERNO real, no dependencia."
+    },
+    {
+      "id": "COM-09-descuentos",
+      "estado": "bloqueado_externo",
+      "motivo": "Requieren reglas de descuento/precio público/stock documentadas (decisión de negocio). Bloqueo EXTERNO real, no dependencia."
+    }
+  ],
+  "pasos": [
+    {
+      "paquete": "BASE-01",
+      "paso": "inventario",
+      "estado": "implementado_sin_auditar",
+      "archivos": [],
+      "pruebas": [],
+      "nota": "Aceptado por coordinador en estado.json (contractSha a4d8fa12, deliverySha 49770eb0). Entrega BASE-01-inventario-entrega.md."
+    },
+    {
+      "paquete": "BASE-02",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [],
+      "pruebas": [],
+      "nota": "contratos/BASE-02.md (284 líneas), PROP para auditoría final."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [],
+      "pruebas": [],
+      "nota": "contratos/BASE-03.md (216 líneas), PROP."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "backend-propias",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/team-workflow/workflow.service.ts",
+        "src/backend/src/modules/team-workflow/workflow-agenda.spec.ts",
+        "src/backend/prisma/schema.prisma",
+        "src/backend/prisma/migrations/20261015063432_add_activity_actor_history/",
+        "src/backend/src/common/security/access-catalog.ts"
+      ],
+      "pruebas": [
+        "jest: 71 suites/1223 tests, 12 fallos preexistentes public-products",
+        "tsc exit 0",
+        "lint exit 0",
+        "e2e API 3001: create 201, list 200, complete 200, retry 409, ID ajeno 404, fuera de equipo 403"
+      ],
+      "nota": "Aceptación cubierta: leer/crear/completar propias, ID ajeno denegado, reintento no duplica (evento CREATE+COMPLETE sin duplicar). Creador/asignado/actor separados (updatedById + TeamActivityEvent). Migración estructural en t06 y deploy de las 42 en grupo_security_tanda."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "frontend-propias",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/services/agenda.service.ts(+spec)",
+        "src/frontend/src/features/agenda/AgendaCalendarPage.tsx(+spec)",
+        "src/frontend/src/features/agenda/AgendaActivityDetail.tsx(+spec)",
+        "src/frontend/src/App.tsx(+App.spec.tsx)",
+        "src/frontend/src/features/supervisor/AgendaCalendarPage.tsx (shim re-export)"
+      ],
+      "pruebas": [
+        "vitest: 39 archivos/422 tests (377 baseline +45 nuevos), 0 fallos",
+        "tsc -b exit 0",
+        "lint idéntico al baseline (2 errores preexistentes DashboardGrants.tsx)",
+        "HTTP 5180: /sales/agenda 200, /supervisor/agenda 200, proxy health 200; recorrido completo vía proxy: POST 201 → recarga 1 fila → complete 200 → retry 409 → ID ajeno 404 → fuera equipo 403"
+      ],
+      "nota": "Aceptación: crear/completar/recargar sin duplicados (dedup por id en caché + vistas compartiendo un estado). D2 resuelta: mover a features/agenda/ con shim (reversible). Historial creador/asignado/actor visible en AgendaActivityDetail. Pendiente navegador real (QA-01 coordinador). Hallazgo para equipo: sellers() sin includeSelf → supervisor puro no ve sus propias actividades (workflow.service.ts:11-12), decisión pendiente."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "backend-equipo",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/team-workflow/workflow.controller.ts (nuevo @Patch activities/:id/assign)",
+        "src/backend/src/modules/team-workflow/workflow.dto.ts (AssignDto)",
+        "src/backend/src/modules/team-workflow/workflow.service.ts (assign + includeSelf:true en sellers)",
+        "src/backend/src/modules/team-workflow/workflow-team.spec.ts (nuevo)",
+        "src/backend/src/common/security/access-catalog.ts (AGENDA_SCOPES own+team; activities:assign con dependencia activities:read)"
+      ],
+      "pruebas": [
+        "jest team-workflow: 3 suites / 44 tests verdes",
+        "suite completa: 72 suites / 1234 pass / 12 fallos baseline (public-products)",
+        "tsc exit 0",
+        "e2e API 3001 (verificado 2026-10-15 14:01): create con assigneeId 201, assign fuera de equipo 403 «Solo puedes asignar actividades dentro de tu equipo», assign UUID inexistente 404, assign ID inexistente 404, complete 200, retry 409"
+      ],
+      "nota": "Aceptación: «Fuera del equipo se rechaza; asignar no concede completar ajenas» — 403/404 e2e + workflow-team.spec.ts. Acción activities:assign separada de activities:complete (contrato §6.2). Bug corregido: sellers() ahora llama getSubordinateIds con includeSelf:true (supervisor ve/Completa las suyas). API reconstruida (dist nuevo) y verificada; S3 intacto (3000/5173 → 200)."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "frontend-equipo",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/features/agenda/agenda-access.ts(+spec)",
+        "src/frontend/src/features/agenda/AgendaAssigneeField.tsx(+spec)",
+        "src/frontend/src/features/agenda/AgendaCalendarPage.tsx(+spec)",
+        "src/frontend/src/features/agenda/AgendaActivityDetail.tsx(+spec)",
+        "src/frontend/src/services/agenda.service.ts(+spec)"
+      ],
+      "pruebas": [
+        "vitest: 41 archivos / 454 tests (RED 17 rojos → GREEN), 0 fallos",
+        "tsc -b exit 0",
+        "lint idéntico al baseline (2 errores preexistentes)",
+        "HTTP vía proxy 5180: /sales/agenda 200; GET activities 200, POST 201, assign fuera 403, assign ID inexistente 404, assign válido 200 (assigneeId cambió, eventos CREATE+ASSIGN), complete 200, retry 409, GET final 1 fila"
+      ],
+      "nota": "Aceptación: «Solo Agenda propia no muestra equipo; botones y API concuerdan» — criterio único agendaAccess() (rol Supervisor/Super Admin hoy; punto de extensión a concesiones activities:* team documentado para COM-01); sin equipo: ni toggle, ni fieldset, ni selector, ni llamada (query enabled:false). Botón Reasignar nuevo en AgendaActivityDetail → PATCH assign; AdminLayout sin cambios (ya enlazado). Solo verificable en navegador → QA-01."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "backend-vinculos",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/team-workflow/workflow.service.ts (addLink/removeLink/revealLinks/convertRequest, LINK_ACTIONS, conversionKey)",
+        "workflow.controller.ts (POST/DELETE activities/:id/links, POST requests/:id/convert)",
+        "workflow.dto.ts (LinkDto UUID, ConvertDto con ruleKey/revisionKey)",
+        "workflow-links.spec.ts (22 tests)",
+        "workflow-convert.spec.ts (15 tests)",
+        "prisma/schema.prisma (TeamActivityLink + enum ActivityLinkTarget + dedupKey @unique + convertedActivityId)",
+        "prisma/migrations/20261015113000_add_activity_links_and_conversion/",
+        "src/backend/src/common/security/access-catalog.ts (listas:read añadida)"
+      ],
+      "pruebas": [
+        "jest: 74 suites / 1284 tests (+37), 12 fallos baseline (public-products)",
+        "tsc exit 0; lint exit 0",
+        "migración 43/43 up to date en grupo_security_tanda; team_activity_links con índice único; 0 filas sembradas",
+        "e2e spot-check independiente: add link 201 (POST conservador revealed:false por diseño), GET revealed:true+label+target con SuperAdmin; convert 1ª created=true / 2ª created=false MISMA id, dedupKey=1 fila, solicitud PENDING con convertedActivityId",
+        "spec cubre el flip de revocación en BD: sin concesión false → con concesión true → retirar false → re-conceder true"
+      ],
+      "nota": "Aceptación A: enlace no concede acceso (AccessGrant=0 tras crear enlace); revealed se evalúa por lectura con resolveAccess (products:read / listas:read / listas:import) — sin cobertura solo targetType+targetId. Aceptación B: clave producto+regla+revisión con índice único; texto del diseño está en DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md:90 (la ficha cita mal COMERCIAL:129-130 — desvío documentado); conversión solo desde PENDING (criterio conservador). Fixture en BD revisión: categoría/marca/producto t06c (id producto migrado a UUID para el DTO), rol Supervisor añadido al admin para probar POST /requests."
+    },
+    {
+      "paquete": "BASE-03",
+      "paso": "frontend-vinculos",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/features/agenda/AgendaLinksSection.tsx(+spec 16 tests)",
+        "AgendaActivityDetail.tsx (props enlaces + montaje)",
+        "agenda-access.ts (canManageAgendaLinks)",
+        "AgendaCalendarPage.tsx (addLink/removeLink/linkError + wiring)",
+        "services/agenda.service.ts (addAgendaLink/removeAgendaLink(+InCache), isUuid, código invalid)",
+        "specs ampliados: AgendaActivityDetail.spec, agenda-access.spec, agenda.service.spec"
+      ],
+      "pruebas": [
+        "vitest: 42 archivos / 501 tests (RED 31 rojos → GREEN), 0 fallos",
+        "tsc -b exit 0; lint idéntico al baseline (2 errores preexistentes)",
+        "HTTP: 5180 /sales/agenda 200; POST link 201 (revealed:false conservador) → refetch revealed:true; duplicado 409; targetId no-UUID 400; actividad desconocida 404; DELETE 200 y desaparece del refetch; fixture 892957e3 intacto"
+      ],
+      "nota": "Aceptación: revealed:false pinta SOLO tipo+id en <div aria-disabled> (sin label/target/nombre/sku/estado, sin <a> ni href, sin control que conceda); revealed:true pinta label/target del servidor; el POST solo envía targetType+targetId (nada que conceda permisos); tras POST solo invalidate→refetch (el POST no revela por diseño). UI de conversión D6 queda FUERA (TeamWorkflowPage está fuera de writePaths). Solo verificable en navegador → QA-01."
+    },
+    {
+      "paquete": "BASE-04",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [],
+      "pruebas": [],
+      "nota": "contratos/BASE-04.md (198 líneas), PROP."
+    },
+    {
+      "paquete": "BASE-04",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [],
+      "pruebas": [],
+      "nota": "T-05 (2 unidades TDD): access-catalog.ts+data-scope.ts (u1, 36 tests RED→GREEN); access-assignments.service.ts+live-admin-identity.service.ts+assign-access.dto.ts+jwt.strategy.ts D3+ajustes mínimos user-permissions/acl (u2). Suite 69/70 (12 fallos preexistentes public-products.spec.ts, también en S3), tsc exit 0, lint exit 0. Migración 20261015103000_add_action_access_concessions solo estructura en BD desechable t05 (access_* con 0 filas). Verificado live: API 3001 reconstruida, health 200, login real+MFA, /api/users 200/401."
+    },
+    {
+      "paquete": "IMP-01",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-01.md (122 líneas, fuente documentada + bloqueo registrado + catálogo faltante)"
+      ],
+      "pruebas": [
+        "evidencia OBS: find/git log/rg → 0 rutas price-import en S3; runtime POST /api/prices/import/preview → 404 (reproducido 2 veces)",
+        "readPaths de la ficha verificados: 2 FALTA (modules/prices/import/, admin-access.postgres.spec.ts), 2 OK (IMPLEMENTACION, DISENO)"
+      ],
+      "nota": "Contrato INLINE; fuente recibida 2026-10-16 y verificada (MANIFEST 29/29)."
+    },
+    {
+      "paquete": "IMP-01",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/prices/import/ (5 specs de L + price-import.service + http.spec 21 tests)",
+        "prices.module.ts (montaje PriceImportController/Service)",
+        "common/security/access-catalog.ts (+prices:read +prices:preview)",
+        "package.json (sax@1.6.1)"
+      ],
+      "pruebas": [
+        "5 suites import: 166/166 tests (RED→GREEN adaptación de guard: 403/401/413/400) + precios: 219/219",
+        "tsc 0; lint 0; build 0",
+        "e2e 3001: POST preview 201 (readOnly:true, HALF_UP, rows:1, changed:1, rounded:1); sin token 401; precios sin cambios",
+        "e2e integral 5 escenarios: 403 sin prices:preview (message: no-covering-grant), 404 lista ajena (Lista no encontrada), 403 producto restringido (REFERENCE_UNAVAILABLE, previous=null), 401/403 permiso retirado con mismo JWT (no-covering-grant), 201 preview permitido sin Biblioteca (biblio=0 grants)"
+      ],
+      "nota": "Adaptación del stack de L (AdminAccessGuard→nuestros guards + concesiones por solicitud con resolveAccess+grantsForUser, transición D5). LEEME §4-6 seguido. sax@1.6.1 añadido sin sustituir lock.\n\nCLASIFICACIÓN DE VERIFICACIÓN (corrección del informe previo):\n- Backend/API/BD: EJECUTADA — 21 tests http + 166 import + 219 precios; e2e integral 5 escenarios (403 sin prices:preview, 404 lista ajena, previous=null en restringido, revocación con mismo JWT, 201 sin Biblioteca); precios intactos; DB revisión limpia.\n- Frontend: INTEGRADO Y PROBADO (preciso): copiados de L y verdes — features/price-import/{preview.utils.ts, PriceImportPreviewPanel.tsx, PriceImportPreviewResults.tsx, preview.spec.tsx} + services/price-import.service.ts; pestaña «Revisar precios» integrada en ListaDetailPage.tsx (tab review + canReviewPrices() gate por prices:preview||canManageListas, render condicional); ListaDetailPage.review-access.spec.tsx (4 tests propios); CAT-01 preservado (ListaDetailPage.spec.tsx verde); suite COMPLETA frontend 67 archivos/736 tests 0 fallos; tsc -b 0; lint baseline. FALTA: lista-preview-access.spec.tsx de L NO migrado (sus aserciones de «review como landing» no mapean a nuestra página con pestañas; propiedades equivalentes cubiertas por review-access.spec + ListaDetailPage.spec — dejarlo migrar solo si el coordinador lo pide).\n- Cadena en vivo vía proxy 5180→3001: 401 sin token, 404 con UUID válido inexistente (llega al servicio), 400 con UUID inválido (DTO).\n- Navegador real: PENDIENTE (QA-01 del coordinador); render estático y HTTP no lo sustituyen.\n\nAUDITORÍA (señalado): @Optional() sobre grants en PriceImportService — si falta AccessAssignmentsService, NUNCA autoriza por omisión (deniega salvo excepción Super Admin; unit-testeado). Montaje REAL verificado: SecurityModule @Global registrado en app.module:56 exporta AccessAssignmentsService (inyección resuelve en PricesModule sin importarlo); prueba runtime: e2e con grants reales produjo 403 no-covering-grant (grantsForUser ejecutado en el proceso vivo) y admin 201 por fallback legado."
+    },
+    {
+      "paquete": "IMP-02",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-02.md (§1–§10: meta/dependencias, estado OBS, contrato de descarga vacía/referencias, gate por modo, campo a campo, errores, incrementos, aceptaciones)"
+      ],
+      "pruebas": [
+        "Contrato consistente con dependencias (BASE-02 PROP, IMP-01 implementado) y decisiones pendientes explícitas; incrementos registrados antes de delegar código"
+      ],
+      "nota": "Fichero de contrato escrito y usado para IMP-02 backend/frontend. Se corrige el estado (quedó en bloqueado por la fuente L; nunca se actualizó al completar IMP-02)."
+    },
+    {
+      "paquete": "IMP-02",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "price-template.ts (+buildPriceTemplate: XLSX nuevo PRECIOS+INSTRUCCIONES, tarifas en orden canónico)",
+        "price-import.service.ts (+downloadTemplate: mode/tariffs a 400, lista a 404, gate prices:preview o prices:read por modo, precios de referencia SOLO con concesión prices:read [P1 estricto], auditoría price-template-download con fileHash sin SKUs)",
+        "price-import.controller.ts (GET template con @Res sin passthrough — el TransformInterceptor envolvería el Buffer en JSON)",
+        "spec price-template-download.spec.ts (13 tests)"
+      ],
+      "pruebas": [
+        "prices: 232/232 tests (13 nuevos RED→GREEN); tsc 0; build 0",
+        "e2e vivo: descarga referencias ORO_IVA a 200, hojas PRECIOS+INSTRUCCIONES, fila1 exacta [REFERENCIA,ORO_IVA] sin DPP_ORO_IVA, 1 SKU de ESA lista; rellenar y POST preview 201 validRows:1 (acceptance 1); 401 / 400 mode / 400 tariff / 404 lista inexistente"
+      ],
+      "motivo": "FUENTE RECIBIDA 2026-10-16: docs/ejecucion-paneles/fuentes/preview-L-20261015.zip (MANIFEST 29/29 hashes OK, LEEME.md). Dejó de ser bloqueo por ausencia: ahora es paso de INTEGRACIÓN (tras cerrar CAT-02). Ver contratos/IMP-01.md §2 y LEEME del zip.",
+      "nota": "Aceptación 2: referencias SOLO de la lista (where listaId) + 404 ajena (unit + e2e). Aceptación 3: orden canónico PRICE_IMPORT_TARIFFS, ORO_IVA exacto. P1: precios de referencia solo con concesión prices:read (legados sin grants → solo SKUs). Fixture ORO_IVA de BD de revisión limpiado; descarga por @Res manual (interceptor global)."
+    },
+    {
+      "paquete": "IMP-02",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/price-import.service.ts (+downloadPriceTemplate con responseType blob y fileName del Content-Disposition, parseTemplateFileName, saveTemplateDownload)",
+        "features/price-import/PriceImportPreviewPanel.tsx (+DownloadTemplateSection: radios Vacía/Con referencias, 5 tarifas IVA, aviso archivo nuevo, errores pintados)",
+        "specs: price-import.service.spec.ts (nuevo, 5) + preview.spec.tsx +2"
+      ],
+      "pruebas": [
+        "vitest: 16/16 en price-import (RED 5+2); suite completa frontend 68 archivos/743 tests 0 fallos; tsc -b 0; lint 11 = baseline S3",
+        "e2e cadena proxy 5180 a 3001: descarga 200 con magic PK (xlsx binario real); sin token 401; lista muerta a 404 (correcto)"
+      ],
+      "motivo": "FUENTE RECIBIDA 2026-10-16: docs/ejecucion-paneles/fuentes/preview-L-20261015.zip (MANIFEST 29/29 hashes OK, LEEME.md). Dejó de ser bloqueo por ausencia: ahora es paso de INTEGRACIÓN (tras cerrar CAT-02). Ver contratos/IMP-01.md §2 y LEEME del zip.",
+      "nota": "UI no exige más permisos que el servidor (403/400 pintados con getApiErrorMessage). Descarga SIEMPRE archivo NUEVO del servidor (nunca transforma el del usuario — regla 1 IMP-02)."
+    },
+    {
+      "paquete": "IMP-03",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-03.md (§1–§9: meta/reglas/casos, estado OBS con 3 entradas COP divergentes, política COP única, errores, aceptaciones por incremento, incrementos, decisiones N1–N4)"
+      ],
+      "pruebas": [
+        "Contrato: resuelve la diferencia entre el límite del preview (9999999999) y los validadores manuales (@Min(0)/@Min(0.01)); decisiones pendientes N1–N4 explícitas; incremento backend registrado con writePaths y aceptación textual"
+      ],
+      "nota": "Regla 2 aterrizada: COP final entero HALF_UP, sin migrar históricos ni imponer precisión COP a USD; regla 3: no se crean/renombran tarifas sin IVA."
+    },
+    {
+      "paquete": "IMP-03",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "common/money/cop-policy.ts (NUEVO: COP_CURRENCY, COP_MAXIMUM=9999999999, CopPriceError{code}, normalizeCopPrice con Decimal HALF_UP, isCopCurrency, resolvePriceCurrency)",
+        "common/money/cop-policy.spec.ts (NUEVO, 20 tests)",
+        "common/money/cop-price.validator.ts (NUEVO: @IsCopPrice valida límite/positividad, @RoundCopPrice redondea HALF_UP en el borde)",
+        "common/money/cop-price.validator.spec.ts (NUEVO, 6 tests)",
+        "modules/prices/import/price-template.ts (+normalizeCopPrice; mismos PRICE_OUT_OF_RANGE; eliminado límite/redondeo duplicado)",
+        "modules/prices/prices.service.ts (+normalizeCopInput: crea/edita COP como entero HALF_UP; otras monedas intactas; auditoría con el valor final)",
+        "modules/prices/dto/create-price.dto.ts y update-price.dto.ts (@Min(0) -> @IsCopPrice)",
+        "modules/products/dto/price-input.dto.ts (@Min(0.01) -> @RoundCopPrice + @IsCopPrice)",
+        "modules/products/dto/price-input.dto.spec.ts (NUEVO, 4 tests)",
+        "modules/prices/prices.service.spec.ts (+5 tests IMP-03)"
+      ],
+      "pruebas": [
+        "backend: 91 suites / 1671 tests, 12 fallos SOLO public-products.spec.ts (baseline DI preexistente, no tocado); tsc 0; lint 0 errores (6 warnings preexistentes de IMP-02/backfill, no de IMP-03); build 0",
+        "specs nuevos: cop-policy 20/20 (1500000.49->1500000, 0.50->1, 0.49/negativos rechazan, 9999999999 acepta, 9999999999.5 desborda tras redondear), validator 6/6, price-input.dto 4/4, prices.service +5",
+        "e2e vivo (BD desechable gs-tanda-db:54331, API 3001): PARIDAD API manual vs plantilla: 1500000.49->1500000/1500000; 1500000.50->1500001/1500001; 0.50->1/1; 0.49->400/PRICE_OUT_OF_RANGE; -10->400/PRICE_OUT_OF_RANGE; 9999999999->9999999999/9999999999; 9999999999.5->400/PRICE_OUT_OF_RANGE",
+        "e2e histórico: quote_item con unitPrice 123456.78 intacto tras redondear un precio a 2000001; prices.service/IMP-03 sin referencias a quote/invoice"
+      ],
+      "nota": "Acceptance 1 (paridad): misma política en preview, API de precios y DTO inline. Acceptance 2: casos 0.49/0.50/negativos/límite/desbordamiento verificados en unidad y e2e. Acceptance 3: históricos (QuoteItem.unitPrice + priceCapturedAt) conservados; sin migración. Inline de ficha redondea en el DTO porque products.service NO es writePath de este paso (frontend envía currency de la tarifa). Fixtures de IMP-03 limpiados; S3 3000/5173 en 200."
+    },
+    {
+      "paquete": "IMP-04",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-04.md (§1-§10: meta/reglas/casos, estado OBS, modelo de revisión 3 tablas+enum, archivo privado+retención, versiones, rutas/acciones/alcance, errores, idempotencia/transacción/recuperación, incrementos, decisiones N1-N5)"
+      ],
+      "pruebas": [
+        "Contrato: retención/tamaño/esquema/recuperación fixados antes de migrar; separa el historial de la revisión del evento resumido price-import-preview; incrementos backend-esquema/revisiones/recuperacion registrados con writePaths y acceptance"
+      ],
+      "nota": "Acciones nuevas: prices:save (guardar) + reuso prices:read (consultar); prices:apply reservado a IMP-05. Archivo original privado (fuera del prefijo estático). Sin datos comerciales en la migración."
+    },
+    {
+      "paquete": "IMP-04",
+      "paso": "backend-esquema",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (+enum PriceImportRevisionStatus; +PriceImportRevision/Row/Price; relaciones inversas en Lista y User)",
+        "prisma/migrations/20261017120000_add_price_import_revisions/migration.sql + migration.down.sql (solo estructura, 0 datos comerciales)",
+        "common/security/access-catalog.ts (+prices:save dependiente de prices:preview; prices:apply reservado a IMP-05)",
+        "common/security/access-catalog.spec.ts (+1 test)"
+      ],
+      "pruebas": [
+        "prisma validate OK; migrate deploy OK en las 7 BDs desechables (tanda, t05, t06, t08, t09, t10, t12); prisma generate OK; tsc 0",
+        "Verificación estructural en BD scratch: UP crea 3 tablas + enum; DOWN las elimina; re-UP restaura; 0 filas en las 3 tablas",
+        "access-catalog.spec 33/33 (prices:save alcance [list,global], dependencia [prices:preview], enabled; prices:apply ausente)"
+      ],
+      "nota": "priceListId nullable (tarifas no resueltas). La migración se parcheó a nullable en las 7 BDs (ALTER ... DROP NOT NULL) y el archivo de migración quedó correcto para despliegues frescos. Persistir no toca Price ni identidad."
+    },
+    {
+      "paquete": "IMP-04",
+      "paso": "backend-revisiones",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/prices/import/price-import-storage.ts (NUEVO: almacenamiento privado por hash, fuera del prefijo estático /uploads)",
+        "modules/prices/import/price-import.service.ts (+computePreview extraído del preview; saveRevision/listRevisions/getRevision/getRevisionFile/discardRevision; guards prices:save/prices:read; auditoría price-import-revision-save/discard)",
+        "modules/prices/import/price-import.controller.ts (+POST/GET/GET :id/GET :id/file/DELETE :id)",
+        "modules/prices/import/price-import.types.ts (+tipos de revisión y versiones parser/trailer)",
+        "modules/prices/import/price-import-revisions.spec.ts (NUEVO, 10 tests)",
+        "common/money/cop-policy.ts (+COP_POLICY_VERSION)"
+      ],
+      "pruebas": [
+        "prices 8 suites/246 tests verdes; spec de revisiones 10/10 (guardar cabecera+filas+precios; idempotencia misma clave; 409 con contenido distinto; 400 sin clave/archivo; 403 sin prices:save; NO toca Price ni identidad)",
+        "e2e vivo (BD desechable): POST revisions 201 + fileAvailable; repetir misma clave -> mismo id (sin duplicar); sin clave -> 400; audit price-import-revision-save"
+      ],
+      "nota": "Persistir escribe en UNA transacción (cabecera+filas+precios); fallo intermedio borra el archivo huérfano y no deja cabecera parcial. Se recalcula el preview en servidor (no se confía en el navegador). Bandera status GUARDADA."
+    },
+    {
+      "paquete": "IMP-04",
+      "paso": "backend-recuperacion",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/prices/import/price-import-storage.ts (NUEVO: almacenamiento privado por hash, fuera del prefijo estático /uploads)",
+        "modules/prices/import/price-import.service.ts (+computePreview extraído del preview; saveRevision/listRevisions/getRevision/getRevisionFile/discardRevision; guards prices:save/prices:read; auditoría price-import-revision-save/discard)",
+        "modules/prices/import/price-import.controller.ts (+POST/GET/GET :id/GET :id/file/DELETE :id)",
+        "modules/prices/import/price-import.types.ts (+tipos de revisión y versiones parser/trailer)",
+        "modules/prices/import/price-import-revisions.spec.ts (NUEVO, 10 tests)",
+        "common/money/cop-policy.ts (+COP_POLICY_VERSION)"
+      ],
+      "pruebas": [
+        "e2e vivo (BD desechable): guardar -> MATAR API por PID verificado -> reiniciar -> GET revisions/:id 200 con fila (recibido 123456.5 -> redondeado 123457, anterior null) y fileAvailable=true (caso 1); GET :id/file 200 con magic PK (16909 bytes); GET sin token 401; GET id inexistente 404",
+        "caso 2 (alcance): spec acredita 403 al consultar una revisión de lista ajena (assertListaAccess) y 403 sin prices:read; e2e 401 sin sesión",
+        "caso 3: tras descartar, DELETE 200 status=DESCARTADA y descartar una APLICADA -> 409; prices intactos (0 filas antes/después)",
+        "backend 92 suites/1682 tests, 12 fallos SOLO public-products.spec.ts (baseline DI); tsc 0; lint 0 errores (6 warnings preexistentes); build 0"
+      ],
+      "nota": "Bug hallado y corregido en e2e: page ausente -> skip NaN -> 500; clampPage a 1 + spec de regresión. Recuperación real tras reinicio de proceso (no memoria). El detalle reconstruye filas/precios desde BD."
+    },
+    {
+      "paquete": "IMP-05",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-05.md (§1-§10: meta/reglas/casos, estado OBS, transacción/concurrencia/límites, esquema+rutas+acciones+alcance, errores, vínculo IMP-04, incrementos, decisiones N1-N5)"
+      ],
+      "pruebas": [
+        "Contrato: atomicidad total Serializable (N1), versión esperada=previousValue (N2), prices:apply separado (N3), filas en error -> 409 sin exclusiones (N4), NO escribe Product.listaId (N5); incrementos backend-transaccion/reintentos/api con writePaths y acceptance"
+      ],
+      "nota": "Acción nueva prices:apply (prereq prices:save). Revalidación por solicitud. Idempotente si status=APLICADA devuelve appliedResult."
+    },
+    {
+      "paquete": "IMP-05",
+      "paso": "backend-transaccion",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (+appliedAt/appliedById/appliedResult en PriceImportRevision; relación appliedBy; @@index([status]))",
+        "prisma/migrations/20261017130000_add_price_import_revision_apply/migration.sql + migration.down.sql",
+        "common/security/access-catalog.ts (+prices:apply independiente de prices:save; dependencia prices:read) + access-catalog.spec.ts (+1 test)",
+        "modules/prices/import/price-import.service.ts (+applyRevision: transacción Serializable, versión esperada=previousValue, upsert Price por (productId,priceListId), marca APLICADA, auditoría price-import-apply; cabecedera con appliedAt/appliedResult)",
+        "modules/prices/import/price-import.controller.ts (+POST revisions/:id/apply)",
+        "modules/prices/import/price-import.types.ts (+tipos de aplicación)",
+        "modules/prices/import/price-import-revisions.spec.ts (+7 tests de aplicación)"
+      ],
+      "pruebas": [
+        "spec de revisión 17/17: aplica (Price.update 90→101, currency COP, listaId, marca APLICADA, NO toca Product/price.create); utilidades Price.create cuando no existía el precio",
+        "e2e vivo (BD desechable): save 201 -> apply 201 appliedPrices=1 -> Price 123457.00 COP lista=… ; revision APLICADA appliedAt; auditoría price-import-apply",
+        "transacción Serializable confirmada en spec: $transaction(fn, { isolationLevel: \"Serializable\" })"
+      ],
+      "nota": "Atomicidad total (todo o nada); fallo revierte sin escribir precios. Se rebanlancea solo Price; nunca Product/identidad (regla 2/3). Se revalida el valor con normalizeCopPrice (IMP-03)."
+    },
+    {
+      "paquete": "IMP-05",
+      "paso": "backend-reintentos",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (+appliedAt/appliedById/appliedResult en PriceImportRevision; relación appliedBy; @@index([status]))",
+        "prisma/migrations/20261017130000_add_price_import_revision_apply/migration.sql + migration.down.sql",
+        "common/security/access-catalog.ts (+prices:apply independiente de prices:save; dependencia prices:read) + access-catalog.spec.ts (+1 test)",
+        "modules/prices/import/price-import.service.ts (+applyRevision: transacción Serializable, versión esperada=previousValue, upsert Price por (productId,priceListId), marca APLICADA, auditoría price-import-apply; cabecedera con appliedAt/appliedResult)",
+        "modules/prices/import/price-import.controller.ts (+POST revisions/:id/apply)",
+        "modules/prices/import/price-import.types.ts (+tipos de aplicación)",
+        "modules/prices/import/price-import-revisions.spec.ts (+7 tests de aplicación)"
+      ],
+      "pruebas": [
+        "e2e vivo: apply -> 201; reintento apply -> 201 alreadyApplied=true SIN nuevas escrituras (price.update no llamado)",
+        "spec: ya APLICADA devuelve aplicadoResult con alreadyApplied y NO llama $transaction; revisión DESCARTADA -> 409",
+        "spec: sin concesión prices:apply -> 403 aunque siga GUARDADA (revocación entre revisar/aplicar bloquea)"
+      ],
+      "nota": "La revalidación de acciones es por SOLICITUD (assertApplyActions). El evento de éxito se emite una sola vez tras confirmar."
+    },
+    {
+      "paquete": "IMP-05",
+      "paso": "backend-api",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (+appliedAt/appliedById/appliedResult en PriceImportRevision; relación appliedBy; @@index([status]))",
+        "prisma/migrations/20261017130000_add_price_import_revision_apply/migration.sql + migration.down.sql",
+        "common/security/access-catalog.ts (+prices:apply independiente de prices:save; dependencia prices:read) + access-catalog.spec.ts (+1 test)",
+        "modules/prices/import/price-import.service.ts (+applyRevision: transacción Serializable, versión esperada=previousValue, upsert Price por (productId,priceListId), marca APLICADA, auditoría price-import-apply; cabecedera con appliedAt/appliedResult)",
+        "modules/prices/import/price-import.controller.ts (+POST revisions/:id/apply)",
+        "modules/prices/import/price-import.types.ts (+tipos de aplicación)",
+        "modules/prices/import/price-import-revisions.spec.ts (+7 tests de aplicación)"
+      ],
+      "pruebas": [
+        "e2e vivo: apply 201 con appliedResult; conflicto por cambio de precio -> 409 con feedback por fila (IMP05-SKU-1 · ORO_IVA: PRICE_CHANGED esperado 123457 actual 999999); precio NO sobrescrito; revisión sigue GUARDADA",
+        "spec: conflicto por precio cambiado/eliminado y por producto fuera de la lista -> 409; filas en error -> 409 REVISION_HAS_ERRORS sin aplicar",
+        "backend 92 suites/1690 tests, 12 fallos SOLO public-products.spec.ts (baseline DI); tsc 0; lint 0 errores (6 warnings preexistentes); build 0"
+      ],
+      "nota": "El 409 expone las filas en conflicto vía feedback (lista de strings) reutilizando el filtro global sin cambiarlo. permiso separado prices:apply por API."
+    },
+    {
+      "paquete": "IMP-06",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-06.md (§1-§10: meta/reglas/casos, estado OBS, flujo de 3 pasos, acciones/gating, errores/estado, rutas, incrementos, decisiones N1-N3)"
+      ],
+      "pruebas": [
+        "Contrato: Revisar≠Aplicar por acciones distintas (prices:preview/save/read/apply); conflicto 409 con feedback sin falso éxito; historial limitado a la lista; retiro del botón CSV; incrementos backend/frontend con writePaths y acceptance"
+      ],
+      "nota": "El backend de guardar/aplicar/historial ya existe (IMP-04/05); el incremento backend puede ser no-op documentado. El trabajo principal es el frontend de 3 pasos."
+    },
+    {
+      "paquete": "IMP-06",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/prices/import/price-import.service.ts (reutilizado)",
+        "src/backend/src/modules/prices/import/price-import.controller.ts (reutilizado)",
+        "src/backend/src/common/security/access-catalog.ts (prices:read/preview/save/apply, reutilizado)",
+        "src/backend/src/modules/prices/import/price-import-revisions.spec.ts (+3 pruebas de acceso/COP)"
+      ],
+      "pruebas": [
+        "backend: price-import-revisions.spec.ts 21/21",
+        "e2e vivo IMP-04/05 (BD desechable): guardar→reiniciar API→recuperar; guardar idempotente; aplicar 201; reintento alreadyApplied; conflicto 409 con feedback por fila"
+      ],
+      "nota": "REUTILIZADO (no-op de código nuevo): los endpoints y acciones ya existen (IMP-01/02/04/05). Comprobadas las 6 aceptaciones exigidas (§11 contrato IMP-06): (1) permisos separados preview/save/apply/read; (2) se aplica exactamente la revisión guardada (servidor recalcula); (3) 409 explica por fila y sin falso éxito; (4) reintento no duplica; (5) historial y archivo respetan accesso a la lista (403 lista ajena, 404 archivo ausente); (6) precios manuales e importados usan la misma política COP (common/money IMP-03)."
+    },
+    {
+      "paquete": "IMP-06",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/services/price-import.service.ts (+spec)",
+        "src/frontend/src/features/price-import/PriceImportRevisionsSection.tsx",
+        "src/frontend/src/features/price-import/revisions.utils.ts",
+        "src/frontend/src/features/price-import/revisions.spec.tsx",
+        "src/frontend/src/features/price-import/PriceImportPreviewPanel.tsx (botón Guardar revisión + historial)",
+        "src/frontend/src/pages/ListaDetailPage.tsx (+spec) — retirado el botón CSV anterior"
+      ],
+      "pruebas": [
+        "frontend: price-import.service.spec.ts 12/12",
+        "frontend: features/price-import/ (revisions.spec.tsx + preview.spec.tsx) 31/31",
+        "frontend: ListaDetailPage.spec.tsx (CSV retirado + gating pestaña) 41/41 (4 archivos)",
+        "frontend: suite completa 69 archivos / 761 pruebas OK; tsc 0; eslint 0 errores / 0 warnings; build OK"
+      ],
+      "nota": "Flujo de 3 pasos (Revisar→Guardar→Aplicar) con permisos separados: Revisar (prices:preview), Guardar (prices:save, clave de idempotencia en cliente), Aplicar (prices:apply), historial (prices:read). 409 muestra feedback por fila sin falso éxito; reintento informa «ya estaba aplicada». Historial con descarga (si fileAvailable) y descartar. Retirado el botón CSV anterior (regla 3/N3)."
+    },
+    {
+      "paquete": "IMP-07",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/IMP-07.md"
+      ],
+      "pruebas": [],
+      "nota": "Contrato con dos subentregas separadas (07A exportación; 07B perfiles de proveedor), campos/rutas/acciones/errores/alcance y mapeo de los 3 casos; sin decisiones de negocio pendientes. Bloqueos externos (Yéminus, Excel Pedidos) ajenos a este paso."
+    },
+    {
+      "paquete": "IMP-07",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/prices/import/price-import.service.ts (07A: exportListaPrices + helpers; 07B: CRUD perfiles, equivalencias, reconocimiento y resolución)",
+        "src/backend/src/modules/prices/import/price-import.controller.ts (07A: GET export + DTO; 07B: rutas profiles + DTOs)",
+        "src/backend/src/modules/prices/import/provider-profile.ts (07B: núcleo puro: validación, huella de encabezados, resolución de referencias)",
+        "src/backend/prisma/schema.prisma (07B: ProviderProfile + ProviderEquivalence)",
+        "src/backend/prisma/migrations/20261017140000_add_provider_profiles/** (migration.sql + down)",
+        "src/backend/src/common/security/access-catalog.ts (+spec) (07B: providers:read / providers:write, global, write depende de read)",
+        "src/backend/src/modules/prices/import/provider-profile.spec.ts (10)",
+        "src/backend/src/modules/prices/import/provider-profiles.spec.ts (14)",
+        "src/backend/src/modules/prices/import/price-template-download.spec.ts (+6 pruebas de exportación)"
+      ],
+      "pruebas": [
+        "backend 07B: provider-profile.spec.ts 10/10 (núcleo puro) + provider-profiles.spec.ts 14/14 (permisos, CRUD, equivalencias, reconocimiento, resolución)",
+        "backend: access-catalog.spec.ts 35/35 (+1 de providers:read/write)",
+        "e2e vivo 07B (BD desechable): e2e-imp07b.cjs 17/17 (401 sin token; 403 sin concesión; 400 validación; 201 crear; 409 duplicado; reconocimiento casos 1 y 2; equivalencias y resolución; version 1→2; 404 tras borrar)",
+        "backend 07A: price-template-download.spec.ts 19/19; e2e vivo e2e-imp07.cjs 8/8",
+        "suite backend completa: 94 suites / 1725 pruebas; 12 fallos SOLO public-products.spec.ts (baseline DI, 0 regresiones)",
+        "migración 20261017140000 aplicada a las 7 BDs desechables"
+      ],
+      "nota": "COMPLETO (07A + 07B) implementado_sin_auditar. 07B: perfiles de proveedor reutilizables (hoja, fila, separadores, moneda COP, tarifas, huella de encabezados) con versionado por cambio de estructura, equivalencias referencia externa→producto, reconocimiento (mismo proveedor no remapea; encabezado cambiado exige revisión) y resolución (sin equivalencia única → pendiente). Rutas añadidas al controlador existente (sin tocar prices.module.ts, fuera de writePaths). Sin escrituras de Price/Product.listaId."
+    },
+    {
+      "paquete": "IMP-07",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/services/price-import.service.ts (+spec) (07A: exportListaPrices; 07B: CRUD perfiles, equivalencias, reconocimiento, resolución)",
+        "src/frontend/src/features/price-import/ExportListaSection.tsx",
+        "src/frontend/src/features/price-import/export-prices.utils.ts",
+        "src/frontend/src/features/price-import/export.spec.tsx",
+        "src/frontend/src/features/price-import/ProviderProfilesSection.tsx",
+        "src/frontend/src/features/price-import/provider-profiles.utils.ts",
+        "src/frontend/src/features/price-import/provider-profiles.spec.tsx (10)",
+        "src/frontend/src/features/price-import/PriceImportPreviewPanel.tsx (integra exportación y perfiles)"
+      ],
+      "pruebas": [
+        "frontend 07B: provider-profiles.spec.tsx 10/10 (permisos, validación espejo, reconocimiento, resolución) + price-import.service.spec.ts (+5 de perfiles)",
+        "frontend 07A: price-import.service.spec.ts (+2) y export.spec.tsx (3) verdes",
+        "frontend: suite completa 71 archivos / 781 pruebas verdes; tsc 0; eslint 0 errores/0 warnings; vite build OK"
+      ],
+      "nota": "COMPLETO (07A + 07B) implementado_sin_auditar. 07B: gestión de perfiles de proveedor (crear/revisar/retirar, reconocimiento y equivalencias) con gating providers:read/providers:write (capa legada D5); el servidor revalida cada acción."
+    },
+    {
+      "paquete": "CAT-01",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/CAT-01.md"
+      ],
+      "pruebas": [
+        "git status S3 idéntico al baseline"
+      ],
+      "nota": "228 líneas; riesgos OBS: removeLista borraba productos/imágenes/precios/bytes (listas.service.ts:589-680), cotizaciones → 500 (FK RESTRICT), deletionPurgeAt/prepareAuditSnapshot sin llamadas; decisiones C1-C7 registradas; solapes CAT-02..09 mapeados."
+    },
+    {
+      "paquete": "CAT-01",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/listas/listas.service.ts (removeLista conservacionista, unlinkProduct, restore con isActive, snapshot audit)",
+        "listas.controller.ts (PATCH unlink)",
+        "access-catalog.ts (listas:link/unlink enabled:false)",
+        "products/import/pipeline/batch-executor.service.ts (+118: OWNERSHIP/UNLINKED_TARGET, FOR UPDATE, lista archivada→404, P2002→409)",
+        "listas-conservation.spec.ts (8 tests PG real t08)",
+        "batch-executor.service.spec.ts (+635, concurrencia PG t09)"
+      ],
+      "pruebas": [
+        "jest: 75 suites / 1304 tests / 12 fallos baseline",
+        "tsc 0; lint 0",
+        "sin migraciones (FKs ya correctas)",
+        "e2e unidad A: DELETE con cotización 409, sin confirm 400, real 200 (productosConservados, bytes intactos, snapshot), unlink 200, restore isActive=true",
+        "concurrencia unidad B: dos execute simultáneos → exactamente una gana; manual vs batch exclusión mutua; SKU único conservado; 2 eventos IMPORT_PRODUCTS"
+      ],
+      "nota": "C1 snapshot+SET NULL, C2 409 precomprobado, C5 restore repone isActive, C6 purga sin ejecutor (pendiente), referencias sin lista → conflicto UNLINKED_TARGET sin vincular (listas:link habilitará); hallazgo: producto listaId=null da 404 en GET /products/:id (ACL actual, afecta CAT-02)."
+    },
+    {
+      "paquete": "CAT-01",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/listas.service.ts (deleteLista, unlinkProduct, errores tipados)",
+        "pages/ListaDetailPage.tsx (botón Quitar de la lista + alertas 404/403/409, export ConfiguracionTab)",
+        "pages/ListasPage.tsx (aviso conservacionista, banner 409, badge En eliminación)",
+        "3 specs nuevos (+43 tests)"
+      ],
+      "pruebas": [
+        "vitest: 45 archivos / 544 tests, 0 fallos (RED 35)",
+        "tsc -b 0; lint idéntico (2 errores preexistentes)",
+        "evidencia HTTP 17/17 vía proxy 5180 (SPA 200, unlink 200/404, DELETE 409 cotización/400 sin confirm/200 con conservación, archive/restore, S3 intacto)"
+      ],
+      "nota": "Copy antiguo «Todos los productos y datos asociados se eliminarán» contradecía el backend — corregido. Sin botón Mover-lista (no existe; el botón Mover es de categoría). UI listas:link queda fuera (sin endpoint). QA-01: interacción real en navegador."
+    },
+    {
+      "paquete": "CAT-02",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/CAT-02.md"
+      ],
+      "pruebas": [],
+      "nota": "Contrato INLINE (subagentes caidos, 10x). OBS clave: publicacion YA existe (publishStatus default borrador + FSM /transition + publish/unpublish con @Permissions products:publish), PERO visibilidad publica separada (catalogPublished) y DETALLE POR ID NO FILTRA borrador (public-detail.service:27 vs :39 slug) = hueco central; sin modelo de revision (ProductRevision no existe); casing inconsistente (borrador vs PUBLISHED). Diseno IP: revision concreta publicada + OCC expectedVersion 409 + estados de revision (DISENO-CATALOGO:29-32,155,187-191,200,204). 4 incrementos backend registrados con acceptance textuales; decisiones K1-K5 (K1: backfill real solo ensayo en desechable, produccion = coordinador)."
+    },
+    {
+      "paquete": "CAT-02",
+      "paso": "backend-esquema",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (enum RevisionStatus 5 estados; modelo ProductRevision con content Json OCC version unique(productId,version); Product.publicRevisionId FK SetNull + índice; back-relation User)",
+        "migración 20261016170000_add_product_revisions (estructura + BACKFILL con snapshot JSON de campos EXPLÍCITOS + imágenes por mismo id) + migration.down.sql (recuperación estructural completa)",
+        "modules/products/product-revisions.backfill.ts (runProductRevisionBackfill/recoverProductRevisionBackfill con paridad SQL) + product-revisions.backfill.spec.ts (PG real t12, 4 tests)"
+      ],
+      "pruebas": [
+        "spec backfill: 4/4 verdes con PG real (BD t12 recreada por corrida + guard current_database): estructura; IDs/datos/medios byte-intactos tras backfill con revisión PUBLICADA v1 enlazada; borrador sin revisión; recuperación (down) → publicRevisionId NULL y productos/medios intactos",
+        "regresión products: 23 suites, 12 fallos SOLO public-products (baseline), batch-executor (CAT-01) restaurado tras desplegar la migración a TODAS las BDs desechables (t05/t06/t08/t09/t10/t12)",
+        "tsc 0; lint 0; migración desplegada en las 7 BDs (revisión incluida: 0 revisiones — ningún producto del fixture está catalogPublished)"
+      ],
+      "nota": "K2 elegida: Product.publicRevisionId (FK SetNull). Snapshot con campos explícitos (no to_jsonb completo) para estabilidad ante evolución del schema; imágenes referenciadas por MISMO id. Limitación documentada: catalogResources/catalogSpecGroups quedan referenciados por productId (fuera del snapshot v1) — tratar en backend-borradores/publico. K1: corrida de producción pendiente del coordinador. down.sql = inverso estructural completo; recover*() = inverso de datos para el spec/operación."
+    },
+    {
+      "paquete": "CAT-02",
+      "paso": "backend-borradores",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/products/product-revisions.service.ts (saveDraft OCC expectedVersion→409 revision-version-conflict, solo escribe product_revisions; listRevisions resúmenes sin content; ACL espejo de products.update (solo con listaId))",
+        "dto/save-product-draft.dto.ts",
+        "products.controller.ts (GET :id/revisions, PATCH :id/revision/draft con @Roles Admin)",
+        "products.module.ts (+ProductRevisionsService)",
+        "specs: product-revisions.service.spec.ts (7) + limit-alias.spec actualizado (constructor 2 args)"
+      ],
+      "pruebas": [
+        "spec: 7/7 (RED 2→ fixtures corregidos); tsc 0; lint 0; products 24 suites con SOLO baseline public-products (12); build 0",
+        "e2e 11/11: guardar borrador 200 SIN_REVISAR v1; público ID/slug/listado BYTE-IDÉNTICO tras guardar (check del coordinador #3); nombre del borrador ausente de las 3 rutas públicas; expectedVersion viejo → 409; GET revisions sin content; 401; fixtures limpios"
+      ],
+      "nota": "Lecciones operativas: (1) reinicio de API — el proceso vivo debe matarse POR PID verificado (pkill no matchea y un kill fallido deja el dist viejo sirviendo: el 404 «Producto no encontrado» persistió hasta confirmar proceso posterior al build). (2) público por ID exige lifecycleStatus=PUBLISHED (no solo catalogPublished). (3) e2e público: usar ?q= (no ?search=) — DTO con forbidNonWhitelisted. Pendiente: backend-publico (lente de revisión) y backend-alternativas."
+    },
+    {
+      "paquete": "CAT-02",
+      "paso": "backend-publico",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/products/public-revision-lens.ts (helper: loadActiveRevisionContents solo PUBLICADA + applyRevisionLens sobre sku/name/description/technicalSpecs/documents/catalogName/catalogModel/catalogBrand)",
+        "public-catalog.service.ts (getDetail y search: where += catalogPublished; select += publicRevisionId; lente en detalle y filas de listado)",
+        "public-detail/public-product-detail.service.ts (slug where += lifecycleStatus PUBLISHED; lente aplicado al enriched antes del mapper)",
+        "storefront/storefront.service.ts (publishedWhere += catalogPublished; select += publicRevisionId; lente en filas de la tienda)",
+        "specs: public-revision-lens.spec.ts (nuevo) + ajustes a public-catalog.service.spec y public-products.spec (where/select actualizados al contrato)"
+      ],
+      "pruebas": [
+        "specs: 15/15 lente+catalog+detail; products+storefront 25 suites con SOLO el baseline public-products (12 DI preexistente); tsc 0; lint 0",
+        "e2e lente 14/14: snapshot servido por ID/slug/listado; edición legacy en columnas NO cambia la ficha pública (las 3 rutas); fallback a columnas vivas sin revisión activa; producto borrador → 404 ID/slug y ausente del listado; borrador en la tabla SIN revisión activa → jamás servido (check del coordinador)"
+      ],
+      "nota": "K4 resuelta: la verdad pública es la revisión activa PUBLICADA; columnas vivas = fallback. Búsqueda opera sobre columnas vivas (el lente pinta el snapshot) — documentado. Precios quedan vivos (fuente comercial separada). catalog* en LENS_FIELDS porque el mapper del sheet prioriza catalogName sobre name."
+    },
+    {
+      "paquete": "CAT-02",
+      "paso": "backend-alternativas",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "product-revisions.service.ts (+markPendingFromLive: REVISION_PENDIENTE con contenido vivo, notes «legacy», version latest+1; jamás toca PUBLICADA)",
+        "products.service.ts (update() llama markPendingFromLive antes de return; @Optional() para no romper DI de specs previos)",
+        "specs: product-revisions.service.spec +2 (9/9)"
+      ],
+      "pruebas": [
+        "e2e 10/10: PUT legacy 200 → público ID/listado conservan el snapshot byte (lente); REVISION_PENDIENTE creada con el nombre vivo nuevo; PUBLICADA intacta (v1); rename de marca NO altera snapshot ni crea revisiones publicadas; limpieza",
+        "hito fin CAT-02 backend: 82 suites/1452 tests (12 = solo baseline public-products DI), tsc 0, lint 0"
+      ],
+      "nota": "Cable update→markPending con @Optional (Nest exige @Optional() para que Test.createTestingModule no falle — 178 fallos transitorios corregidos). K5: política de revisión de productos afectados por rename compartido → CAT-06 (aquí solo se acredita que el snapshot NO cambia). K6: marcar pendientes desde import masivo queda documentado (el lente ya aísla el público)."
+    },
+    {
+      "paquete": "CAT-03",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/CAT-03.md"
+      ],
+      "pruebas": [
+        "Inspección del estado real (OBS) en la copia: sheet/ frontend (ProductSheetEditor con los 8 apartados) + GET/PUT /api/products/:id/sheet + ProductRevision (CAT-02, content/notes/version con OCC)."
+      ],
+      "nota": "Contrato §1-§10. Hallazgo: CAT-03 NO es no-op — hay 5 huecos verificados (H1: no existe almacenamiento de Notas internas y el apartado \"Notas\" edita campos PÚBLICOS specsDisclaimer/firmwareNote; H2: PUT sheet sin OCC; H3: autorización por @Roles+ACL en vez de acción del catálogo; H4: sin identificadores de fabricante; H5: editar no marca revisión pendiente explícitamente). Mapa de apartados sin duplicidad y plan de 4 incrementos con aceptación y writePaths. Decisiones: D1 campo de notas, D2 products:notes (el coordinador confirma a quién se concede), D3 definiciones globales de atributos, D4 identificadores de fabricante. Sin bloqueo externo."
+    },
+    {
+      "paquete": "CAT-03",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/prisma/schema.prisma (+migración 20261017150000_add_product_sheet_notes_occ con down)",
+        "src/backend/src/common/security/access-catalog.ts (+spec): acción products:notes sin conceder por defecto",
+        "src/backend/src/modules/products/sheet/dto/product-sheet.dto.ts: internalNotes, manufacturerRefs, expectedVersion; vista con version",
+        "src/backend/src/modules/products/sheet/product-sheet.service.ts: OCC 409 sheet-version-conflict sin escribir; notas gated por products:notes (sin acción: se conservan y no se devuelven); acciones products:read/write con transición D5 (@Optional grants + resolveAccess, patrón COM-08); refs deduplicados; auditoría sin notas si no hay acción",
+        "src/backend/src/modules/products/sheet/product-sheet.spec.ts: 12 pruebas nuevas (2 suites/64 verdes)",
+        "src/backend/src/modules/products/public-detail/product.mapper.spec.ts: el DTO público nunca expone notas ni sheetVersion"
+      ],
+      "pruebas": [
+        "jest src/modules/products/sheet: 2 suites / 64 pruebas verdes",
+        "accesos completos del backend: 94 suites / 1737 pruebas, 12 fallos = solo baseline DI public-products.spec.ts (0 regresiones)",
+        "tsc --noEmit 0 errores; eslint 0 errores (3 warnings preexistentes ajenos)",
+        "e2e vivo /tmp/gs-tanda-logs/e2e-cat03.cjs: 30/30 — 401; GET con version; OCC atrasada 409 con feedback y CERO escritura/auditoría; PUT correcto +1 versión, refs dedupe, notas devueltas, no publica; auditoría update_sheet con versiones; legado sin expectedVersion 200; detalle público 200 SIN notas ni versión; grants reales (solo customers:read) → 403 GET/PUT para Admin Comercial sin products:read/write, Super Admin conserva acceso; BD restaurada",
+        "migración aplicada a las 7 BDs desechables (deploy + verificación de columnas y _prisma_migrations)"
+      ],
+      "nota": "CAT-03 backend CERRADO (contrato §11). Huecos cubiertos: H1 notas privadas (catalogInternalNotes + products:notes), H2 OCC (sheetVersion + expectedVersion → 409 sheet-version-conflict), H3 acciones del catálogo con transición D5 (products:read/write; el catálogo real no tiene products:edit — contrato §4 corregido), H4 catalogManufacturerRefs String[] (D4 resuelta: plano, sin inventar estructura; no se expone al público en este incremento). H5 (revisión pendiente) corresponde a frontend-beneficios sobre el mecanismo CAT-02. Conducta legada documentada sin tocar: assertProductAccess responde 404 para productos SIN Lista. La ficha no edita sku/name (identidad via PUT /products/:id; el caso sku duplicado pertenece a esa ruta/IMP). Sin commits/push/deploy."
+    },
+    {
+      "paquete": "CAT-03",
+      "paso": "frontend-identidad",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/frontend/src/features/products/sheet/sheet-form.ts: manufacturerRefs/internalNotes/version en la vista; savePayloadWithVersion (expectedVersion); detectVersionConflict (solo 409 sheet-version-conflict, extrae currentVersion); versionConflictMessage; límites espejo (20×120)",
+        "src/frontend/src/features/products/sheet/ProductSheetEditor.tsx: bloque «Identificadores del fabricante» en Identidad; PUT via savePayloadWithVersion; banner de conflicto con versión + «Descartar cambios y recargar»; sin falso éxito",
+        "src/frontend/src/features/products/sheet/ProductSheetTab.tsx: detecta el 409 (el borrador local se conserva — el error no toca la caché); sustituye el error genérico; onReload = refetch + mutation.reset()",
+        "src/frontend/src/features/products/sheet/fixtures.ts: manufacturerRefs/internalNotes/version",
+        "src/frontend/src/features/products/sheet/sheet-form.spec.ts (+10) y ProductSheetEditor.spec.tsx (+4)",
+        "src/backend (corrección de semántica acompañante): omitir internalNotes CONSERVA (undefined ≠ borrar; solo null explícito con products:notes borra) + 2 pruebas jest"
+      ],
+      "pruebas": [
+        "vitest frontend: 71 archivos / 795 pruebas verdes (+14)",
+        "jest backend tras corrección: 94 suites / 1739, 12 fallos = solo baseline public-products (0 regresiones); sheet 66/66",
+        "e2e-cat03.cjs actualizado a la nueva semántica: 30/30 (guardado legado CONSERVA notas)",
+        "tsc 0 (frontend y backend); eslint 0 errores (6 warnings preexistentes en archivos no tocados); vite build OK; smoke 5180=200 y proxy /api/health=200"
+      ],
+      "nota": "frontend-identidad CERRADO (contrato §12): guardado/reload conserva campos (manufacturerRefs round-trip), OCC real en el editor (expectedVersion desde sheet.version), 409 muestra la versión vigente y conserva lo escrito sin falso éxito, con recarga explícita. El payload omite internalNotes → el servidor las conserva (no se pueden borrar sin verlas). QA-01 navegador (dos pestañas concurrentes) queda del coordinador — sin Playwright en la tanda."
+    },
+    {
+      "paquete": "CAT-03",
+      "paso": "frontend-beneficios",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/products/sheet/product-sheet.service.ts: update llama markPendingFromLive (H5, regla 5; @Optional, patrón legacy de products.service); 409 OCC no marca nada",
+        "src/backend/src/modules/products/sheet/product-sheet.spec.ts: +3 pruebas H5 (69/69)",
+        "src/frontend/src/features/products/sheet/sheet-revisions.ts (+spec): estados reales del enum, latestValidation (pendiente solo con REVISION_PENDIENTE), aviso regla 5",
+        "src/frontend/src/features/products/sheet/sheet.service.ts: fetchProductRevisions + sheetKeys.revisions",
+        "src/frontend/src/features/products/sheet/ProductSheetTab.tsx: consulta de revisiones + invalidación tras guardado",
+        "src/frontend/src/features/products/sheet/ProductSheetEditor.tsx: estado de validación en el pie + aviso ámbar pendiente; Destacados re-redactados como beneficios (regla 2)",
+        "src/frontend/src/features/products/sheet/ProductSheetEditor.spec.tsx: +2 (banner pendiente sin opción de publicar; destacados sin campos de tienda)"
+      ],
+      "pruebas": [
+        "jest backend: 94 suites / 1742, 12 fallos = solo baseline public-products (0 regresiones); sheet 69/69",
+        "vitest frontend: 72 archivos / 801 pruebas (+6)",
+        "e2e-cat03.cjs ampliado: 33/33 — guarda marca revisión pendiente, 409 no marca, publicRevisionId intacto, limpieza determinista",
+        "tsc 0 ambos; eslint 0 errores; builds backend y frontend OK; API 3001 con build nuevo; smoke 5180 OK"
+      ],
+      "nota": "frontend-beneficios CERRADO (contrato §13). H5 implementado sobre el mecanismo CAT-02 EXISTENTE (markPendingFromLive): editar invalida la validación sin autorizar ni publicar; UI muestra «revisión pendiente» y la tienda sigue viendo la última versión publicada. Regla 2: Destacados = beneficios, sin campos de tienda (probado). Limitación documentada: el snapshot de markPendingFromLive cubre los campos que CAT-02 definió; afinarlo es CAT-05. QA-01 navegador queda del coordinador."
+    },
+    {
+      "paquete": "CAT-03",
+      "paso": "frontend-tecnicos",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/src/modules/products/sheet/dto/product-sheet.dto.ts + product-sheet.service.ts: la vista trae canSeeInternalNotes (flag honesto: distingue sin-notas de sin-permiso)",
+        "src/frontend/src/features/products/sheet/sheet-form.ts: SheetForm.internalNotes (null = oculto); toPayload con spread condicional (sin permiso la clave se OMITE → el servidor conserva; con permiso vacío = null explícito = borrar); límite 4000 espejo del DTO",
+        "src/frontend/src/features/products/sheet/ProductSheetEditor.tsx: apartado Notas con «Notas internas (privadas)» + aviso «Nunca se publican…» (solo si canSeeInternalNotes); sin permiso: aviso de conservación; campos públicos reetiquetados (público/pública)",
+        "specs: sheet-form.spec.ts (viaja/omite/conserva + 4000 + publicar-sin-PDF + slug única exigencia), ProductSheetEditor.spec.tsx (notas marcadas internas, sin permiso, Modelos sin campos de tienda), fixtures.ts"
+      ],
+      "pruebas": [
+        "jest backend: sheet 69/69 (canSeeInternalNotes en los 3 escenarios); suite 94 suites/1742, 12 fallos = solo baseline public-products (0 regresiones); tsc 0; build OK",
+        "e2e-cat03.cjs: 34/34 (añade flag canSeeInternalNotes=true para Super Admin en vivo)",
+        "vitest frontend: 72 archivos / 806 pruebas (+5); tsc 0; eslint 0 errores; vite build OK"
+      ],
+      "nota": "frontend-tecnicos CERRADO (contrato §14) — CAT-03 COMPLETO (5/5 pasos implementados sin auditar). Notas internas en UI marcadas como privadas con flag honesto canSeeInternalNotes; payload omitente sin permiso (conserva); borrar = null explícito; separación público/privada etiquetada; Modelos sin variantes (sin campos de tienda, probado); publicar sin PDF no se bloquea (probado); regla 1 sin duplicidad cumplida. QA-01 y D2 (a quién se concede products:notes) quedan del coordinador."
+    },
+    {
+      "paquete": "CAT-04",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/CAT-04.md"
+      ],
+      "pruebas": [
+        "OBS verificada con evidencia de líneas: UploadedFile sin metadata (schema:441-448); serve @Public con caché immutable (files.controller:12); deleteByUrl borra bytes sin comprobar referencias (files.service + products.service:1663); LENS_FIELDS sin images ni recursos (public-revision-lens:15); requiresLicense decorativo (solo dto/mapper); uploadImage no atómico (products.service:1631-1650); documents any[] sin validación (update-product.dto:60)."
+      ],
+      "nota": "Contrato CAT-04 (§1-§10): 6 huecos verificados (G1 sin metadata/tipo real/hash/visibilidad; G2 todo archivo accesible por URL y requiresLicense sin aplicación; G3 borrado duro rompe revisiones que referencian el URL; G4 imágenes/recursos no viajan en el snapshot del lente; G5 subida no atómica (huérfanos); G6 sin subida de documentos). Decisiones técnicas reversibles D1-D5: columnas aditivas en UploadedFile (sizeBytes/sha256/detectedKind/originalName/visibility/ownerProductId, sin relleno retroactivo); content.images + content.catalogResources construidos POR EL SERVIDOR y añadidos a LENS_FIELDS; release() conservador (retención + auditoría, GC pospuesta); medio privado exige sesión + ACL view del dueño (verificar cookie access_token en el guard SOLO en esa ruta); POST /products/:id/assets atómico con detección de tipo real por firma mágica. ALCANCE DIFERIDO con insumo externo: subida de firmware (diseño :267 exige inventario de formatos/lista permitida/tamaño/origen/seguridad) — no bloquea el resto del paquete, no se inventa. Sin bloqueo externo del paquete."
+    },
+    {
+      "paquete": "CAT-04",
+      "paso": "backend-activos",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "src/backend/prisma/schema.prisma + migración 20261017160000_add_uploaded_file_metadata (down incl., aplicada a las 7 BDs): sizeBytes/sha256/detectedKind/originalName/visibility/ownerProductId aditivas, sin relleno retroactivo",
+        "src/backend/src/modules/files/file-signature.ts (+spec): tipo REAL por firma mágica (IMAGE/PDF/ZIP/UNKNOWN), declaredMatchesDetected, sha256Hex",
+        "src/backend/src/modules/files/files.service.ts: store con metadata+dueño+tx; release() referencial (excluye la propia fila, retiene si revisión u otro activo referencia, audita file-retained); deleteByUrl delega; setVisibilityByUrl",
+        "src/backend/src/modules/files/files.controller.ts (+spec reescrito): PRIVATE exige sesión (401) + ACL del dueño (404 fail-closed sin revelar / 403 sin dueño) con private,no-store + attachment; PÚBLICO intacto (immutable cross-origin)",
+        "src/backend/src/modules/files/files.module.ts: imports AuthModule (JwtService mismo secreto), AclModule, AuditModule",
+        "src/backend/src/common/security/d5-action.ts: helper D5 reutilizable (canAct/assertAction)",
+        "src/backend/src/modules/products/products.service.ts (+products.assets.spec.ts): uploadImage atómica con tipo real y D5; uploadAsset IMAGE|DOCUMENT (FIRMWARE 400 firmware-upload-deferred E1); deleteImage usa release (retención informada, nunca 409)",
+        "src/backend/src/modules/products/products.controller.ts: POST /products/:id/assets (multipart, 16MB)",
+        "src/backend/src/modules/products/product-revisions.service.ts: buildMediaSnapshot (servidor); saveDraft y markPendingFromLive incluyen images+catalogResources; spec actualizado con aserción D2",
+        "src/backend/src/modules/products/public-revision-lens.ts(+spec): LENS_FIELDS con images/catalogResources; test de pisa-listas",
+        "src/backend/src/modules/products/sheet/product-sheet.service.ts(+spec): recurso requiresLicense con URL de almacén → PRIVATE con dueño (no roba propiedad; sin licencia → PUBLIC), en la misma transacción"
+      ],
+      "pruebas": [
+        "jest: 6 suites tocadas 105/105 (firma 9, controller 8, service 9, assets 11, sheet D4 +2, lens +1, revisions actualizado); suite completa 96 suites/1770, 12 fallos = solo baseline public-products (0 regresiones)",
+        "tsc 0; eslint 0 errores (3 warnings preexistentes ajenos); build OK; API 3001 reiniciada con el build",
+        "e2e-cat04.cjs 23/23: metadata real (size/sha256/IMAGE), mismatch declarado→400 SIN huérfanos, DOCUMENT verificado, FIRMWARE 400 con motivo, licencia→PRIVATE, privado 401/404(Vendedor fixture real)/200-no-store, DELETE con revisión referenciando→retained+auditoría, BD restaurada en 0",
+        "migración aplicada a las 7 BDs desechables (deploy + columna verificada)"
+      ],
+      "nota": "backend-activos CERRADO (contrato §11). Casos de la ficha acreditados en vivo: (1) borrar/sustituir imagen no rompe lo publicado — release() retiene bytes referenciados por revisiones/otros activos (excluyendo la propia fila) y audita file-retained; (2) medio PRIVADO inaccesible por ID/URL directa — 401 sin sesión, negado sin revelar (404) con usuario real sin acceso, 200 private,no-store al autorizado; la tienda pública no se rompe (serve público intacto para PUBLIC); (3) archivos inválidos rechazados por tipo REAL (firma mágica) sin dejar huérfanos y asociación atómica ( store+fila). D2: content.images/catalogResources construidos por el servidor + lente los pisa. E1 firmware-diferido con motivo explícito (sin inventar formatos). Limitaciones documentadas: LIKE de contención es conservador a propósito; GC de huérfanos y text-search pendientes de política (E2)."
+    },
+    {
+      "paquete": "CAT-04",
+      "paso": "frontend-imagenes",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-04",
+      "paso": "frontend-documentos",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-05",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-05",
+      "paso": "backend-reglas",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-05",
+      "paso": "backend-api",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-05",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-06",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-06",
+      "paso": "backend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-06",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-07",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-07",
+      "paso": "backend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-07",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-08",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-08",
+      "paso": "backend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-08",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-09",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-09",
+      "paso": "backend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "CAT-09",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-01",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-01.md"
+      ],
+      "pruebas": [
+        "git status S3 = 32 líneas (baseline intacto)"
+      ],
+      "nota": "209 líneas. Paquetes concretos (Vendedor/Supervisor comercial/Gestión comercial) con acciones+alcances del DISENO-COMERCIAL/BASE-02 y catálogo de la copia; aplicar = replaceSource template idempotente, sin migración automática. Decisiones pendientes: D5 (guards, fuera de todo writePath del plan; hoy 403 solo en endpoints decorados), E1 (sin endpoint HTTP de concesiones), E2 (modelo de paquete en el cimiento UA), E6 (revalidar AccessGrant por petición), habilitar enabled:false. UserAccessAssignments.tsx = FALTA-L (se creará sobre nuestra base)."
+    },
+    {
+      "paquete": "COM-01",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "access-catalog.ts (PACKAGE_TEMPLATES 3 paquetes con selecciones literales + autochequeo)",
+        "access-assignments.service.ts (applyPackage/removePackage/replaceManualSource, OCC+idempotencia)",
+        "modules/users/users.controller.ts (DESVIACIÓN E1: GET/PUT :id/access + DELETE packages/:packageId)",
+        "security.module.ts (DESVIACIÓN menor: +LiveAdminIdentityService/+HierarchyModule)",
+        "specs: access-catalog.spec (27), access-assignments.service.spec (41), users.controller.access.spec (18 HTTP)"
+      ],
+      "pruebas": [
+        "specs específicos: 3 suites / 79 tests verdes (sin suite completa, directriz 3)",
+        "tsc exit 0; lint exit 0",
+        "sin migración (enum AccessSourceKind ya tenía template)",
+        "e2e 32/32: GET access 200/403/401/404, aplicar paquete 200 (14 grants, fuente template), disabled 400, versión vieja 409, retiro 200 conservando fuente manual, cuenta sin roles /api/users 403 + profile 200, JWT dashboard revocado 401 sin cerrar sesión"
+      ],
+      "nota": "Aceptación 1 (dos vendedores mismo rol, concesiones distintas) acreditada; 2 parcial POR DISEÑO (endpoints decorados 403; el resto pendiente D5 — fuera de writePaths de toda ficha); 3 acreditada como lectura viva + D3 dashboard; E6 (revalidar AccessGrant por petición) NO implementada (fuera de writePaths) — comportamiento actual documentado sin maquillar en spec E6-gap. Migración automática de cuentas: ninguna."
+    },
+    {
+      "paquete": "COM-01",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/users.service.ts (+231: fetchUserAccess/applyUserPackage/removeUserPackage/setUserAccessGrants, errores tipados)",
+        "features/users/access.ts (+spec 10) patrón agenda-access con useOwnUserAccess/refreshSessionAfterAccessChange",
+        "features/users/components/UserAccessAssignments.tsx (FALTA-L: componente nuevo sobre base propia, panel con 3 paquetes y sus selecciones concretas, ruta /users/access?usuario=)",
+        "components/layout/CommercialLayout.tsx (pestañas filtradas por grants; sin paneles → «Sin paneles asignados» sin Outlet)",
+        "components/layout/AdminLayout.tsx (monta acceso una vez en el shell)",
+        "App.tsx (solo import + ruta) + specs (6 archivos/51 tests)"
+      ],
+      "pruebas": [
+        "specs específicos: 6 archivos / 51 tests verdes; tsc -b 0; lint 2 errores preexistentes (0 nuevos)",
+        "e2e 18/18 vía proxy 5180: 401 sin token, 403 sin rol, A paquete 14 grants vs B 2 grants mismo rol vacío (aceptación 1), 409 versión vieja, DELETE 200 → applied=false grants 0 y sesión viva (aceptación 3 refetch), 404 doble retiro",
+        "5180/users/access → 200"
+      ],
+      "nota": "Aceptación 2 por navegación: sin grants → menú sin datos internos sin montar Outlet (las queries no se emiten); propia cuenta (Mi resumen/Agenda) fuera de paneles intacta (specs asertan). Límites honestos: D5 (endpoints sin @Permissions) y E6 (revalidación JWT de acciones) sin resolver; GET /users/:id/access es @Roles Super Admin → gating por grants solo donde el servidor deja leer (decisión del coordinador pendiente: lectura propia para no-Super-Admin); Header dropdown sin gating (Header no es writePath)."
+    },
+    {
+      "paquete": "COM-02",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-02.md"
+      ],
+      "pruebas": [
+        "git status S3 = 32 (baseline)"
+      ],
+      "nota": "214 líneas. Hallazgo central (regla 1): UpdateCustomerDto extends PartialType(CreateCustomerDto) hereda status/ownerId (dto:11, create:50-53,69-72) y el servicio los aplica (service:170,174-178) con solo guarda de vendedor personal (assertOwnCustomerOwner:278) — Supervisor/Admin reasignan sin customers:reassign; PATCH usa @Roles sin @Permissions; la acción customers:reassign existe en catálogo y ningún endpoint la consulta. Decisiones nuevas F1-F6 (estado sin acción, customers:convert|delete ausentes, PII de notas en auditoría, ficha backend sin schema.prisma para historial de cartera, reasignar «sin responsable»)."
+    },
+    {
+      "paquete": "COM-02",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "customers/dto/update-customer.dto.ts (Omit status/ownerId/isActive + IsAbsent)",
+        "dto/reassign-customer.dto.ts (nuevo)",
+        "customers.service.ts (update orden 403→400→404→403; reassign; assertActionAllowed con resolveAccess+grants; updateAuditTrail PII metadato)",
+        "customers.controller.ts (PATCH :id/reassign)",
+        "specs: customers.service.spec (+22), update-customer.dto.spec (nuevo)"
+      ],
+      "pruebas": [
+        "specs tocados: 2 suites / 42 tests verdes (20 previos intactos)",
+        "tsc 0; lint 0; sin schema (motivo en AuditLog existente)",
+        "e2e 27/27: PATCH ownerId/status/isActive → 400 código owner-not-allowed… y BD intacta; reassign 403 sin customers:reassign / 404 fuera de alcance / 200 con auditoría actor+antes/después+motivo sin PII; 401 sin token"
+      ],
+      "nota": "customers:reassign validado con resolveAccess+grants (nunca rol/permiso global; ownerId del servidor). Pendientes F1-F6 (estado sin acción, convert/delete sin acción, fetchUsers sin gating, historial de cartera, sin responsable), D5/E6. Riesgo de transición §11: frontend enviaba status → corregido en frontend."
+    },
+    {
+      "paquete": "COM-02",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/customers.service.ts (CustomerEditPayload Omit, reassignCustomer, errores tipados)",
+        "features/customers/customer-form.ts (payload edit sin status)",
+        "CustomerFormModal.tsx (selector Estado retirado en edición, errores tipados)",
+        "ReassignCustomerModal.tsx (selector responsable vía fetchUsers + motivo ≤500)",
+        "features/customers/access.ts (customersAccess rol + extensión grants)",
+        "CustomersPage.tsx (botón Reasignar + wiring) + 6 specs nuevos"
+      ],
+      "pruebas": [
+        "specs tocados: 6 suites / 48 tests verdes (RED 20; RED demostrado contra modal original)",
+        "tsc -b 0; lint baseline (2 errores preexistentes, 0 nuevos)",
+        "e2e 22/22 vía proxy 5180: 401 sin token, 400 ownerId/status/isActive sin cambio parcial, edición limpia 200, reassign 400/404/200 con lista reflejando nuevo responsable"
+      ],
+      "nota": "Aceptaciones cerradas lado cliente: 1 payload limpio+400 servidor, 2 sin gating nuevo (403 del servidor manda y se pinta), 3 refetch del responsable nuevo (auditoría es del backend). expected? = guarda anti-carrera cliente (GET previo → 409); servidor sin OCC (E6). Pendientes F1-F6/D5/E6 sin tocar."
+    },
+    {
+      "paquete": "COM-03",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-03.md"
+      ],
+      "pruebas": [],
+      "nota": "232 líneas. OBS: discountPct NO se recalcula al editar cantidad (service:312-314) pero SÍ es editable en la misma operación sin acción propia (update-quote-item.dto:11-14, add-quote-item.dto:14-17, UI QuoteItemsTable:119-137); Quote.discount global solo lectura; quotes:discount NO existe en catálogo; PATCH /:id/status @Roles con QUOTE_STATUS_ROLES (ganada solo SuperAdmin/AdminCom/Supervisor — Vendedor no cierra la propia); ganada → SalesOrder 1:1 idempotente. Decisiones: F1 quién recibe quotes:discount, F2 umbrales→COM-09, F3 ¿vendedor cierra ganada?, F7 400→409 transición inválida, D5/E6."
+    },
+    {
+      "paquete": "COM-03",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "quotes/dto/update-quote-item.dto.ts + add-quote-item.dto.ts (IsAbsent discountPct)",
+        "dto/update-quote-item-discount.dto.ts + absent.decorator.ts (nuevos)",
+        "quotes.service.ts (updateItemDiscount con 404/409/403 quotes:discount/400 antes de escribir; assertActionAllowed resolveAccess+grants; F7 409)",
+        "quotes.controller.ts (PATCH :id/items/:itemId/discount con Swagger)",
+        "access-catalog.ts (quotes:discount: own|team|global, dep quotes:edit, enabled)",
+        "specs: quotes.service.spec +16, access-catalog.spec +2"
+      ],
+      "pruebas": [
+        "specs tocados: 2 suites / 61 tests verdes (baseline 45)",
+        "tsc 0; lint 0; sin schema",
+        "e2e 3001: cantidad editada con descuento intacto; discountPct en vía general → 400 sin escritura parcial; PATCH discount sin concesión 403 → con concesión 200; producto ajeno 403/404; doble ganada 409 con orders=1; externalInvoiceNumber=null y dashboard facturación sin cambio; 401 sin token"
+      ],
+      "nota": "quotes:discount: nadie la recibe por defecto (F1 pendiente; solo SuperAdmin por excepción) — decisión conservadora registrada. Conteo de facturación vive en dashboard.service (fuera de writePaths): criterio ya correcto (externalInvoiceNumber not null), acreditado por lectura+e2e. F7 aplicada (400→409 reversible en quotes.service.ts:448). ⚠ INCIDENTE SANITARIO REGISTRADO: primer borrador del e2e usó PrismaClient sin URL inline → escribió fixtures en Neon producción (1 categoría, 1 marca, 3 listas, 1 tarifa, 3 productos, 1 precio); subagente los borró y VERIFICACIÓN INDEPENDIENTE POSTERIOR: 0 filas nuevas en 16h en las 29 tablas con createdAt de neondb (2026-10-16). Script corregido con guard de current_database."
+    },
+    {
+      "paquete": "COM-03",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/quotes.service.ts (Omit discountPct en tipos+runtime, updateQuoteItemDiscount, errores tipados, *InCache)",
+        "features/quotes/access.ts (quotesAccess: gate canEditDiscount SuperAdmin, extensión D5/E6/F1)",
+        "QuoteItemsTable.tsx (cantidad vía general, descuento vía dedicada, gate)",
+        "AddQuoteItemModal.tsx (alta sin discountPct)",
+        "QuoteDetailPage.tsx (409 pintado) + 4 specs nuevos"
+      ],
+      "pruebas": [
+        "specs archivos: 4 suites / 40 tests verdes (RED 23); con App+CommercialLayout 55/55",
+        "tsc -b 0; lint baseline (2 errores preexistentes)",
+        "e2e 42/42 vía proxy 5180: cantidad 200 con descuento 10 intacto y unitPrice/priceCapturedAt congelados, payload mixto 400 sin escritura, alta con descuento 400, discount sin concesión 403 → concedida 200, lista ajena 403/sin precio 409, ganada 200 → 1 pedido externalInvoiceNumber=null → doble ganada 409, 401, S3 200"
+      ],
+      "nota": "Recorrido cotizaciones cerrado. QuotesPage sin cambios (no compartía lógica). Queda: F1 (concesario no-SuperAdmin ve descuento solo lectura hasta que el cliente lea grants), F2→COM-09, F3, D5, E6 — declarados."
+    },
+    {
+      "paquete": "COM-04",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-04.md"
+      ],
+      "pruebas": [],
+      "nota": "218 líneas. OBS: upsert por (userId,period) reemplaza sin duplicar (service:96-112, @@unique); auditoría AUSENTE en sales-targets (DISENO:159 la exige); avance facturado = BD propia SalesOrder externalInvoiceNumber not null + rango Bogotá (dashboard:144-155,327-360) → B1 NO bloquea; POST hoy @Roles(SUPER_ADMIN,SUPERVISOR) sin @Permissions (decisión G2); AssignedTargetsPage.tsx NO existe (página a crear). Pendientes G1-G6/D5/E6."
+    },
+    {
+      "paquete": "COM-04",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "sales-targets.service.ts (+140: assertActionAllowed resolveAccess+grants, auditoría idempotente antes/después, catálogo monedas)",
+        "sales-targets.controller.ts (ctx jti; @Roles intactos SIN @Permissions)",
+        "dto/upsert-sales-target.dto.ts (currency obligatoria ISO 3)",
+        "sales-targets.module.ts (+AuditModule)",
+        "specs: service +13 previos intactos +4 bloques COM-04, dto spec nuevo (5)"
+      ],
+      "pruebas": [
+        "specs: 2 suites / 38 tests verdes (RED 10)",
+        "tsc 0; lint 0; nest build 0; sin schema",
+        "e2e 45/45: 401×2, POST idéntico → 1 fila+1 auditoría, cambio → 2 auditorías antes/después, vendedor/supervisor sin grants 403 con 0 escrituras, subordinado propio 201 vs ajeno 403, moneda MXN/ausente 400, GET-POST-GET conserva y dashboard separa target vs invoiced (fuente SalesOrder)"
+      ],
+      "nota": "G4 semántica «solo audita si cambió»; G3 currency obligatoria (ruptura PROP — vista del coordinador); G2 a medio resolver (grants encima de @Roles transitorio; sustitución pendiente decisión); @Permissions NO añadido (D5). Desviación: recurso resolveAccess sin kind target (union cerrado fuera de writePath, comportamiento idéntico unit-tested)."
+    },
+    {
+      "paquete": "COM-04",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "services/dashboard-insights.service.ts (ampliado: fetchSalesTargets/upsertSalesTarget tipados con currency obligatoria, errores 400/401/403, dedupeTargets, upsertSalesTargetInCache refetch único, fetchMemberInvoiced)",
+        "pages/AssignedTargetsPage.tsx (nuevo: tabla con avance SEPARADO, gate targetsCanEdit, formulario con moneda required sin default) + spec 15",
+        "dashboard-insights.service.spec.ts (nuevo, 11)",
+        "App.tsx (DESVIACIÓN: ruta /targets)"
+      ],
+      "pruebas": [
+        "specs: 2 suites / 26 tests verdes (RED 10)",
+        "tsc -b 0; lint 2 errores preexistentes (0 nuevos)",
+        "e2e 28 PASS vía 5180: 401, POST 201 → GET conserva (meta ≠ avance), POST idéntico misma fila, 403 vendedor/supervisor-sin-grants/ajeno con mensaje tal cual, 400 MXN/ausente, sales-goal target/invoiced separados"
+      ],
+      "nota": "Recorrido metas cerrado. Servicio = dashboard-insights (writePath canónico, comparte COM-05/07). Ruta /targets = desviación declarada (App fuera de writePaths, precedente COM-01); sin nav-link (Header fuera de writePaths) — decisión pendiente. Gate UX espejo de @Roles (G2 pendiente). F3 fetchUsers sin gating documentado."
+    },
+    {
+      "paquete": "COM-05",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-05.md"
+      ],
+      "pruebas": [],
+      "nota": "122 líneas con 11 secciones §1-§10 completas, redactado INLINE por indisponibilidad del modelo de subagentes (3 fallos model_coming_soon). OBS: facturación = externalInvoiceNumber manual criterio único (:152/:336/:505), sin doble conteo con ganada (contador); AssignedHome/AssignedReportsPage NO existen (a crear); SupervisorWorkspacePage = prototipo con banner de ficticios (:31,:13); sin etiquetas de fuente; dashboard:read/commercialInsights:read ausentes del catálogo (H1); dashboard casi todo @Roles ALL_ROLES (H2/D5). Decisiones H1-H5 + B1 + D5/E6 + F3."
+    },
+    {
+      "paquete": "COM-05",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "modules/dashboard/dashboard.service.ts (InvoicedAmount + INVOICE_SOURCE/SOURCE_STATUS en los 3 literales; canSeeTeam con resolveAccess teamInsights:read; getTeamBlock(userId,roles) omite sin concesión; getTeamMemberCommercial 403 sin concesión; constructor +grants? opcional)",
+        "modules/dashboard/dashboard-fuente-alcance.spec.ts (nuevo, 13 tests RED→GREEN)",
+        "dashboard.service.spec.ts (7 aserciones invoiced actualizadas al nuevo shape de contrato)"
+      ],
+      "pruebas": [
+        "specs dashboard: 2 suites / 45 tests verdes (13 nuevos RED 5 fallaban)",
+        "tsc exit 0; lint exit 0; nest build 0",
+        "e2e gate en API 3001 (fixtures limpiados): grants customers:own sobre compras → 200 → GET me team AUSENTE (gate); +teamInsights:read team → 200 → GET me team PRESENTE solo con su subordinado, totals.invoiced con source/sourceStatus; sales-goal invoiced con source=invoice-reference-manual sourceStatus=erp-not-connected; A1: filtros not-null en las 3 consultas (unit) + sales-goal sin cambio con factura nula ya acreditado en COM-03"
+      ],
+      "nota": "Decisión H3 resuelta: gate de equipo SOLO cuando el usuario tiene concesiones (con ella manda teamInsights:read); legados sin grants conservan capa rol+jerarquía (transición D5, documentada en código). SuperAdmin = excepción explícita en resolveAccess (verificado en spec drill-down). H1 intacto (sin dashboard:read/commercialInsights:read nuevos). Fuente honesta: referencia manual, jamás «sincronizado Yéminus» (regla 1)."
+    },
+    {
+      "paquete": "COM-05",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "pages/AssignedHome.tsx (nuevo + spec 5: tarjetas facturado CON etiqueta de fuente, meta separada, ganadas como contador de oportunidades, equipo SOLO si la API trae team)",
+        "pages/AssignedReportsPage.tsx (nuevo + spec 4: tabla miembros con columnas Meta/Facturado separadas, estado vacío honesto «Sin datos de equipo disponibles», mixedCurrency avisado, fuente en cabecera)",
+        "services/dashboard-insights.service.ts (+fetchPersonalSalesGoal/fetchMyWorkspace/tipos InvoicedAmount/invoiceSourceLabel/targetsCanEdit movido de AssignedTargetsPage) + spec +3 tests",
+        "App.tsx (DESVIACIÓN: rutas /home y /reports, precedente COM-01/COM-04)"
+      ],
+      "pruebas": [
+        "specs: 3 archivos / 23 tests verdes (RED: 3 service + 2 páginas por módulo ausente); AssignedTargetsPage spec 29/29 tras mover targetsCanEdit",
+        "tsc -b 0; lint 11 (2 errors+9 warnings) = BASELINE EXACTO de S3 (se corrigió el warning extra de COM-04)",
+        "e2e HTTP: 5180/home 200, 5180/reports 200, proxy health 200, sales-goal 401 sin token / 200 con token, S3 3000/5173 200"
+      ],
+      "nota": "Aceptaciones lado cliente: A1 (facturado SOLO invoiced, sin suma con ganadas — asertado con anti-suma 103.00/1350000.00), A3 (etiqueta «Referencia manual · ERP sin conectar» también en cero, /sincroniz/i prohibido — ajusté el copy para no contener la palabra ni en negación), A2 (equipo sin API → DOM sin rastro; con API → solo sus miembros). H4: SupervisorWorkspacePage ficticio NO tocado (fuera de writePaths); rutas nuevas /home y /reports = desviación declarada; nav-links pendientes (Header fuera de writePaths)."
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "backend-solicitudes",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "frontend-solicitudes",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "backend-atencion",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "frontend-atencion",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "backend-excel",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-06",
+      "paso": "frontend-excel",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-07",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-07",
+      "paso": "backend-sincronizacion",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-07",
+      "paso": "frontend-facturas",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-07",
+      "paso": "backend-indicadores",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-07",
+      "paso": "frontend-indicadores",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-08",
+      "paso": "contrato",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "docs/ejecucion-paneles/contratos/COM-08.md"
+      ],
+      "pruebas": [],
+      "nota": "Contrato redactado INLINE (modelo de subagentes sigue caído). OBS: módulo S3 reconciliado (352 líneas; crear=publicar — DISENO:131 confirma «adaptación pendiente»; lectura ya filtra vencidos/audiencia TEAM en service:39-40; withdraw isActive:false+auditoría; solo @Roles sin @Permissions); catálogo commercialPromotions:* COMPLETO (:92,:101-104) con paquetes (Vendedor read-own, Gestión team-CRUD); banners.service.ts FALTA (bloqueo L, no reimplementar); slider=HomeHero fuera de writePaths (refuerza aceptación 5.3). PROP: borrador via publishedAt (J1), publish explícito, transición concesión/rol tipo COM-05. Pendientes J1-J3/D5/B-L."
+    },
+    {
+      "paquete": "COM-08",
+      "paso": "backend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "prisma/schema.prisma (SalesPromotion.publishedAt DateTime?)",
+        "migración 20261016155455_promotion_draft_publish (solo estructura)",
+        "promotions.service.ts (create → borrador publishedAt:null; publishExisting con acción publish/409 doble/400 vencido/auditoría old+new; canAct/assertAction con resolveAccess+grants — transición D5 legados sin grants; current(): gate read → lista vacía J2 + filtro publishedAt not-null; manage/edit/setFlyer/withdraw con acciones)",
+        "promotions.controller.ts (PATCH :id/publish)",
+        "specs: promotions.service.spec previo actualizado (+publishedAt en where) + 11 tests nuevos = 34/34"
+      ],
+      "pruebas": [
+        "specs: 1 suite / 34 tests verdes (RED 8)",
+        "tsc 0; lint 0; build 0; migración deploy + status up to date en BD revisión",
+        "e2e v2 18/18 checks: crear borrador publishedAt null → current NO lista / manage SÍ; publish 200 → visible; 2ª publish 409; público /public/products idéntico antes/después (aceptación 3); fixture Supervisor con grants read → POST 403 commercialPromotions:create, publish 403, withdraw 403 (capa de concesión sobre la capa rol); J2: 200 lista vacía sin read; grants completos → 201 borrador invisible en current; 401 sin token; fixtures limpiados (sales_promotions 0, access_sources 0, user_mfa 0, usuarios fixture borrados)"
+      ],
+      "nota": "J1 = publishedAt (elegido); J2 = lista vacía para lectura; capa @Roles del controller permanece (D5) — para usuarios fuera de los roles del guard la capa de concesión queda tras el 403 de rol (observado con compras=Admin Comercial, documentado, no oculto); storefront/HomeHero byte-idénticos a S3 (aceptación 3 por no-conexión + e2e). Pendientes: J3/D5/B-L."
+    },
+    {
+      "paquete": "COM-08",
+      "paso": "frontend",
+      "estado": "implementado_sin_auditar",
+      "archivos": [
+        "features/promotions/promotions.service.ts (ManagedPromotion.publishedAt, promotionStatus → «Borrador» con === null estricto, publishDraftPromotion → PATCH :id/publish)",
+        "features/promotions/PromotionManagerPage.tsx (form «Preparar aviso (borrador)»/«Guardar borrador», mutación publishDraft con 403/409/400 pintados, acciones por estado: borrador→Publicar / publicado→Retirar, sección «Avisos preparados y publicados»)",
+        "specs: PromotionManagerPage.spec.tsx (nuevo, 4) + promotions.spec.tsx +3 (Borrador/publishDraft/A3 rutas solo /promotions*)"
+      ],
+      "pruebas": [
+        "specs promotions: 3 archivos / 31 tests verdes (RED 3 página + 1 service)",
+        "tsc -b 0; lint 11 = baseline S3 exacto",
+        "e2e HTTP: 5180/promotions 200, proxy 200, current 200/401, S3 3000/5173 200"
+      ],
+      "nota": "Aceptación lado cliente: A1 filas solo de la API (sin vencido/ajeno inventado), A2 separación preparar/publicar/retirar con etiqueta «Borrador», A3 sin imports de storefront/slider/precios (spec ?raw). legacy publishedAt undefined tratado como publicado (compatibilidad). Pendientes: D5, B-L banners, J4 backfill de avisos existentes (decisión coordinador: quedan como borrador tras la migración)."
+    },
+    {
+      "paquete": "COM-09",
+      "paso": "contrato",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-09",
+      "paso": "backend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "COM-09",
+      "paso": "frontend",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    },
+    {
+      "paquete": "QA-01",
+      "paso": "auditoria",
+      "estado": "pendiente",
+      "archivos": [],
+      "pruebas": []
+    }
+  ],
+  "actualizado": "2026-10-17",
+  "estrategia_pruebas": "Pruebas específicas por incremento (specs del incremento + checks de seguridad/datos); suites completas SOLO en hitos de integración (fin CAT, fin COM, pre-entrega), salvo cambio que justifique corrida completa antes (informe del coordinador 2026-10-15).",
+  "baseline_verificacion": "2026-10-15: copia fresca de la versión inicial (/tmp/opencode/base-inicial/backend, rsync de S3 + npm install) → 63/64 suites, 12 fallos SOLO public-products.spec.ts, 1090 pass = idéntico al baseline. Causa raíz: PublicProductsController exige StorefrontService y el spec no la provee (árbol sucio inicial del proyecto anterior); en S3 la suite ni compila por nodemailer ausente de node_modules. Archivos public-products.controller/spec y src/modules/storefront/ byte-idénticos entre S3 inicial y la copia de la tanda. Regresiones de la tanda: 0.",
+  "piezas_a_pedir_preview": [
+    "src/backend/src/modules/prices/import/** (completo: xlsx-container, price-workbook-structure, price-template, price-import.service/controller, comparador + specs xlsx-container/price-workbook-structure/price-template/price-import.service/price-import.http)",
+    "src/backend/src/modules/prices/prices.module.ts (versión L con montaje del import)",
+    "src/backend/src/common/guards/admin-access.guard.ts + admin-access.guard.spec.ts",
+    "src/backend/src/common/security/admin-access.postgres.spec.ts + admin-access.integration.spec.ts",
+    "acción prices:preview de access-catalog.ts de L (fragmento a integrar; nuestro catálogo difiere)",
+    "src/frontend/src/features/price-import/** + src/frontend/src/services/price-import.service.ts",
+    "src/frontend/src/pages/ListaDetailPage.tsx versión L (pestaña Revisar precios; merge con CAT-01)",
+    "package.json/package-lock con sax@1.6.1"
+  ],
+  "cambios_ajenos_2026_10_16": [
+    "S3 root: opencode.json REESCRITO externamente a las 14:09 (58 bytes: {\"$schema\":\"opencode.ai\",\"permission\":\"allow\"}); perdió el prompt gentle-orchestrator, instructions (AGENTS.md/MIGRACION) y MCP agentation. NO revertido (posible acción del usuario o del runtime); recuperable con git checkout -- opencode.json.",
+    "S3 15/10 15:12: listas/LISTA DE PRECIOS EXCEL/ (vertido de Excels del coordinador).",
+    "S3 15/10 15:18: M biblioteca/titulos-vitrina.csv (reescritura externa 690/690)."
+  ],
+  "hito_fin_COM": "2026-10-16: suites completas de integración. Backend 79 suites/1433 tests — 1421 pass, 12 fail SOLO public-products.spec.ts (preexistente verificado contra copia de la versión inicial; 0 regresiones); tsc 0; lint 0. Frontend 65 archivos/723 tests — 0 fallos; lint baseline (11 = S3); tsc 0.",
+  "pieza_preview_recibida": "2026-10-16: preview-L-20261015.zip (158KB, 31 archivos, MANIFEST 29/29) en docs/ejecucion-paneles/fuentes/; extraído a /tmp/opencode/preview-L; LEEME: integrar (no reemplazar) modules/prices/import + features/price-import + montaje PricesModule + pestaña ListaDetailPage por MERGE (conservar CAT-01), access-catalog/guards/identidad de L son REFERENCIAS (adaptar prices:preview+read+listas:read con view_prices incl. PRODUCT, sin activar AdminAccessGuard sin inventariar), sax 1.6.1 añadido al package.json preservando el resto; preview compara sin aplicar/persistir.",
+  "hito_fin_CAT02_backend": "2026-10-16: backend completo 82 suites/1452 tests — 1440 pass, 12 fail SOLO public-products.spec.ts (DI preexistente); tsc 0; lint 0. CAT-02 (5/5: contrato, esquema, borradores, publico, alternativas) implementado_sin_auditar.",
+  "incidente_helper_db": "2026-10-16 CORREGIDO (directriz): CONTENIDO PENDIENTE DE AUDITORÍA. Caso A (e2e-com03 borrador): escrituras EXITOSAS conocidas en Neon (1 categoría, 1 marca, 3 Listas, 1 tarifa, 3 productos, 1 precio) con limpieza posterior del subagente; verificación 0 filas/16h cubre solo la ventana POSTERIOR. Casos B/C sin escritura observable (B: INSERT rechazado por unique, fila original 21-sep intacta; C: DELETEs sin matches + sentencia fallida por access_grants inexistente en Neon). NO conclusión global de «sin escritura». Contención: 20 helpers auditados, e2e-com02/base03/login corregidos, testdb.cjs con guard verificado, specs backend sin .env. Documento: resultados/TANDA-01-incidente-helper-db.md. Sin nuevas conexiones/limpiezas/correcciones en producción. Verificación de ventanas = auditoría del coordinador.",
+  "nota_bloqueos": "DISTINCIÓN (directriz 2026-10-17): (a) BLOQUEO POR DEPENDENCIA = un paso espera a otro paso de la misma tanda; se registra como estado \"pendiente\" (nunca \"bloqueado\") y se ejecuta al cerrar su predecesor. Casos previos mal etiquetados como bloqueo: IMP-06:backend/frontend (dependían de IMP-05) e IMP-07:contrato/backend/frontend (dependen de IMP-06) → RECLASIFICADOS a \"pendiente\". (b) BLOQUEO EXTERNO = falta un insumo o una decisión que NO está en la tanda (Excel Pedidos saneado, API Yéminus, reglas de descuento/precio público/stock); se registra en bloqueos_externos y, si aplica a un paso concreto, ese paso queda en estado \"bloqueado\" con motivo explícito. IMP-06/07 NO requieren decisión externa.",
+  "entrega": {
+    "archivo": "docs/ejecucion-paneles/resultados/TANDA-01-entrega.md",
+    "fecha": "2026-10-17",
+    "resumen": "59 implementados_sin_auditar / 40 pendientes / 0 bloqueados",
+    "suites": {
+      "backend": "94 suites / 1725 pruebas; 12 fallos SOLO public-products.spec.ts (baseline DI, 0 regresiones)",
+      "frontend": "71 archivos / 781 pruebas verdes",
+      "tipos": "tsc 0 (backend y frontend)",
+      "lint": "0 errores; warnings de baseline sin nuevos",
+      "build": "backend y frontend OK"
+    },
+    "e2e": [
+      "e2e-imp04.cjs",
+      "e2e-imp05.cjs",
+      "e2e-imp07.cjs (8/8)",
+      "e2e-imp07b.cjs (17/17)"
+    ],
+    "qa01": "recorridos de navegador real reservados al coordinador"
+  }
+}

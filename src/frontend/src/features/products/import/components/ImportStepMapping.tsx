@@ -4,7 +4,7 @@ import type { SystemField } from '../types/import.types';
 import MappingLine, { SYSTEM_FIELD_LABELS } from './MappingLine';
 import MappingPresetManager from './MappingPresetManager';
 
-const REQUIRED_FIELDS: SystemField[] = ['sku', 'name'];
+const REQUIRED_FIELDS: SystemField[] = ['sku'];
 
 /** Campos que pueden completarse con un valor fijo si el archivo no trae columna. */
 const FIXED_VALUE_FIELDS: SystemField[] = ['brand', 'category', 'description', 'technicalSpecs'];
@@ -113,6 +113,10 @@ export default function ImportStepMapping() {
           <p className="mt-1 text-xs text-gray-400">
             Si el archivo no contiene columnas de Categoría o Marca, asígnales un valor fijo abajo
             (se aplicará a todos los productos y se creará si no existe).
+          </p>
+          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Solo el SKU es obligatorio. Si una fila no trae nombre, descripción ni otros datos de identidad,
+            se creará como borrador inactivo y no visible para completarla después.
           </p>
         </div>
         <MappingPresetManager />

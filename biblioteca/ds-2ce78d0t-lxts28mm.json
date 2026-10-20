@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE78D0T-LXTS(2.8mm)",
+  "nombre": {
+    "valor": "Cámara Turret Sirena y Audio Bidireccional 2 MP",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "CÁMARA TURRET SIRENA Y AUDIO BIDIRECCIONAL 2 MP, RESOLUCIÓN DE 1920 × 1080 LENTE FOCAL FIJA DE 2,8 MM Y 3,6 MM",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cámara Turret Sirena y Audio Bidireccional 2 MP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

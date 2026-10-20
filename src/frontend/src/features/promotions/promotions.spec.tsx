@@ -47,6 +47,12 @@ describe('promotion announcements', () => {
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
   })
+  it.each(['Vendedor', 'Admin Comercial', 'Operador', 'Consulta'])('%s no tiene controles de publicación', role => {
+    expect(canPublishPromotions([role])).toBe(false)
+  })
+  it.each(['Supervisor', 'Super Admin'])('%s puede publicar avisos', role => {
+    expect(canPublishPromotions([role])).toBe(true)
+  })
   it('distingue programada, vigente, vencida y retirada en los límites exactos', () => {
     expect(promotionStatus(promotion, Date.parse(promotion.startsAt) - 1)).toBe('Programada')
     expect(promotionStatus(promotion, Date.parse(promotion.startsAt))).toBe('Vigente')

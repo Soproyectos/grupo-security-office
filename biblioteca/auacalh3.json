@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACALH3",
+  "nombre": {
+    "valor": "Control Remoto Accessmatic de 3 Botones con Clip para el Visor",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CONTROL REMOTO ACCESSMATIC DE 3 BOTONES CON CLIP PARA EL VISOR, FRECUENCIA 433MHZ. ORIGINAL PARA MOTOR SHARK1000.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Control Remoto Accessmatic 3 Botones Clip Visor",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

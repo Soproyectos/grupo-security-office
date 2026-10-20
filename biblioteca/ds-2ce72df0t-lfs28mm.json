@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE72DF0T-LFS(2.8mm)",
+  "nombre": {
+    "valor": "Luz Híbrida Inteligente de 2 MP con Cámara de Torreta Fija ColorVu",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Luz híbrida inteligente de 2 MP con cámara de torreta fija ColorVu IP67 40 m",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret 2MP ColorVu Luz Híbrida Inteligente",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

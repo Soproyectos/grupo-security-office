@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACAC24NE",
+  "nombre": {
+    "valor": "Tarjeta Controladora Accessmatic ACCESSCOMAND24 Ne para Motores",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "TARJETA CONTROLADORA ACCESSMATIC ACCESSCOMAND24 NE PARA MOTORES BATIENTES EAGLE Y FALCON. ALIMENTACIÓN 110V, SALIDA BRAZOS 24V, CARGADOR DE BATERÍAS INCORPORADO. DISPLAY DIGITAL.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Tarjeta Controladora ACCESSCOMAND24 Eagle/Falcon",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

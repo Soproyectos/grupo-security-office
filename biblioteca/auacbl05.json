@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACBL05",
+  "nombre": {
+    "valor": "Caja de Seguridad Accessmatic para Desbloqueo de Motores Centrales",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAJA DE SEGURIDAD ACCESSMATIC PARA DESBLOQUEO DE MOTORES CENTRALES COMO EL ARMADILLO AR161, 261 Y 282. INCLUYE BOTONERA INTERNA PARA APERTURA Y CIERRE.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Caja de Seguridad Desbloqueo Motores Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

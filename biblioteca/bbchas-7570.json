@@ -1,0 +1,23 @@
+{
+  "referencia": "BBCHAS-7570",
+  "nombre": {
+    "valor": "Chasis Externo para Banco de Baterias UPS 10 - 15 - 20 KVA UL",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Kits de Autonomía para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 13. KIT DE AUTONOMÍA PARA UPS TRIFÁSICA POWEST UL de la lista"
+  },
+  "descripcion": {
+    "valor": "CHASIS EXTERNO PARA BANCO DE BATERIAS UPS 10 - 15 - 20 KVA UL",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Chasis Externo Baterías UPS 10/15/20KVA",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE72KF3TP-DLS(180°)",
+  "nombre": {
+    "valor": "[colorvu] Turret TurboHD 3K (5 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "[ColorVu] Turret TURBOHD 3K (5 Megapixel) / Micrófono Integrado / Lente 2.8 mm / Imagen a Color 24/7 / 20 mts Luz Blanca / Exterior IP67 / dWDR / 4 Tecnologías",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "[colorvu] Turret TurboHD 3K (5 Megapixel",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACBOOM06T",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "ASTA TELESCOPICA PARA TALANQUERA ACCESSMATIC. AJUSTABLE DE 3 A 6 METROS.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Asta Telescópica Ajustable 3-6m Talanquera",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

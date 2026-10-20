@@ -1,0 +1,37 @@
+{
+  "referencia": "SDCS3/64GB",
+  "nombre": {
+    "valor": "MicroSD Kingston Canvas Select Plus 64GB Clase 10 UHS-I",
+    "origen": "web",
+    "fuente": "https://www.bhphotovideo.com/c/search?q=SDCS3&sts=ma"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "Kingston",
+    "origen": "web",
+    "fuente": "https://www.bhphotovideo.com/c/search?q=SDCS3&sts=ma"
+  },
+  "descripcion": {
+    "valor": "Memoria Micro SD Canvas Select Plus 64 Gb Clase 10",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://media.kingston.com/images/products/SDCS3_1TB_tn.png",
+    "origen": "web",
+    "fuente": "https://www.kingston.com/en/memory-cards/canvas-select-plus-microsd-card-sdcs3"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://www.bhphotovideo.com/c/search?q=SDCS3&sts=ma",
+    "https://www.kingston.com/en/memory-cards/canvas-select-plus-microsd-card-sdcs3"
+  ],
+  "nombre_vitrina": {
+    "valor": "MicroSD Kingston Canvas Select Plus 64GB",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

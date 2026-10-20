@@ -1,0 +1,19 @@
+{
+  "referencia": "AUNA3-18-1",
+  "categoria": {
+    "valor": "Herrajes para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion KIT DE HERRAJES PARA 100KG & 3,66M X 2,44M de la lista"
+  },
+  "descripcion": {
+    "valor": "BISAGRA NUMERO UNO (1) EN ACERO GALVANIZADO EN CALIBRE 18. FABRICADA EN USA .",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Bisagra Numero Uno en Acero Galvanizado Calibre 18",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, con palabras de la propia descripcion"
+  }
+}

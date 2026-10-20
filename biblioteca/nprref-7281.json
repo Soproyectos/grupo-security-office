@@ -1,0 +1,23 @@
+{
+  "referencia": "NPRREF-7281",
+  "nombre": {
+    "valor": "Protector Voltaje 120V Refrimatic",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "PROTECTOR VOLTAJE 120V REF. REFRIMATIC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Protector Voltaje 120V Refrimatic",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

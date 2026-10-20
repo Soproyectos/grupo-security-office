@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import logging
 import re
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import pandas as pd
 import requests
@@ -63,18 +64,35 @@ SKU_COLUMN_CANDIDATES = [
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
 
-# Categorías conocidas de Hikvision (optimizadas para no navegar todas)
-HIKVISION_CATEGORIES = [
-    # Turbo HD Cameras (prioridad alta)
-    "https://www.hikvision.com/es-co/products/Turbo-HD-Products/Turbo-HD-Cameras/ColorVu-Series/",
-    "https://www.hikvision.com/es-co/products/Turbo-HD-Products/Turbo-HD-Cameras/Pro--Series/",
-    "https://www.hikvision.com/es-co/products/Turbo-HD-Products/Turbo-HD-Cameras/Value-Series/",
-    "https://www.hikvision.com/es-co/products/Turbo-HD-Products/Turbo-HD-Cameras/Ultra-Series/",
-    "https://www.hikvision.com/es-co/products/Turbo-HD-Products/Turbo-HD-Cameras/IOT-Series/",
-    # IP Network Cameras
-    "https://www.hikvision.com/es-co/products/IP-Products/Network-Cameras/DeepinView-Series/",
-    "https://www.hikvision.com/es-co/products/IP-Products/Network-Cameras/Pro-Series/",
-]
+# Discovery: the tool navigates the public category pages like a visitor
+# (family -> sub-category -> series -> paginated product list). It never reads
+# sitemap.xml and never tries to get past the site's anti-bot challenge.
+SITE_ROOT = "https://www.hikvision.com"
+DEFAULT_FAMILIES = ["Turbo-HD-Products", "IP-Products", "Accessories"]
+LOCALES_IN_ORDER = ["es-co", "en"]  # es-co first, /en/ as fallback
+MAX_LISTING_PAGES_PER_CRAWL = 250   # safety cap on visited listing pages per locale
+MAX_PAGINATION_CLICKS = 250         # safety cap on "next page" clicks per listing (12 items/page)
+DISCOVERY_INDEX_FILE = "discovery_index.json"
+
+# Text found on a page served instead of content when a bot challenge kicks in.
+CHALLENGE_MARKERS = (
+    "just a moment", "checking your browser", "verify you are human",
+    "captcha", "access denied", "attention required",
+    "enable javascript and cookies",
+)
+CHALLENGE_MAX_HTML_LEN = 60000  # real product/listing pages are hundreds of KB
+
+# Product media lives on the assets CDN; everything served from the main site
+# under /content/dam or /etc/clientlibs is page chrome (icons, banners, logos).
+MEDIA_HOST = "assets.hikvision.com"
+MIN_IMAGE_BYTES = 2000
+JUNK_IMAGE_NAME_RE = re.compile(r"(logo|icon|placeholder|no[-_ ]?image|sprite|banner|loading)", re.I)
+THUMB_SUFFIX_RE = re.compile(r"\.thumb\.(\d+)\.(\d+)(\.[A-Za-z0-9]+)$", re.I)
+MODULE_ID_RE = re.compile(r"/(m\d{6,})/")
+CONTENT_TYPE_EXT = {
+    "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg",
+    "image/webp": ".webp", "image/gif": ".gif",
+}
 
 
 # --- Logging ---
@@ -257,6 +275,17 @@ def initialize_browser(logger: logging.Logger) -> Any:
         raise RuntimeError(f"Error inicializando Playwright: {e}")
 
 
+def is_challenge_page(html: str) -> bool:
+    """True when the response looks like an anti-bot challenge instead of content.
+
+    The tool never tries to solve or bypass a challenge: such pages are skipped.
+    """
+    if not html or len(html) > CHALLENGE_MAX_HTML_LEN:
+        return False
+    lowered = html.lower()
+    return any(marker in lowered for marker in CHALLENGE_MARKERS)
+
+
 def fetch_page_with_playwright(url: str, context: Any, logger: logging.Logger) -> Optional[BeautifulSoup]:
     try:
         page = context.new_page()
@@ -264,30 +293,274 @@ def fetch_page_with_playwright(url: str, context: Any, logger: logging.Logger) -
         time.sleep(3)
         html = page.content()
         page.close()
+        if is_challenge_page(html):
+            logger.warning(f"Challenge page instead of content, skipped: {url}")
+            return None
         return BeautifulSoup(html, "html.parser")
     except Exception as e:
         logger.debug(f"Error cargando {url} con Playwright: {e}")
         return None
 
 
-def extract_product_urls_from_category(soup: BeautifulSoup) -> List[str]:
-    product_urls = []
-    seen = set()
+# --- Catalog discovery (public category pages, like a visitor) ---
+
+def model_key(raw: Any) -> str:
+    """Comparable key for a model: upper case, lens suffix like (2.8MM) removed,
+    only letters and digits kept. Keeps meaningful suffixes such as (C)."""
+    s = normalize_sku(raw)
+    s = re.sub(r"\(\s*\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?\s*MM\s*\)\s*$", "", s)
+    return re.sub(r"[^A-Z0-9]", "", s)
+
+
+def model_base_key(raw: Any) -> str:
+    """Like model_key but drops every parenthetical (lens, variant flags)."""
+    s = re.sub(r"\([^)]*\)", "", normalize_sku(raw))
+    return re.sub(r"[^A-Z0-9]", "", s)
+
+
+def _catalog_path_segments(url: str) -> List[str]:
+    return [seg for seg in urlparse(url).path.split("/") if seg]
+
+
+def _clean_catalog_url(href: str, base: str) -> str:
+    full = urljoin(base, href)
+    parsed = urlparse(full)
+    path = parsed.path if parsed.path.endswith("/") else parsed.path + "/"
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+
+def parse_listing_page(soup: BeautifulSoup, page_url: str, locale: str,
+                       family: str) -> "tuple[Dict[str, str], List[str]]":
+    """Return (products, sub_listings).
+
+    products maps a product URL to the model text shown in the list (or "").
+    sub_listings are deeper category/series pages inside the same family.
+    """
+    products: Dict[str, str] = {}
+    listings: List[str] = []
+    prefix = ["products", family]
+
+    def usable(url: str, locales: "tuple[str, ...]") -> Optional[List[str]]:
+        if not validate_domain(url):
+            return None
+        segs = _catalog_path_segments(url)
+        if len(segs) < 4 or segs[0] not in locales or segs[1:3] != prefix:
+            return None
+        if segs[-1].endswith("_msm_moved"):
+            return None
+        return segs
+
+    # An es-co list also links products that only exist under /en/: keep both.
+    product_locales = tuple(dict.fromkeys((locale,) + tuple(LOCALES_IN_ORDER)))
+
+    for a in soup.select("a.btn-details-link[href]"):
+        url = _clean_catalog_url(str(a["href"]), page_url)
+        if usable(url, product_locales) is None:
+            continue
+        label = a.select_one(".result_info_text")
+        products[url] = label.get_text(strip=True) if label else ""
 
     for a in soup.find_all("a", href=True):
         if not isinstance(a, Tag) or not isinstance(a["href"], str):
             continue
-        href = str(a["href"])
-        if "/products/" in href:
-            full_url = urljoin("https://www.hikvision.com", href)
-            if validate_domain(full_url):
-                parts = href.strip("/").split("/")
-                if len(parts) >= 5 and parts[0] == "es-co" and parts[1] == "products":
-                    if full_url not in seen:
-                        seen.add(full_url)
-                        product_urls.append(full_url)
+        url = _clean_catalog_url(str(a["href"]), page_url)
+        if url in products:
+            continue
+        segs = usable(url, product_locales)
+        if segs is None:
+            continue
+        depth = len(segs) - 3  # segments below /<locale>/products/<family>
+        if depth in (1, 2):
+            if segs[0] == locale and url not in listings:
+                listings.append(url)
+        elif depth == 3:
+            products.setdefault(url, "")
+    return products, listings
 
-    return product_urls
+
+def fetch_listing_pages(url: str, context: Any, logger: logging.Logger,
+                        delay_seconds: float) -> List[BeautifulSoup]:
+    """Load a listing page and walk its own pagination ("next" button), returning
+    the rendered HTML of every page. Challenge pages are skipped and logged."""
+    soups: List[BeautifulSoup] = []
+    page = None
+    try:
+        page = context.new_page()
+        page.goto(url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT)
+        time.sleep(3)
+        try:  # the list is filled by a script after load; empty lists just time out
+            page.wait_for_selector("li.layout4-content-wrapper", timeout=8000)
+        except Exception:
+            pass
+        html = page.content()
+        if is_challenge_page(html):
+            logger.warning(f"Challenge page instead of content, skipped: {url}")
+            return []
+        soups.append(BeautifulSoup(html, "html.parser"))
+
+        last_first_href = None
+        for _ in range(MAX_PAGINATION_CLICKS):
+            items = soups[-1].select("li.layout4-content-wrapper a.btn-details-link[href]")
+            first_href = str(items[0]["href"]) if items else None
+            if first_href is None or (first_href == last_first_href and len(soups) > 1):
+                break
+            last_first_href = first_href
+            nxt = page.locator("#layout-pagination-wrapper span.next")
+            if nxt.count() == 0:
+                break
+            nxt_soup = soups[-1].select_one("#layout-pagination-wrapper span.next")
+            if nxt_soup is None or "current" in (nxt_soup.get("class") or []):
+                break  # disabled "next" on the last page
+            nxt.first.click()
+            time.sleep(delay_seconds)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            soups.append(BeautifulSoup(page.content(), "html.parser"))
+            if soups[-1].select_one("li.layout4-content-wrapper a.btn-details-link[href]") is None:
+                break
+    except Exception as e:
+        logger.debug(f"Error paginando {url}: {e}")
+    finally:
+        if page is not None:
+            try:
+                page.close()
+            except Exception:
+                pass
+    return soups
+
+
+class CatalogIndex:
+    """Model -> product page URLs, built lazily from the public category pages.
+
+    Families are crawled lazily (es-co first, /en/ only when a SKU was not found in es-co).
+    The index is cached in <output_dir>/discovery_index.json between runs.
+    """
+
+    def __init__(self, context: Any, logger: logging.Logger, delay_seconds: float,
+                 cache_path: Optional[Path] = None, refresh: bool = False,
+                 families: Optional[List[str]] = None):
+        self.context = context
+        self.logger = logger
+        self.delay_seconds = delay_seconds
+        self.cache_path = cache_path
+        self.families = families or DEFAULT_FAMILIES
+        self.entries: Dict[str, List[str]] = {}
+        self.crawled: set = set()
+        self.listing_pages_visited = 0
+        if cache_path and cache_path.exists() and not refresh:
+            try:
+                data = json.loads(cache_path.read_text(encoding="utf-8"))
+                self.entries = {k: list(v) for k, v in data.get("entries", {}).items()}
+                self.crawled = set(data.get("crawled", []))
+                logger.info(f"Discovery index cargado: {len(self.entries)} modelos, "
+                            f"locales {sorted(self.crawled)}")
+            except (OSError, ValueError):
+                pass
+
+    def _add(self, key: str, url: str) -> None:
+        if not key:
+            return
+        urls = self.entries.setdefault(key, [])
+        if url not in urls:
+            urls.append(url)
+
+    def _save(self) -> None:
+        if not self.cache_path:
+            return
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(
+                safe_json_dumps({"entries": self.entries, "crawled": sorted(self.crawled)}),
+                encoding="utf-8")
+        except OSError as e:
+            self.logger.debug(f"No se pudo guardar el discovery index: {e}")
+
+    def ensure_family(self, locale: str, family: str) -> None:
+        tag = f"{locale}/{family}"
+        if tag in self.crawled:
+            return
+        self.logger.info(f"Descubriendo catalogo ({tag}) navegando categorias publicas...")
+        self._crawl_family(locale, family)
+        self.crawled.add(tag)
+        self._save()
+        self.logger.info(f"Discovery {tag}: {len(self.entries)} modelos indexados "
+                         f"({self.listing_pages_visited} paginas de listado)")
+
+    def _crawl_family(self, locale: str, family: str) -> None:
+        root = f"{SITE_ROOT}/{locale}/products/{family}/"
+        queue = [root]
+        visited: set = set()
+        while queue and len(visited) < MAX_LISTING_PAGES_PER_CRAWL:
+            url = queue.pop(0)
+            if url in visited:
+                continue
+            visited.add(url)
+            time.sleep(self.delay_seconds)
+            soups = fetch_listing_pages(url, self.context, self.logger, self.delay_seconds)
+            self.listing_pages_visited += 1
+            collected: set = set()
+            listed_items: set = set()  # every card, including moved-product twins
+            sub_listings: List[str] = []
+            for soup in soups:
+                listed_items.update(
+                    str(a["href"]) for a in
+                    soup.select("li.layout4-content-wrapper a.btn-details-link[href]"))
+                products, listings = parse_listing_page(soup, url, locale, family)
+                for purl, label in products.items():
+                    slug = _catalog_path_segments(purl)[-1]
+                    self._add(model_key(slug), purl)
+                    self._add(model_key(label), purl)
+                    collected.add(purl)
+                sub_listings.extend(u for u in listings if u not in sub_listings)
+
+            # A paginated list shows "N products" for the whole subtree. When it was
+            # fully collected there is no need to visit every child page again.
+            total = 0
+            if soups:
+                for counter in soups[0].select(".sum-number-of-products"):
+                    digits = re.search(r"\d+", counter.get_text())
+                    if digits:
+                        total = int(digits.group())
+                        break
+            complete = total > 0 and len(listed_items) >= total
+            if not complete:
+                known = self._all_urls()
+                for lurl in sub_listings:
+                    if lurl not in visited and lurl not in queue and lurl not in known:
+                        queue.append(lurl)
+            self.logger.debug(f"Listado {url}: {len(collected)} productos ({len(listed_items)}/{total or '?'} tarjetas), "
+                              f"complete={complete}, cola={len(queue)}")
+
+    def _all_urls(self) -> set:
+        return {u for urls in self.entries.values() for u in urls}
+
+    def lookup(self, sku: str) -> List[str]:
+        """Candidate product URLs for a SKU, es-co pages first.
+
+        Families are crawled lazily, one at a time, and the crawl stops as soon
+        as the SKU is listed; /en/ is only crawled when es-co has no candidate.
+        """
+        for locale in LOCALES_IN_ORDER:
+            for family in self.families:
+                found = self._candidates(sku)
+                if found:
+                    return found
+                self.ensure_family(locale, family)
+            found = self._candidates(sku)
+            if found:
+                return found
+        return []
+
+    def _candidates(self, sku: str) -> List[str]:
+        found: List[str] = []
+        for key in (model_key(sku), model_base_key(sku)):
+            for url in self.entries.get(key, []):
+                if url not in found:
+                    found.append(url)
+        found.sort(key=lambda u: 0 if "/es-co/" in u else 1)
+        return found
 
 
 def extract_json_ld(soup: BeautifulSoup) -> List[Dict[str, Any]]:
@@ -635,20 +908,107 @@ def download_document(url: str, local_path: Path, logger: logging.Logger) -> boo
         return False
 
 
-def download_image(url: str, local_path: Path, logger: logging.Logger) -> bool:
+def download_image(url: str, dest_stem: Path, logger: logging.Logger) -> Optional[Path]:
+    """Download one image to <dest_stem><ext>, where ext follows the real content
+    type. Rejects non-images (a challenge/HTML page) and tiny placeholders.
+    Returns the saved path or None."""
     try:
         resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
         if resp.status_code != 200:
-            return False
-        content_type = resp.headers.get("Content-Type", "")
+            return None
+        content_type = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
         if not content_type.startswith("image/"):
             logger.debug(f"Rechazada imagen no válida ({content_type}): {url}")
-            return False
+            return None
+        if len(resp.content) < MIN_IMAGE_BYTES:
+            logger.debug(f"Rechazada imagen demasiado pequeña ({len(resp.content)} B): {url}")
+            return None
+        ext = CONTENT_TYPE_EXT.get(content_type)
+        if not ext:
+            ext = Path(urlparse(url).path).suffix.lower()
+            if ext not in IMAGE_EXTENSIONS:
+                ext = ".jpg"
+        local_path = dest_stem.with_name(dest_stem.name + ext)
         local_path.write_bytes(resp.content)
-        return True
+        return local_path
     except Exception as e:
         logger.debug(f"Error descargando imagen {url}: {e}")
-        return False
+        return None
+
+
+def split_thumbnail(url: str) -> "tuple[str, int]":
+    """Split an assets-CDN image URL into (original URL, thumbnail pixel area).
+
+    The CDN serves the same picture as `<name>.png`, `<name>.png.thumb.140.100.png`
+    or `<name>.png?eo-img.format=webp`. The original has area 0 (no thumbnail).
+    """
+    parsed = urlparse(url)
+    path = parsed.path
+    area = 0
+    m = THUMB_SUFFIX_RE.search(path)
+    if m:
+        area = int(m.group(1)) * int(m.group(2))
+        path = path[:m.start()]
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", "")), area
+
+
+def detect_module_id(*sources: Any) -> str:
+    """Product media folder id (e.g. m000001824) taken from the first URL that has one."""
+    for src in sources:
+        items = src if isinstance(src, (list, tuple)) else [src]
+        for item in items:
+            if isinstance(item, str):
+                m = MODULE_ID_RE.search(urlparse(item).path)
+                if m:
+                    return m.group(1)
+    return ""
+
+
+def select_image_candidates(image_urls: List[str], base_url: str, module_id: str = "") -> List[List[str]]:
+    """Group the page's image URLs into distinct official product pictures.
+
+    Keeps only assets-CDN product media (skips page chrome, icons, logos, related
+    accessories from other media folders). Variants of one picture (thumbnail,
+    webp query) collapse into one group; each group lists download candidates
+    best first: the original, then the largest thumbnail seen on the page.
+    Page order is preserved.
+    """
+    order: List[str] = []
+    variants: Dict[str, Dict[str, Any]] = {}
+    for raw in image_urls:
+        if not raw or not isinstance(raw, str):
+            continue
+        full = urljoin(base_url, raw)
+        parsed = urlparse(full)
+        if parsed.netloc.lower() != MEDIA_HOST:
+            continue
+        if "/image/" not in parsed.path:
+            continue
+        if module_id and f"/{module_id}/" not in parsed.path:
+            continue
+        ext = Path(parsed.path).suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            continue
+        original, area = split_thumbnail(full)
+        if JUNK_IMAGE_NAME_RE.search(Path(urlparse(original).path).name):
+            continue
+        entry = variants.get(original)
+        if entry is None:
+            entry = {"best_thumb": "", "best_area": 0}
+            variants[original] = entry
+            order.append(original)
+        if area > entry["best_area"]:
+            entry["best_thumb"] = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+            entry["best_area"] = area
+
+    groups: List[List[str]] = []
+    for original in order:
+        cands = [original]
+        thumb = variants[original]["best_thumb"]
+        if thumb and thumb != original:
+            cands.append(thumb)
+        groups.append(cands)
+    return groups
 
 
 def extract_assets_from_json_ld(json_ld: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -744,7 +1104,7 @@ def extract_assets_from_json_ld(json_ld: List[Dict[str, Any]]) -> Dict[str, Any]
 def process_sku(sku_input: str, output_dir: str, max_images: int, delay_seconds: float,
                 dry_run: bool, logger: logging.Logger, context: Any,
                 source_map: Dict[str, str],
-                category_cache: Dict[str, List[str]]) -> EnrichmentResult:
+                catalog: "CatalogIndex") -> EnrichmentResult:
     """Procesa un SKU individual y retorna el resultado enriquecido."""
     result = EnrichmentResult(
         sku_input=normalize_sku(sku_input) if sku_input else "",
@@ -769,47 +1129,13 @@ def process_sku(sku_input: str, output_dir: str, max_images: int, delay_seconds:
         logger.info(f"Usando URL del source-map para {normalized_target}: {product_url}")
         product_urls = [product_url]
     else:
-        # Estrategia: navegar categorías y buscar URLs de productos que contengan el SKU base
-        logger.debug(f"Buscando en categorías por SKU: {normalized_target}")
-        product_urls = []
-
-        for category_url in HIKVISION_CATEGORIES:
-            try:
-                # Usar caché de categorías si está disponible
-                if category_url in category_cache:
-                    category_product_urls = category_cache[category_url]
-                    logger.debug(f"Categoría (cache): {category_url} -> {len(category_product_urls)} productos")
-                else:
-                    soup = fetch_page_with_playwright(category_url, context, logger)
-                    if not soup:
-                        continue
-                    category_product_urls = extract_product_urls_from_category(soup)
-                    category_cache[category_url] = category_product_urls
-                    logger.debug(f"Categoría {category_url}: {len(category_product_urls)} productos encontrados")
-
-                # Filtrar URLs que contengan el SKU base en la ruta
-                for url in category_product_urls:
-                    url_compact = re.sub(r"[^\w]", "", url.upper())
-                    if sku_base in url_compact or normalized_clean in url.upper().replace("(", "").replace(")", ""):
-                        if url not in product_urls:
-                            product_urls.append(url)
-
-                # Si ya tenemos suficientes candidatos, podemos detenernos
-                if len(product_urls) >= 5:
-                    break
-
-            except Exception as e:
-                logger.debug(f"Error navegando categoría {category_url}: {e}")
-                continue
-
-        # Si no encontramos URLs, intentar navegar directamente a la URL del producto
-        if not product_urls:
-            direct_url = f"https://www.hikvision.com/es-co/products/turbo-hd-products/turbo-hd-cameras/colorvu-series/{sku_base.lower()}/"
-            product_urls = [direct_url]
+        # Estrategia: indice construido navegando las categorias publicas (es-co, luego /en/)
+        logger.debug(f"Buscando en el indice de catalogo: {normalized_target}")
+        product_urls = catalog.lookup(normalized_target)
 
     if not product_urls:
         result.match_status = "not_found"
-        result.notes = "No se encontraron URLs de producto en resultados de navegación."
+        result.notes = "Modelo no listado en las categorias publicas (es-co ni en)."
         return result
 
     logger.debug(f"Validando {len(product_urls)} URLs de productos")
@@ -915,31 +1241,15 @@ def process_sku(sku_input: str, output_dir: str, max_images: int, delay_seconds:
         logger.debug(f"Total imágenes (HTML + JSON-LD): {len(image_urls)}")
         logger.debug(f"Total documentos (HTML + JSON-LD): {len(doc_urls)}")
 
-        unique_images: set[str] = set()
-        large_images: List[str] = []
-        thumb_images: List[str] = []
+        module_id = detect_module_id(json_ld_assets.get("images", []), og_meta.get("og:image", ""),
+                                     doc_urls)
+        image_groups = select_image_candidates(json_ld_assets.get("images", []) + image_urls,
+                                               exact_match_url, module_id)
+        # Up to max_images distinct pictures; originals preferred over thumbnails.
+        valid_images = [group[0] for group in image_groups[:max_images]]
 
-        for url in image_urls:
-            ext = Path(urlparse(url).path).suffix.lower()
-            if ext not in IMAGE_EXTENSIONS:
-                continue  # Saltar imágenes sin extensión válida
-            full_url = urljoin(exact_match_url, url)
-            if validate_domain(full_url) and full_url not in unique_images:
-                unique_images.add(full_url)
-                # Separar imágenes grandes de miniaturas
-                if ".thumb." in full_url or "/specicon/" in full_url or "/icons/" in full_url:
-                    thumb_images.append(full_url)
-                else:
-                    large_images.append(full_url)
-
-        # Priorizar imágenes grandes sobre miniaturas e iconos
-        # Solo usar imágenes grandes si hay disponibles
-        if large_images:
-            valid_images = large_images[:max_images]
-        else:
-            valid_images = (large_images + thumb_images)[:max_images]
-
-        logger.debug(f"Valid images: {len(valid_images)} (large: {len(large_images)}, thumbs: {len(thumb_images)}")
+        logger.debug(f"Distinct official images: {len(image_groups)} (module {module_id or 'n/a'}); "
+                     f"selected: {len(valid_images)}")
 
         result.image_source_urls_json = safe_json_dumps(valid_images)
         result.image_count = len(valid_images)
@@ -989,21 +1299,36 @@ def process_sku(sku_input: str, output_dir: str, max_images: int, delay_seconds:
             pdfs_dir.mkdir(parents=True, exist_ok=True)
 
             local_paths = []
+            seen_hashes: set = set()
 
-            for idx, url in enumerate(valid_images, start=1):
-                ext = Path(urlparse(url).path).suffix.lower() or ".jpg"
-                if ext not in IMAGE_EXTENSIONS:
-                    ext = ".jpg"
-                filename = f"hikvision__{safe_sku}__{idx:02d}{ext}"
-                local_path = images_dir / filename
+            # Walk the distinct pictures until max_images were saved: a failed
+            # download does not use up a slot, and each saved file gets the next
+            # free number (no collisions).
+            for group in image_groups:
+                if len(local_paths) >= max_images:
+                    break
+                idx = len(local_paths) + 1
+                stem = images_dir / f"hikvision__{safe_sku}__{idx:02d}"
 
-                if local_path.exists() and local_path.stat().st_size > 0:
-                    local_paths.append(str(local_path.relative_to(output_dir)))
+                existing = [p for p in images_dir.glob(stem.name + ".*")
+                            if p.stat().st_size >= MIN_IMAGE_BYTES]
+                if existing:
+                    seen_hashes.add(hashlib.sha256(existing[0].read_bytes()).hexdigest())
+                    local_paths.append(str(existing[0].relative_to(output_dir)))
                     continue
 
-                if download_image(url, local_path, logger):
-                    local_paths.append(str(local_path.relative_to(output_dir)))
-                    logger.debug(f"Imagen guardada: {local_path}")
+                for candidate in group:
+                    saved = download_image(candidate, stem, logger)
+                    if not saved:
+                        continue
+                    digest = hashlib.sha256(saved.read_bytes()).hexdigest()
+                    if digest in seen_hashes:  # same bytes under another URL
+                        saved.unlink()
+                        break
+                    seen_hashes.add(digest)
+                    local_paths.append(str(saved.relative_to(output_dir)))
+                    logger.debug(f"Imagen guardada: {saved}")
+                    break
 
             result.image_local_paths_json = safe_json_dumps(local_paths)
             if local_paths:
@@ -1423,7 +1748,7 @@ class HikvisionEnricher:
         self.logger = logger
         self.context: Any = None
         self.browser: Any = None
-        self.category_cache: Dict[str, List[str]] = {}
+        self.catalog: Optional[CatalogIndex] = None
 
     def run(self) -> int:
         try:
@@ -1453,6 +1778,11 @@ class HikvisionEnricher:
         try:
             self.browser, self.context = initialize_browser(self.logger)
             self.logger.info("Navegador listo para procesamiento")
+            self.catalog = CatalogIndex(
+                self.context, self.logger, self.args.delay_seconds,
+                cache_path=Path(self.args.output_dir) / DISCOVERY_INDEX_FILE,
+                refresh=self.args.refresh_discovery,
+            )
         except Exception as e:
             self.logger.error(f"Error inicializando navegador: {e}")
             return 1
@@ -1480,7 +1810,7 @@ class HikvisionEnricher:
                     self.logger,
                     self.context,
                     source_map,
-                    self.category_cache,
+                    self.catalog,
                 )
                 results.append(result)
 
@@ -1545,6 +1875,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Retomar ejecución previa. Saltará SKUs ya procesados.")
     parser.add_argument("--source-map", type=str, default=None,
                         help="Archivo CSV con mapeos sku->source_url (prioridad sobre navegación).")
+    parser.add_argument("--refresh-discovery", action="store_true",
+                        help="Ignorar el indice de catalogo guardado (discovery_index.json) y volver a navegar las categorias.")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Mostrar mensajes de depuración.")
     return parser
@@ -1556,8 +1888,8 @@ def main() -> None:
 
     if not (1 <= args.max_images <= 10):
         parser.error(f"--max-images debe estar entre 1 y 10. Valor recibido: {args.max_images}")
-    if args.delay_seconds < 1.0:
-        parser.error(f"--delay-seconds debe ser >= 1.0.Valor recibido: {args.delay_seconds}")
+    if args.delay_seconds < 1.5:
+        parser.error(f"--delay-seconds debe ser >= 1.5 (robots.txt: Crawl-delay 1). Valor recibido: {args.delay_seconds}")
 
     logger = setup_logging(verbose=args.verbose)
     enricher = HikvisionEnricher(args, logger)

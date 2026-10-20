@@ -524,13 +524,7 @@ export class StorefrontService {
     ]);
     if (productId && !products.length)
       throw new NotFoundException("Producto no disponible en el catálogo.");
-    // CAT-02: la tienda sirve el snapshot activo (fallback: columnas vivas).
-    const lensContents = await loadActiveRevisionContents(
-      this.prisma,
-      products.map((p) => p.publicRevisionId),
-    );
-    const result = products.map((raw) => {
-      const product = applyRevisionLens(raw as never, lensContents) as typeof raw;
+    const result = products.map((product) => {
       const { prices, ...details } = product;
       const publicPrice = prices.find(
         (price) => price.priceListId === settings.publicPriceListId,

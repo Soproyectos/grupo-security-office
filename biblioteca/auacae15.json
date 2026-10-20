@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACAE15",
+  "nombre": {
+    "valor": "Fotoceldas Accessmatic Accesseye Mini para Cabezales/Puertas",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "FOTOCELDAS ACCESSMATIC ACCESSEYE MINI PARA CABEZALES/PUERTAS AUTOMÁTICAS. SIRVE PARA TODAS LAS MARCAS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Fotoceldas Accesseye Mini Cabezales/Puertas",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

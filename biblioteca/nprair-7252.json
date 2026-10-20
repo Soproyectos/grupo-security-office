@@ -1,0 +1,23 @@
+{
+  "referencia": "NPRAIR-7252",
+  "nombre": {
+    "valor": "Protector Voltaje 220V/20A Airmatic",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "PROTECTOR VOLTAJE 220V/20A REF. AIRMATIC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Protector Voltaje 220V/20A Airmatic",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

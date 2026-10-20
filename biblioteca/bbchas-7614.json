@@ -1,0 +1,23 @@
+{
+  "referencia": "BBCHAS-7614",
+  "nombre": {
+    "valor": "Chasis Externo para Banco de Baterias UPS 6 y 10 KVA Rack",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Bancos de Baterías para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 6. BANCO BATERIAS UPS ONLINE ADICIONALES PARA UPS MONO Y BIFASICAS de la lista"
+  },
+  "descripcion": {
+    "valor": "CHASIS EXTERNO PARA BANCO DE BATERIAS UPS 6 y 10 KVA RACK",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Chasis Externo Baterías UPS 6-10KVA Rack",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

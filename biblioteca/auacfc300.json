@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACFC300",
+  "nombre": {
+    "valor": "Kit de Motores Batientes Falcon 300 para Puertas de 2 Hojas de 3MT de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTORES BATIENTES FALCON 300 PARA PUERTAS DE 2 HOJAS DE 3MT DE ANCHO O MAX 300KG DE PESO POR HOJA. INCLUYE 2 MOTORES FC300, 2 CONTROLES, TARJETA ELECTRONICA CON DISPLAY DIGITAL. 24V. SISTEMA DE RESPALDO INCLUIDO. USO INTENSIVO RESIDENCIAL. 3 AÑOS DE GARANTIA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Motores Batientes Falcon 300 2 Hojas 3m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7204HUHI-M1/XT",
+  "nombre": {
+    "valor": "DVR 4 Canales TurboHD + 4 Canales IP",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 4 Canales TURBOHD + 4 Canales IP / 8 Megapixel (4K) / Audio de dos vías por Coaxitron / ACUSENSE / Reconocimiento Facial / 1 Bahía de Disco Duro / Salida de Video en Full HD / H.265+",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 4 Canales TurboHD + 4 Canales IP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "referencia": "NERMC4-8800",
+  "categoria": {
+    "valor": "Accesorios Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.3 ACCESORIOS de la lista"
+  },
+  "descripcion": {
+    "valor": "SET DE CONECTORES MC4 HEMBRA - MACHO",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Set de Conectores MC4 Hembra-Macho",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

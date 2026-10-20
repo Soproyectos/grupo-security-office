@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-9032HQHI-M8/S",
+  "nombre": {
+    "valor": "DVR AcuSense de 32 Canales",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR AcuSense de 32 canales, 1080p/3K , 2U, H.265 Protección perimetral basada en aprendizaje profundo Detección de movimiento basada en aprendizaje profundo 2.0 para todos los canales analógicos Compresión de vídeo H.265 Pro+/H.265 Pro/H.265/H.264+/H.264 Hasta 48 entradas de cámara IP y 8 interfaces SATA Capacidad de codificación de hasta 1080p a 15 fps Entradas de vídeo HDTVI/AHD/CVI/CVBS/IP Grabación activada por POS y superposición de información de POS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense 32CH 3K 2U",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

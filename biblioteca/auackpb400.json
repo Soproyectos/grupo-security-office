@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKPB400",
+  "nombre": {
+    "valor": "Kit de Motor Corredizo Accessmatic Pitbull 400 de 400KG",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTOR CORREDIZO ACCESSMATIC PITBULL 400 DE 400KG. INCLUYE MOTOR PB400 + 4 METROS DE CREMALLERA DE ACERO CON PERNOS RIM4F Y 2 CONTROLES. VELOCIDAD 14 MT/MIN. 110V AC. USO RESIDENCIAL. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Motor Corredizo Pitbull 400 400kg",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

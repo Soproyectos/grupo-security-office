@@ -24,10 +24,10 @@ services:
 
   # ---- Backend (NestJS con hot-reload) ----
   api:
+    image: gs-customer-access-api:20261007
     build:
       context: ./src/backend
-      dockerfile: Dockerfile
-      target: deps
+      dockerfile: Dockerfile.customer-access
     container_name: gs-api
     restart: unless-stopped
     ports:
@@ -42,15 +42,28 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       API_PORT: 3000
+      STOREFRONT_URL: http://100.87.48.41:5174
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY}
     volumes:
       - ./src/backend/src:/app/src
       - ./src/backend/prisma:/app/prisma
-    command: >
-      sh -c "npx prisma generate && npx prisma migrate deploy && npm run start:dev"
+      - ./src/backend/tsconfig.json:/app/tsconfig.json
+      - ./src/backend/nest-cli.json:/app/nest-cli.json
+      - ./src/backend/package.json:/app/package.json
+      - ./src/backend/tsconfig.build.json:/app/tsconfig.build.json
+      # Uploads persist on the host (data/ is git-ignored)
+      - ./data/uploads:/app/uploads
+    command: node dist/src/main
 
   # ---- Frontend (Vite con hot-reload) ----
   frontend:
-    image: node:20-alpine
+    image: node:22-alpine
     container_name: gs-frontend
     restart: unless-stopped
     ports:
@@ -59,6 +72,7 @@ services:
       - api
     working_dir: /app
     volumes:
+      - /app/node_modules
       - ./src/frontend:/app
     command: >
       sh -c "npm ci && npm run dev -- --host 0.0.0.0"

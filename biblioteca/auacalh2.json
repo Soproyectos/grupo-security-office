@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACALH2",
+  "nombre": {
+    "valor": "Control Remoto Accessmatic 433MHZ",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CONTROL REMOTO ACCESSMATIC 433MHZ. COMPATIBLE CON MOTOR DE GARAJE SHARK 1000.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Control Remoto Accessmatic 433MHZ",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

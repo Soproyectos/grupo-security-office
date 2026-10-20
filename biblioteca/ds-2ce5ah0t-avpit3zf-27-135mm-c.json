@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE5AH0T-AVPIT3ZF/2.7-13.5mm/C",
+  "nombre": {
+    "valor": "Camara Turbo 5MP Domo 0.01LUX 2.7 IR40m IP67 IK10 Metalica Hikvision",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 5MP DOMO 0.01LUX 2.7 IR40m IP67 IK10 METALICA HIKVISION",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Domo 5MP Antivandálico IK10 IR40m 2.7mm",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "referencia": "ACCPARAL-9352",
+  "nombre": {
+    "valor": "Kit Paralelo UPS Hibrida 6KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Accesorios Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.3 ACCESORIOS de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT PARALELO UPS HIBRIDA 6KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Paralelo UPS Hibrida 6KVA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

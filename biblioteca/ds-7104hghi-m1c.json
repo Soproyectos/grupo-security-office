@@ -1,0 +1,32 @@
+{
+  "referencia": "DS-7104HGHI-M1(C)",
+  "nombre": {
+    "valor": "DVR 4CH Turbo 1080P Lite H.265+ AcuSense Hikvision",
+    "origen": "web",
+    "fuente": "https://duckduckgo.com/html/?q=%22DS-7104HGHI-M1%22+DVR+Hikvision"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; serie Value de DVRs Turbo HD segun pagina oficial"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "web",
+    "fuente": "https://duckduckgo.com/html/?q=%22DS-7104HGHI-M1%22+DVR+Hikvision"
+  },
+  "descripcion": {
+    "valor": "DVR 4CH TURBO 1080p LITE 4TB H.265+H.265 2MP MAX120m HDMI/VGA AcuSense",
+    "origen": "lista"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://duckduckgo.com/html/?q=%22DS-7104HGHI-M1%22+DVR+Hikvision",
+    "https://www.hikvision.com/en/products/Turbo-HD-Products/DVR/Value-Series/ds-7104hghi-m1/"
+  ],
+  "nombre_vitrina": {
+    "valor": "DVR 4CH Turbo 1080P Lite H.265+ AcuSense Hikvision",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -22,12 +22,17 @@
 
 - [ADR: Arquitectura híbrida de importación masiva](./adr/ADR-001-import-hybrid-architecture.md)
 - [ADR: Biblioteca de Vitrina — separar la identidad del producto del precio](./adr/ADR-002-biblioteca-vitrina.md)
+- [ADR: cada producto pertenece como máximo a una lista](./adr/ADR-20261014-producto-una-sola-lista.md)
 
 `docs/adr/` es la única ubicación para registrar nuevas decisiones de arquitectura.
 
 ## Operación
 
 - [Runbook: importación de listas y agentes](./procedimientos/runbook-importacion-y-agentes.md)
+- [Importación masiva de productos por SKU](./procedimientos/importacion-masiva-productos.md)
+- [Importación masiva de biblioteca vitrina por manifiesto JSON](./procedimientos/importacion-masiva-biblioteca-vitrina.md)
+- [Auditoría del lote oficial de 39 listas](./procedimientos/auditoria-biblioteca-39-listas.md)
+- [Enriquecimiento posterior de nombres de vitrina](./procedimientos/enriquecimiento-nombres-biblioteca.md)
 
 ## Bitácoras
 
@@ -39,3 +44,14 @@
 - [Estrategia de testing](./testing-strategy.md)
 - [Checklist de seguridad](./security-checklist-v1.md)
 - [Migración de filtros UI](./UI/ui-filters-migration.md)
+
+## Paneles de trabajo (estructura aprobada, 2026-10-13)
+
+- [Estructura aprobada de los diez paneles](./PROPUESTA-ARBOL-PANELES-2026-10-13.md)
+- [Comparación con el servidor y la versión local](./COMPARACION-10-PANELES-2026-10-13.md)
+- [Decisión: paneles y paquetes de trabajo](./adr/ADR-20261013-paneles-y-paquetes-de-trabajo.md)
+- [Comercial: hijos, herramientas y reglas de Yéminus/pedidos](./DISENO-PANEL-COMERCIAL-2026-10-13.md)
+- [Catálogo y precios: listas, Biblioteca completa, validación, publicación y agenda](./DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md)
+- [Carga de precios: plantilla, tarifas, redondeo COP y formatos de proveedor](./DISENO-IMPORTACION-PRECIOS-2026-10-14.md)
+- [Revisión de precios implementada localmente: pantalla, API, permisos y límites](./IMPLEMENTACION-REVISION-PRECIOS-2026-10-14.md)
+- [Ejecución por pasos para agente económico y auditoría del coordinador](./ejecucion-paneles/README.md)

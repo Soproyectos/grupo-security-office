@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7216HQHI-M2/FA",
+  "nombre": {
+    "valor": "DVR AcuSense de 16 Canales",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR AcuSense de 16 canales, 1080p, 1U, H.265 5 señales de entrada adaptativas (HDTVI/AHD/CVI/CVBS/IP) Admite reconocimiento facial o reducción de falsas alarmas según un algoritmo de aprendizaje profundo. Admite comparación de imágenes de rostros y búsqueda de imágenes de rostros. Tecnología de compresión eficiente H.265 pro+ Capacidad de codificación hasta 3K/5M Lite a 12 fps 5 señales de entrada adaptativas (HDTVI/AHD/CVI/CVBS/IP) Se pueden conectar hasta 24 Cámaras de red Reconocimiento Facial",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense 16CH 1080P Facial 1U",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

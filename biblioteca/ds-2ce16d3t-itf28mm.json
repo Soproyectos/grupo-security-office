@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE16D3T-ITF(2.8mm)",
+  "nombre": {
+    "valor": "Cámara Minibala Fija de 2 MP con Iluminación Ultrabaja EXIR 2.0:",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara minibala fija de 2 MP con iluminación ultrabaja EXIR 2.0: tecnología infrarroja avanzada con una distancia IR de 30 m Resistente al agua y al polvo (IP67) 4 en 1 (4 señales conmutables TVI/AHD/CVI/CVBS).",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Minibala 2MP Luz Ultrabaja EXIR 2.0",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,47 +1,82 @@
 # Handoff Actual — Grupo Security Office
 
-> Handoff vigente con estado verificado desde Git. Solo incluye hechos confirmados;
-> lo no verificado se marca explícitamente como tal.
+> Handoff vigente con estado verificado desde Git y ejecución local.
+> Fecha de verificación: **2026-10-07**. Lo no verificado se marca explícitamente.
 
-## Último commit de producto verificado en remoto
+## Rama activa del checkout principal
 
-- **Commit**: `aff21e2838a8b37a392c9419fb9bf3357ae116fd`
-- **Mensaje**: `feat(frontend): contextualize product operations [FE-CONTEXTUAL-PRODUCT-001]`
+- **Rama**: `feat/storefront-public-pricing`
+- **Último commit de producto**: `e7e6ba7` — `chore(repo): stop tracking packaged
+  zips and ignore tooling cache`. Los commits posteriores son sólo documentación.
+- **Base**: 19 commits por feature sobre `451393c` (cadena ODD `baseline-commit-chain`,
+  2026-10-07). Documentación de la cadena: `odd/tasks/baseline-commit-chain.md`.
+- **Push / PR / merge**: **NO realizados** (no autorizados por el coordinador).
 
-## HEAD actual de `main` remoto
+## Estado de verificación (local, 2026-10-07)
 
-- **HEAD**: `917f8c5` — `vault: auto-save 2026-09-07 10:18`
-- **Nota**: el último commit sobre `main` es un auto-save de vault; el último commit
-  de producto verificado sigue siendo `aff21e2` (inmediatamente debajo en el
-  historial). Verificado con `git log origin/main`.
+| Check | Resultado |
+|-------|-----------|
+| Backend `npx jest` | 1102/1102 (64 suites) |
+| Frontend `npx vitest run` | 377/377 (35 archivos) |
+| Backend `tsc --noEmit` | 0 errores |
+| Frontend `tsc -b` | 0 errores |
+| `npm run lint` backend | limpio |
+| `npm run lint` frontend | 2 errores preexistentes en `features/users/components/DashboardGrants.tsx` |
 
-## Bloqueador local conocido (no verificado contra main actual)
+## HEAD de `origin/main` (refs locales, sin fetch)
 
-- **Descripción**: fallo de compilación TypeScript por contrato de props en
-  `ListaDetailPage.tsx`, reportado en el worktree previo `fe-lista-detail-tabs`.
-- **Estado**: **NO verificado** contra `main` actual. Requiere un Issue formal que
-  reproduzca el fallo antes de tratarlo como bloqueador confirmado.
+- **`origin/main`**: `0873e73` — `fix(storefront): keep storefront links out of the internal app`
+- **Nota**: leído con `git log origin/main` sobre las refs locales; **no se hizo
+  `git fetch`** en esta sesión, por lo que puede estar desactualizado respecto al remoto.
 
-## Pull Request abierto independiente
+## Bloqueador local anterior — RESUELTO
 
-- **PR #4**: bump Dependabot `qs` — permanece independiente. No modificar.
+- El fallo de props de `ListaDetailPage.tsx` reportado en el worktree
+  `fe-lista-detail-tabs` **ya no aplica**: el archivo `ListaDetailPage.tsx` **no existe**
+  en el árbol actual (verificado con `find`), y el typecheck de backend y frontend
+  pasan limpios. No requiere Issue.
+
+## Pull Request (NO verificado en esta sesión)
+
+- **PR #4** (Dependabot `qs`): heredado del handoff anterior. **No se verificó** con
+  `gh` (sin ejecución remota autorizada). Tratarlo como pendiente de confirmación.
+
+## Trabajo sin commitear
+
+- **Ninguno**: `git status --porcelain` quedó vacío el 2026-10-07.
+- La captura `Cliente — Tienda pública (estilo retail)@2x.png` (2880×5120, 3.9 MB)
+  fue **borrada** por decisión del coordinador; los módulos probe
+  `src/backend/src/test/` y `test2/` también.
+- Los zips empaquetados salieron del índice en `e7e6ba7` (siguen en disco, ignorados);
+  la historia de Git **no** se reescribió, así que siguen en commits antiguos.
+- Los módulos probe `src/backend/src/test/` y `test2/` fueron **borrados** del disco.
+
+## Otros worktrees (sin tocar)
+
+| Worktree | Rama / HEAD |
+|----------|-------------|
+| `~/.herdr/.../worktree-dashboards` | `worktree/dashboards` @ `c42fe89` |
+| `~/.herdr/.../worktree-gs-fe-product-specs-001` | `worktree/GS-FE-PRODUCT-SPECS-001` @ `97b67e1` |
+| `.claude/worktrees/hikvision-web-design-31483a` | `claude/hikvision-web-design-31483a` @ `97b67e1` |
+| `.claude/worktrees/hostinger-database-container-ea7234` | `claude/hostinger-database-container-ea7234` @ `c9d61cf` |
+| `~/.codex/worktrees/1ac7/...` | detached @ `a7c9797` |
+| `/tmp/gs-sales-commit-validation` | detached @ `3fe94b4` |
 
 ## Próximo trabajo recomendado
 
-1. Crear un Issue formal de GitHub:
-   **"Corregir fallo de compilación TypeScript en ListaDetailPage.tsx"**.
-2. Crear un worktree limpio para ese Issue.
-3. Reproducir el fallo con `npx tsc --noEmit` / `npm run build`.
-4. Corregir el contrato de props sin cambiar comportamiento funcional.
-
-## Estado de esta tarea de limpieza de documentación
-
-- **Tarea**: `DOCS-CLEANUP-001` — eliminación de documentación heredada y
-  establecimiento de punto de entrada canónico.
-- **Estado**: en ejecución (commit registrado en `work-log.md` al cierre).
+1. **Decisión del coordinador**: push / PR / merge de `feat/storefront-public-pricing`
+   (19 commits listos y verificados) — no se mueve sin su orden.
+2. **Hito 2 — Calidad base** (ver `docs/PROJECT_STATUS.md`): DTOs de query tipados,
+   body parser 1 MB, bloqueo de auto-asignación de roles, auditoría automática,
+   ProductImage `createdAt`, lint de `DashboardGrants.tsx`.
+3. **C006 — Migración FSM de datos legacy** (544+ productos): backup + dry-run +
+   aprobación explícita.
+4. Confirmar el estado real del **PR #4** cuando haya autorización de ejecución remota.
+5. Verificar por qué `gentle-ai` no está en PATH (RDD no evaluó ningún commit).
 
 ## Comandos de verificación utilizados
 
-- `git log origin/main --oneline -n 5`
-- `git rev-parse origin/main`
-- `git worktree list`
+- `git status --porcelain`, `git log --oneline`, `git worktree list`, `git log origin/main`
+- `npx jest` (src/backend), `npx vitest run` (src/frontend)
+- `npx tsc --noEmit -p tsconfig.json` (src/backend), `npx tsc -b` (src/frontend)
+- `npm run lint` (ambos)

@@ -1,0 +1,29 @@
+{
+  "referencia": "AUELKPA42",
+  "nombre": {
+    "valor": "Kit de Puerta Automática Elite Zoom de 4.2 Mt de Ancho o También para",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Elite",
+    "origen": "inferido",
+    "razon": "'ELITE' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE PUERTA AUTOMÁTICA ELITE ZOOM DE 4.2 MT DE ANCHO O TAMBIÉN PARA DOS HOJAS DE 1 MT DE ANCHO Y MAXIMO 100 KG DE PESO PARA 2 HOJAS Y 120 PARA 1 SOLA HOJA DE MÁXIMO 1.5 MT DE ANCHO Y 120 KG DE PESO. CONTROL MULTIFUNCIONES WIRELESS, 2 SENSORES MN20. ALIMENTACIÓN 220V. INCLUYE UN JUEGO DE FOTOCEL- DAS AE15 Y BATERÍA DE RESPALDO. 2 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Puerta Automática Elite Zoom 4.2m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "referencia": "NUU6AP-1626",
+  "categoria": {
+    "valor": "Cableado Categoría 6A",
+    "origen": "inferido",
+    "razon": "Seccion 23.3 CATEGORIA 6A de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE U/UTP CAT 6A PVC (305 MTS)",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable U/UTP CAT 6A PVC 305m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

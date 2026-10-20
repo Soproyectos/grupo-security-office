@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isPersonalSeller } from '../../../common/rbac/personal-seller';
 import { ROLE } from '../../../common/rbac/roles.constants';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';

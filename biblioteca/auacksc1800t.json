@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKSC1800T",
+  "nombre": {
+    "valor": "Motor de Garaje Accessmatic Scorpion 1800 de 1.5 HP de Fuerza",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MOTOR DE GARAJE ACCESSMATIC SCORPION 1800 DE 1.5 HP DE FUERZA, SALIDA 12/24V PARA CONECTAR TODO TIPO DE ACCESORIOS. USO INTENSIVO. INCLUYE 2 CONTROLES DE 4 BOTONES, BOTONERA INALÁMBRICA DE 3 BOTONES. CARGADOR DE BATERÍA INCORPORADO. 8 MT DE RECORRIDO. INCLUYE 4 METROS DE RIEL EN T. 110V. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Motor Garaje Scorpion 1800T 1.5HP Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

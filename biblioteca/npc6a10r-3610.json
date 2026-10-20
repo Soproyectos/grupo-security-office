@@ -1,0 +1,19 @@
+{
+  "referencia": "NPC6A10R-3610",
+  "categoria": {
+    "valor": "Cableado Categoría 6A",
+    "origen": "inferido",
+    "razon": "Seccion 23.3 CATEGORIA 6A de la lista"
+  },
+  "descripcion": {
+    "valor": "PATCH CORD U/FTP CAT 6A 10FT ROJO",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Patch Cord U/FTP CAT 6A 10ft Rojo",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,9 +1,10 @@
+import { canPublishPromotions } from '../../features/promotions/promotions.service'
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
-import { canAdministerAccess, hasAssignedAction, useOwnUserAccess, usePanelAccess } from '../../features/users/access'
+import { canViewAudit, canViewUsers } from '../../lib/rbac'
 import {
   fetchNotifications,
   fetchUnreadCount,
@@ -13,6 +14,12 @@ import {
   getNotificationTypeLabel,
   getNotificationColor,
 } from '../../services/notifications.service'
+
+const COMMERCIAL_ITEMS = [
+  { to: '/commercial/products', label: 'Productos' },
+  { to: '/commercial/lists', label: 'Listas' },
+  { to: '/commercial/settings', label: 'Configuración' },
+]
 
 export default function Header() {
   const { user, logout } = useAuthStore()
@@ -31,11 +38,6 @@ export default function Header() {
   const notificationsRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const queryClient = useQueryClient()
-  const commercial = usePanelAccess('commercial')
-  const catalog = usePanelAccess('catalog')
-  const { access, status } = useOwnUserAccess()
-  const allowed = (action: string) => hasAssignedAction({ roles: user?.roles, grants: access?.grants, status }, [action])
-  const isSuperAdmin = canAdministerAccess(user?.roles)
 
   // Notificaciones: fetch automático + refetch al abrir dropdown
   const { data: notificationsData, refetch: refetchNotifications } = useQuery({
@@ -76,7 +78,8 @@ export default function Header() {
     }
   }, [notificationsOpen, refetchNotifications])
 
-  const isCommercialActive = commercial.tabs.some((tab) => location.pathname.startsWith(tab.to))
+  const isCommercialActive =
+    location.pathname === '/commercial' || location.pathname.startsWith('/commercial/')
 
   const openMenu = () => {
     const btn = commercialButtonRef.current
@@ -170,7 +173,7 @@ export default function Header() {
           </div>
 
           {/* Centro: Buscador global */}
-          {allowed('products:read') && <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
+          <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
             <div className="relative">
               <input
                 type="text"
@@ -189,7 +192,7 @@ export default function Header() {
                 </svg>
               </button>
             </div>
-          </form>}
+          </form>
 
           {/* Derecha: Notificaciones + User menu */}
           <div className="flex items-center gap-2 pl-1 border-l border-[var(--color-border)]">
@@ -400,16 +403,14 @@ export default function Header() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin py-2">
             <div className="flex-shrink-0">
-              <NavItem to="/" label="Mi resumen" />
+              <NavItem to="/" label="Dashboard" />
             </div>
-            <div className="flex-shrink-0"><NavItem to="/agenda" label="Agenda y tareas" /></div>
-            {catalog.tabs[0] && <div className="flex-shrink-0"><NavItem to={catalog.tabs[0]?.to ?? '/commercial/lists'} label="Catálogo y precios" /></div>}
-            {commercial.tabs[0] && <div className="relative flex-shrink-0">
+            <div className="relative flex-shrink-0">
               <div ref={commercialButtonRef} className="flex items-center">
                 <NavLink
-                  to={commercial.tabs[0]?.to ?? '/commercial/customers'}
+                  to="/commercial/products"
                   onClick={() => setCommercialOpen(false)}
-                  aria-label="Panel Comercial"
+                  aria-label="Comercial: Productos"
                   className={`flex items-center px-3 py-1.5 text-sm font-condensed font-semibold whitespace-nowrap transition-all tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] rounded ${
                     isCommercialActive
                       ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)]'
@@ -442,14 +443,17 @@ export default function Header() {
                   </svg>
                 </button>
               </div>
-            </div>}
-            {isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /><NavItem to="/users/access" label="Asignar paneles" /></div>}
-            {allowed('users:read') && (
+            </div>
+            {canPublishPromotions(user?.roles) && (
+              <div className="flex-shrink-0"><NavItem to="/promotions" label="Promociones" /></div>
+            )}
+            {user?.roles?.includes('Super Admin') && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /></div>}
+            {canViewUsers() && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
               </div>
             )}
-            {allowed('audit:read') && (
+            {canViewAudit() && (
               <div className="flex-shrink-0">
                 <NavItem to="/audit" label="Auditoría" />
               </div>
@@ -457,7 +461,7 @@ export default function Header() {
           </div>
         </div>
 
-        {commercialOpen && commercial.hasAnyPanel && (
+        {commercialOpen && (
           <div
             ref={commercialMenuRef}
             id="comercial-menu"
@@ -466,7 +470,7 @@ export default function Header() {
             style={{ left: menuLeft }}
             className="absolute top-full z-[60] mt-1 min-w-[180px] py-1 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-lg"
           >
-            {commercial.tabs.map((item) => (
+            {COMMERCIAL_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

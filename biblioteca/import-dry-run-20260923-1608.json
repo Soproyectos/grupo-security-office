@@ -1,0 +1,44 @@
+{
+  "mode": "dry-run",
+  "generatedAt": "2026-09-23T16:08:03.660Z",
+  "totals": {
+    "fichasFiles": 764,
+    "valid": 764,
+    "invalid": 0,
+    "updates": 0,
+    "creates": 0,
+    "skipped": 764,
+    "errors": 0,
+    "images": 20,
+    "namesTruncated": 0
+  },
+  "perEstado": {
+    "verificado": {
+      "updates": 0,
+      "creates": 0,
+      "skipped": 22,
+      "errors": 0,
+      "total": 22
+    },
+    "parcial": {
+      "updates": 0,
+      "creates": 0,
+      "skipped": 587,
+      "errors": 0,
+      "total": 587
+    },
+    "no_encontrado": {
+      "updates": 0,
+      "creates": 0,
+      "skipped": 155,
+      "errors": 0,
+      "total": 155
+    }
+  },
+  "categoriesToCreate": [],
+  "brandsToCreate": [],
+  "categoriesCreated": 0,
+  "brandsCreated": 0,
+  "invalidFichas": [],
+  "rowErrors": []
+}

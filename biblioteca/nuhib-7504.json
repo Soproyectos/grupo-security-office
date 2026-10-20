@@ -1,0 +1,23 @@
+{
+  "referencia": "NUHIB-7504",
+  "nombre": {
+    "valor": "Inversor Solar All In One 3KVA On-grid",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Inversores Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.1 INVERSOR SOLAR - UPS HIBRIDA de la lista"
+  },
+  "descripcion": {
+    "valor": "INVERSOR SOLAR ALL IN ONE 3KVA ON-GRID",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Inversor Solar All In One 3KVA On-grid",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

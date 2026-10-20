@@ -1,0 +1,22 @@
+[
+  {
+    "file": "DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+    "previousSha256": "f162cd5ac4af5aeef854eb49e6a6d3d1f06d158905de02bab8d90aed48824737",
+    "newSha256": "256315bffd670e8d1b50a5c43f28cf2dbc9f0cc7dd56ed1627636ca2a2c9d934"
+  },
+  {
+    "file": "DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+    "previousSha256": "295b26e672476295b54045171e5e606d29fdcb8ea6caf7843fd32176bfcd479b",
+    "newSha256": "c58e8319e8da29df33c86d8da709b544610ff242954f73506c0ddfc78b4779d0"
+  },
+  {
+    "file": "plantillas/generar_plantilla_precios.py",
+    "previousSha256": "dd7daf638a987cbca6faf4c7be11f527b3c6f2434b40155daf49da40b85524ba",
+    "newSha256": "7d283c018def8dae4a48df2bf31425ffe3bfb67788e26a38fc31538af932169d"
+  },
+  {
+    "file": "plantillas/PLANTILLA-PRECIOS-GRUPO-SECURITY-v3.xlsx",
+    "previousSha256": null,
+    "newSha256": "33696203d47a59a2abdb576ec44a237ff8e485eb4eb7d0081c44bb56fb6d5724"
+  }
+]

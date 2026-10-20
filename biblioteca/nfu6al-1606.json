@@ -1,0 +1,19 @@
+{
+  "referencia": "NFU6AL-1606",
+  "categoria": {
+    "valor": "Cableado Categoría 6A",
+    "origen": "inferido",
+    "razon": "Seccion 23.3 CATEGORIA 6A de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE F/UTP CAT 6A LSZH (305 MTS)",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable F/UTP CAT 6A LSZH 305m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

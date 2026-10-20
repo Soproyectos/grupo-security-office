@@ -1,0 +1,36 @@
+{
+  "referencia": "WD122PURZ",
+  "nombre": {
+    "valor": "Disco Duro WD Purple 12TB SATA 3.5\" para Videovigilancia",
+    "origen": "web",
+    "fuente": "https://www.camarasmexico.com/1549857239-DISCOS-WDPURZ-WD122PURZ,668_2"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "Western Digital",
+    "origen": "web",
+    "fuente": "https://www.camarasmexico.com/1549857239-DISCOS-WDPURZ-WD122PURZ,668_2"
+  },
+  "descripcion": {
+    "valor": "DISCO DURO 12TB 3.5 7200RPM SATA WD 6GB/S 256MB CACHE",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://www.camarasmexico.com/productos/big/1551146277-147.jpg",
+    "origen": "web",
+    "fuente": "https://www.camarasmexico.com/1549857239-DISCOS-WDPURZ-WD122PURZ,668_2"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://www.camarasmexico.com/1549857239-DISCOS-WDPURZ-WD122PURZ,668_2"
+  ],
+  "nombre_vitrina": {
+    "valor": "Disco Duro WD Purple 12TB Videovigilancia",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

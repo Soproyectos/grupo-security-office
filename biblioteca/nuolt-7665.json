@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7665",
+  "nombre": {
+    "valor": "Powest EA99100 100KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "POWEST EA99100 100KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Powest EA99100 100KVA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -73,3 +73,20 @@ tools/enrichment_output/
 *.log
 .pytest_cache/
 .mypy_cache/
+
+# Backups de despliegue y dumps de base de datos (contienen datos reales; NUNCA al repo)
+backend-hostinger-*.zip
+frontend-hostinger-*.zip
+ficha-producto-*.zip
+*-backup-*.dump
+supabase-backup-*.dump
+*.sql.gz
+
+# Paquetes subidos por upload y caches de tooling
+Grupo Security Design System.zip
+src/frontend/grupo-security-frontend.zip
+.atl/
+
+# office temp/lock files
+~$*
+*.tmp

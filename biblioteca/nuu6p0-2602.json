@@ -1,0 +1,19 @@
+{
+  "referencia": "NUU6P0-2602",
+  "categoria": {
+    "valor": "Cableado Categoría 6",
+    "origen": "inferido",
+    "razon": "Seccion 23.2 CATEGORIA 6 de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE OUTDOOR UTP CAT 6 PVC (305 MTS)",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable Outdoor UTP CAT 6 PVC 305m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

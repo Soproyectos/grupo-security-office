@@ -295,14 +295,17 @@ describe('CategoriesService', () => {
       expect(mockPrisma.product.groupBy).toHaveBeenCalledTimes(1);
     });
 
-    it('cuenta solo productos PUBLISHED', async () => {
+    it('cuenta productos comerciales y fichas informativas oficiales', async () => {
       mockPrisma.category.findMany.mockResolvedValue([
         { ...mockCategory, id: 'root', slug: 'root', parentId: null },
       ]);
 
       await service.findMenu();
 
-      expect(mockPrisma.product.groupBy.mock.calls[0][0].where).toEqual({ lifecycleStatus: 'PUBLISHED' });
+      expect(mockPrisma.product.groupBy.mock.calls[0][0].where.OR).toEqual(expect.arrayContaining([
+        { lifecycleStatus: 'PUBLISHED' },
+        expect.objectContaining({ extraAttributes: expect.objectContaining({ path: ['biblioteca'] }) }),
+      ]));
     });
 
     it('conserva el orden de sortOrder y name de la consulta', async () => {

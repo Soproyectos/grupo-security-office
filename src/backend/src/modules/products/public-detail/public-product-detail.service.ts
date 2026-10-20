@@ -41,7 +41,7 @@ export class PublicProductDetailService {
     if (!SLUG.test(idOrSlug)) throw new BadRequestException('Identificador de producto inválido');
 
     const bySlug = await this.prisma.product.findFirst({
-      where: { catalogSlug: idOrSlug, catalogPublished: true, lifecycleStatus: 'PUBLISHED' },
+      where: { catalogSlug: idOrSlug, catalogPublished: true },
       select: { id: true },
     });
     if (!bySlug) throw new NotFoundException('Producto no encontrado');

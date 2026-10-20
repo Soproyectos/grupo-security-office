@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE16H0T-ITPFS(2.8mm)",
+  "nombre": {
+    "valor": "Audio por Coaxitron",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "AUDIO POR COAXITRON / Bala TURBOHD 5 Megapixel / Lente 2.8 mm / 4 Tecnologías (TVI / AHD / CVI / CVBS) / 20 mts SMART IR EXIR / Exterior IP67 / dWDR / Policarbonato",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Audio por Coaxitron",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

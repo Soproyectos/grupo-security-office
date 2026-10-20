@@ -1,0 +1,28 @@
+{
+  "referencia": "NUIMN-7278",
+  "nombre": {
+    "valor": "UPS Interactiva 3000VA MICRONET3000",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Interactivas",
+    "origen": "inferido",
+    "razon": "Seccion 4. UPS INTERACTIVAS MICRONET de la lista"
+  },
+  "marca": {
+    "valor": "Micronet",
+    "origen": "inferido",
+    "razon": "'MICRONET' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS INTERACTIVA 3000VA REF.MICRONET3000",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Interactiva 3000VA MICRONET3000",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

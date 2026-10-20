@@ -1,0 +1,19 @@
+{
+  "referencia": "CECABA-7286",
+  "categoria": {
+    "valor": "Accesorios para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 7. ACCESORIOS UPS ONLINE TIPO TORRE de la lista"
+  },
+  "descripcion": {
+    "valor": "CABLE DE CONEXION BANCO DE BATERIAS 6-10KVA",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Cable Conexión Banco Baterías 6-10KVA",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

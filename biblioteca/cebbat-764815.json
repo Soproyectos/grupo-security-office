@@ -1,0 +1,23 @@
+{
+  "referencia": "CEBBAT-764815",
+  "nombre": {
+    "valor": "Banco Baterias (15MN) Bb Titan EA9980 Externo",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "BANCO BATERIAS (15MN) REF.BB TITAN EA9980 EXTERNO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Banco Baterias (15MN) Bb Titan EA9980 Externo",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

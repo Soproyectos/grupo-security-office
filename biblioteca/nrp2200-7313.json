@@ -1,0 +1,28 @@
+{
+  "referencia": "NRP2200-7313",
+  "nombre": {
+    "valor": "Regulador de Voltaje Powest 2200 VA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Reguladores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 2. REGULADORES ELECTRONICOS DE VOLTAJE. de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "REGULADOR DE VOLTAJE POWEST 2200 VA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Regulador de Voltaje Powest 2200 VA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

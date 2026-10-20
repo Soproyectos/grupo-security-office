@@ -5,10 +5,10 @@
  * PrismaClient y sin efectos sobre la BD — para que jest (rootDir: src)
  * la pruebe directamente. El CLI operativo es prisma/import-biblioteca.ts.
  *
- * Entrada (read-only): las 764 fichas de biblioteca/*.json con la forma
+ * Entrada (read-only): fichas JSON individuales o un manifiesto masivo con la forma
  * {referencia, nombre_vitrina{valor,origen,razon?}, categoria?{valor},
  * marca?{valor}, descripcion{valor}, imagen?{valor}, estado,
- * fuentes_consultadas}.
+ * fuentes_consultadas}. Un manifiesto usa {schemaVersion, products: [...] }.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,9 +20,18 @@ import {
 
 // ---------- Forma de la ficha ----------
 
-export type FichaEstado = 'verificado' | 'parcial' | 'no_encontrado';
+export type FichaEstado =
+  | 'verificado'
+  | 'parcial'
+  | 'no_encontrado'
+  | 'pendiente_enriquecimiento';
 
-const ESTADOS_VALIDOS: FichaEstado[] = ['verificado', 'parcial', 'no_encontrado'];
+const ESTADOS_VALIDOS: FichaEstado[] = [
+  'verificado',
+  'parcial',
+  'no_encontrado',
+  'pendiente_enriquecimiento',
+];
 
 export interface FichaValorBlock {
   valor?: string;
@@ -33,13 +42,19 @@ export interface FichaValorBlock {
 export interface BibliotecaFicha {
   referencia: string;
   nombre?: FichaValorBlock;
-  nombre_vitrina: FichaValorBlock;
+  nombre_vitrina?: FichaValorBlock;
   categoria?: FichaValorBlock;
   marca?: FichaValorBlock;
   descripcion?: FichaValorBlock;
   imagen?: FichaValorBlock;
   estado: FichaEstado;
   fuentes_consultadas?: string[];
+}
+
+export interface BibliotecaManifest {
+  schemaVersion: 1;
+  source?: string;
+  products: unknown[];
 }
 
 export interface InvalidFicha {
@@ -60,17 +75,24 @@ export function validateFicha(raw: unknown): string | null {
   if (typeof f.referencia !== 'string' || !f.referencia.trim()) {
     return 'falta "referencia" (string no vacío)';
   }
-  const vitrina = f.nombre_vitrina as Record<string, unknown> | undefined;
+  if (typeof f.estado !== 'string' || !ESTADOS_VALIDOS.includes(f.estado as FichaEstado)) {
+    return `"estado" ausente o inválido (debe ser uno de ${ESTADOS_VALIDOS.join('/')})`;
+  }
+  const estado = f.estado as FichaEstado;
+  const vitrina = f.nombre_vitrina as Record<string, unknown> | null | undefined;
+  const hasVitrina = Object.prototype.hasOwnProperty.call(f, 'nombre_vitrina');
   if (
-    !vitrina ||
-    typeof vitrina !== 'object' ||
-    typeof vitrina.valor !== 'string' ||
-    !String(vitrina.valor).trim()
+    hasVitrina &&
+    vitrina !== null &&
+    (typeof vitrina !== 'object' || typeof vitrina.valor !== 'string' || !vitrina.valor.trim())
   ) {
     return 'falta "nombre_vitrina.valor" (string no vacío)';
   }
-  if (typeof f.estado !== 'string' || !ESTADOS_VALIDOS.includes(f.estado as FichaEstado)) {
-    return `"estado" ausente o inválido (debe ser uno de ${ESTADOS_VALIDOS.join('/')})`;
+  const hasVitrinaValue =
+    Boolean(vitrina && typeof vitrina === 'object' && typeof vitrina.valor === 'string') &&
+    Boolean((vitrina as Record<string, unknown>).valor);
+  if (estado !== 'pendiente_enriquecimiento' && !hasVitrinaValue) {
+    return 'falta "nombre_vitrina.valor" (string no vacío)';
   }
   return null;
 }
@@ -113,6 +135,57 @@ export function loadFichas(dir: string): LoadFichasResult {
   return { valid, invalid };
 }
 
+/**
+ * Carga un único manifiesto masivo. Acepta el formato versionado recomendado
+ * y, por compatibilidad, un array JSON plano de fichas.
+ */
+export function loadFichasFromManifest(filePath: string): LoadFichasResult {
+  const file = path.basename(filePath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (e) {
+    return { valid: [], invalid: [{ file, reason: `JSON ilegible: ${(e as Error).message}` }] };
+  }
+
+  const isObject = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+  const manifest = isObject ? (parsed as Partial<BibliotecaManifest>) : null;
+  if (manifest && manifest.schemaVersion !== undefined && manifest.schemaVersion !== 1) {
+    return { valid: [], invalid: [{ file, reason: 'schemaVersion no soportada (se esperaba 1)' }] };
+  }
+
+  const records = Array.isArray(parsed) ? parsed : manifest?.products;
+  if (!Array.isArray(records)) {
+    return { valid: [], invalid: [{ file, reason: 'el manifiesto debe contener un array "products"' }] };
+  }
+
+  const valid: BibliotecaFicha[] = [];
+  const invalid: InvalidFicha[] = [];
+  const seen = new Set<string>();
+  records.forEach((raw, index) => {
+    const reference =
+      typeof (raw as any)?.referencia === 'string' ? (raw as any).referencia : undefined;
+    const rowFile = `${file}[${index + 1}]`;
+    const reason = validateFicha(raw);
+    if (reason) {
+      invalid.push({ file: rowFile, referencia: reference, reason });
+      return;
+    }
+    const normalizedReference = normalizeSku((raw as BibliotecaFicha).referencia);
+    if (seen.has(normalizedReference)) {
+      invalid.push({
+        file: rowFile,
+        referencia: reference,
+        reason: 'referencia duplicada dentro del manifiesto',
+      });
+      return;
+    }
+    seen.add(normalizedReference);
+    valid.push(raw as BibliotecaFicha);
+  });
+  return { valid, invalid };
+}
+
 // ---------- Resolución de categorías y marcas ----------
 
 export interface ExistingNamedEntity {
@@ -127,6 +200,8 @@ export interface NameResolution {
   toCreate: string[];
   /** id del default ("Sin categoría"/"Sin marca") si ya existe; null si falta crearlo */
   defaultId: string | null;
+  /** Nombre canónico del default correspondiente a este tipo de entidad. */
+  defaultName: string;
 }
 
 export const DEFAULT_CATEGORY_NAME = 'Sin categoría';
@@ -155,9 +230,13 @@ function resolveNamed(
   const matched = new Map<string, string>();
   const toCreate: string[] = [];
   const seen = new Set<string>();
+  let needsDefault = false;
   for (const ficha of fichas) {
     const valor = getValor(ficha)?.trim();
-    if (!valor) continue; // ausente → default (se asigna al final)
+    if (!valor) {
+      needsDefault = true;
+      continue;
+    }
     const norm = normalizeNameForMatch(valor);
     const existingId = byNorm.get(norm);
     if (existingId) {
@@ -167,10 +246,15 @@ function resolveNamed(
       toCreate.push(valor);
     }
   }
+  const defaultNorm = normalizeNameForMatch(defaultName);
+  if (needsDefault && !byNorm.has(defaultNorm) && !seen.has(defaultNorm)) {
+    toCreate.push(defaultName);
+  }
   return {
     matched,
     toCreate,
-    defaultId: byNorm.get(normalizeNameForMatch(defaultName)) ?? null,
+    defaultId: byNorm.get(defaultNorm) ?? null,
+    defaultName,
   };
 }
 
@@ -203,7 +287,7 @@ export function resolveEntityId(
     const id = resolution.matched.get(norm) ?? createdIds.get(norm);
     if (id) return id;
   }
-  return resolution.defaultId;
+  return resolution.defaultId ?? createdIds.get(normalizeNameForMatch(resolution.defaultName)) ?? null;
 }
 
 /** Datos de creación de una categoría nueva (slug sin acentos, estilo repo). */
@@ -298,7 +382,9 @@ export function buildBibliotecaAttributes(ficha: BibliotecaFicha): Record<string
 
 /** Nombre de vitrina recortado al presupuesto de 70 chars (ADR-002). */
 export function fichaVitrinaName(ficha: BibliotecaFicha): string {
-  return truncateProductName((ficha.nombre_vitrina?.valor ?? '').trim());
+  return truncateProductName(
+    (ficha.nombre_vitrina?.valor ?? ficha.referencia).trim(),
+  );
 }
 
 /** true cuando el nombre de vitrina original excede 70 chars (se recorta). */
@@ -313,7 +399,7 @@ export interface ProductUpdateData {
   categoryId: string;
   brandId: string;
   nameSource: string;
-  nameLockedAt: Date;
+  nameLockedAt: Date | null;
   lastSeenAt: Date;
   extraAttributes: Record<string, unknown>;
 }
@@ -362,6 +448,7 @@ export function buildCreateData(
   brandId: string,
   now: Date,
 ): ProductCreateData {
+  const isPending = ficha.estado === 'pendiente_enriquecimiento';
   return {
     sku: ficha.referencia.trim(),
     name: fichaVitrinaName(ficha),
@@ -370,8 +457,8 @@ export function buildCreateData(
     brandId,
     extraAttributes: { biblioteca: buildBibliotecaAttributes(ficha) },
     isActive: false,
-    nameSource: 'curado',
-    nameLockedAt: now,
+    nameSource: isPending ? 'sistema' : 'curado',
+    nameLockedAt: isPending ? null : now,
     lastSeenAt: now,
   };
 }
@@ -410,6 +497,23 @@ export function isIdempotentSkip(
   if (existing.name !== fichaVitrinaName(ficha)) return false;
   const fichaDesc = ficha.descripcion?.valor ?? null;
   return (existing.description ?? null) === fichaDesc;
+}
+
+/**
+ * Un producto pendiente creado desde un manifiesto SKU-only se puede volver a
+ * enriquecer; una ficha pendiente nunca debe degradar un producto real.
+ */
+export function isPendingPlaceholder(
+  existing: Pick<ExistingProductIdentity, 'sku' | 'name' | 'nameLockedAt' | 'extraAttributes'>,
+): boolean {
+  if (existing.nameLockedAt) return false;
+  const root = isPlainObject(existing.extraAttributes) ? existing.extraAttributes : undefined;
+  const attributes = root && isPlainObject(root.biblioteca) ? root.biblioteca : undefined;
+  return (
+    normalizeSku(existing.name) === normalizeSku(existing.sku) ||
+    root?.importStatus === 'pending_enrichment' ||
+    attributes?.estado === 'pendiente_enriquecimiento'
+  );
 }
 
 // ---------- Reporte ----------
@@ -476,7 +580,7 @@ const emptyEstadoCounts = (): EstadoActionCounts => ({
 
 /**
  * Reporte de importación (dry-run y apply): totales por acción, desglose por
- * estado (verificado/parcial/no_encontrado), categorías/marcas por
+ * estado (verificado/parcial/no_encontrado/pendiente_enriquecimiento), categorías/marcas por
  * crear/creadas, imágenes, nombres recortados, fichas inválidas y errores
  * por fila.
  */
@@ -485,6 +589,7 @@ export function buildReport(input: BuildReportInput): ImportReportData {
     verificado: emptyEstadoCounts(),
     parcial: emptyEstadoCounts(),
     no_encontrado: emptyEstadoCounts(),
+    pendiente_enriquecimiento: emptyEstadoCounts(),
   };
   const totals = { updates: 0, creates: 0, skipped: 0, errors: 0 };
   for (const entry of input.entries) {

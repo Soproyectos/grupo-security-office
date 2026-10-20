@@ -1,0 +1,23 @@
+{
+  "referencia": "NMNET-7550",
+  "nombre": {
+    "valor": "Supresor de Picos Negro de 6 Salidas Multinet 6TN",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "SUPRESOR DE PICOS NEGRO DE 6 SALIDAS REF.MULTINET 6TN",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Supresor de Picos Negro de 6 Salidas Multinet 6TN",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -100,6 +100,8 @@ export interface ImportExecutionResult {
      * para revisión humana; el import no falla por esto).
      */
     identityChangesDetected: number;
+    /** Productos nuevos con SKU pero sin identidad comercial completa. */
+    pendingEnrichment: number;
   };
 
   /** Errores durante la ejecución */

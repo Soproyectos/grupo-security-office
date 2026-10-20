@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACKBD1824BL",
+  "nombre": {
+    "valor": "Kit de Motor Corredizo Accessmatic Bulldog 1824BL sin Escobillas de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTOR CORREDIZO ACCESSMATIC BULLDOG 1824BL SIN ESCOBILLAS DE 1800KG. INCLUYE MOTOR A 24V BD1824BL + BATERÍAS DE RESPALDO + 4 METROS DE CREMALLERA DE ACERO CON PERNOS RIM4Z Y 2 CONTROLES. VELOCIDAD 14 MT/ MIN. 110 VAC. USO INTENSIVO. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Motor Corredizo Bulldog 1824BL s/Escobillas",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

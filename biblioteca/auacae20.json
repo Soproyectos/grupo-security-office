@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACAE20",
+  "nombre": {
+    "valor": "Fotoceldas Accessmatic Accesseye 20 con 20 Mt de Alcance para Uso",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "FOTOCELDAS ACCESSMATIC ACCESSEYE 20 CON 20 MT DE ALCANCE PARA USO INTERIOR, FUNCIONAN DE 12-24V. COMPATIBLES CON TODOS LOS MOTORES ACCESSMATIC, BENINCA, KING GATES",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Fotoceldas Accesseye 20 Alcance 20m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

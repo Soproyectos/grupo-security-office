@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7216HQHI-M1/XT",
+  "nombre": {
+    "valor": "DVR 16 Canales TurboHD + 8 Canales IP",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 16 Canales TURBOHD + 8 Canales IP / 5 Megapixel Lite - 3K Lite / Audio de Dos Vías por Coaxitron / Reconocimiento Facial / ACUSENSE (Evita falsas alarmas) / 1 Bahía de Disco Duro / Salida de Video en Full HD",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 16 Canales TurboHD + 8 Canales IP",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

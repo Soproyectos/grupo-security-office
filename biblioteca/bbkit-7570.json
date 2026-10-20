@@ -1,0 +1,23 @@
+{
+  "referencia": "BBKIT-7570",
+  "nombre": {
+    "valor": "Kit de Baterias UPS 10 - 15 - 20 KVA UL",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Kits de Autonomía para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 13. KIT DE AUTONOMÍA PARA UPS TRIFÁSICA POWEST UL de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE BATERIAS UPS 10 - 15 - 20 KVA UL",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit de Baterias UPS 10 - 15 - 20 KVA UL",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

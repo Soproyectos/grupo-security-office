@@ -1,0 +1,23 @@
+{
+  "referencia": "CEELTRA-2273",
+  "nombre": {
+    "valor": "Transformador de Aislamiento de 6KVA Bif",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "TRANSFORMADOR DE AISLAMIENTO DE 6KVA BIF. RACK",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Transformador de Aislamiento de 6KVA Bif",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

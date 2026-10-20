@@ -1,0 +1,36 @@
+{
+  "referencia": "WDD256G1P0C",
+  "nombre": {
+    "valor": "MicroSD WD Purple SC 256GB UHS-I para Videovigilancia",
+    "origen": "web",
+    "fuente": "https://www.sandisk.com/products/memory-cards/microsd-cards/wd-purple-microsd?sku=WDD064G1P0C"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "Western Digital",
+    "origen": "web",
+    "fuente": "https://www.sandisk.com/products/memory-cards/microsd-cards/wd-purple-microsd?sku=WDD064G1P0C"
+  },
+  "descripcion": {
+    "valor": "MICROSD WD PURPLE CLASE 10 256GB PARA VIDEOVIGILANCIA",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://www.sandisk.com/content/dam/store/en-us/assets/products/surveillance-solutions/wd-purple-microsd/featured/purple-msd-feat1.jpg.wdthumb.1280.1280.jpg",
+    "origen": "web",
+    "fuente": "https://www.sandisk.com/products/memory-cards/microsd-cards/wd-purple-microsd?sku=WDD064G1P0C"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://www.sandisk.com/products/memory-cards/microsd-cards/wd-purple-microsd?sku=WDD064G1P0C"
+  ],
+  "nombre_vitrina": {
+    "valor": "MicroSD WD Purple SC 256GB Videovigilancia",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

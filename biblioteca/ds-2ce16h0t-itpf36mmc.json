@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE16H0T-ITPF(3.6mm)(C)",
+  "nombre": {
+    "valor": "Bala TurboHD 5 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Bala TURBOHD 5 Megapixel / Lente 2.8 mm / 4 Tecnologías (TVI / AHD / CVI / CVBS) / 25 mts SMART IR EXIR / Exterior IP67 / dWDR / Policarbonato",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 5MP TurboHD Smart IR 3.6mm",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACSB9",
+  "nombre": {
+    "valor": "Freno Paracaídas para Motores Hulk 700 & Hulk 900",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "FRENO PARACAÍDAS PARA MOTORES HULK 700 & HULK 900.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Freno Paracaídas para Motores Hulk 700 & Hulk 900",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

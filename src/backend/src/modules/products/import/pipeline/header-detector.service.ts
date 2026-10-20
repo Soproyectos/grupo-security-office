@@ -270,8 +270,9 @@ export class HeaderDetectorService {
       }
     }
 
-    // Solo SKU y name son truly required; category y brand se resuelven con defaults
-    const isRequired = ['sku', 'name'].includes(bestMatch.field);
+    // Solo SKU es requerido; nombre, categoría y marca pueden completarse
+    // después del cargue y categoría/marca tienen defaults de importación.
+    const isRequired = ['sku'].includes(bestMatch.field);
 
     return {
       sourceColumn: header,

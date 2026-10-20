@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACAE25",
+  "nombre": {
+    "valor": "Fotoceldas Accessmatic para Motores Hulk",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "FOTOCELDAS ACCESSMATIC PARA MOTORES HULK, DEBEN TENER LA RECEPTORA HR42 PARA SU CONEXIÓN.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Fotoceldas Accessmatic para Motores Hulk",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

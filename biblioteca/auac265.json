@@ -1,0 +1,28 @@
+{
+  "referencia": "AUAC265",
+  "nombre": {
+    "valor": "Tarjeta Controladora Accessmatic ACCESS-COMAND265",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "TARJETA CONTROLADORA ACCESSMATIC ACCESS-COMAND265, SIRVE PARA MOTORES CENTRALES Y TUBULARES DE TODAS LAS MARCAS, VIENE CON TECNOLOGIA FLEX-VOLT QUE LE BRINDA FLEXIBILIDAD EN EL VOLTAJE DE ENTRADA DESDE 95-265V, SIRVE PARA MOTORES AC DE 110V Y 220V. IDEAL PARA AR161, AR261 Y AR282 O DE CUALQUIER MARCA. VIENE CON PULSADOR DE 3 PASOS INCORPORADO, RECEPTOR PARA 64 CONTROLES.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Tarjeta Controladora Accessmatic ACCESS-COMAND265",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

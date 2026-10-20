@@ -1,0 +1,19 @@
+{
+  "referencia": "NJR6A-3601",
+  "categoria": {
+    "valor": "Cableado Categoría 6A",
+    "origen": "inferido",
+    "razon": "Seccion 23.3 CATEGORIA 6A de la lista"
+  },
+  "descripcion": {
+    "valor": "JACK CAT 6A UTP ROJO",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Jack CAT 6A UTP Rojo",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

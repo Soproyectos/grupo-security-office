@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACMTD624",
+  "nombre": {
+    "valor": "Barrera Accessmatic MASTODON624 para Accesos Vehiculares",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "BARRERA ACCESSMATIC MASTODON624 PARA ACCESOS VEHICULARES. USO CONTINUO DE 3.000.000 DE CICLOS. REDUCCIONES COMPLETAMENTE METÁLICAS Y MOTOR BRUSHLESS 24V DC. DIRECCIÓN INTERCAMBIABLE. APERTURA DE 0.6 A 6 SEGUNDOS. MOTOR 110V/220V AC. INCLUYE SEMAFORO LED, TARJETA CON DISPLAY DIGITAL Y 2 CONTROLES REMOTOS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Barrera Vehicular MASTODON624 Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

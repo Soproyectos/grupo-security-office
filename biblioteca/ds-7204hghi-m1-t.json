@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-7204HGHI-M1/T",
+  "nombre": {
+    "valor": "DVR Lite Mini 1U H.265 de 4 Canales y 1080p Metalico Compatible con la",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR Lite Mini 1U H.265 de 4 canales y 1080p metalico Compatible con la tecnología de detección de movimiento de todos los canales Compresión de vídeo H.265 Pro+/H.265 Pro/H.265 Entradas de vídeo HDTVI/CVI/AHD/IP/CVBS Audio por cable coaxial Compatible con todos los canales de tecnología de audio bidireccional HDTVI Entradas de cámara IP de hasta 5 canales",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR Lite Mini 1U 4CH 1080P Metálico",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

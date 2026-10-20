@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2AE5225TI-A(E)",
+  "nombre": {
+    "valor": "Camara PTZ Turbo HD 25X 2MP DWDR Color: 0.005 Lux",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "'HIKVISION' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "CAMARA PTZ TURBO HD 25X 2MP DWDR COLOR: 0.005 lux / F1.6 / AGC On ; WB: 0.001 lux /F1.6 / AGC On 3D DNR HIKVISION",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara PTZ Turbo HD 25X 2MP DWDR Color: 0.005 Lux",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

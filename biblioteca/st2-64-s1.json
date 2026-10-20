@@ -1,0 +1,36 @@
+{
+  "referencia": "ST2-64-S1",
+  "nombre": {
+    "valor": "MicroSD Imou 64GB Clase 10 para Videovigilancia",
+    "origen": "web",
+    "fuente": "https://bydemes.com/en/products/cctv/storage-systems/sd-cards/IMOU-0029"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "Imou",
+    "origen": "web",
+    "fuente": "https://bydemes.com/en/products/cctv/storage-systems/sd-cards/IMOU-0029"
+  },
+  "descripcion": {
+    "valor": "MICROSD IMOU CLASE 10 64GB PARA VIDEOVIGILANCIA",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://bydemes.com/ByDemesFiles/images/IMOU-0029.jpg",
+    "origen": "web",
+    "fuente": "https://bydemes.com/en/products/cctv/storage-systems/sd-cards/IMOU-0029"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://bydemes.com/en/products/cctv/storage-systems/sd-cards/IMOU-0029"
+  ],
+  "nombre_vitrina": {
+    "valor": "MicroSD Imou 64GB Clase 10 para Videovigilancia",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

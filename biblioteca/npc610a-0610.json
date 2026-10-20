@@ -1,0 +1,19 @@
+{
+  "referencia": "NPC610A-0610",
+  "categoria": {
+    "valor": "Cableado Categoría 6",
+    "origen": "inferido",
+    "razon": "Seccion 23.2 CATEGORIA 6 de la lista"
+  },
+  "descripcion": {
+    "valor": "PATCH CORD CAT 6 10FT AZUL",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Patch Cord CAT 6 10ft Azul",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACAE30",
+  "nombre": {
+    "valor": "Fotoceldas Accessmatic Accesseye 30 con 30 Mt de Alcance para la",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "FOTOCELDAS ACCESSMATIC ACCESSEYE 30 CON 30 MT DE ALCANCE PARA LA INTERPERIE, FUNCIONAN DE 12-24V. ORIENTABLES A 180 GRADOS. COMPATIBLES CON TODOS LOS MOTORES ACCESSMATIC, BENINCA, KING GATES.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Fotoceldas Accesseye 30 Alcance 30m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

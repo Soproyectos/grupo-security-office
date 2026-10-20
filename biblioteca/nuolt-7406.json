@@ -1,0 +1,28 @@
+{
+  "referencia": "NUOLT-7406",
+  "nombre": {
+    "valor": "UPS On Line 3KVA Powest 3KVA 220",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS On Line",
+    "origen": "inferido",
+    "razon": "Seccion 5. UPS ON LINE INCLUYE BATERIAS (AUTONOMIA). POWEST de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS ON LINE 3KVA REF.POWEST 3KVA 220",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS On Line 3KVA Powest 3KVA 220",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

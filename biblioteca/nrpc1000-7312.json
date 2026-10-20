@@ -1,0 +1,23 @@
+{
+  "referencia": "NRPC1000-7312",
+  "nombre": {
+    "valor": "Regulador Electronico de Voltaje PROPC1000",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Reguladores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 2. REGULADORES ELECTRONICOS DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "REGULADOR ELECTRONICO DE VOLTAJE REF. PROPC1000",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Regulador Electronico de Voltaje PROPC1000",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "AUELTW25",
+  "nombre": {
+    "valor": "Kit de Motores Batientes Elite TWIST250 para Puertas Abatibles de 2.5",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Elite",
+    "origen": "inferido",
+    "razon": "'ELITE' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE MOTORES BATIENTES ELITE TWIST250 PARA PUERTAS ABATIBLES DE 2.5 MTS Y 250 KG POR HOJA. ALIMENTACIÓN 110/24V. INCLUYE 2 PISTONES, 2 CON- TROLES, TARJETA ELECTRÓNICA CON DISPLAY DIGITAL. OPCIÓN DE BATERÍA DE RESPALDO (NO INCLUÍDA). 2 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Motores Elite TWIST250 Abatibles 2.5m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

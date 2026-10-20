@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily logical backup of the Grupo Security database (gs-db)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=gsops
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=30min
+ExecStart=/opt/grupo-security/deploy/vps/gs-db-backup.sh

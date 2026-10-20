@@ -1,0 +1,19 @@
+{
+  "referencia": "NPC5E3A-0503",
+  "categoria": {
+    "valor": "Cableado Categoría 5E",
+    "origen": "inferido",
+    "razon": "Seccion 23.1 CATEGORIA 5E de la lista"
+  },
+  "descripcion": {
+    "valor": "PATCH CORD CAT 5E 3FT AZUL",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Patch Cord CAT 5E 3ft Azul",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

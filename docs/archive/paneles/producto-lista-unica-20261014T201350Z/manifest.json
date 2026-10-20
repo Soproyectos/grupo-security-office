@@ -1,0 +1,32 @@
+[
+  {
+    "file": "DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md",
+    "previousSha256": "c58e8319e8da29df33c86d8da709b544610ff242954f73506c0ddfc78b4779d0",
+    "newSha256": "5e9035f795428b63d3d8cc77b9fbab2e8bc8bb5b2d60f8fd271412703c3d8146"
+  },
+  {
+    "file": "DISENO-IMPORTACION-PRECIOS-2026-10-14.md",
+    "previousSha256": "256315bffd670e8d1b50a5c43f28cf2dbc9f0cc7dd56ed1627636ca2a2c9d934",
+    "newSha256": "2144990dc1172d4f38fbd1ca6b17f56f1914e2dc110f184318f3d670916cd3b7"
+  },
+  {
+    "file": "PROPUESTA-ARBOL-PANELES-2026-10-13.md",
+    "previousSha256": "9d9e8d89fdb2988649c38e723fb9ac9856e4b44530fbc0ef5b23ebc38f5196e9",
+    "newSha256": "960381267e72b4f4215b089a945ab24d941741ce7fd30c12accc95b7542f0e7d"
+  },
+  {
+    "file": "adr/ADR-20261014-producto-una-sola-lista.md",
+    "previousSha256": null,
+    "newSha256": "3054eddf25b2cab4219d9fd3bdef2846e89927c4adba6a2637f20f2cb804a001"
+  },
+  {
+    "file": "00-INDEX.md",
+    "previousSha256": "07919901eed118f800a075c82b90d70e49ab50233efd596bc0cde4e4566ceca2",
+    "newSha256": "85749b4d0df6bfa222e6684ca26a4bb4ee50eb2de79036ef3e91ddc079081458"
+  },
+  {
+    "file": "adr/ADR-002-biblioteca-vitrina.md",
+    "previousSha256": "79b829572a461c696255a230b371ad33abc97b15a7641aa9f8126852215d1955",
+    "newSha256": "9da7dc03e2766837b37655591307af1e2d8894d47fc989979a9b2e7b3617ddc4"
+  }
+]

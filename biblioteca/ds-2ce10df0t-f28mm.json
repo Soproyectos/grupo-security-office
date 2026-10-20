@@ -1,0 +1,32 @@
+{
+  "referencia": "DS-2CE10DF0T-F(2.8mm)",
+  "nombre": {
+    "valor": "Camara Turbo 1080P Bala ColorVu 24/7 Hikvision",
+    "origen": "web",
+    "fuente": "https://duckduckgo.com/html/?q=%22DS-2CE10DF0T-F%22+Hikvision"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; serie ColorVu de camaras Turbo HD segun pagina oficial"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "web",
+    "fuente": "https://duckduckgo.com/html/?q=%22DS-2CE10DF0T-F%22+Hikvision"
+  },
+  "descripcion": {
+    "valor": "CAMARA TURBO 1080P BALA 0.001LUX F1.0 24/7 COLORVU 20M 3D DNR DWDR IP67 LUZ BLANCA METALICA HIKVISION",
+    "origen": "lista"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://duckduckgo.com/html/?q=%22DS-2CE10DF0T-F%22+Hikvision",
+    "https://www.hikvision.com/en/products/Turbo-HD-Products/Turbo-HD-Cameras/ColorVu-Series/ds-2ce10df0t-f/"
+  ],
+  "nombre_vitrina": {
+    "valor": "Camara Turbo 1080P Bala ColorVu 24/7 Hikvision",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

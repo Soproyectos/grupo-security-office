@@ -1,0 +1,23 @@
+{
+  "referencia": "ACCSNMP-9459",
+  "nombre": {
+    "valor": "SNMP UPS Rack 3, 6 y 10 KVA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Accesorios para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 7. ACCESORIOS UPS ONLINE TIPO TORRE de la lista"
+  },
+  "descripcion": {
+    "valor": "SNMP UPS RACK 3, 6 Y 10 KVA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Tarjeta SNMP UPS Rack 3, 6 y 10KVA",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

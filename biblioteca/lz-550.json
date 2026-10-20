@@ -1,0 +1,24 @@
+{
+  "referencia": "LZ-550",
+  "nombre": {
+    "valor": "Detector de Movimiento PIR y Microondas Cableado Deteccion 115°X15M",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "descripcion": {
+    "valor": "DETECTOR DE MOVIMIENTO PIR Y MICROONDAS CABLEADO DETECCION 115°X15M ANTIMASCOTA HASTA 20KG",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Detector Movimiento PIR + Microondas 115° 15m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

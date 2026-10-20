@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE19H8T-AIT3ZF(2.7-13.5mm)",
+  "nombre": {
+    "valor": "Cámara Bala Varifocal Motorizada de 5 MP para Luz Ultrabaja IP67 IR de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara bala varifocal motorizada de 5 MP para luz ultrabaja IP67 IR de 80 m WDR real de 130 dB",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Bala 5MP Varifocal Motorizada Luz Ultrabaja",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "referencia": "iDS-7332HQHI-M4/S",
+  "nombre": {
+    "valor": "DVR 4 Megapixel",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 4 Megapixel / 32 Canales TURBOHD + 16 Canales IP / 4 Bahías de Disco Duro / 4 Canales de Audio / Videoanalisis / 16 Entradas de Alarma",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 4MP 32CH TurboHD + 16CH IP 4Bahías",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

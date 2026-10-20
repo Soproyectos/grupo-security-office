@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACRT2415U",
+  "nombre": {
+    "valor": "Fotoceldas Accessmatic REFLEX15 Sirven Alcance de 15 Metros",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "FOTOCELDAS ACCESSMATIC REFLEX15 SIRVEN ALCANCE DE 15 METROS, IDEALES PARA MOTORES COMERCIALES Y BARRERAS/TALANQUERAS ELECTRÓNICAS.ALIMENTACIÓN 12-36V DC / 10-24V AC ALCANCE HASTA 15 M. PROTECTORES INCLUIDOS.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Fotoceldas REFLEX15 Alcance 15m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

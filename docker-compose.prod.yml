@@ -1,13 +1,13 @@
 # ============================================================
-# docker-compose.prod.yml — Producción (imágenes pre-build)
+# docker-compose.prod.yml - Production (pre-built GHCR images)
 # ============================================================
-# Uso:
-#   docker compose -f docker-compose.prod.yml up -d
-#   docker compose -f docker-compose.prod.yml down
+# On the VPS this file is always combined with the override, which keeps the
+# bundled nginx out of `up`, binds api/frontend to 127.0.0.1 and adds
+# MFA_ENCRYPTION_KEY (see deploy/vps/ and docs/procedimientos/deploy-vps.md):
+#   IMAGE_TAG=<sha8> docker compose -p grupo-security \
+#     -f docker-compose.prod.yml -f deploy/vps/docker-compose.override.yml up -d
 #
-# Las imágenes se tagean por SHA de git.
-# Ejemplo de variable de entorno:
-#   IMAGE_TAG=abc1234 docker compose -f docker-compose.prod.yml up -d
+# Images are tagged with the first 8 characters of the git SHA.
 
 services:
   # ---- Reverse proxy (SSL termination) ----
@@ -35,7 +35,7 @@ services:
 
   # ---- Backend (NestJS) ----
   api:
-    image: ghcr.io/zatairo/grupo-security-office/api:${IMAGE_TAG:-latest}
+    image: ghcr.io/soproyectos/grupo-security-office/api:${IMAGE_TAG:-latest}
     container_name: gs-api
     restart: always
     expose:
@@ -45,11 +45,17 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_DRIVER: postgres
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://panel.gruposecurity.com}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
       API_PORT: 3000
+    volumes:
+      - uploads:/app/uploads
+      # Manifests and import reports are persisted on the VPS and never baked
+      # into an application image.
+      - ./data/imports:/app/biblioteca
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
@@ -59,7 +65,7 @@ services:
 
   # ---- Frontend (Nginx static files) ----
   frontend:
-    image: ghcr.io/zatairo/grupo-security-office/frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/soproyectos/grupo-security-office/frontend:${IMAGE_TAG:-latest}
     container_name: gs-frontend
     restart: always
     expose:
@@ -75,17 +81,17 @@ services:
 
   # ---- PostgreSQL ----
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: gs-db
     restart: always
     expose:
       - "5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-grupo_security}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-grupo_security}"]
       interval: 5s
@@ -94,3 +100,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

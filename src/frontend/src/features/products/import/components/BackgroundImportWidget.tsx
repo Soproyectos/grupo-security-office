@@ -82,6 +82,9 @@ export default function BackgroundImportWidget() {
             {job.status === 'completed' && job.result && (
               <p className="mt-1 text-xs text-neutral-600">
                 {job.result.summary.created} creados · {job.result.summary.updated} actualizados
+                {(job.result.summary.pendingEnrichment ?? 0) > 0 && (
+                  <span> · {job.result.summary.pendingEnrichment} pendientes</span>
+                )}
                 {job.result.summary.errors > 0 && (
                   <span className="text-security-700"> · {job.result.summary.errors} con error</span>
                 )}

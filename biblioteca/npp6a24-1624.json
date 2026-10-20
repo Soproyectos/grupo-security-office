@@ -1,0 +1,23 @@
+{
+  "referencia": "NPP6A24-1624",
+  "nombre": {
+    "valor": "Patch Panel Cat 6A 24 Puertos 1U",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Gabinetes Tipo Rack",
+    "origen": "inferido",
+    "razon": "Seccion 20. INFRAESTRUCTURA - GABINETES TIPO RACK POWEST de la lista"
+  },
+  "descripcion": {
+    "valor": "PATCH PANEL CAT 6A 24 PUERTOS 1U",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Patch Panel Cat 6A 24 Puertos 1U",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

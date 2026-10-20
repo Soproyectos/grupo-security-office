@@ -1,0 +1,36 @@
+{
+  "referencia": "WD23PURZ",
+  "nombre": {
+    "valor": "Disco Duro WD Purple 2TB SATA 3.5\" para Videovigilancia",
+    "origen": "web",
+    "fuente": "https://www.westerndigital.com/products/internal-drives/wd-purple-sata-hdd?sku=WD23PURZ"
+  },
+  "categoria": {
+    "valor": "Almacenamiento",
+    "origen": "inferido",
+    "razon": "Seccion ALMACENAMIENTO de la hoja ALMACENAMIENTO en LISTA ALMACENAMIENTO GRUPO.xlsx"
+  },
+  "marca": {
+    "valor": "Western Digital",
+    "origen": "web",
+    "fuente": "https://www.westerndigital.com/products/internal-drives/wd-purple-sata-hdd?sku=WD23PURZ"
+  },
+  "descripcion": {
+    "valor": "DISCO DURO 2TB/ Intellipower 3.5\" SATA WD",
+    "origen": "lista"
+  },
+  "imagen": {
+    "valor": "https://www.westerndigital.com/content/dam/store/en-us/assets/products/internal-storage/wd-purple-sata-hdd/gallery/wd-purple-surveillance-hard-drive-1tb.png.thumb.1280.1280.png",
+    "origen": "web",
+    "fuente": "https://www.westerndigital.com/products/internal-drives/wd-purple-sata-hdd?sku=WD23PURZ"
+  },
+  "estado": "verificado",
+  "fuentes_consultadas": [
+    "https://www.westerndigital.com/products/internal-drives/wd-purple-sata-hdd?sku=WD23PURZ"
+  ],
+  "nombre_vitrina": {
+    "valor": "Disco Duro WD Purple 2TB Videovigilancia",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

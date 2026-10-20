@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACESA3.5",
+  "nombre": {
+    "valor": "Botón de Parada de Emergencia para Motor Kong con 3.5M de Cable",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "BOTÓN DE PARADA DE EMERGENCIA PARA MOTOR KONG CON 3.5M DE CABLE. PARA CERTIFICACIÓN.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Botón de Parada Motor Kong c/Cable 3.5m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,5 +1,7 @@
 # ADR-002: Biblioteca de Vitrina — separar la identidad del producto del precio
 
+**Actualización de producto del 14 de octubre de 2026:** el usuario confirmó que un producto pertenece como máximo a una lista. La [decisión posterior](ADR-20261014-producto-una-sola-lista.md) reemplaza los supuestos de multilistado y de `Product.listaId` meramente informativo de esta propuesta histórica. Se mantiene la separación entre identidad y precios.
+
 | Campo | Valor |
 |-------|-------|
 | **Estado** | Propuesta |

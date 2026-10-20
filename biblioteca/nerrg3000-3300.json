@@ -1,0 +1,23 @@
+{
+  "referencia": "NERRG3000-3300",
+  "nombre": {
+    "valor": "Controlador de Cargador Solar 3KW",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Controladores Solares",
+    "origen": "inferido",
+    "razon": "Seccion 24.6 CONTROLADORES SOLARES de la lista"
+  },
+  "descripcion": {
+    "valor": "CONTROLADOR DE CARGADOR SOLAR 3KW",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Controlador de Cargador Solar 3KW",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

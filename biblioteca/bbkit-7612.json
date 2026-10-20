@@ -1,0 +1,23 @@
+{
+  "referencia": "BBKIT-7612",
+  "nombre": {
+    "valor": "Kit de Baterias UPS 1KVA Rack",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Bancos de Baterías para UPS",
+    "origen": "inferido",
+    "razon": "Seccion 6. BANCO BATERIAS UPS ONLINE ADICIONALES PARA UPS MONO Y BIFASICAS de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE BATERIAS UPS 1KVA RACK",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit de Baterias UPS 1KVA Rack",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

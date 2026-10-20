@@ -1,0 +1,28 @@
+{
+  "referencia": "NUIMN-7282",
+  "nombre": {
+    "valor": "UPS Powest Interactiva 1250VA",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "UPS Interactivas",
+    "origen": "inferido",
+    "razon": "Seccion 4. UPS INTERACTIVAS MICRONET de la lista"
+  },
+  "marca": {
+    "valor": "Powest",
+    "origen": "inferido",
+    "razon": "'POWEST' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "UPS POWEST INTERACTIVA 1250VA",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "UPS Powest Interactiva 1250VA",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

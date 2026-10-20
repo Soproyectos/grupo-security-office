@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-E08HGHI-D",
+  "nombre": {
+    "valor": "DVR 8 CH 1080p Disco Duro eSSD 960gb H265+ Diseño Compacto",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR 8 CH 1080p DISCO DURO eSSD 960gb H265+ DISEÑO COMPACTO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR 8CH 1080P eSSD 960GB Compacto",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

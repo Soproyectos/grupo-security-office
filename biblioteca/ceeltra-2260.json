@@ -1,0 +1,23 @@
+{
+  "referencia": "CEELTRA-2260",
+  "nombre": {
+    "valor": "Transformador de Aislamiento 1KVA Monofásico",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "TRANSFORMADOR DE AISLAMIENTO 1KVA MONOFÁSICO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Transformador de Aislamiento 1KVA Monofásico",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

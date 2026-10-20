@@ -1,0 +1,23 @@
+{
+  "referencia": "CEELTRA-7583",
+  "nombre": {
+    "valor": "Transformador de Aislamiento de 100KVA 208/120 y - y",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 15. TRANSFORMADORES DE AISLAMIENTO POWEST EA de la lista"
+  },
+  "descripcion": {
+    "valor": "TRANSFORMADOR DE AISLAMIENTO DE 100KVA 208/120 Y - Y",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Transformador Aislamiento 100KVA 208/120",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

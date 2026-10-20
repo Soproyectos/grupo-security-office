@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE78D0T-LTS(2.8mm)",
+  "nombre": {
+    "valor": "Turret TurboHD 2 Megapixel (1080p)",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Turret TURBOHD 2 Megapixel (1080p) / Lente 2.8 mm / Dual Light (40 mts IR EXIR + 40 mts Luz Blanca) / Micrófono Integrado / Gran Angular 105° / IP67 / 4 Tecnologías",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Turret TurboHD 1080P Dual Light 40m",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

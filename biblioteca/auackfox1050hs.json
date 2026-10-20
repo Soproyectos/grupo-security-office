@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKFOX1050HS",
+  "nombre": {
+    "valor": "Motor de Garaje Accessmatic FOX 1050 High Speed de 3/4 HP de Fuerza",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MOTOR DE GARAJE ACCESSMATIC FOX 1050 HIGH SPEED DE 3/4 HP DE FUERZA, SALIDA 12/24VPARA CONECTAR TODO TIPO DE ACCESORIOS. ALTA VELOCIDAD 240CM/S. TECNOLOGIA DE COMUNICACION INALAMBRICA PARA ACCESORIOS. USO INTENSIVO. INCLUYE 2 CONTROLES DE 4 BOTONES, BOTONERA INALÁMBRICA DE 3 BOTONES. CARGADOR DE BATERÍA INCORPORADO, FUNCIONA CON RIEL EN C Y RIEL EN T. 12 MT DE RECORRIDO. INCLUYE 3M RIEL, MUY SILENCIOSO SILENTDRIVE. 110V. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Motor Garaje FOX 1050 High Speed Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

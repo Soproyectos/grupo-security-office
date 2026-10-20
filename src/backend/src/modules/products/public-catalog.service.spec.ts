@@ -53,15 +53,16 @@ const products = [
 
 /** Aplica el `where` que el servicio manda a Prisma sobre `products`. */
 function matchesProductWhere(row: any, where: any): boolean {
+  if (where.AND && !where.AND.every((condition: any) => matchesProductWhere(row, condition))) return false;
+  if (where.OR && !where.OR.some((condition: any) => matchesProductWhere(row, condition))) return false;
   if (where.id !== undefined && row.id !== where.id) return false;
   if (where.lifecycleStatus !== undefined && row.lifecycleStatus !== where.lifecycleStatus) return false;
   if (where.categoryId?.in && !where.categoryId.in.includes(row.categoryId)) return false;
-  if (where.OR) {
-    const hit = where.OR.some((cond: any) => {
-      const [field, filter] = Object.entries(cond)[0] as [string, any];
-      return String(row[field]).toLowerCase().includes(String(filter.contains).toLowerCase());
-    });
-    if (!hit) return false;
+  if (where.extraAttributes?.path?.[0] === 'biblioteca' && !row.extraAttributes?.biblioteca) return false;
+  for (const field of ['name', 'sku']) {
+    if (where[field]?.contains && !String(row[field]).toLowerCase().includes(String(where[field].contains).toLowerCase())) {
+      return false;
+    }
   }
   return true;
 }
@@ -111,12 +112,30 @@ describe('PublicCatalogService', () => {
       expect(result.meta).toEqual({ total: 4, offset: 0, limit: 24 });
     });
 
-    it('consulta con PUBLISHED y los ids de la categoría y sus descendientes', async () => {
+    it('consulta con publicación comercial o marca de biblioteca y los ids de la categoría', async () => {
       await service.search({ category: 'cctv' });
 
       const where = prisma.product.findMany.mock.calls[0][0].where;
-      expect(where.lifecycleStatus).toBe('PUBLISHED');
+      expect(where.AND[0].OR).toEqual(expect.arrayContaining([
+        { lifecycleStatus: 'PUBLISHED' },
+        expect.objectContaining({ extraAttributes: expect.objectContaining({ path: ['biblioteca'] }) }),
+      ]));
       expect([...where.categoryId.in].sort()).toEqual(['c-cctv', 'c-domos', 'c-ptz']);
+    });
+
+    it('incluye una ficha informativa oficial sin abrir otros borradores', async () => {
+      build([{ productId: 'p-library', value: '999999', list: PUBLIC_LIST }], {}, [
+        product('p-library', 'SKU informativo', 'c-cctv', {
+          lifecycleStatus: 'DRAFT',
+          extraAttributes: { biblioteca: { estado: 'pendiente_enriquecimiento' } },
+        }),
+      ]);
+
+      const result = await service.search({ category: 'cctv' });
+
+      expect(result.data.find((item) => item.id === 'p-library')).toMatchObject({ isInformational: true });
+      expect(result.data.find((item) => item.id === 'p-library')?.price).toBeNull();
+      expect(result.data.some((item) => item.id === 'p-04')).toBe(false);
     });
 
     it('una subcategoría solo trae su propio subárbol', async () => {
@@ -212,7 +231,7 @@ describe('PublicCatalogService', () => {
     it('responde 404 para un producto que no está PUBLISHED (DRAFT)', async () => {
       await expect(service.getDetail('p-04')).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.product.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'p-04', lifecycleStatus: 'PUBLISHED', catalogPublished: true } }),
+        expect.objectContaining({ where: { id: 'p-04', AND: expect.any(Array) } }),
       );
       // Un 404 no debe gastar consultas de precio ni de categorías.
       expect(prisma.price.findMany).not.toHaveBeenCalled();
@@ -256,6 +275,22 @@ describe('PublicCatalogService', () => {
         technicalSpecs: [{ key: 'resolucion', value: '8', unit: 'MP' }],
         datasheets: [{ name: 'ficha-tecnica.pdf', url: '/api/files/f1/ficha-tecnica.pdf' }],
         price: { value: 2450000, currency: 'COP' },
+        isInformational: false,
+      });
+    });
+
+    it('permite el detalle de una ficha informativa oficial', async () => {
+      build([], {}, [
+        product('p-library', 'SKU informativo', 'c-cctv', {
+          lifecycleStatus: 'DRAFT',
+          extraAttributes: { biblioteca: { estado: 'pendiente_enriquecimiento' } },
+        }),
+      ]);
+
+      await expect(service.getDetail('p-library')).resolves.toMatchObject({
+        id: 'p-library',
+        isInformational: true,
+        price: null,
       });
     });
 
@@ -297,7 +332,7 @@ describe('PublicCatalogService', () => {
 
       expect(detail.price).toEqual({ value: 399000, currency: 'COP' });
       expect(Object.keys(detail).sort()).toEqual([
-        'breadcrumb', 'brand', 'category', 'datasheets', 'description', 'id', 'images', 'name', 'price', 'sku', 'technicalSpecs',
+        'breadcrumb', 'brand', 'category', 'datasheets', 'description', 'id', 'images', 'isInformational', 'name', 'price', 'sku', 'technicalSpecs',
       ].sort());
       const serialized = JSON.stringify(detail);
       for (const forbidden of ['extraAttributes', 'COSTO', 'PLATINO', 'INSTALADOR', 'TIENDA', 'DPP_', 'SIN_IVA', 'lifecycleStatus']) {

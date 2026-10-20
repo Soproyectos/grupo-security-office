@@ -1,0 +1,19 @@
+{
+  "referencia": "AUACBOOM04F",
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE ASTA ARTICULADA PARA TALANQUERA ACCESSMATIC MTD624. 4 METROS. INCLUYE SOPORTE LATERAL.",
+    "origen": "lista"
+  },
+  "estado": "no_encontrado",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Asta Articulada Talanquera MTD624",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "ME05-WB-V2",
+  "nombre": {
+    "valor": "Modulo Ethernet para Conexión de Alarmas y Electrificadores JFL con",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Cercos Eléctricos",
+    "origen": "inferido",
+    "razon": "Seccion CERCOS ELECTRICOS de la lista"
+  },
+  "marca": {
+    "valor": "JFL",
+    "origen": "inferido",
+    "razon": "'JFL' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "MODULO ETHERNET PARA CONEXIÓN DE ALARMAS Y ELECTRIFICADORES JFL CON APLICACIÓN MÓVIL",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Módulo Ethernet Alarmas JFL",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "referencia": "NPRLAV-7258",
+  "nombre": {
+    "valor": "Protector de Voltaje 120V Lavomatic",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "PROTECTOR DE VOLTAJE 120V REF.LAVOMATIC",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Protector de Voltaje 120V Lavomatic",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

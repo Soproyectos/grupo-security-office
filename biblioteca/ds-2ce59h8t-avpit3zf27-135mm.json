@@ -1,0 +1,29 @@
+{
+  "referencia": "DS-2CE59H8T-AVPIT3ZF(2.7-13.5mm)",
+  "nombre": {
+    "valor": "Cámara Domo Varifocal Motorizada Antivandálica de 5 MP con Iluminación",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "Cámara domo varifocal motorizada antivandálica de 5 MP con iluminación ultrabaja WDR real de 130 dB IR de 60 m Resistente al agua y al polvo (IP67) y a prueba de vandalismo (IK10)",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Camara Domo 5MP Varifocal Antivandálica Iluminada",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

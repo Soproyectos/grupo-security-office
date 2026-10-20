@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKVIPER350",
+  "nombre": {
+    "valor": "Kit de Puerta Batiente Accessmatic Pull & Push para Hojas de Max",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE PUERTA BATIENTE ACCESSMATIC PULL & PUSH PARA HOJAS DE MAX. 350KG. INCLUYE BRAZO DE EMPUJE (INSTALACIÓN EXTERNA) Y PINZA DE VIDRIO 2 CONTROLES MULTIFUNCIÓN, BOTÓN NO TOUCH. VOLTAJE DE ENTRADA 110V. 99° DE APERTURA. PARA USO INTENSIVO EXTERNO (CON BRISA). 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Puerta Batiente Viper 350 Pull&Push 350kg",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "referencia": "AUACKHULK950",
+  "nombre": {
+    "valor": "Kit de Sistema de Apertura para Cortinas Enrollables Accessmatic Hulk",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "'ACCESSMATIC' mencionado en la descripcion de la lista"
+  },
+  "descripcion": {
+    "valor": "KIT DE SISTEMA DE APERTURA PARA CORTINAS ENROLLABLES ACCESSMATIC HULK DE PESO DE 950KG SIN RESORTE, MUY FUERTE, IDEAL PARA CORTINAS ENROLLABLES DE ALMACENES Y CENTROS DE DISTRIBUCIÓN. INCLUYE MOTOR, ACCESORIOS PARA SU INSTALACIÓN Y PULSADOR INDUSTRIAL DE 3 BOTONES. 110V/60HZ. 3 AÑOS DE GARANTÍA.",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Kit Apertura Enrollables Hulk 950 Accessmatic",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

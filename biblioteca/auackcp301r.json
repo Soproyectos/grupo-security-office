@@ -1,0 +1,28 @@
+{
+  "referencia": "AUACKCP301R",
+  "nombre": {
+    "valor": "Puerta Pánel Liso 2,74m de Ancho x 2,14m de Alto",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Motores para Puertas Levadizas",
+    "origen": "inferido",
+    "razon": "Seccion MOTORES PARA PUERTAS LEVADIZAS de la lista"
+  },
+  "marca": {
+    "valor": "Accessmatic",
+    "origen": "inferido",
+    "razon": "Prefijo AUAC de la referencia, patron de la linea Accessmatic en la lista"
+  },
+  "descripcion": {
+    "valor": "PUERTA PÁNEL LISO 2,74m DE ANCHO X 2,14m DE ALTO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Puerta Pánel Liso 2,74m de Ancho x 2,14m de Alto",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

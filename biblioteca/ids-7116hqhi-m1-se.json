@@ -1,0 +1,29 @@
+{
+  "referencia": "iDS-7116HQHI-M1/S(E)",
+  "nombre": {
+    "valor": "DVR AcuSense Mini 1U H.265 de 16 Canales y 1080p Clasificación de",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista, recortado a 70 caracteres"
+  },
+  "categoria": {
+    "valor": "DVRs Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-7/iDS-7/iDS-9/DS-E0 = DVR"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "DVR AcuSense mini 1U H.265 de 16 canales y 1080p Clasificación de objetivos humanos y de vehículos basada en aprendizaje profundo de Motion Detection 2.0 Protección perimetral basada en aprendizaje profundo Compresión de vídeo H.265 Pro+/H.265 Pro/H.265 Entradas de vídeo HDTVI/AHD/CVI/CVBS/IP Audio mediante cable coaxial Entradas de cámara IP de hasta 24 canales (hasta 6 MP) Capacidad de codificación hasta 3K/5M Lite a 12 fps",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "DVR AcuSense Mini 1U 16CH 1080P",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

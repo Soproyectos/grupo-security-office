@@ -1,0 +1,23 @@
+{
+  "referencia": "CEBBAT-766505",
+  "nombre": {
+    "valor": "Banco Baterias (5MN) Bb Titan EA99100 Externo",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Transformadores de Aislamiento",
+    "origen": "inferido",
+    "razon": "Seccion 8. TRANSFORMADORES DE AISLAMIENTO de la lista"
+  },
+  "descripcion": {
+    "valor": "BANCO BATERIAS (5MN) REF.BB TITAN EA99100 EXTERNO",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Banco Baterias (5MN) Bb Titan EA99100 Externo",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}

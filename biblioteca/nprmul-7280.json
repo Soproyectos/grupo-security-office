@@ -1,0 +1,23 @@
+{
+  "referencia": "NPRMUL-7280",
+  "nombre": {
+    "valor": "Protector VOLTAJE120V MULTIMATIC120",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Protectores de Voltaje",
+    "origen": "inferido",
+    "razon": "Seccion 3. PROTECTORES DE VOLTAJE. de la lista"
+  },
+  "descripcion": {
+    "valor": "PROTECTOR VOLTAJE120V REF.MULTIMATIC120",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Protector Voltaje 120V Multimatic 120",
+    "origen": "inferido",
+    "razon": "Re-curado a <=50 chars para vitrina visual; se conservan los specs que distinguen la variante"
+  }
+}

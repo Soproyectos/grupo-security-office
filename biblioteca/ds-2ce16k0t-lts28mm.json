@@ -1,0 +1,28 @@
+{
+  "referencia": "DS-2CE16K0T-LTS(2.8mm)",
+  "nombre": {
+    "valor": "Minibala Fija con Audio Bidireccional de 3K",
+    "origen": "lista"
+  },
+  "categoria": {
+    "valor": "Camaras Turbo",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO de la lista; prefijo DS-2CE/DS-2AE = camara"
+  },
+  "marca": {
+    "valor": "Hikvision",
+    "origen": "inferido",
+    "razon": "Hoja HIKVISION TURBO / pista_marca de la lista"
+  },
+  "descripcion": {
+    "valor": "MINIBALA FIJA CON AUDIO BIDIRECCIONAL DE 3K",
+    "origen": "lista"
+  },
+  "estado": "parcial",
+  "fuentes_consultadas": [],
+  "nombre_vitrina": {
+    "valor": "Minibala Fija con Audio Bidireccional de 3K",
+    "origen": "inferido",
+    "razon": "Redactado desde la descripcion de la lista"
+  }
+}
