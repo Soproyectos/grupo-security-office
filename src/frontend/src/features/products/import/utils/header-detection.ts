@@ -67,7 +67,7 @@ export function detectHeaderMappings(headers: string[]): {
         sourceColumn: header,
         targetField: bestMatch.field,
         confidence: bestMatch.confidence,
-        isRequired: ['sku', 'name'].includes(bestMatch.field),
+        isRequired: ['sku'].includes(bestMatch.field),
       });
     } else {
       unmappedHeaders.push(header);
@@ -85,7 +85,7 @@ export function detectHeaderMappings(headers: string[]): {
     });
     if (descriptionMapping) {
       descriptionMapping.targetField = 'name';
-      descriptionMapping.isRequired = true;
+      descriptionMapping.isRequired = false;
     }
   }
 

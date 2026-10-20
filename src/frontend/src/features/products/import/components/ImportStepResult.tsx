@@ -34,6 +34,7 @@ export default function ImportStepResult({ onNewImport, onClose }: ImportStepRes
     await exportImportSummary(
       {
         created: executionResult.summary.created,
+        pendingEnrichment: executionResult.summary.pendingEnrichment ?? 0,
         updated: executionResult.summary.updated,
         skipped: executionResult.summary.skipped,
         errors: executionResult.executionErrors,
@@ -53,6 +54,7 @@ export default function ImportStepResult({ onNewImport, onClose }: ImportStepRes
         updated: executionResult.summary.updated,
         skipped: executionResult.summary.skipped,
         errors: executionResult.summary.errors,
+        pendingEnrichment: executionResult.summary.pendingEnrichment ?? 0,
       },
       errors: executionResult.executionErrors,
     });
@@ -79,13 +81,21 @@ export default function ImportStepResult({ onNewImport, onClose }: ImportStepRes
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <div className="border border-gray-200 rounded-lg p-4">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
             Total
           </p>
           <p className="mt-1 text-2xl font-bold text-security-900">
             {executionResult.summary.total}
+          </p>
+        </div>
+        <div className="border border-amber-200 bg-amber-50 rounded-lg p-4">
+          <p className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+            Pendientes
+          </p>
+          <p className="mt-1 text-2xl font-bold text-amber-800">
+            {executionResult.summary.pendingEnrichment ?? 0}
           </p>
         </div>
         <div className="border border-green-200 bg-green-50 rounded-lg p-4">

@@ -25,6 +25,7 @@ export async function exportValidationErrors(errors: ValidationRowError[], fileN
 export async function exportImportSummary(
   params: {
     created: number;
+    pendingEnrichment: number;
     updated: number;
     skipped: number;
     errors: Array<{ sku: string; error: string }>;
@@ -35,6 +36,7 @@ export async function exportImportSummary(
 
   const summaryData = [
     { Concepto: 'Productos creados', Valor: params.created },
+    { Concepto: 'Pendientes de enriquecimiento', Valor: params.pendingEnrichment },
     { Concepto: 'Productos actualizados', Valor: params.updated },
     { Concepto: 'Filas omitidas', Valor: params.skipped },
     { Concepto: 'Errores', Valor: params.errors.length },
@@ -63,7 +65,7 @@ export async function exportImportSummary(
 export function exportImportLog(params: {
   fileName: string;
   listaLabel?: string;
-  totals: { total: number; created: number; updated: number; skipped: number; errors: number };
+  totals: { total: number; created: number; updated: number; skipped: number; errors: number; pendingEnrichment: number };
   errors: Array<{ rowIndex?: number; sku?: string; error: string }>;
 }): void {
   const lines: string[] = [];
@@ -76,6 +78,7 @@ export function exportImportLog(params: {
   lines.push('Totales:');
   lines.push(`  - Total filas procesadas: ${params.totals.total}`);
   lines.push(`  - Productos creados: ${params.totals.created}`);
+  lines.push(`  - Pendientes de enriquecimiento: ${params.totals.pendingEnrichment}`);
   lines.push(`  - Productos actualizados: ${params.totals.updated}`);
   lines.push(`  - Filas omitidas: ${params.totals.skipped}`);
   lines.push(`  - Filas con error: ${params.totals.errors}`);

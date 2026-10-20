@@ -1,7 +1,7 @@
 /**
  * Importador de la biblioteca de vitrina (ADR-002, tarea T5).
  *
- * Siembra la capa de identidad de los 764 productos curados por el agente
+ * Siembra la capa de identidad de las fichas curadas por el agente
  * bibliotecario: nombre de vitrina (<=70), descripción, categoría, marca,
  * `nameSource="curado"` y bloqueo `nameLockedAt`, más el bloque
  * `extraAttributes.biblioteca` con la documentación de origen de cada ficha.
@@ -9,6 +9,8 @@
  *
  * Uso (ts-node, estilo prisma/seed.ts):
  *   npm run db:import-biblioteca                      → DRY-RUN (cero escrituras en BD)
+ *   npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import.json
+ *   npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import.json --updates-only
  *   npm run db:import-biblioteca -- --apply --confirm=IMPORTAR-BIBLIOTECA-2026
  *
  * La corrida real exige el token exacto: sin --apply o sin el token correcto
@@ -29,8 +31,11 @@ import {
   buildImageRows,
   buildReport,
   buildUpdateData,
+  deepMergeExtraAttributes,
   formatTimestamp,
   isIdempotentSkip,
+  isPendingPlaceholder,
+  loadFichasFromManifest,
   loadFichas,
   matchProducts,
   normalizeNameForMatch,
@@ -53,11 +58,19 @@ interface RowOutcome {
   action: 'update' | 'create' | 'skip' | 'error';
 }
 
-function parseArgs(argv: string[]): { apply: boolean; confirm: string | null } {
+function parseArgs(argv: string[]): {
+  apply: boolean;
+  confirm: string | null;
+  manifest: string | null;
+  updatesOnly: boolean;
+} {
   const apply = argv.includes('--apply');
+  const updatesOnly = argv.includes('--updates-only');
   const confirmArg = argv.find((a) => a.startsWith('--confirm='));
   const confirm = confirmArg ? confirmArg.slice('--confirm='.length) : null;
-  return { apply, confirm };
+  const manifestArg = argv.find((a) => a.startsWith('--manifest=') || a.startsWith('--file='));
+  const manifest = manifestArg ? manifestArg.slice(manifestArg.indexOf('=') + 1) : null;
+  return { apply, confirm, manifest, updatesOnly };
 }
 
 function writeJsonArtifact(dir: string, name: string, payload: unknown): string {
@@ -93,7 +106,7 @@ async function createMissingBrands(
 }
 
 async function main(): Promise<void> {
-  const { apply, confirm } = parseArgs(process.argv.slice(2));
+  const { apply, confirm, manifest, updatesOnly } = parseArgs(process.argv.slice(2));
   const now = new Date();
   const ts = formatTimestamp(now);
 
@@ -105,8 +118,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`[import-biblioteca] leyendo fichas de ${FICHAS_DIR}`);
-  const { valid: fichas, invalid } = loadFichas(FICHAS_DIR);
+  const manifestPath = manifest ? path.resolve(process.cwd(), manifest) : null;
+  const inputLabel = manifestPath ?? FICHAS_DIR;
+  console.log(`[import-biblioteca] leyendo fichas de ${inputLabel}`);
+  const { valid: fichas, invalid } = manifestPath
+    ? loadFichasFromManifest(manifestPath)
+    : loadFichas(FICHAS_DIR);
   console.log(
     `[import-biblioteca] fichas: ${fichas.length} válidas, ${invalid.length} inválidas`,
   );
@@ -133,17 +150,19 @@ async function main(): Promise<void> {
     }),
   ]);
 
-  const catRes = resolveCategories(fichas, categories as ExistingNamedEntity[]);
-  const brandRes = resolveBrands(fichas, brands as ExistingNamedEntity[]);
   const { updates, creates } = matchProducts(
     fichas,
     products.map((p) => p.sku),
   );
+  const plannedFichas = updatesOnly ? updates.map(({ ficha }) => ficha) : fichas;
+  const catRes = resolveCategories(plannedFichas, categories as ExistingNamedEntity[]);
+  const brandRes = resolveBrands(plannedFichas, brands as ExistingNamedEntity[]);
   const productBySku = new Map(products.map((p) => [p.sku, p]));
   const productsWithImages = new Set(existingImageProductIds.map((i) => i.productId));
 
   console.log(
-    `[import-biblioteca] cruce con BD: ${updates.length} updates, ${creates.length} creates ` +
+    `[import-biblioteca] cruce con BD: ${updates.length} existentes, ${creates.length} no encontrados ` +
+      `| modo: ${updatesOnly ? 'solo actualizaciones' : 'actualizaciones y creaciones'} ` +
       `| categorías por crear: ${catRes.toCreate.length} | marcas por crear: ${brandRes.toCreate.length}`,
   );
 
@@ -152,13 +171,21 @@ async function main(): Promise<void> {
     const outcomes: RowOutcome[] = [];
     for (const { ficha, sku } of updates) {
       const existing = productBySku.get(sku);
-      if (existing && isIdempotentSkip(existing, ficha)) {
+      if (
+        existing &&
+        ficha.estado === 'pendiente_enriquecimiento' &&
+        !isPendingPlaceholder(existing)
+      ) {
+        outcomes.push({ ficha, action: 'skip' });
+      } else if (existing && isIdempotentSkip(existing, ficha)) {
         outcomes.push({ ficha, action: 'skip' });
       } else {
         outcomes.push({ ficha, action: 'update' });
       }
     }
-    for (const ficha of creates) outcomes.push({ ficha, action: 'create' });
+    for (const ficha of creates) {
+      outcomes.push({ ficha, action: updatesOnly ? 'skip' : 'create' });
+    }
 
     const report = buildReport({
       mode: 'dry-run',
@@ -167,8 +194,8 @@ async function main(): Promise<void> {
       invalid,
       categoriesToCreate: catRes.toCreate,
       brandsToCreate: brandRes.toCreate,
-      images: fichas.filter((f) => buildImageRows(f).length > 0).length,
-      namesTruncated: fichas.filter(
+      images: plannedFichas.filter((f) => buildImageRows(f).length > 0).length,
+      namesTruncated: plannedFichas.filter(
         (f) => (f.nombre_vitrina?.valor ?? '').trim().length > 70,
       ).length,
     });
@@ -203,6 +230,9 @@ async function main(): Promise<void> {
   console.log(`[import-biblioteca] backup: ${backupPath} (${backupRows.length} productos)`);
 
   const outcomes: RowOutcome[] = [];
+  if (updatesOnly) {
+    for (const ficha of creates) outcomes.push({ ficha, action: 'skip' });
+  }
   const rowErrors: { sku: string; error: string }[] = [];
   let imagesCreated = 0;
   let categoriesCreated = 0;
@@ -236,6 +266,27 @@ async function main(): Promise<void> {
     }
     if (isIdempotentSkip(existing, ficha)) {
       outcomes.push({ ficha, action: 'skip' });
+      return;
+    }
+    if (ficha.estado === 'pendiente_enriquecimiento' && !isPendingPlaceholder(existing)) {
+      outcomes.push({ ficha, action: 'skip' });
+      return;
+    }
+    if (ficha.estado === 'pendiente_enriquecimiento') {
+      await tx.product.update({
+        where: { id: existing.id },
+        data: {
+          lastSeenAt: now,
+          extraAttributes: deepMergeExtraAttributes(existing.extraAttributes, {
+            biblioteca: {
+              estado: ficha.estado,
+              origen: ficha.nombre_vitrina?.origen ?? null,
+              fuentes_consultadas: ficha.fuentes_consultadas ?? [],
+            },
+          }),
+        } as unknown as Prisma.ProductUncheckedUpdateInput,
+      });
+      outcomes.push({ ficha, action: 'update' });
       return;
     }
     const categoryId = resolveEntityId(ficha.categoria?.valor, catRes, createdCatIds);
@@ -366,12 +417,14 @@ async function main(): Promise<void> {
     'updates',
   );
 
-  // 3) Creates (referencias nuevas).
-  await runChunked(
-    creates.map((ficha) => ({ ficha })),
-    (tx, ficha) => applyCreateRow(tx, ficha),
-    'creates',
-  );
+  // 3) Creates (referencias nuevas), salvo en modo seguro de solo actualización.
+  if (!updatesOnly) {
+    await runChunked(
+      creates.map((ficha) => ({ ficha })),
+      (tx, ficha) => applyCreateRow(tx, ficha),
+      'creates',
+    );
+  }
 
   const report = buildReport({
     mode: 'apply',
@@ -381,7 +434,9 @@ async function main(): Promise<void> {
     categoriesToCreate: catRes.toCreate,
     brandsToCreate: brandRes.toCreate,
     images: imagesCreated,
-    namesTruncated: fichas.filter((f) => (f.nombre_vitrina?.valor ?? '').trim().length > 70).length,
+    namesTruncated: plannedFichas.filter(
+      (f) => (f.nombre_vitrina?.valor ?? '').trim().length > 70,
+    ).length,
     categoriesCreated,
     brandsCreated,
     rowErrors,
@@ -401,7 +456,7 @@ function printSummary(
   console.log(`fichas:          ${t.fichasFiles} archivos | ${t.valid} válidas | ${t.invalid} inválidas`);
   console.log(`updates:         ${t.updates}`);
   console.log(`creates:         ${t.creates}`);
-  console.log(`skipped:         ${t.skipped} (idempotentes)`);
+  console.log(`skipped:         ${t.skipped} (idempotentes o no encontrados en updates-only)`);
   console.log(`errors:         ${t.errors}`);
   console.log(`imágenes:        ${t.images}`);
   console.log(`nombres>70:      ${t.namesTruncated} (recortados a 70)`);

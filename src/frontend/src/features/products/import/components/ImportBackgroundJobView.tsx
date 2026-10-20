@@ -44,6 +44,7 @@ export default function ImportBackgroundJobView({
       {job.status === 'completed' && job.result && (
         <div className="w-full max-w-md grid grid-cols-2 gap-3 text-left">
           <Stat label="Creados" value={job.result.summary.created} tone="success" />
+          <Stat label="Pendientes" value={job.result.summary.pendingEnrichment ?? 0} tone="neutral" />
           <Stat label="Actualizados" value={job.result.summary.updated} tone="neutral" />
           <Stat label="Omitidos" value={job.result.summary.skipped} tone="neutral" />
           <Stat label="Errores" value={job.result.summary.errors} tone={job.result.summary.errors > 0 ? 'error' : 'neutral'} />

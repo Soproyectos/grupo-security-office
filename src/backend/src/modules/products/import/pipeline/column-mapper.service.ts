@@ -13,7 +13,7 @@ import { HeaderDetectionResult } from '../interfaces/column-mapping';
  * Responsabilidades:
  * - Aplicar mapping automático del HeaderDetector
  * - Permitir ajustes manuales del usuario
- * - Validar que todos los campos requeridos estén mapeados
+ * - Validar que el SKU esté mapeado
  * - Gestionar presets de mapping guardados
  */
 @Injectable()
@@ -98,7 +98,7 @@ export class ColumnMapperService {
         entries.push({
           sourceColumn: entry.sourceColumn,
           targetField: override,
-          isRequired: ['sku', 'name'].includes(override),
+          isRequired: ['sku'].includes(override),
           confidence: override === entry.targetField ? entry.confidence : 1.0,
         });
       } else {
@@ -125,13 +125,9 @@ export class ColumnMapperService {
     if (!hasField('sku')) {
       missingFields.push('sku');
     }
-    // 'name' no es estrictamente requerido si existe una columna mapeada a
-    // 'description': resolveEffectiveName() deriva el nombre desde la
-    // descripción a nivel de fila (ver text-normalizer.ts). Solo se exige
-    // 'name' cuando no hay ninguna fuente de la que derivarlo.
-    if (!hasField('name') && !hasField('description')) {
-      missingFields.push('name');
-    }
+    // Nombre y descripción son opcionales: una fila que solo trae SKU se
+    // crea como borrador pendiente de enriquecimiento. El normalizador usa el
+    // SKU como nombre provisional y el ejecutor evita publicarlo.
 
     return missingFields;
   }
@@ -174,7 +170,7 @@ export class ColumnMapperService {
       entries: preset.mappings.map((m) => ({
         sourceColumn: m.sourceColumn,
         targetField: m.targetField,
-        isRequired: ['sku', 'name'].includes(m.targetField),
+        isRequired: ['sku'].includes(m.targetField),
         confidence: 1.0,
       })),
       confirmed: true,

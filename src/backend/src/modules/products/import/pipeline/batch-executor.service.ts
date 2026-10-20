@@ -45,6 +45,24 @@ const DEFAULT_BATCH_CONFIG: BatchConfig = {
 /** Decisión de sección del wizard, normalizada por sourceValue (slug). */
 type SectionDecisionMap = NonNullable<ImportContext['sectionDecisions']>;
 
+/** Un objeto vacío no aporta identidad comercial para decidir publicación. */
+function hasMeaningfulObject(value?: Record<string, unknown>): boolean {
+  return Boolean(value && Object.keys(value).length > 0);
+}
+
+/**
+ * Detecta filas que solo identifican el producto por SKU (con o sin precio).
+ * El precio no convierte una ficha sin identidad en publicable.
+ */
+function isPendingEnrichmentRow(row: NormalizedRow): boolean {
+  return (
+    row.nameIsFallback &&
+    !row.description &&
+    !hasMeaningfulObject(row.technicalSpecs) &&
+    !hasMeaningfulObject(row.extraAttributes)
+  );
+}
+
 /**
  * Servicio de ejecución en batch.
  *
@@ -89,6 +107,7 @@ export class BatchExecutorService {
       durationMs: 0,
       defaultsByMissingInference: { category: 0, brand: 0 },
       identityChangesDetected: 0,
+      pendingEnrichment: 0,
     };
 
     // Pre-cargar categorías y marcas existentes + Lista destino
@@ -135,6 +154,7 @@ export class BatchExecutorService {
         result.productIds.push(...batchResult.productIds);
         result.errors.push(...batchResult.errors);
         result.identityChangesDetected += batchResult.identityChangesDetected;
+        result.pendingEnrichment += batchResult.pendingEnrichment;
         result.defaultsByMissingInference.category += batchResult.defaults.category;
         result.defaultsByMissingInference.brand += batchResult.defaults.brand;
 
@@ -191,6 +211,7 @@ export class BatchExecutorService {
     errors: BatchError[];
     defaults: { category: number; brand: number };
     identityChangesDetected: number;
+    pendingEnrichment: number;
   }> {
     return this.prisma.$transaction(
       async (tx) => {
@@ -202,6 +223,7 @@ export class BatchExecutorService {
           errors: [] as BatchError[],
           defaults: { category: 0, brand: 0 },
           identityChangesDetected: 0,
+          pendingEnrichment: 0,
         };
 
         // Pre-cargar SKUs existentes en este batch. Además del id, se traen los
@@ -262,6 +284,7 @@ export class BatchExecutorService {
             );
 
             const existingProduct = existingSkuMap.get(normalizeSku(row.sku));
+            const pendingEnrichment = isPendingEnrichmentRow(row);
 
             if (existingProduct) {
               // UPDATE: producto ya existe.
@@ -300,18 +323,27 @@ export class BatchExecutorService {
                 // traía SKU y precio), se conserva el nombre que el producto
                 // ya tenía en catálogo — de lo contrario un cargue mensual sin
                 // nombre borraría el nombre real ya guardado.
-                await tx.product.update({
-                  where: { id: existingProduct.id },
-                  data: {
-                    ...(row.nameIsFallback ? {} : { name: row.name }),
-                    description: row.description ?? undefined,
-                    categoryId: categoryResult.id,
-                    brandId: brandResult.id,
-                    technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                    extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                    lastSeenAt: new Date(),
-                  },
-                });
+                if (pendingEnrichment) {
+                  // Una fila SKU-only repetida no debe borrar la identidad que
+                  // alguien ya completó; solo confirma presencia y precios.
+                  await tx.product.update({
+                    where: { id: existingProduct.id },
+                    data: { lastSeenAt: new Date() },
+                  });
+                } else {
+                  await tx.product.update({
+                    where: { id: existingProduct.id },
+                    data: {
+                      ...(row.nameIsFallback ? {} : { name: row.name }),
+                      description: row.description ?? undefined,
+                      categoryId: categoryResult.id,
+                      brandId: brandResult.id,
+                      technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+                      extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+                      lastSeenAt: new Date(),
+                    },
+                  });
+                }
               }
 
               // Actualizar precios
@@ -333,9 +365,17 @@ export class BatchExecutorService {
                   brandId: brandResult.id,
                   listaId,
                   technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                  extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-                  isActive: true,
-                  isVisible: defaultVisibility,
+                  extraAttributes: pendingEnrichment
+                    ? {
+                        importStatus: 'pending_enrichment',
+                        pendingReason: 'missing_identity',
+                      }
+                    : (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+                  isActive: !pendingEnrichment,
+                  isVisible: pendingEnrichment ? false : defaultVisibility,
+                  ...(pendingEnrichment
+                    ? { lifecycleStatus: 'DRAFT', publishStatus: 'borrador' }
+                    : {}),
                 },
               });
 
@@ -346,6 +386,7 @@ export class BatchExecutorService {
 
               await tx.$executeRawUnsafe('RELEASE SAVEPOINT row_sp');
               batchResult.created++;
+              if (pendingEnrichment) batchResult.pendingEnrichment++;
               batchResult.productIds.push(newProduct.id);
               // Defensa adicional: si una fila posterior del mismo lote resuelve al
               // mismo SKU normalizado (no debería pasar tras el fix de validación,
@@ -717,6 +758,7 @@ export class BatchExecutorService {
           durationMs: result.durationMs,
           defaultsByMissingInference: result.defaultsByMissingInference,
           identityChangesDetected: result.identityChangesDetected,
+          pendingEnrichment: result.pendingEnrichment,
           columnsMapped,
           columnsExtra,
           columnsSkipped,
