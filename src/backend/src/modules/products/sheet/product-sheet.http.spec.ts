@@ -145,6 +145,7 @@ describe('ProductSheetController (HTTP)', () => {
 
   it.each(['Super Admin', 'Admin Comercial'])('PUT as %s saves, audits and returns the new sheet in the {data} envelope', async (role) => {
     prisma.product.findUnique
+      .mockResolvedValueOnce(row()) // authorizeProduct select
       .mockResolvedValueOnce(row())
       .mockResolvedValueOnce(row({ catalogName: 'DVR AcuSense', catalogSlug: 'ids-e04hqhi-d', catalogPublished: true }));
 

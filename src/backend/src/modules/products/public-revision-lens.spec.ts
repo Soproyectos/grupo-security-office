@@ -8,6 +8,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { applyRevisionLens, loadActiveRevisionContents } from './public-revision-lens';
 import { PublicCatalogService } from './public-catalog.service';
+import { PUBLIC_CATALOG_VISIBILITY } from './public-catalog-visibility';
 
 describe('CAT-02 backend-publico — lente de revisión', () => {
   const PUBLICADA = { id: 'rev-1', status: 'PUBLICADA', content: { name: 'Nombre del snapshot', sku: 'SKU-SNAP' } };
@@ -90,7 +91,7 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
       expect(detail.sku).toBe('SKU-SNAP');
     });
 
-    it('search exige catalogPublished además de PUBLISHED (borrador jamás listado)', async () => {
+    it('search exige la visibilidad pública común (PUBLIC_CATALOG_VISIBILITY): publicado o ficha informativa de la biblioteca', async () => {
       const prisma = {
         category: { findMany: jest.fn().mockResolvedValue([]) },
         product: {
@@ -103,13 +104,12 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
       const service = new PublicCatalogService(prisma, pricing);
       await service.search({ q: 'x' });
       const where = prisma.product.findMany.mock.calls[0][0].where;
-      expect(where.lifecycleStatus).toBe('PUBLISHED');
-      expect(where.catalogPublished).toBe(true);
+      expect(where.AND).toEqual(expect.arrayContaining([PUBLIC_CATALOG_VISIBILITY]));
     });
   });
 
   describe('getDetail por ID exige visibilidad completa (hueco §2.1 cerrado)', () => {
-    it('el where exige catalogPublished además de PUBLISHED', async () => {
+    it('el where exige la visibilidad pública común además del id', async () => {
       const prisma = {
         product: {
           findFirst: jest.fn().mockResolvedValue({
@@ -126,7 +126,7 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
       await service.getDetail('p1');
       expect(prisma.product.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'p1', lifecycleStatus: 'PUBLISHED', catalogPublished: true },
+          where: { id: 'p1', AND: [PUBLIC_CATALOG_VISIBILITY] },
         }),
       );
     });

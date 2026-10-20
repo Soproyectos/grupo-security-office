@@ -42,7 +42,14 @@ describe('ProductRevisionsService — borradores versionados', () => {
       assertProductAccess: jest.fn().mockResolvedValue(undefined),
       isListasAdmin: jest.fn().mockReturnValue(true),
     };
-    service = new ProductRevisionsService(prisma, acl as any);
+    // Strict access model: without grants every action is denied, so the harness grants both.
+    const grants = {
+      grantsForUser: jest.fn().mockResolvedValue([
+        { sourceId: 's-r', actionId: 'products:read', scope: 'global' },
+        { sourceId: 's-w', actionId: 'products:write', scope: 'global' },
+      ]),
+    };
+    service = new ProductRevisionsService(prisma, acl as any, grants as any);
   });
 
   it('guardar borrador crea la revisión SIN_REVISAR v1 y NO toca el producto (activos protegidos)', async () => {

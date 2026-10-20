@@ -162,7 +162,7 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
   });
 
   it('crea una fila SKU-only como borrador pendiente y no visible', async () => {
-    mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-pendiente', defaultVisibility: true });
+    mockPrisma.lista.findUnique.mockResolvedValue(activeLista('lista-pendiente', { defaultVisibility: true }));
 
     const skuOnlyRow = {
       ...normalizedRow,

@@ -294,7 +294,8 @@ describe('ProductSheetService.get', () => {
     });
     expect(sheet.resources[0]).toMatchObject({ kind: 'FIRMWARE', requiresLicense: true, version: 'V1' });
     // Orders by position, items included: reuses the public detail include.
-    expect(prisma.product.findUnique.mock.calls[0][0].include.catalogSpecGroups.orderBy).toEqual({ position: 'asc' });
+    const loadCall = prisma.product.findUnique.mock.calls.find(([arg]: [{ include?: unknown }]) => arg.include);
+    expect(loadCall[0].include.catalogSpecGroups.orderBy).toEqual({ position: 'asc' });
   });
 
   it('404s for an unknown product', async () => {
@@ -428,7 +429,8 @@ describe('ProductSheetService.update', () => {
     const { service, prisma, audit } = build();
     const before = productRow({ catalogName: 'Antes', catalogBadges: ['Viejo'] });
     const after = productRow({ catalogName: 'DVR AcuSense 4 canales', catalogSlug: 'ids-e04hqhi-d', catalogBadges: ['Destacado'] });
-    prisma.product.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+    // 1st call: ownership/ACL select in authorizeProduct; 2nd: load(before); 3rd: reload(after).
+    prisma.product.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(before).mockResolvedValueOnce(after);
 
     const result = await service.update(PRODUCT_ID, baseInput(), ctx);
 
@@ -567,6 +569,7 @@ describe('CAT-03 · notas internas (H1), identificadores (H4) y acciones (H3)', 
     prisma.product
       .findUnique
       .mockResolvedValueOnce(productRow())
+      .mockResolvedValueOnce(productRow())
       .mockResolvedValueOnce(productRow({ catalogInternalNotes: 'Nota interna' }));
 
     const view = await service.update(PRODUCT_ID, baseInput({ internalNotes: 'Nota interna' }), ctx);
@@ -629,6 +632,7 @@ describe('CAT-03 · notas internas (H1), identificadores (H4) y acciones (H3)', 
     const { service, prisma, tx } = build();
     prisma.product
       .findUnique
+      .mockResolvedValueOnce(productRow())
       .mockResolvedValueOnce(productRow())
       .mockResolvedValueOnce(productRow({ catalogManufacturerRefs: ['PN-123', 'EAN-456'] }));
 

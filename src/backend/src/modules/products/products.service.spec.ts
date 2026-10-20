@@ -1786,7 +1786,7 @@ describe('ProductsService', () => {
         return { id: 'p2', sku: 'SKU2', listaId: 'lista-a', lifecycleStatus: 'PUBLISHED', publishStatus: 'publicado', isActive: true, isVisible: true };
       });
       mockPrisma.product.update.mockResolvedValue({ id: 'p1', sku: 'SKU1' });
-      const r = await service.scheduleListaProducts('lista-a', { publishAt: '2099-01-01T00:00:00.000Z' }, baseCtx);
+      const r = await service.scheduleListaProducts('lista-a', { publishAt: '2099-01-01T00:00:00.000Z' }, { userId: 'user-1', roles: ['Super Admin'] }); // per-product publish needs a grant or Super Admin
       expect(r.succeeded).toBe(1);
       expect(r.skipped).toBe(1);
       expect(r.failed).toBe(0);

@@ -205,14 +205,14 @@ describe('ProductValidationService.reportOf (V2: obsoleto tras editar)', () => {
 
 describe('ProductValidationService.validateBatch', () => {
   it('respetos: omitido sin revelar fuera de alcance; un fallo no aborta el lote', async () => {
-    const { service, prisma, acl } = build();
-    acl.assertProductAccess
-      .mockResolvedValueOnce({ listaId: null }) // A en alcance
-      .mockRejectedValueOnce(new ForbiddenException()) // B fuera
-      .mockResolvedValueOnce({ listaId: null }); // C en alcance pero falla el ensamblado
-    prisma.product.findUnique
-      .mockResolvedValueOnce(productRow()) // A
-      .mockResolvedValueOnce(null); // C inexistente → failed
+    const { service, prisma } = build();
+    // Per product the service looks it up twice: scope check (assertView) and assembly.
+    const lookups: Record<string, number> = {};
+    prisma.product.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => {
+      lookups[where.id] = (lookups[where.id] ?? 0) + 1;
+      if (lookups[where.id] === 1) return where.id === 'B' ? null : { id: where.id, listaId: null }; // B: out of scope, nothing revealed
+      return where.id === 'C' ? null : productRow(); // C: in scope but assembly fails
+    });
     prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-x' });
 
     const r = await service.validateBatch(['A', 'B', 'C'], ctx);
