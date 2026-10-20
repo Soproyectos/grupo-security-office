@@ -19,6 +19,7 @@ DEFAULT_BASELINE = ROOT / "biblioteca-import-web.json"
 DEFAULT_API = "https://dev.gruposecurity.cloud/api/public/products"
 EXPECTED_OFFICIAL = 5038
 PAGE_SIZE = 48
+DEFAULT_PAGE_DELAY = 1.2
 
 
 def normalize_sku(value: str) -> str:
@@ -67,7 +68,7 @@ def fetch_page(api_url: str, offset: int) -> tuple[list[dict[str, Any]], int]:
     raise ValueError("public API response has no data[]/meta envelope")
 
 
-def fetch_all(api_url: str) -> tuple[list[dict[str, Any]], int]:
+def fetch_all(api_url: str, page_delay: float = DEFAULT_PAGE_DELAY) -> tuple[list[dict[str, Any]], int]:
     products: list[dict[str, Any]] = []
     expected_total: int | None = None
     offset = 0
@@ -81,6 +82,8 @@ def fetch_all(api_url: str) -> tuple[list[dict[str, Any]], int]:
             raise ValueError(f"pagination stopped at {offset} of {expected_total}")
         products.extend(page)
         offset += len(page)
+        if offset < expected_total and page_delay > 0:
+            time.sleep(page_delay)
     if expected_total is None or len(products) != expected_total:
         raise ValueError(f"incomplete public read: expected {expected_total}, received {len(products)}")
     return products, expected_total
@@ -169,6 +172,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--attempts", type=int, default=12)
     parser.add_argument("--delay", type=float, default=10.0)
+    parser.add_argument(
+        "--page-delay",
+        type=float,
+        default=DEFAULT_PAGE_DELAY,
+        help="seconds between public API pages (default: 1.2, below the 60 requests/minute limit)",
+    )
     args = parser.parse_args()
 
     official = load_manifest(args.manifest)
@@ -178,7 +187,7 @@ def main() -> int:
 
     for attempt in range(1, max(args.attempts, 1) + 1):
         try:
-            public_products, total = fetch_all(args.api)
+            public_products, total = fetch_all(args.api, max(args.page_delay, 0.0))
             last_summary, errors = reconcile(official, baseline, public_products, total)
             if not errors:
                 break
