@@ -118,6 +118,7 @@ const product: PublicProductResult = {
   categoryName: 'Cámaras IP',
   categorySlug: 'camaras-ip',
   brandName: 'Hikvision',
+  isInformational: false,
   price: { value: 118258.8, currency: 'COP' },
 }
 

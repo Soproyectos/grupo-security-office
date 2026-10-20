@@ -32,6 +32,7 @@ function product(id: string, overrides: Partial<PublicProductResult> = {}): Publ
     categoryName: 'Cámaras Turbo',
     categorySlug: 'camaras-turbo',
     brandName: 'Hikvision',
+    isInformational: false,
     price: { value: 100000, currency: 'COP' },
     ...overrides,
   }

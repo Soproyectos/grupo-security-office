@@ -34,23 +34,8 @@ export function validateRowClient(
     }
   }
 
-  const nameValue = getValue('name');
-  const name = nameValue ? String(nameValue).trim() : '';
-  if (!name) {
-    errors.push({ field: 'name', code: 'NAME_REQUIRED', message: 'El nombre es requerido' });
-  }
-
-  const categoryValue = getValue('category');
-  const category = categoryValue ? String(categoryValue).trim() : '';
-  if (!category) {
-    errors.push({ field: 'category', code: 'CATEGORY_REQUIRED', message: 'La categoría es requerida' });
-  }
-
-  const brandValue = getValue('brand');
-  const brand = brandValue ? String(brandValue).trim() : '';
-  if (!brand) {
-    errors.push({ field: 'brand', code: 'BRAND_REQUIRED', message: 'La marca es requerida' });
-  }
+  // Nombre, categoría y marca son opcionales. El backend crea SKU-only como
+  // borrador pendiente y resuelve defaults para categoría/marca.
 
   return errors;
 }

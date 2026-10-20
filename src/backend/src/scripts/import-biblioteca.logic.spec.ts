@@ -7,10 +7,12 @@ import {
   buildImageRows,
   buildReport,
   buildUpdateData,
+  isPendingPlaceholder,
   fichaVitrinaName,
   isIdempotentSkip,
   isNameTruncated,
   loadFichas,
+  loadFichasFromManifest,
   matchProducts,
   resolveBrands,
   resolveCategories,
@@ -61,6 +63,9 @@ describe('import-biblioteca.logic', () => {
     it('acepta una ficha válida devolviendo null', () => {
       expect(validateFicha(makeFicha({ estado: 'parcial' }))).toBeNull();
       expect(validateFicha(makeFicha({ estado: 'no_encontrado' }))).toBeNull();
+      expect(
+        validateFicha({ referencia: 'SKU-ONLY-1', estado: 'pendiente_enriquecimiento' }),
+      ).toBeNull();
     });
   });
 
@@ -111,6 +116,51 @@ describe('import-biblioteca.logic', () => {
       const names = [...result.valid.map((f) => f.referencia), ...result.invalid.map((i) => i.file)];
       expect(names).not.toContain('REPORT-1');
       expect(names).not.toContain('BACKUP-1');
+    });
+  });
+
+  describe('loadFichasFromManifest', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biblioteca-manifest-test-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('carga un manifiesto versionado, permite SKU-only y rechaza referencias duplicadas', () => {
+      const filePath = path.join(dir, 'biblioteca-5028.json');
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({
+          schemaVersion: 1,
+          source: 'test',
+          products: [
+            makeFicha({ referencia: 'REF-1' }),
+            { referencia: 'ref-1', estado: 'pendiente_enriquecimiento' },
+            { referencia: 'REF-3', estado: 'estado-invalido' },
+          ],
+        }),
+      );
+
+      const result = loadFichasFromManifest(filePath);
+
+      expect(result.valid).toHaveLength(1);
+      expect(result.valid[0].referencia).toBe('REF-1');
+      expect(result.invalid).toHaveLength(2);
+      expect(result.invalid[0].reason).toContain('duplicada');
+      expect(result.invalid[1].reason).toContain('"estado" ausente o inválido');
+    });
+
+    it('rechaza una versión de esquema no soportada', () => {
+      const filePath = path.join(dir, 'futuro.json');
+      fs.writeFileSync(filePath, JSON.stringify({ schemaVersion: 2, products: [] }));
+
+      expect(loadFichasFromManifest(filePath).invalid[0].reason).toContain(
+        'schemaVersion no soportada',
+      );
     });
   });
 
@@ -250,6 +300,23 @@ describe('import-biblioteca.logic', () => {
       expect(data.nameSource).toBe('curado');
       expect(data.extraAttributes.biblioteca).toMatchObject({ estado: 'verificado' });
     });
+
+    it('crea un SKU-only como placeholder desbloqueado y pendiente', () => {
+      const now = new Date('2026-09-22T00:00:00.000Z');
+      const ficha = makeFicha({
+        referencia: ' PENDIENTE-1 ',
+        nombre_vitrina: undefined,
+        estado: 'pendiente_enriquecimiento',
+      });
+      const data = buildCreateData(ficha, 'cat-1', 'br-1', now);
+
+      expect(data.name).toBe('PENDIENTE-1');
+      expect(data.nameSource).toBe('sistema');
+      expect(data.nameLockedAt).toBeNull();
+      expect(data.extraAttributes.biblioteca).toMatchObject({
+        estado: 'pendiente_enriquecimiento',
+      });
+    });
   });
 
   describe('fichaVitrinaName / isNameTruncated', () => {
@@ -298,6 +365,27 @@ describe('import-biblioteca.logic', () => {
       expect(isIdempotentSkip({ ...locked, nameLockedAt: null }, ficha)).toBe(false);
       expect(isIdempotentSkip({ ...locked, name: 'Otro nombre' }, ficha)).toBe(false);
       expect(isIdempotentSkip({ ...locked, description: 'Distinta' }, ficha)).toBe(false);
+    });
+  });
+
+  describe('isPendingPlaceholder', () => {
+    it('reconoce placeholders SKU-only y no productos con identidad bloqueada', () => {
+      expect(
+        isPendingPlaceholder({
+          sku: 'SKU-1',
+          name: 'SKU-1',
+          nameLockedAt: null,
+          extraAttributes: { importStatus: 'pending_enrichment' },
+        }),
+      ).toBe(true);
+      expect(
+        isPendingPlaceholder({
+          sku: 'SKU-2',
+          name: 'Nombre real',
+          nameLockedAt: new Date(),
+          extraAttributes: {},
+        }),
+      ).toBe(false);
     });
   });
 

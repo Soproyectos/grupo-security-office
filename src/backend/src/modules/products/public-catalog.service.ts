@@ -10,6 +10,7 @@ import {
   sanitizeTechnicalSpecs,
 } from './public-catalog.helpers';
 import { PublicPrice, PublicPricingService } from './public-pricing.service';
+import { PUBLIC_CATALOG_VISIBILITY } from './public-catalog-visibility';
 
 /** Fila del listado público: solo campos aptos para un visitante anónimo. */
 export interface PublicProductListItem {
@@ -20,6 +21,8 @@ export interface PublicProductListItem {
   categoryName: string;
   categorySlug: string;
   brandName: string;
+  /** True while the official library record has not passed commercial publication. */
+  isInformational: boolean;
   /** Precio de la lista pública vigente, o `null` si el producto no lo tiene. */
   price: PublicPrice | null;
 }
@@ -43,6 +46,8 @@ export interface PublicProductDetail {
   technicalSpecs: PublicTechnicalSpec[];
   datasheets: PublicDatasheet[];
   price: PublicPrice | null;
+  /** True while the official library record has not passed commercial publication. */
+  isInformational: boolean;
 }
 
 export const PUBLIC_LIST_DEFAULT_LIMIT = 24;
@@ -50,8 +55,8 @@ export const PUBLIC_LIST_DEFAULT_LIMIT = 24;
 /**
  * Lectura pública del catálogo para el storefront. Todas las consultas usan un
  * `select` explícito (nunca se propaga una fila de producto) y solo devuelven
- * productos publicados (estado canónico PUBLISHED de la FSM). Los precios
- * llegan exclusivamente de `PublicPricingService`.
+ * productos comercialmente publicados o fichas informativas del lote oficial.
+ * Los precios llegan exclusivamente de `PublicPricingService`.
  */
 @Injectable()
 export class PublicCatalogService {
@@ -89,14 +94,16 @@ export class PublicCatalogService {
     }
 
     const where = {
-      lifecycleStatus: 'PUBLISHED',
       ...(categoryIds && { categoryId: { in: categoryIds } }),
-      ...(term !== '' && {
-        OR: [
-          { name: { contains: term, mode: 'insensitive' as const } },
-          { sku: { contains: term, mode: 'insensitive' as const } },
-        ],
-      }),
+      AND: [
+        PUBLIC_CATALOG_VISIBILITY,
+        ...(term !== ''
+          ? [{ OR: [
+              { name: { contains: term, mode: 'insensitive' as const } },
+              { sku: { contains: term, mode: 'insensitive' as const } },
+            ] }]
+          : []),
+      ],
     };
 
     const [products, total] = await Promise.all([
@@ -106,6 +113,7 @@ export class PublicCatalogService {
           id: true,
           sku: true,
           name: true,
+          lifecycleStatus: true,
           category: { select: { name: true, slug: true } },
           brand: { select: { name: true } },
           images: {
@@ -122,7 +130,9 @@ export class PublicCatalogService {
       this.prisma.product.count({ where }),
     ]);
 
-    const prices = await this.pricing.getPublicPrices(products.map((p) => p.id));
+    const prices = await this.pricing.getPublicPrices(
+      products.filter((p) => p.lifecycleStatus === 'PUBLISHED').map((p) => p.id),
+    );
 
     return {
       data: products.map((p) => ({
@@ -133,23 +143,25 @@ export class PublicCatalogService {
         categoryName: p.category.name,
         categorySlug: p.category.slug,
         brandName: p.brand.name,
-        price: prices.get(p.id) ?? null,
+        isInformational: p.lifecycleStatus !== 'PUBLISHED',
+        price: p.lifecycleStatus === 'PUBLISHED' ? (prices.get(p.id) ?? null) : null,
       })),
       meta: { total, offset, limit },
     };
   }
 
   /**
-   * Ficha pública de un producto. Un id inexistente y un producto que no está
-   * PUBLISHED responden igual (404) para no revelar el estado interno.
+   * Ficha pública de un producto. Un id inexistente y un borrador ajeno al lote
+   * oficial responden igual (404) para no revelar el estado interno.
    */
   async getDetail(id: string): Promise<PublicProductDetail> {
     const product = await this.prisma.product.findFirst({
-      where: { id, lifecycleStatus: 'PUBLISHED' },
+      where: { id, AND: [PUBLIC_CATALOG_VISIBILITY] },
       select: {
         id: true,
         sku: true,
         name: true,
+        lifecycleStatus: true,
         description: true,
         technicalSpecs: true,
         documents: true,
@@ -182,7 +194,8 @@ export class PublicCatalogService {
       images: images.map((image) => ({ url: image.url, alt: image.alt ?? null })),
       technicalSpecs: sanitizeTechnicalSpecs(product.technicalSpecs),
       datasheets: sanitizeDatasheets(product.documents),
-      price,
+      price: product.lifecycleStatus === 'PUBLISHED' ? price : null,
+      isInformational: product.lifecycleStatus !== 'PUBLISHED',
     };
   }
 

@@ -13,6 +13,7 @@ const product: PublicProductResult = {
   categoryName: 'Cámaras IP',
   categorySlug: 'camaras-ip',
   brandName: 'Hikvision',
+  isInformational: false,
   price: { value: 118258.8, currency: 'COP' },
 }
 
@@ -96,6 +97,15 @@ describe('PublicProductCard', () => {
     expect(markup).toContain('Cotizar')
     expect(markup).not.toContain('IVA incluido')
     expect(markup).not.toContain('$ ')
+  })
+
+  it('muestra una ficha informativa sin ofrecer una cotización prematura', () => {
+    const markup = render({ price: null, isInformational: true })
+
+    expect(markup).toContain('Ficha informativa')
+    expect(markup).toContain('Datos en preparación')
+    expect(markup).not.toContain('Cotizar')
+    expect(markup).not.toContain('Precio a consultar')
   })
 
   it('omite la marca cuando el producto no la tiene', () => {

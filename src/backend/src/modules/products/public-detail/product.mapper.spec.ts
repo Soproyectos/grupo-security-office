@@ -21,6 +21,7 @@ const base: PublicProductDetail = {
   ],
   datasheets: [{ name: 'Ficha técnica', url: 'https://example.com/ds.pdf' }],
   price: { value: 118258.8, currency: 'COP' },
+  isInformational: false,
 };
 
 const bare: ProductRecord = {
