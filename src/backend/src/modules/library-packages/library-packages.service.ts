@@ -20,13 +20,13 @@ const TERMINAL_READY = ['COMPLETED', 'COMPLETED_WITH_ERRORS'];
 const MAX_PRODUCTS = 5000;
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 
-const PRODUCT_INCLUDE = {
-  images: { orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }] },
-  catalogSpecGroups: { orderBy: { position: 'asc' as const }, include: { items: { orderBy: { position: 'asc' as const } } } },
-  catalogResources: { orderBy: { position: 'asc' as const } },
+const PRODUCT_INCLUDE = Prisma.validator<Prisma.ProductInclude>()({
+  images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+  catalogSpecGroups: { orderBy: { position: 'asc' }, include: { items: { orderBy: { position: 'asc' } } } },
+  catalogResources: { orderBy: { position: 'asc' } },
   category: { select: { id: true, name: true, slug: true } },
   brand: { select: { id: true, name: true, slug: true } },
-} as const;
+});
 type Product = Prisma.ProductGetPayload<{ include: typeof PRODUCT_INCLUDE }>;
 interface BinaryFile {
   id: string; mimeType: string; visibility: string; ownerProductId: string | null;
