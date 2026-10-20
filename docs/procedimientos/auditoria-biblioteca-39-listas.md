@@ -111,6 +111,7 @@ python scripts/generar_manifiesto_biblioteca.py `
 ```
 
 `--expected-files 39` detiene la generación si la carpeta cambia accidentalmente. El script lee los Excel y las fichas curadas, pero no modifica las fuentes ni se conecta a la base de datos.
+También reescribe el archivo de checksums con finales de línea LF explícitos, de modo que la validación produzca el mismo resultado en Windows, Git y GitHub Actions/Linux.
 
 ## Criterio de aceptación antes de cargar
 

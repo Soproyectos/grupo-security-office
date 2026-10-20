@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import re
 import unicodedata
@@ -35,6 +36,7 @@ DEFAULT_LISTS_DIR = ROOT / "listas" / "LISTA DE PRECIOS EXCEL"
 LIBRARY_DIR = ROOT / "biblioteca"
 DEFAULT_OUTPUT = ROOT / "biblioteca-import-39-listas.json"
 DEFAULT_REPORT = ROOT / "biblioteca-import-39-listas.report.json"
+DEFAULT_CHECKSUMS = ROOT / "biblioteca-import-39-listas.sha256"
 DEFAULT_PUBLIC_MANIFEST = ROOT / "biblioteca-import-web.json"
 HEADER_MAX_ROWS = 10
 MAX_SKU_LENGTH = 100
@@ -634,6 +636,7 @@ def main() -> None:
     parser.add_argument("--expected-files", type=int)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument("--checksums", type=Path, default=DEFAULT_CHECKSUMS)
     parser.add_argument(
         "--public-manifest",
         type=Path,
@@ -653,14 +656,32 @@ def main() -> None:
     manifest, report = build_manifest_and_report(lists_dir, public_manifest_path)
     output = args.output.resolve()
     report_path = args.report.resolve()
+    checksums_path = args.checksums.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    checksums_path.parent.mkdir(parents=True, exist_ok=True)
+    # Explicit LF makes the checksums identical on Windows and Linux and to
+    # the normalized blobs that GitHub Actions checks out.
+    output.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    checksum_lines = [
+        f"{hashlib.sha256(path.read_bytes()).hexdigest().upper()}  {path.name}"
+        for path in (output, report_path)
+    ]
+    checksums_path.write_text("\n".join(checksum_lines) + "\n", encoding="ascii", newline="\n")
 
     metadata = manifest["metadata"]
     print(f"Manifiesto: {output}")
     print(f"Reporte: {report_path}")
+    print(f"Checksums: {checksums_path}")
     print(
         f"{metadata['sourceFiles']} archivos | {metadata['productRows']} filas de producto | "
         f"{metadata['uniqueProducts']} SKU únicos | "
