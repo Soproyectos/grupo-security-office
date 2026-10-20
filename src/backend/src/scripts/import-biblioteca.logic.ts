@@ -200,6 +200,8 @@ export interface NameResolution {
   toCreate: string[];
   /** id del default ("Sin categoría"/"Sin marca") si ya existe; null si falta crearlo */
   defaultId: string | null;
+  /** Nombre canónico del default correspondiente a este tipo de entidad. */
+  defaultName: string;
 }
 
 export const DEFAULT_CATEGORY_NAME = 'Sin categoría';
@@ -228,9 +230,13 @@ function resolveNamed(
   const matched = new Map<string, string>();
   const toCreate: string[] = [];
   const seen = new Set<string>();
+  let needsDefault = false;
   for (const ficha of fichas) {
     const valor = getValor(ficha)?.trim();
-    if (!valor) continue; // ausente → default (se asigna al final)
+    if (!valor) {
+      needsDefault = true;
+      continue;
+    }
     const norm = normalizeNameForMatch(valor);
     const existingId = byNorm.get(norm);
     if (existingId) {
@@ -240,10 +246,15 @@ function resolveNamed(
       toCreate.push(valor);
     }
   }
+  const defaultNorm = normalizeNameForMatch(defaultName);
+  if (needsDefault && !byNorm.has(defaultNorm) && !seen.has(defaultNorm)) {
+    toCreate.push(defaultName);
+  }
   return {
     matched,
     toCreate,
-    defaultId: byNorm.get(normalizeNameForMatch(defaultName)) ?? null,
+    defaultId: byNorm.get(defaultNorm) ?? null,
+    defaultName,
   };
 }
 
@@ -276,7 +287,7 @@ export function resolveEntityId(
     const id = resolution.matched.get(norm) ?? createdIds.get(norm);
     if (id) return id;
   }
-  return resolution.defaultId;
+  return resolution.defaultId ?? createdIds.get(normalizeNameForMatch(resolution.defaultName)) ?? null;
 }
 
 /** Datos de creación de una categoría nueva (slug sin acentos, estilo repo). */

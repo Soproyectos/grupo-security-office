@@ -199,7 +199,11 @@ describe('import-biblioteca.logic', () => {
         { id: 'cat-turbo', name: 'CAMARAS TURBO' },
       ]);
       expect(sinDefault.defaultId).toBeNull();
+      expect(sinDefault.toCreate).toEqual(['Cableado Categoría 6A', 'Alarmas Nueva', 'Sin categoría']);
       expect(resolveEntityId(undefined, sinDefault, new Map())).toBeNull();
+      expect(
+        resolveEntityId(undefined, sinDefault, new Map([['sin categoria', 'cat-created-default']])),
+      ).toBe('cat-created-default');
     });
   });
 
@@ -219,6 +223,18 @@ describe('import-biblioteca.logic', () => {
       expect(res.toCreate).toEqual(['Truvision']);
       expect(res.defaultId).toBe('br-def');
       expect(resolveEntityId(undefined, res, new Map())).toBe('br-def');
+    });
+
+    it('crea y resuelve "Sin marca" cuando hay fichas sin marca y el default no existe', () => {
+      const fichas = [
+        makeFicha({ referencia: 'R1', marca: { valor: 'Hikvision' } }),
+        makeFicha({ referencia: 'R2' }),
+      ];
+      const res = resolveBrands(fichas, [{ id: 'br-hik', name: 'HIKVISION' }]);
+
+      expect(res.toCreate).toEqual(['Sin marca']);
+      expect(res.defaultId).toBeNull();
+      expect(resolveEntityId(undefined, res, new Map([['sin marca', 'br-default']]))).toBe('br-default');
     });
   });
 
