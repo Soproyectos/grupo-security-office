@@ -15,7 +15,7 @@ push a main ──► CI ──(verde)──► CD (GitHub Actions)
 ```
 
 - Nginx del host es dueño de los puertos 80/443 y hace proxy a `127.0.0.1:3001` (API) y `127.0.0.1:8080` (frontend). Los contenedores solo escuchan en `127.0.0.1`.
-- Contenedores: `gs-api`, `gs-frontend`, `gs-db` (`postgres:18-alpine`). Proyecto Compose: `grupo-security`. Volúmenes: `grupo-security_pgdata` y `grupo-security_uploads`.
+- Contenedores: `gs-api`, `gs-frontend`, `gs-db` (`postgres:18-alpine`). Proyecto Compose: `grupo-security`. Volúmenes: `grupo-security_pgdata`, `grupo-security_uploads` y el bind persistente `/opt/grupo-security/data/imports:/app/biblioteca` para cargas auditadas.
 - Netdata y los demás servicios del host quedan fuera de este procedimiento.
 
 | Archivo | Función |
@@ -26,6 +26,7 @@ push a main ──► CI ──(verde)──► CD (GitHub Actions)
 | `deploy/vps/deploy.sh` | Despliegue en el VPS (lo invoca CD; también se puede usar a mano). |
 | `deploy/vps/bootstrap-vps.sh` | Preparación única del VPS (usuario, grupo, directorios, temporizador). |
 | `deploy/vps/gs-db-backup.sh` + `systemd/gs-db-backup.*` | Copia diaria de la base de datos. |
+| `deploy/vps/import-biblioteca.sh` | Dry-run, backup verificado y aplicación protegida del manifiesto oficial. |
 | `deploy/vps/nginx-*.conf`, `setup-*.sh`, `renew-ip-cert.sh`, `check-renewal.sh`, `maintenance.html`, `systemd/gs-certbot-renew.*` | Plantillas y scripts de nginx y TLS del host (copiados tal como están en producción). |
 
 ## Configuración inicial (una sola vez)
@@ -86,6 +87,18 @@ Las migraciones se aplican antes de recrear los contenedores, así que el códig
 
 Despliegue manual: Actions ► CD ► Run workflow. Con el campo `tag` vacío se construye y despliega el commit seleccionado.
 
+## Importación de la biblioteca oficial
+
+La carga de los 5.038 SKU es un proceso manual separado del CD para que desplegar código nunca modifique el catálogo por sorpresa. Tras un CD verde, ejecutar Actions ► **Import biblioteca** primero con `dry-run` y después con `apply`. El segundo modo:
+
+1. repite el dry-run;
+2. crea un dump verificado en `/var/backups/grupo-security/pre-import/`;
+3. aplica el manifiesto con el token de confirmación;
+4. valida que el reporte tenga 5.038 válidas, 0 inválidas y 0 errores;
+5. consulta toda la API pública y sube la reconciliación como artefacto de GitHub Actions.
+
+Los detalles del contrato, el lote y la aceptación están en [importacion-masiva-biblioteca-vitrina.md](importacion-masiva-biblioteca-vitrina.md).
+
 ## Rollback
 
 - **Desde GitHub (recomendado):** Actions ► CD ► Run workflow, con `tag` = el `<sha8>` anterior (`git rev-parse --short=8 <commit>`). No se construye nada; solo se despliega esa etiqueta ya publicada.
@@ -114,6 +127,7 @@ Las imágenes locales (`gs-api:local-*`) no sirven como destino de rollback auto
 | --- | --- | --- |
 | Diaria | `/var/backups/grupo-security/daily/gs-db-<fecha>.dump` | `gs-db-backup.timer`, hacia las 03:30 (hora del servidor) con hasta 15 min de retraso aleatorio; 14 días |
 | Previa a migrar | `/var/backups/grupo-security/pre-deploy/<fecha>-<tag>.dump` | en cada despliegue; los 10 más recientes |
+| Previa a importar biblioteca | `/var/backups/grupo-security/pre-import/biblioteca-<fecha>.dump` | antes de cada `apply`; conservación manual |
 
 Ambas copias están en el mismo disco; la copia de disco completo diaria de OVH sigue siendo la protección ante pérdida del VPS.
 

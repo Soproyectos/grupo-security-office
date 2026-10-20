@@ -1,6 +1,6 @@
 # Importación masiva de la biblioteca vitrina
 
-Estado: **manifiesto oficial generado y validado localmente; no aplicado a producción**.
+Estado: **manifiesto oficial generado y validado localmente; la aplicación a producción se ejecuta únicamente mediante el workflow manual `Import biblioteca`**.
 
 La biblioteca se carga con **un solo manifiesto JSON**, no con miles de archivos. El universo autorizado son exactamente los 39 Excel de `D:\Empresa\web-gruposecurity\listas\LISTA_DE_PRECIOS_EXCEL`.
 
@@ -32,6 +32,26 @@ npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import-web.json --up
 ```
 
 La confirmación exacta es una barrera operativa; no debe usarse para producción sin aprobación humana explícita. Para crear los SKU faltantes del lote oficial se usa el modo normal. `--updates-only` omitiría esos SKU y, por tanto, no sirve para crear la biblioteca completa.
+
+## Carga al VPS y base de datos
+
+La importación productiva no se ejecuta pegando comandos ad hoc por SSH. Después de desplegar en `main`:
+
+1. Actions → **Import biblioteca** → `dry-run`.
+2. Revisar que el job valide 5.038 fichas, 0 inválidas y 0 errores.
+3. Actions → **Import biblioteca** → `apply`.
+4. El job repite el dry-run, crea y verifica un `pg_dump` en `/var/backups/grupo-security/pre-import/`, aplica el manifiesto y reconcilia la API pública.
+
+Los artefactos se copian a `/opt/grupo-security/data/imports`, montado como `/app/biblioteca` en `gs-api`. Allí quedan el manifiesto, los reportes de dry-run/apply y el backup de identidad. El workflow comprueba `biblioteca-import-39-listas.sha256` antes de transferir y el VPS vuelve a comprobarlo antes de leer datos.
+
+La aplicación solo se considera terminada cuando `scripts/verificar_biblioteca_publica.py` demuestra en el endpoint público que:
+
+- están visibles los 5.038 SKU oficiales;
+- cada uno tiene nombre y categoría;
+- no hay SKU públicos duplicados;
+- siguen visibles los 497 productos del snapshot previo, incluidos los 18 externos a las listas.
+
+El reporte de esa comprobación se conserva 30 días como artefacto del workflow `Import biblioteca`.
 
 ## Formato recomendado
 
@@ -94,6 +114,7 @@ La regla compartida está en `src/backend/src/modules/products/public-catalog-vi
 - El proceso trabaja en transacciones por lotes de 50 filas y conserva reintentos por fila.
 - La biblioteca escribe identidad, categorías, marcas e imagen principal; **no escribe `Price` ni publica productos**.
 - Las corridas generan reporte y, en `--apply`, backup de identidad en la carpeta `biblioteca/`.
+- `--artifacts-dir` permite dirigir esos reportes a un volumen persistente; producción usa `/app/biblioteca`.
 - Un segundo dry-run o apply es idempotente para la misma información.
 
 ## Checklist para el lote oficial de 5.038
@@ -134,5 +155,7 @@ La cifra 5.028 era una aproximación de negocio. La evidencia reproducible de lo
 - Generador reproducible: `scripts/generar_manifiesto_biblioteca.py`.
 - Auditoría del lote oficial: [`auditoria-biblioteca-39-listas.md`](./auditoria-biblioteca-39-listas.md).
 - Filtro reproducible de la web publicada: `scripts/generar_manifiesto_web.py`.
+- Verificación posterior a la publicación: `scripts/verificar_biblioteca_publica.py`.
+- Ejecución productiva protegida: `.github/workflows/import-biblioteca.yml` y `deploy/vps/import-biblioteca.sh`.
 - Importación operativa separada por Excel/CSV: [`importacion-masiva-productos.md`](./importacion-masiva-productos.md).
 - Decisión de separar identidad y precios: [`ADR-002-biblioteca-vitrina.md`](../adr/ADR-002-biblioteca-vitrina.md).
