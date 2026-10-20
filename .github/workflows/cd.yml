@@ -1,47 +1,70 @@
 name: CD
 
-on:
-  push:
-    branches:
-      - dev
-      - main
+# Builds the images after a green CI run on main, pushes them to GHCR and
+# deploys them to the VPS over SSH (see docs/procedimientos/deploy-vps.md).
+#
+# Manual run: "Run workflow" with an empty tag builds and deploys the selected
+# commit; with a tag (an 8-char SHA already in GHCR) it skips the build and
+# redeploys that tag, which is how a rollback is done.
 
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing GHCR image tag to deploy without building (rollback). Empty = build the selected commit."
+        required: false
+        default: ""
+        type: string
+
+# One production deploy at a time; a newer run waits instead of cancelling.
 concurrency:
-  group: cd-${{ github.ref_name }}
+  group: cd-production
   cancel-in-progress: false
 
-env:
-  REGISTRY: ghcr.io
-  REGISTRY_OWNER: zatairo
-  IMAGE_BACKEND: ghcr.io/zatairo/grupo-security-office/api
-  IMAGE_FRONTEND: ghcr.io/zatairo/grupo-security-office/frontend
-  NODE_VERSION: 20
+permissions:
+  contents: read
 
 jobs:
   build:
     name: Build images + push to GHCR
+    # workflow_run: only push runs on this repository whose CI went green
+    # (never pull requests, which may carry fork code).
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag == '')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     outputs:
       tag: ${{ steps.vars.outputs.tag }}
-      env: ${{ steps.vars.outputs.env }}
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set env vars (branch-based)
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+      - name: Compute image tag and names
         id: vars
         run: |
-          echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "env=production" >> "$GITHUB_OUTPUT"
-          else
-            echo "env=staging" >> "$GITHUB_OUTPUT"
-          fi
+          # GHCR requires a lowercase namespace; the repository name may not be.
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "tag=${SOURCE_SHA::8}"
+            echo "image_backend=${prefix}/api"
+            echo "image_frontend=${prefix}/frontend"
+          } >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
@@ -53,11 +76,16 @@ jobs:
           file: src/backend/Dockerfile
           target: runner
           push: true
+          # Links the package to this repository so the deploy job's
+          # GITHUB_TOKEN (packages: read) can pull it.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
           tags: |
-            ${{ env.IMAGE_BACKEND }}:${{ steps.vars.outputs.tag }}
-            ${{ env.IMAGE_BACKEND }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ steps.vars.outputs.image_backend }}:${{ steps.vars.outputs.tag }}
+            ${{ steps.vars.outputs.image_backend }}:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
@@ -65,68 +93,112 @@ jobs:
           file: src/frontend/Dockerfile
           target: runner
           push: true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
           tags: |
-            ${{ env.IMAGE_FRONTEND }}:${{ steps.vars.outputs.tag }}
-            ${{ env.IMAGE_FRONTEND }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ steps.vars.outputs.image_frontend }}:${{ steps.vars.outputs.tag }}
+            ${{ steps.vars.outputs.image_frontend }}:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
-    name: Deploy (${{ needs.build.outputs.env }})
+    name: Deploy to VPS
     needs: build
+    # Runs after a successful build, or when the build was skipped on purpose
+    # because a manual run supplied an existing tag. A failed or skipped build
+    # on any other path (for example CI red) never deploys.
+    if: >-
+      always() &&
+      (needs.build.result == 'success' ||
+       (needs.build.result == 'skipped' &&
+        github.event_name == 'workflow_dispatch' &&
+        inputs.tag != ''))
     runs-on: ubuntu-latest
-    if: success()
-    environment: ${{ needs.build.outputs.env }}
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    permissions:
+      contents: read
+      packages: read
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      IMAGE_TAG: ${{ needs.build.outputs.tag || inputs.tag }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - name: Deploy via SSH
-        if: ${{ env.DEPLOY_HOST }}
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Deploy skipped (no deploy secrets)
+        if: ${{ env.DEPLOY_HOST == '' }}
+        run: |
+          echo "::notice title=Deploy skipped::DEPLOY_HOST is not set in the production environment. Images were published to GHCR; nothing was deployed."
+      - name: Validate image tag
+        if: ${{ env.DEPLOY_HOST != '' }}
+        run: |
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::Invalid image tag: '$IMAGE_TAG'"
+            exit 1
+          fi
+          echo "Deploying image tag: $IMAGE_TAG"
+      - uses: actions/checkout@v4
+        if: ${{ env.DEPLOY_HOST != '' }}
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+      - name: Sync deploy files to the VPS
+        if: ${{ env.DEPLOY_HOST != '' }}
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: IMAGE_TAG
+          source: docker-compose.prod.yml,deploy/vps
+          target: /opt/grupo-security
+      - name: Deploy via SSH
+        if: ${{ env.DEPLOY_HOST != '' }}
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          command_timeout: 20m
+          envs: IMAGE_TAG,GHCR_USER,GHCR_TOKEN
           script: |
-            set -e
-            echo "Pulling images..."
-            docker compose -f /opt/grupo-security/docker-compose.prod.yml pull
-            echo "Deploying with tag: ${{ needs.build.outputs.tag }}"
-            IMAGE_TAG=${{ needs.build.outputs.tag }} \
-              docker compose -f /opt/grupo-security/docker-compose.prod.yml up -d --no-deps --remove-orphans
+            # The token only lives for this deploy: always log out, even on
+            # failure. The exit status is the one of deploy.sh.
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || exit 1
+            rc=0
+            bash /opt/grupo-security/deploy/vps/deploy.sh "$IMAGE_TAG" || rc=$?
+            exit "$rc"
       - name: Smoke test
-        if: ${{ env.DEPLOY_HOST }}
+        if: ${{ env.DEPLOY_HOST != '' }}
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
           echo "Running smoke tests against $DEPLOY_URL"
           chmod +x ./scripts/smoke-test.sh
           ./scripts/smoke-test.sh "$DEPLOY_URL"
-      - name: Deploy skipped (sin secrets configurados)
-        if: ${{ !env.DEPLOY_HOST }}
-        run: |
-          echo "Deploy SSH no configurado (faltan secrets DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY). Build publicado en GHCR. El deployment de GitHub queda marcado como completado sin despliegue real."
 
   notify:
     name: Notify result
     needs: [build, deploy]
-    if: always()
+    # Stay quiet when nothing ran (for example CI failed, so both jobs skipped).
+    if: >-
+      always() &&
+      (needs.build.result != 'skipped' || needs.deploy.result != 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Discord (opcional)
+      - name: Notify Discord (optional)
         if: ${{ vars.DISCORD_WEBHOOK_URL != '' }}
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ vars.DISCORD_WEBHOOK_URL }}
-          status: ${{ needs.deploy.result }}
-          title: "Deploy ${{ needs.build.outputs.env }} — ${{ needs.build.outputs.tag }}"
+          status: ${{ needs.build.result == 'failure' && 'failure' || needs.deploy.result }}
+          title: "Deploy production - ${{ needs.build.outputs.tag || inputs.tag }}"
           description: |
             Repo: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Autor: ${{ github.actor }}
+            Commit: ${{ github.event.workflow_run.head_sha || github.sha }}
+            Author: ${{ github.actor }}

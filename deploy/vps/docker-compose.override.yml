@@ -1,0 +1,24 @@
+# VPS override. Always used together with ../../docker-compose.prod.yml:
+#   docker compose -p grupo-security \
+#     -f docker-compose.prod.yml -f deploy/vps/docker-compose.override.yml ...
+# Starts only db, api and frontend: host Nginx owns ports 80 and 443.
+# Images come from GHCR (see docker-compose.prod.yml); for a manual local build
+# add docker-compose.build.yml as a third file.
+services:
+  # Host Nginx is the reverse proxy here; keep the bundled proxy out of default `up`.
+  nginx:
+    profiles: ["docker-proxy"]
+
+  api:
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?MFA_ENCRYPTION_KEY is required}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+
+  frontend:
+    ports:
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
