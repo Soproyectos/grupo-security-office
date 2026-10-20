@@ -10,7 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { findProductMatchesBySkus, normalizeSku } from '../../products/helpers/sku-identity';
 import { PriceImportAccess, isSuperAdmin, type ProductRef } from './price-import-authz';
-import { clampChangePercentForStorage } from './price-import-change';
+import { clampChangePercentForStorage, measurePriceChange } from './price-import-change';
 import { buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
 import {
   profileMatchesHeaders,
@@ -24,7 +24,7 @@ import {
   type RecognitionView,
   type ResolvedReference,
 } from './provider-profile';
-import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
+import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, resolveLargeChangeThresholdPct, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
 import { deletePriceImportFile, priceImportFileExists, readPriceImportFile, storePriceImportFile } from './price-import-storage';
 
 /** Tarifa configurada resuelta al revisar (se captura como versión en la revisión). */
@@ -238,6 +238,7 @@ export class PriceImportService {
     const previous = new Map(storedPrices.map((p) => [`${p.productId}:${p.priceListId}`, p]));
 
     const snapshots = new Map<number, RowSnapshot>();
+    const thresholdPct = resolveLargeChangeThresholdPct();
     let inaccessible = 0;
     for (const row of rows) {
       const referenceBroken = row.issues.some((i) => i.column === 'REFERENCIA');
@@ -278,6 +279,8 @@ export class PriceImportService {
         }
       }
       for (const price of row.prices) {
+        price.changePercent = null;
+        price.largeChange = false;
         if (unavailable.has(price.code)) {
           row.issues.push({ row: row.row, column: price.code, code: 'TARIFF_UNAVAILABLE', message: 'Esta tarifa necesita configurarse antes de actualizar sus precios.' });
           continue;
@@ -293,6 +296,10 @@ export class PriceImportService {
         price.previous = oldValue.toFixed();
         price.difference = new Prisma.Decimal(price.rounded).minus(oldValue).toFixed();
         price.change = oldValue.equals(price.rounded) ? 'unchanged' : 'changed';
+        // R3: strictly above the threshold (up or down); a zero previous price is always flagged.
+        const measure = measurePriceChange(oldValue, price.rounded, thresholdPct);
+        price.changePercent = measure.changePercent;
+        price.largeChange = measure.largeChange && price.change === 'changed';
       }
       row.status = row.issues.length ? 'error' : 'valid';
     }
@@ -321,6 +328,8 @@ export class PriceImportService {
         unknownRows: rows.filter((r) => r.resolution === 'PENDING_PRODUCT').length,
         rejectedRows: rows.length - valid.length,
         rowsInInaccessibleListas: inaccessible,
+        largeChangePrices: prices.filter((p) => p.largeChange).length,
+        largeChangeThresholdPct: thresholdPct,
       }, issues: [...issues, ...rows.flatMap((r) => r.issues)], rows,
     };
     return { result, tariffs, configured, snapshots };

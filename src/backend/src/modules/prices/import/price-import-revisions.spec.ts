@@ -122,6 +122,15 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     expect(fake.prisma.priceImportRevision.create).not.toHaveBeenCalled();
   });
 
+  it('guarda el porcentaje y la alerta de cambio grande, y acota un cambio extremo a DECIMAL(9,2)', async () => {
+    await service.saveRevision(file([['SKU-A', 200]]), 'key-large-001', ctx);
+    expect(fake.state.revisionPrices[0]).toMatchObject({ changePercent: '122.22', largeChange: true });
+    fake.state.prices[0].value = 1;
+    await service.saveRevision(file([['SKU-A', 99999999]]), 'key-extreme-1', ctx);
+    expect(fake.state.revisionPrices[1].changePercent).toBe('9999999.99');
+    expect(fake.state.revisionPrices[1].largeChange).toBe(true);
+  });
+
   describe('lecturas', () => {
     const seedMixed = async () => {
       await service.saveRevision(file([['SKU-A', 100], ['SKU-B', 600], ['NO-SUCH', 5]]), 'key-mixed-001', ctx);

@@ -5,6 +5,8 @@ import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { PriceImportService } from './price-import.service';
+import { buildPriceTemplate } from './price-template';
+import { PRICE_IMPORT_TARIFFS } from './price-import.types';
 import { createGrantsProvider, createPriceImportFake, type PriceImportFakeSeed } from './price-import.test-helpers';
 
 const LISTA_A = '00000000-0000-4000-8000-0000000000a1';
@@ -240,5 +242,99 @@ describe('authorizeProductsByLista', () => {
     const { service } = build(baseSeed(), [LISTA_A]);
     const products = [{ id: 'product-a', listaId: LISTA_A }];
     expect((await service.authorizeProductsByLista(products, ctx, ['prices:read', 'prices:apply'])).size).toBe(0);
+  });
+});
+
+describe('R3 large price change alert (strictly above the threshold, up or down)', () => {
+  const previewWithPrevious = async (previous: number | string | null, next: number | string) => {
+    const seed = baseSeed();
+    seed.prices = previous === null ? [] : [{ productId: 'product-a', priceListId: 'tariff-oro', value: previous }];
+    return (await build(seed).service.preview(file([['SKU-A', next]]), ctx));
+  };
+
+  it.each([
+    // previous, new, expected percent, flagged
+    [10000, 13000, '30.00', false],
+    [10000, 13001, '30.01', true],
+    [10000, 7000, '-30.00', false],
+    [10000, 6999, '-30.01', true],
+    [10000, 10001, '0.01', false],
+    ['90.75', 118, '30.03', true],
+    ['90.75', 117, '28.93', false],
+    [1000, 100000, '9900.00', true],
+  ])('previous %s -> new %s is %s%% and flagged=%s', async (previous, next, percent, flagged) => {
+    const result = await previewWithPrevious(previous, next);
+    const price = result.rows[0].prices[0];
+    expect(price.changePercent).toBe(percent);
+    expect(price.largeChange).toBe(flagged);
+    expect(result.summary.largeChangePrices).toBe(flagged ? 1 : 0);
+    expect(result.summary.largeChangeThresholdPct).toBe(30);
+    // A flagged change never blocks the row.
+    expect(result.rows[0].status).toBe('valid');
+  });
+
+  it('flags any change from a zero previous price and reports no percent', async () => {
+    const result = await previewWithPrevious(0, 500);
+    expect(result.rows[0].prices[0]).toMatchObject({ previous: '0', change: 'changed', changePercent: null, largeChange: true });
+  });
+
+  it('does not flag new prices or unchanged prices', async () => {
+    const fresh = await previewWithPrevious(null, 500);
+    expect(fresh.rows[0].prices[0]).toMatchObject({ change: 'new', changePercent: null, largeChange: false });
+    const same = await previewWithPrevious(500, 500);
+    expect(same.rows[0].prices[0]).toMatchObject({ change: 'unchanged', changePercent: '0.00', largeChange: false });
+  });
+
+  it('flags a ratio of 30.004% even though it displays as 30.00 (comparison is on the exact value)', async () => {
+    const result = await previewWithPrevious(1000000, 1300004);
+    expect(result.rows[0].prices[0]).toMatchObject({ changePercent: '30.00', largeChange: true });
+  });
+
+  it('honors the configured threshold override', async () => {
+    process.env.PRICE_IMPORT_LARGE_CHANGE_PCT = '10';
+    try {
+      const result = await previewWithPrevious(10000, 11001);
+      expect(result.rows[0].prices[0].largeChange).toBe(true);
+      expect(result.summary.largeChangeThresholdPct).toBe(10);
+    } finally {
+      delete process.env.PRICE_IMPORT_LARGE_CHANGE_PCT;
+    }
+  });
+
+  it('does not report a percent for a hidden previous price (forbidden lista)', async () => {
+    const { service } = build();
+    const result = await service.preview(file([['SKU-B', 1]]), ctx);
+    expect(result.rows[0].prices[0]).toMatchObject({ previous: null, changePercent: null, largeChange: false });
+  });
+});
+
+describe('Existing price rules keep holding through the preview (regression)', () => {
+  it.each([[0], [-5], ['abc'], [1e25]])('rejects the price %p and never applies it', async (value) => {
+    const { service } = build();
+    const result = await service.preview(file([['SKU-A', value]]), ctx);
+    expect(result.rows[0].status).toBe('error');
+    expect(result.summary.validRows).toBe(0);
+    expect(result.summary.prices).toBe(0);
+  });
+
+  it('keeps the current price when a tariff cell is blank (no price entry for that tariff)', async () => {
+    const { service } = build();
+    const result = await service.preview(file([['SKU-A', 100, null]], ['REFERENCIA', 'ORO_IVA', 'TIENDA_IVA']), ctx);
+    expect(result.rows[0].prices.map((p) => p.code)).toEqual(['ORO_IVA']);
+  });
+
+  it('rounds final COP prices half up to whole pesos', async () => {
+    const { service } = build();
+    const result = await service.preview(file([['SKU-A', 100.5]]), ctx);
+    expect(result.rows[0].prices[0]).toMatchObject({ raw: '100.5', rounded: '101', wasRounded: true });
+    const down = await service.preview(file([['SKU-A', 100.49]]), ctx);
+    expect(down.rows[0].prices[0]).toMatchObject({ rounded: '100' });
+  });
+
+  it('template v3 keeps the header and tariff order of the agreed columns', () => {
+    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: [...PRICE_IMPORT_TARIFFS].reverse() });
+    const book = XLSX.read(buffer, { type: 'buffer' });
+    const header = XLSX.utils.sheet_to_json<string[]>(book.Sheets.PRECIOS, { header: 1 })[0];
+    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'TIENDA_IVA', 'ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA']);
   });
 });

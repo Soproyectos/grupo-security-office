@@ -115,5 +115,17 @@ suite('price import mixed listas (database)', () => {
       expect(detail.totalRows).toBe(4);
       expect(detail.byLista).toHaveLength(2);
     });
+
+    it('persists the large-change percent and flag, clamping an extreme ratio to DECIMAL(9,2)', async () => {
+      const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'ORO_IVA' } });
+      await prisma.price.create({ data: { productId: ids.pA, priceListId: tariff.id, value: 1, listaId: ids.listaA } });
+      const header = await service.saveRevision(workbook([[`${TAG}-IDS-E04HQHI-D`, 99999999]]), 'key-b2db-0002', ctx);
+      const [price] = await prisma.priceImportRevisionPrice.findMany({ where: { revisionId: header.id } });
+      expect(price.changePercent?.toFixed(2)).toBe('9999999.99');
+      expect(price).toMatchObject({ largeChange: true, productId: ids.pA, previousValue: '1' });
+      const normal = await service.saveRevision(workbook([[`${TAG}-IDS-E04HQHI-D`, 1]]), 'key-b2db-0003', ctx);
+      const [same] = await prisma.priceImportRevisionPrice.findMany({ where: { revisionId: normal.id } });
+      expect(same).toMatchObject({ largeChange: false, change: 'unchanged' });
+    });
   });
 });

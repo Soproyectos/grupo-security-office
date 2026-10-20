@@ -25,6 +25,15 @@ Estado: backend implementado en la rama `feat/price-import-rules-2` (2026-10-20)
 - Vista previa y guardado: `prices:preview`, `prices:save` y `prices:read` como puerta general; después, `prices:read` sobre la lista de cada producto (decisión `decideCatalogResourceAccessFromGrants`, igual que `AclService`). Un producto sin lista solo se cubre con una concesión de alcance global.
 - La autorización de aplicar (`prices:apply` por lista) se documenta en la sección de aplicación.
 
+## Alerta de cambio grande (R3)
+
+- Para cada precio con valor anterior se calcula `|nuevo - anterior| / anterior * 100` con aritmética decimal. Se marca (`largeChange`) solo si supera el umbral de forma estricta, tanto al subir como al bajar: 30,00 % no se marca y 30,01 % sí.
+- Si el valor anterior es cero no hay porcentaje y el precio siempre se marca. Los precios nuevos y los iguales no se marcan.
+- El porcentaje (`changePercent`) es con signo, con 2 decimales (HALF_UP) y en texto. La comparación usa el valor exacto, por lo que 30,004 % se muestra como 30,00 y se marca. Al guardar, un porcentaje extremo se acota a 9999999,99 (columna DECIMAL(9,2)).
+- El umbral por defecto es 30 y puede cambiarse con `PRICE_IMPORT_LARGE_CHANGE_PCT` (1 a 1000). El resumen incluye `largeChangePrices` y `largeChangeThresholdPct`.
+- Una fila con cambio grande no se bloquea: la confirmación se pide al aplicar.
+- Siguen rechazándose los precios en cero, negativos, no numéricos o fuera de rango; una celda vacía conserva el precio actual; los precios se redondean a pesos enteros HALF_UP. La plantilla v3 mantiene el orden `REFERENCIA, INSTALADOR_IVA, TIENDA_IVA, ORO_IVA, DPP_PLATINO_IVA, CLIENTE_FINAL_IVA`.
+
 ## Revisiones guardadas
 
 - Las revisiones nuevas guardan `listaId = null`; la verdad es la instantánea por fila (`productId`, `listaId`, `resolution`).
