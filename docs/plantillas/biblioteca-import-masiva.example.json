@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "source": "fuente-autorizada",
+  "products": [
+    {
+      "referencia": "SKU-001",
+      "nombre_vitrina": {
+        "valor": "Producto de ejemplo",
+        "origen": "fuente-autorizada"
+      },
+      "estado": "parcial",
+      "fuentes_consultadas": ["fuente-autorizada"]
+    },
+    {
+      "referencia": "SKU-002",
+      "estado": "pendiente_enriquecimiento"
+    }
+  ]
+}

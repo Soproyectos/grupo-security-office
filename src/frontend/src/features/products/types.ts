@@ -89,6 +89,8 @@ export interface ProductDetail {
   slug: string;
   /** Precio público (IVA incluido) o null: "Precio a consultar". */
   price: ProductPrice | null;
+  /** Ficha oficial visible, pendiente de publicación comercial. */
+  isInformational: boolean;
   description: string | null;
   /** Galería, imagen principal primero. */
   images: ProductImage[];

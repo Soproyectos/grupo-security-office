@@ -2,6 +2,10 @@
 
 > **Objetivo:** Convertir las listas crudas de proveedor (`listas/*.xlsx`) en fichas de producto (`biblioteca/<slug>.json`) y un archivo consolidado listo para importar a la vitrina web.
 
+> **Carga masiva actual:** para crear la biblioteca en la base de datos no es necesario conservar un archivo por producto. El importador acepta un único manifiesto JSON con `schemaVersion` y `products`; el contrato y el comando están en [`procedimientos/importacion-masiva-biblioteca-vitrina.md`](procedimientos/importacion-masiva-biblioteca-vitrina.md). La carpeta de fichas individuales sigue siendo compatible como formato histórico.
+
+> **Artefactos reproducibles:** `scripts/generar_manifiesto_biblioteca.py` consolida exactamente los 39 Excel autorizados de `D:\Empresa\web-gruposecurity\listas\LISTA_DE_PRECIOS_EXCEL` en `biblioteca-import-39-listas.json` y deja la auditoría en `biblioteca-import-39-listas.report.json`. `scripts/generar_manifiesto_web.py` filtra ese universo a los SKUs ya publicados y produce `biblioteca-import-web.json`; este último se importa con `--updates-only`.
+
 > **Autor:** Bibliotecario de catálogo
 > **Fecha:** 2026-10-15
 > **Base de datos:** `catalogo-base.json` (764 productos parseados de 6 archivos Excel)
