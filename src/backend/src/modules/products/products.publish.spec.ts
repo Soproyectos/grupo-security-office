@@ -59,6 +59,7 @@ function build(opts: {
   const tx = {
     productRevision: { update: jest.fn().mockResolvedValue({}) },
     product: { update: jest.fn().mockResolvedValue(product) },
+    productChange: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
   const prisma = {
     product: {
@@ -77,6 +78,7 @@ function build(opts: {
     price: { count: jest.fn().mockResolvedValue(1) },
     productImage: { count: jest.fn().mockResolvedValue(1) },
     stock: { findUnique: jest.fn().mockResolvedValue(null) },
+    productChange: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
   };
   const acl = {
@@ -222,13 +224,13 @@ describe('CAT-06 P1/P2: publicar pinea la revisión exacta y re-valida con el mo
 
 describe('CAT-06 T3: programar exige validación vigente y congela la revisión', () => {
   it('schedulePublication con motor OK: persiste publishAt + scheduledRevisionId y registra SCHEDULE', async () => {
-    const { service, prisma, validation, events } = build({ product: { lifecycleStatus: 'DRAFT' } })
+    const { service, prisma, tx, validation, events } = build({ product: { lifecycleStatus: 'DRAFT' } })
     prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-work' })
 
     await service.schedulePublication('p-1', { publishAt: new Date(Date.now() + 86400000).toISOString() }, ctxAdmin)
 
     expect(validation.runFresh).toHaveBeenCalled()
-    expect(prisma.product.update.mock.calls[0][0].data).toMatchObject({ scheduledRevisionId: 'rev-work' })
+    expect(tx.product.update.mock.calls[0][0].data).toMatchObject({ scheduledRevisionId: 'rev-work' })
     expect(events()).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'SCHEDULE', result: 'ok', revisionId: 'rev-work', actorId: 'u-1' })]))
   })
 
@@ -245,12 +247,12 @@ describe('CAT-06 T3: programar exige validación vigente y congela la revisión'
   })
 
   it('legacy publish(publishAt futuro) usa el MISMO servicio: gate + congelado', async () => {
-    const { service, prisma, validation } = build({ product: { lifecycleStatus: 'DRAFT' } })
+    const { service, prisma, tx, validation } = build({ product: { lifecycleStatus: 'DRAFT' } })
     prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-fut' })
 
     await service.publish('p-1', { publishAt: new Date(Date.now() + 86400000).toISOString() }, ctxAdmin)
 
     expect(validation.runFresh).toHaveBeenCalled()
-    expect(prisma.product.update.mock.calls[0][0].data).toMatchObject({ lifecycleStatus: 'DRAFT', scheduledRevisionId: 'rev-fut' })
+    expect(tx.product.update.mock.calls[0][0].data).toMatchObject({ lifecycleStatus: 'DRAFT', scheduledRevisionId: 'rev-fut' })
   })
 })

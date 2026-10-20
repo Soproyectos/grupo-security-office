@@ -74,6 +74,8 @@ describe('ProductsService', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+    mockPrisma.productChange.createMany.mockResolvedValue({ count: 0 });
 
     // Sin coincidencias de SKU normalizado por defecto (helper findProductsBySkus).
     mockPrisma.$queryRaw.mockResolvedValue([]);
