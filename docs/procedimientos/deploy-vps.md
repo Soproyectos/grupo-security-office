@@ -57,11 +57,13 @@ push a main ──► CI ──(verde)──► CD (GitHub Actions)
    | Tipo | Nombre | Valor |
    | --- | --- | --- |
    | Secret | `DEPLOY_HOST` | `57.131.50.38` |
-   | Secret | `DEPLOY_USER` | `deploy` |
    | Secret | `DEPLOY_SSH_KEY` | contenido de la clave **privada** `gs-deploy-key` |
    | Secret (opcional) | `DEPLOY_PORT` | puerto SSH si no es 22 |
+   | Variable | `DEPLOY_USER` | `deploy` |
    | Variable | `DEPLOY_URL` | `https://dev.gruposecurity.cloud` |
    | Variable (opcional) | `DISCORD_WEBHOOK_URL` | webhook de notificación |
+
+   `DEPLOY_USER` es una variable y no un secreto: el nombre de usuario no da acceso por sí solo, porque el acceso depende de la clave privada. Si fuera secreto, GitHub reemplazaría la palabra `deploy` por `***` en todos los logs.
 
    Se recomienda restringir el entorno `production` a la rama `main` (Deployment branches) y, si se desea una aprobación manual, añadir revisores. Sin `DEPLOY_HOST` el workflow publica las imágenes pero omite el despliegue y lo avisa en el resumen.
 
