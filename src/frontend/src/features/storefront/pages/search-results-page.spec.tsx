@@ -39,6 +39,7 @@ const results: PublicProductResult[] = [
     categoryName: 'Cámaras IP',
     categorySlug: 'camaras-ip',
     brandName: 'Hikvision',
+    isInformational: false,
     price: { value: 118258.8, currency: 'COP' },
   },
   {
@@ -49,6 +50,7 @@ const results: PublicProductResult[] = [
     categoryName: 'Control de Acceso',
     categorySlug: 'control-de-acceso',
     brandName: 'ZKTeco',
+    isInformational: false,
     price: null,
   },
 ]

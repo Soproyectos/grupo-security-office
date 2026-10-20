@@ -1,0 +1,85 @@
+name: Import biblioteca
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Dry-run validates without writes; apply takes a verified backup and imports all 5,038 SKU."
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+
+concurrency:
+  group: biblioteca-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    name: ${{ inputs.mode == 'apply' && 'Apply official library' || 'Dry-run official library' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      IMPORT_MODE: ${{ inputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify repository artifacts
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          sha256sum -c biblioteca-import-39-listas.sha256
+
+      - name: Require deployment configuration
+        run: |
+          test -n "$DEPLOY_HOST" || { echo "::error::DEPLOY_HOST is not configured"; exit 1; }
+          test -n "${{ vars.DEPLOY_USER }}" || { echo "::error::DEPLOY_USER is not configured"; exit 1; }
+
+      - name: Copy audited artifacts to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: biblioteca-import-39-listas.json,biblioteca-import-39-listas.report.json,biblioteca-import-39-listas.sha256
+          target: /opt/grupo-security/data/imports
+          overwrite: true
+
+      - name: Run guarded import on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMPORT_MODE: ${{ env.IMPORT_MODE }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          command_timeout: 40m
+          envs: IMPORT_MODE
+          script: bash /opt/grupo-security/deploy/vps/import-biblioteca.sh "$IMPORT_MODE"
+
+      - name: Verify all official SKU on the public web
+        if: ${{ inputs.mode == 'apply' }}
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          python3 scripts/verificar_biblioteca_publica.py \
+            --api "${DEPLOY_URL%/}/api/public/products" \
+            --output biblioteca-publicacion-verificacion.json
+
+      - name: Upload public reconciliation
+        if: ${{ inputs.mode == 'apply' && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: biblioteca-publicacion-verificacion-${{ github.run_id }}
+          path: biblioteca-publicacion-verificacion.json
+          if-no-files-found: warn
+          retention-days: 30
