@@ -57,7 +57,7 @@ The 3-step screen, the purchasing package and its assignment, Supabase data comp
 Route per task: delegated writer (2+ non-trivial files). Design source: the read-only design of 2026-10-20 recorded in this document's decisions.
 
 - [x] T8 Amend `ADR-20261014`, `DISENO-IMPORTACION-PRECIOS-2026-10-14.md` and `IMPLEMENTACION-REVISION-PRECIOS-2026-10-14.md` to match the decisions. Check: no remaining text that requires a destination lista or forbids unknown-SKU creation.
-- [ ] T1 Additive migration (`price_import_revisions.listaId` nullable with `SET NULL`; row columns `productId`, `listaId`, `resolution`, `resolvedAt`, `resolvedById`; price columns `productId`, `changePercent`, `largeChange`; table `ProductChange`), types and constants (`LARGE_PRICE_CHANGE_PERCENT = 30`, incidence codes), in-memory test helper. Check: `migrate deploy` up and down on a throwaway DB, `migrate diff` empty, `tsc`.
+- [x] T1 Additive migration (`price_import_revisions.listaId` nullable with `SET NULL`; row columns `productId`, `listaId`, `resolution`, `resolvedAt`, `resolvedById`; price columns `productId`, `changePercent`, `largeChange`; table `ProductChange`), types and constants (`LARGE_PRICE_CHANGE_PERCENT = 30`, incidence codes), in-memory test helper. Check: `migrate deploy` up and down on a throwaway DB, `migrate diff` empty, `tsc`.
 - [ ] T4 `ProductChangeService`, `AuditService.logTx`, `productId` in audit, `GET /api/products/:id/changes` (price fields only with `prices:read`). Check: unit and DB-backed specs.
 - [ ] T2 R1 in `computePreview`, `saveRevision` and revision reads: global SKU matching via `findProductsBySkus`, per-lista authorization, `byLista` summary, idempotency by file hash and creator. Check: updated and new specs.
 - [ ] T3 R3 percent and flag in preview and save. Check: boundary specs 30.00 / 30.01 / previous zero.
@@ -77,3 +77,4 @@ Route per task: delegated writer (2+ non-trivial files). Design source: the read
 
 - 2026-10-20: design produced and decisions recorded. Next: user chooses the chain strategy, then T8.
 - 2026-10-20 T8 done: ADR amended in place (section "Enmienda 2026-10-20"), design doc and implementation report annotated, recovery note added. Check: `rg` for destination-lista / unknown-SKU-not-created sentences shows only amended text.
+- 2026-10-20 T1 done. Checks (throwaway postgres:18-alpine): `prisma validate` ok; `migrate deploy` from scratch ok; `migration.down.sql` then `migrate deploy` again ok (up/down/up); `migrate diff --from-migrations --to-schema-datamodel` = "No difference detected" and `--from-url` (after up/down/up) also empty; backend `tsc --noEmit` 0; eslint src/modules/prices 0 errors; jest prices+audit 14 suites / 328 tests pass (includes new helper and types specs).

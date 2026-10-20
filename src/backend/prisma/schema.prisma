@@ -448,7 +448,8 @@ enum PriceImportRevisionStatus {
 /// preview (audit `price-import-preview`) se conserva aparte de este historial.
 model PriceImportRevision {
   id             String                    @id @default(uuid())
-  listaId        String
+  /// Nullable since 2026-10-20: a revision may span several listas (rows carry their own listaId snapshot).
+  listaId        String?
   createdById    String?
   fileName       String
   fileHash       String
@@ -469,7 +470,7 @@ model PriceImportRevision {
   appliedResult  Json?
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
-  lista          Lista                     @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  lista          Lista?                    @relation(fields: [listaId], references: [id], onDelete: SetNull)
   createdBy      User?                     @relation("PriceImportRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   appliedBy      User?                     @relation("PriceImportRevisionAppliedBy", fields: [appliedById], references: [id], onDelete: SetNull)
   rows           PriceImportRevisionRow[]
@@ -490,10 +491,19 @@ model PriceImportRevisionRow {
   sku        String
   status     String
   issues     Json
+  /// Snapshots without FKs: they must never block product/lista deletion.
+  productId  String?
+  listaId    String?
+  /// null | PENDING_PRODUCT | PRODUCT_CREATED | SKIPPED
+  resolution String?
+  resolvedAt DateTime?
+  resolvedById String?
   revision   PriceImportRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@unique([revisionId, rowNumber])
   @@index([revisionId, status])
+  @@index([listaId])
+  @@index([productId])
   @@map("price_import_revision_rows")
 }
 
@@ -511,11 +521,36 @@ model PriceImportRevisionPrice {
   difference    String?
   wasRounded    Boolean
   change        String
+  productId     String?
+  changePercent Decimal?            @db.Decimal(9, 2)
+  largeChange   Boolean             @default(false)
   revision      PriceImportRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@unique([revisionId, rowNumber, tariffCode], map: "price_import_revision_prices_revisionId_rowNumber_tariffCode_ke")
   @@index([revisionId])
   @@map("price_import_revision_prices")
+}
+
+/// Per-product change history (2026-10-20). productId is a plain scalar (no FK)
+/// so the history survives product deletion and never blocks it.
+model ProductChange {
+  id        String   @id @default(uuid())
+  productId String
+  sku       String
+  /// name | description | brandId | categoryId | lifecycleStatus | listaId | price:<TARIFF>
+  field     String
+  oldValue  Json?
+  newValue  Json?
+  /// PRICE_IMPORT | MANUAL | PRODUCT_IMPORT | BIBLIOTECA_IMPORT | LIFECYCLE | SYSTEM
+  source    String
+  sourceRef String?
+  actorId   String?
+  batchId   String?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt(sort: Desc)])
+  @@index([sourceRef])
+  @@map("product_changes")
 }
 
 model ProductImage {
