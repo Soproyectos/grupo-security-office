@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { ProductRevisionsService } from './product-revisions.service';
 import { ProductsController } from './products.controller';
+import { ProductChangesController } from './product-changes.controller';
+import { ProductChangeService } from './product-change.service';
 import { ListasPublicationController } from './products.controller';
 import { PublicProductsController } from './public-products.controller';
 import { PublicProductDetailController } from './public-detail/public-product-detail.controller';
@@ -23,8 +25,8 @@ import { FilesModule } from '../files/files.module';
 
 @Module({
   imports: [StorefrontModule, PrismaModule, AclModule, AuditModule, ImportModule, FilesModule],
-  controllers: [ProductsController, ListasPublicationController, PublicProductsController, PublicProductDetailController, ProductSheetController, ProductValidationController, PublicationBoardController],
-  providers: [ProductsService, ProductRevisionsService, PublicPricingService, PublicCatalogService, PublicProductDetailService, ProductSheetService, ProductValidationService, PublicationBoardService],
-  exports: [ProductsService, PublicProductDetailService, ProductValidationService],
+  controllers: [ProductsController, ProductChangesController, ListasPublicationController, PublicProductsController, PublicProductDetailController, ProductSheetController, ProductValidationController, PublicationBoardController],
+  providers: [ProductsService, ProductChangeService, ProductRevisionsService, PublicPricingService, PublicCatalogService, PublicProductDetailService, ProductSheetService, ProductValidationService, PublicationBoardService],
+  exports: [ProductsService, ProductChangeService, PublicProductDetailService, ProductValidationService],
 })
 export class ProductsModule {}
