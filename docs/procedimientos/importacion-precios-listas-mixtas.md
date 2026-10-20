@@ -23,7 +23,7 @@ Estado: backend implementado en la rama `feat/price-import-rules-2` (2026-10-20)
 ## Autorización por lista
 
 - Vista previa y guardado: `prices:preview`, `prices:save` y `prices:read` como puerta general; después, `prices:read` sobre la lista de cada producto (decisión `decideCatalogResourceAccessFromGrants`, igual que `AclService`). Un producto sin lista solo se cubre con una concesión de alcance global.
-- La autorización de aplicar (`prices:apply` por lista) se documenta en la sección de aplicación.
+- Aplicar: ver la sección siguiente (`prices:apply` sobre cada lista que se va a escribir).
 
 ## Alerta de cambio grande (R3)
 
@@ -41,6 +41,28 @@ Estado: backend implementado en la rama `feat/price-import-rules-2` (2026-10-20)
 - `GET /api/prices/import/revisions?listaId=` lista las revisiones con filas en esa lista, más las heredadas por `revision.listaId`.
 - `GET /api/prices/import/revisions/:id` devuelve solo las filas de listas con `prices:read`; del resto devuelve únicamente la cuenta (`rowsInInaccessibleListas`). Los nombres de listas sin permiso se quitan también del resumen y del resultado de aplicación. Las revisiones heredadas (una lista, sin instantánea por fila) siguen siendo legibles.
 - El archivo original y el descarte de una revisión mixta exigen ser quien la subió o tener `prices:read` sobre todas sus listas.
+
+## Aplicar una revisión (`POST /api/prices/import/revisions/:id/apply`)
+
+Cuerpo opcional: `{ acknowledgeRejectedRows?: number, confirmLargeChanges?: boolean }`. Todo ocurre en una sola transacción `Serializable`; si algo falla no queda nada escrito, ni siquiera el cambio de estado de la revisión.
+
+1. Se reclama la revisión (`GUARDADA` a `APLICADA`). Si otra aplicación ya lo hizo, se devuelve el resultado guardado con `alreadyApplied: true`; un fallo de serialización (P2034) se reintenta hasta 3 veces y, si persiste, responde 409 `APPLY_SERIALIZATION_CONFLICT` (reintentable).
+2. Permisos: `prices:apply` sobre cada lista de las filas que se van a escribir; para productos sin lista, `prices:apply` y `products:write` con alcance global. Si se perdió algún permiso desde la vista previa: 409 `REVISION_CONFLICT` con `details.reason = LISTA_ACCESS_CHANGED` para toda la aplicación (no se nombra la lista).
+3. Solo se aplican las filas válidas con cambios. Las filas rechazadas (`UNKNOWN_REFERENCE`, `LISTA_FORBIDDEN`, etc.) no bloquean, pero si existen hay que enviar `acknowledgeRejectedRows` igual al número actual; si falta o no coincide: 409 `REJECTED_ROWS_UNACKNOWLEDGED` con `details.count` y una lista compacta (`rowNumber`, `sku`, `code`, máximo 50). Las filas de listas que la persona no puede ver no se enumeran (solo `hiddenRows`).
+4. Sin filas válidas con cambios: 409 `NOTHING_TO_APPLY`.
+5. Con cambios grandes y sin `confirmLargeChanges: true`: 409 `LARGE_CHANGES_UNCONFIRMED` con `details.changes` (`sku`, `tariffCode`, `previous`, `new`, `percent`). La confirmación queda en `appliedResult.largeChangesConfirmed`.
+6. Se bloquean los productos (`SELECT ... FOR UPDATE`, igual que la importación de productos) para serializar contra `PUT /api/products/:id` con cambio de lista. Si la lista actual del producto difiere de la de la revisión: `MEMBERSHIP_CHANGED`.
+7. Se revalidan los precios anteriores: `PRICE_CHANGED`, `PRICE_REMOVED`, `PRICE_CREATED_ELSEWHERE` (409 `REVISION_CONFLICT`, `details.conflicts`).
+8. Se escribe solo `Price`, con `Price.listaId` igual a la lista actual del producto (puede ser nula). Los precios iguales (`unchanged`) no se escriben ni dejan historial.
+9. Dentro de la misma transacción se crea un `ProductChange` por precio cambiado (`field = price:<TARIFA>`, valor anterior y nuevo, origen `PRICE_IMPORT`, `sourceRef` = id de la revisión, un `batchId` por aplicación) y la entrada de auditoría `price-import-apply` (`AuditService.logTx`).
+
+`appliedResult` conserva su forma anterior y añade `unchangedPrices`, `rejectedRows`, `largeChangesConfirmed`, `perLista` y `batchId`. Los nombres de listas sin permiso de lectura se quitan al leerlo.
+
+Límites conocidos:
+
+- El controlador conserva `@Roles('Super Admin', 'Supervisor', 'Admin Comercial')` a nivel de clase: quien solo tiene el paquete de compras sin uno de esos roles no llega a estos endpoints. No se cambia en este bloque.
+- La aplicación escribe precio por precio dentro de la transacción (hasta 5.000 filas por 5 tarifas). El tiempo máximo de la transacción es de 120 s.
+- El archivo guardado se identifica por su hash; descartar una revisión borra ese archivo aunque otra revisión use el mismo contenido.
 
 ## Respuestas de error
 

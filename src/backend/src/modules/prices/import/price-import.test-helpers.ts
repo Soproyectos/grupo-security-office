@@ -139,7 +139,7 @@ export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
       }
       if (text.includes('FOR UPDATE')) {
         const ids = new Set(query.values[0] as string[]);
-        return products.filter((p) => ids.has(p.id)).sort((a, b) => a.id.localeCompare(b.id)).map((p) => ({ id: p.id, listaId: p.listaId }));
+        return products.filter((p) => ids.has(p.id)).sort((a, b) => a.id.localeCompare(b.id)).map((p) => ({ id: p.id, sku: p.sku, listaId: p.listaId }));
       }
       throw new Error(`unexpected raw query: ${text}`);
     }),

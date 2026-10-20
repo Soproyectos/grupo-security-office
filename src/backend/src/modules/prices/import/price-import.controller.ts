@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { Response } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -47,6 +47,19 @@ export class PriceImportRevisionSaveDto {
   @ApiProperty({ description: 'Clave de idempotencia del cliente; repetirla no duplica la revisión.' })
   @IsString()
   idempotencyKey: string;
+}
+
+export class ApplyPriceImportRevisionDto {
+  @ApiProperty({ required: false, description: 'Número de filas rechazadas que quedan sin aplicar. Obligatorio, e igual al número actual, si la revisión tiene filas rechazadas.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  acknowledgeRejectedRows?: number;
+
+  @ApiProperty({ required: false, description: 'Confirma los cambios de precio grandes (mayores que el umbral). Obligatorio si la revisión los tiene.' })
+  @IsOptional()
+  @IsBoolean()
+  confirmLargeChanges?: boolean;
 }
 
 export class PriceImportRevisionListQueryDto {
@@ -236,9 +249,12 @@ export class PriceImportController {
   }
 
   @Post('revisions/:id/apply')
-  @ApiOperation({ summary: 'Aplicar una revisión de precios (permiso separado; transacción atómica).' })
-  applyRevision(@Param('id') id: string, @CurrentUser() user: { sub: string; roles: string[] }) {
-    return this.service.applyRevision(id, { userId: user.sub, roles: user.roles });
+  @ApiOperation({ summary: 'Aplicar las filas válidas de una revisión (prices:apply por lista; transacción atómica). 409 con code REJECTED_ROWS_UNACKNOWLEDGED, LARGE_CHANGES_UNCONFIRMED, NOTHING_TO_APPLY o REVISION_CONFLICT (LISTA_ACCESS_CHANGED, PRICE_CHANGED...).' })
+  applyRevision(@Param('id') id: string, @Body() dto: ApplyPriceImportRevisionDto,
+    @CurrentUser() user: { sub: string; roles: string[] }) {
+    return this.service.applyRevision(id, { userId: user.sub, roles: user.roles }, {
+      acknowledgeRejectedRows: dto?.acknowledgeRejectedRows, confirmLargeChanges: dto?.confirmLargeChanges,
+    });
   }
 
   @Delete('revisions/:id')

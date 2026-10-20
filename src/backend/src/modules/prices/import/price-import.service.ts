@@ -9,6 +9,7 @@ import { COP_POLICY_VERSION, normalizeCopPrice } from '../../../common/money/cop
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { findProductMatchesBySkus, normalizeSku } from '../../products/helpers/sku-identity';
+import { diffFields, newBatchId, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeInput } from '../../products/product-change.service';
 import { PriceImportAccess, isSuperAdmin, type ProductRef } from './price-import-authz';
 import { clampChangePercentForStorage, measurePriceChange } from './price-import-change';
 import { buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
@@ -24,7 +25,7 @@ import {
   type RecognitionView,
   type ResolvedReference,
 } from './provider-profile';
-import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, resolveLargeChangeThresholdPct, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
+import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, resolveLargeChangeThresholdPct, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PRICE_IMPORT_APPLY_CODES, PriceImportApplyOptions, PriceImportApplyPerLista, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
 import { deletePriceImportFile, priceImportFileExists, readPriceImportFile, storePriceImportFile } from './price-import-storage';
 
 /** Tarifa configurada resuelta al revisar (se captura como versión en la revisión). */
@@ -37,6 +38,10 @@ interface ConfiguredTariff {
   validUntil: Date | null;
 }
 
+const APPLY_MAX_ATTEMPTS = 3;
+const COMPACT_LIST_LIMIT = 50;
+/** Large imports write up to 5,000 rows x 5 tariffs one by one: the default 5 s interactive limit is far too short. */
+const APPLY_TX_OPTIONS = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 120_000 };
 const REVISION_PAGE_SIZE = 25;
 const REVISION_ROWS_PAGE_SIZE = 100;
 /** Stand-in id to ask "may the caller see products without a lista at all" (only a global grant says yes). */
@@ -68,6 +73,8 @@ interface ProviderProfileRow {
 
 @Injectable()
 export class PriceImportService {
+  private readonly changes: ProductChangeService;
+
   constructor(
     private prisma: PrismaService,
     private acl: AclService,
@@ -77,7 +84,11 @@ export class PriceImportService {
      * para conservar construcciones de 3 argumentos en specs; Nest lo inyecta.
      */
     @Optional() private grants?: AccessAssignmentsService,
-  ) {}
+    /** Per-product history writer (Nest injects the shared one; specs may omit it). */
+    @Optional() changes?: ProductChangeService,
+  ) {
+    this.changes = changes ?? new ProductChangeService(prisma, acl, grants);
+  }
 
   /**
    * Revalida por SOLICITUD las acciones del preview contra las concesiones
@@ -674,144 +685,267 @@ export class PriceImportService {
     return this.toRevisionHeader(updated, false);
   }
 
+  /** Prisma serialization failure (P2034), also surfaced as a raw-query failure with SQLSTATE 40001. */
+  private isSerializationFailure(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (error.code === 'P2034') return true;
+    return error.code === 'P2010' && /40001|could not serialize/i.test(`${error.message} ${JSON.stringify(error.meta ?? {})}`);
+  }
+
+  /** Result of an already applied revision, with lista names the caller cannot read removed. */
+  private async replayApplied(revision: { id: string; appliedAt: Date | null; appliedResult: Prisma.JsonValue | null }, ctx: AccessContext): Promise<PriceImportRevisionApplyResult> {
+    const stored = revision.appliedResult as unknown as PriceImportRevisionApplyResult | null;
+    const result: PriceImportRevisionApplyResult = stored ? { ...stored, alreadyApplied: true } : {
+      revisionId: revision.id, status: 'APLICADA', alreadyApplied: true, appliedRows: 0, appliedPrices: 0, tariffs: [], appliedAt: revision.appliedAt?.toISOString() ?? '',
+    };
+    return this.appliedResultForViewer(result, await this.loadAccess(ctx, ['prices:read']));
+  }
+
   /**
-   * IMP-05 — Aplica la revisión: escribe SOLO `Price` (upsert por
-   * `(productId, priceListId)`) + marca la revisión `APLICADA`, en UNA
-   * transacción `Serializable`. NO toca `Product`/identidad ni `Lista`.
-   * Versión esperada = `previousValue` (conflicto si cambió). Idempotente si ya
-   * estaba `APLICADA`.
+   * IMP-05 — Aplica la revisión de forma atómica: UNA transacción `Serializable`
+   * que reclama la revisión, valida permisos por lista, confirmaciones y versiones
+   * esperadas, bloquea los productos, escribe SOLO `Price` y deja el historial por
+   * producto y la auditoría en la misma transacción. No toca `Product`/identidad.
+   *
+   * - Solo se aplican las filas válidas; las rechazadas no bloquean, pero la persona
+   *   debe confirmar su número exacto (`acknowledgeRejectedRows`).
+   * - Los cambios grandes exigen `confirmLargeChanges`.
+   * - `prices:apply` se exige sobre CADA lista de las filas a escribir (alcance global
+   *   para productos sin lista); si se perdió desde la revisión, 409 `LISTA_ACCESS_CHANGED`.
+   * - Dos aplicaciones simultáneas: la perdedora recibe el resultado guardado
+   *   (`alreadyApplied`) tras reintentar un fallo de serialización (P2034).
    */
-  async applyRevision(id: string, ctx: AccessContext): Promise<PriceImportRevisionApplyResult> {
+  async applyRevision(id: string, ctx: AccessContext, options: PriceImportApplyOptions = {}): Promise<PriceImportRevisionApplyResult> {
     await this.assertApplyActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
-    // Mixed-lista revisions (listaId null) are applied by the per-lista apply of T5.
-    if (!revision.listaId) {
-      throw new ConflictException({ code: 'REVISION_APPLY_UNSUPPORTED', message: 'Esta revisión mezcla listas y todavía no se puede aplicar.' });
-    }
-    await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
-    if (revision.status === 'APLICADA') {
-      const stored = revision.appliedResult as unknown as PriceImportRevisionApplyResult | null;
-      return stored ? { ...stored, alreadyApplied: true } : {
-        revisionId: id, status: 'APLICADA', alreadyApplied: true, appliedRows: 0, appliedPrices: 0, tariffs: [], appliedAt: revision.appliedAt?.toISOString() ?? '',
-      };
-    }
+    if (revision.status === 'APLICADA') return this.replayApplied(revision, ctx);
     if (revision.status !== 'GUARDADA') {
       throw new ConflictException({ code: 'REVISION_DISCARDED', message: 'Esta revisión fue descartada y no se puede aplicar.' });
     }
 
-    const rows = await this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' } });
-    const storedPrices = await this.prisma.priceImportRevisionPrice.findMany({ where: { revisionId: id } });
-    const errorRows = rows.filter((r) => r.status !== 'valid');
-    if (errorRows.length) {
-      throw new ConflictException({
-        code: 'REVISION_HAS_ERRORS',
-        message: `La revisión tiene ${errorRows.length} fila(s) con problemas; corrígelas o exclúyelas de forma expresa antes de aplicar.`,
-        feedback: errorRows.map((r) => `Fila ${r.rowNumber} (${r.sku}): ${(r.issues as unknown as { message?: string }[] | null)?.map((i) => i.message ?? '').filter(Boolean).join(' ') || 'con problemas'}`),
-        rows: errorRows.map((r) => ({ row: r.rowNumber, sku: r.sku, issues: r.issues })),
-      });
-    }
-
-    const validKeys = new Set(rows.map((r) => `${r.rowNumber}:${r.sku}`));
-    const targets = storedPrices.filter((p) => validKeys.has(`${p.rowNumber}:${p.sku}`));
-    const skus = [...new Set(targets.map((t) => t.sku))];
-    const products = skus.length
-      ? await this.prisma.product.findMany({ where: { listaId: revision.listaId, sku: { in: skus, mode: 'insensitive' } }, select: { id: true, sku: true, listaId: true } })
-      : [];
-    const productBySku = new Map(products.map((p) => [p.sku.toUpperCase(), p]));
-
-    const conflicts: PriceImportRevisionApplyConflict[] = [];
-    const planned: { productId: string; priceListId: string; value: string; previous: string | null; code: string; sku: string }[] = [];
-    for (const t of targets) {
-      const product = productBySku.get(t.sku.toUpperCase());
-      if (!product) {
-        conflicts.push({ code: 'MEMBERSHIP_CHANGED', sku: t.sku, tariffCode: t.tariffCode, expected: revision.listaId, actual: 'no pertenece a la lista' });
-        continue;
-      }
-      if (!t.priceListId) {
-        conflicts.push({ code: 'TARIFF_UNAVAILABLE', sku: t.sku, tariffCode: t.tariffCode, expected: 'tarifa configurada', actual: 'no configurada' });
-        continue;
-      }
-      // Defensa en profundidad (IMP-03): el valor a escribir se revalida antes.
-      const value = normalizeCopPrice(t.roundedValue).rounded;
-      planned.push({ productId: product.id, priceListId: t.priceListId, value, previous: t.previousValue, code: t.tariffCode, sku: t.sku });
-    }
-    if (conflicts.length) {
-      throw new ConflictException({
-        code: 'REVISION_CONFLICT',
-        message: 'La revisión ya no coincide con la configuración vigente.',
-        feedback: conflicts.map((c) => `${c.sku} · ${c.tariffCode}: ${c.code} (esperado ${c.expected ?? '—'}, actual ${c.actual ?? '—'})`),
-        conflicts,
-      });
-    }
-
-    const applied = await this.prisma.$transaction(
-      async (tx) => {
-        const productIds = [...new Set(planned.map((p) => p.productId))];
-        const currentPrices = productIds.length
-          ? await tx.price.findMany({ where: { productId: { in: productIds } }, select: { id: true, productId: true, priceListId: true, value: true } })
-          : [];
-        const currentByKey = new Map(currentPrices.map((c) => [`${c.productId}:${c.priceListId}`, c]));
-        const rowConflicts: PriceImportRevisionApplyConflict[] = [];
-        for (const p of planned) {
-          const current = currentByKey.get(`${p.productId}:${p.priceListId}`);
-          const currentStr = current ? current.value.toString() : null;
-          if (p.previous === null && current) {
-            rowConflicts.push({ code: 'PRICE_CREATED_ELSEWHERE', sku: p.sku, tariffCode: p.code, expected: null, actual: currentStr });
-          } else if (p.previous !== null && !current) {
-            rowConflicts.push({ code: 'PRICE_REMOVED', sku: p.sku, tariffCode: p.code, expected: p.previous, actual: null });
-          } else if (current && p.previous !== null && !new Prisma.Decimal(current.value).equals(p.previous)) {
-            rowConflicts.push({ code: 'PRICE_CHANGED', sku: p.sku, tariffCode: p.code, expected: p.previous, actual: currentStr });
-          }
-        }
-        if (rowConflicts.length) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const outcome = await this.applyOnce(revision, ctx, options);
+        return 'revision' in outcome ? this.replayApplied(outcome.revision, ctx) : outcome.result;
+      } catch (error) {
+        if (!this.isSerializationFailure(error)) throw error;
+        if (attempt >= APPLY_MAX_ATTEMPTS) {
           throw new ConflictException({
-            code: 'REVISION_CONFLICT',
-            message: 'Los precios cambiaron desde que se preparó la revisión.',
-            feedback: rowConflicts.map((c) => `${c.sku} · ${c.tariffCode}: ${c.code} (esperado ${c.expected ?? '—'}, actual ${c.actual ?? '—'})`),
-            conflicts: rowConflicts,
+            code: PRICE_IMPORT_APPLY_CODES.APPLY_SERIALIZATION_CONFLICT,
+            message: 'Otra operación modificó estos precios al mismo tiempo. Vuelve a intentar aplicar la revisión.',
           });
         }
+      }
+    }
+  }
 
-        let appliedPrices = 0;
-        for (const p of planned) {
-          const current = currentByKey.get(`${p.productId}:${p.priceListId}`);
-          const data = { value: new Prisma.Decimal(p.value), currency: 'COP', listaId: revision.listaId };
-          if (current) {
-            await tx.price.update({ where: { id: current.id }, data });
-          } else {
-            await tx.price.create({ data: { productId: p.productId, priceListId: p.priceListId, ...data } });
-          }
-          appliedPrices += 1;
+  private async applyOnce(
+    revision: { id: string; listaId: string | null },
+    ctx: AccessContext,
+    options: PriceImportApplyOptions,
+  ): Promise<{ replayed: true; revision: { id: string; appliedAt: Date | null; appliedResult: Prisma.JsonValue | null } } | { replayed: false; result: PriceImportRevisionApplyResult }> {
+    const id = revision.id;
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      // Claim first: a concurrent apply either waits and replays the stored result or fails serialization and retries.
+      const claim = await tx.priceImportRevision.updateMany({
+        where: { id, status: 'GUARDADA' },
+        data: { status: 'APLICADA', appliedAt: now, appliedById: ctx.userId ?? null },
+      });
+      if (claim.count === 0) {
+        const current = await tx.priceImportRevision.findUnique({ where: { id } });
+        if (!current) throw new NotFoundException('Revisión de precios no encontrada.');
+        if (current.status === 'APLICADA') return { replayed: true as const, revision: current };
+        throw new ConflictException({ code: 'REVISION_DISCARDED', message: 'Esta revisión fue descartada y no se puede aplicar.' });
+      }
+
+      const rows = await tx.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' } });
+      const storedPrices = await tx.priceImportRevisionPrice.findMany({ where: { revisionId: id } });
+      const validByKey = new Map(rows.filter((r) => r.status === 'valid').map((r) => [`${r.rowNumber}:${r.sku}`, r]));
+      const rejected = rows.filter((r) => r.status !== 'valid');
+      const targets = storedPrices.filter((p) => validByKey.has(`${p.rowNumber}:${p.sku}`) && p.change !== 'unchanged');
+      const unchangedPrices = storedPrices.filter((p) => validByKey.has(`${p.rowNumber}:${p.sku}`) && p.change === 'unchanged').length;
+
+      // Owner of every row to write: the stored snapshot, or (legacy single-lista rows) the SKU in the revision's lista.
+      const legacyRows = [...new Set(targets.filter((t) => !validByKey.get(`${t.rowNumber}:${t.sku}`)!.productId).map((t) => t.sku))];
+      const legacyMatches = legacyRows.length
+        ? await findProductMatchesBySkus(tx, legacyRows, { id: true, sku: true, listaId: true })
+        : new Map();
+      const ownerOf = (rowNumber: number, sku: string): { productId: string; listaId: string | null } | null => {
+        const row = validByKey.get(`${rowNumber}:${sku}`)!;
+        if (row.productId) return { productId: row.productId, listaId: row.listaId ?? null };
+        const candidates = legacyMatches.get(normalizeSku(sku)) ?? [];
+        return candidates.length === 1 ? { productId: candidates[0].id, listaId: revision.listaId } : null;
+      };
+
+      // 1. Permission on EVERY lista (or global scope for products without lista) that will be written.
+      const access = await this.loadAccess(ctx, ['prices:apply'], ['prices:apply', 'products:write']);
+      const owners = new Map<string, { productId: string; listaId: string | null } | null>();
+      for (const t of targets) owners.set(`${t.rowNumber}:${t.sku}`, ownerOf(t.rowNumber, t.sku));
+      for (const owner of owners.values()) {
+        if (owner && !access.allows({ id: owner.productId, listaId: owner.listaId })) {
+          throw new ConflictException({
+            code: PRICE_IMPORT_APPLY_CODES.REVISION_CONFLICT,
+            message: 'Ya no tienes permiso para aplicar precios en una de las listas de esta revisión. No se aplicó nada.',
+            details: { reason: PRICE_IMPORT_APPLY_CODES.LISTA_ACCESS_CHANGED },
+            reason: PRICE_IMPORT_APPLY_CODES.LISTA_ACCESS_CHANGED,
+          });
         }
-        const result: PriceImportRevisionApplyResult = {
-          revisionId: id,
-          status: 'APLICADA',
-          alreadyApplied: false,
-          appliedRows: rows.length,
-          appliedPrices,
-          tariffs: [...new Set(planned.map((p) => p.code))],
-          appliedAt: new Date().toISOString(),
-        };
-        await tx.priceImportRevision.update({
-          where: { id },
-          data: { status: 'APLICADA', appliedAt: new Date(), appliedById: ctx.userId ?? null, appliedResult: result as unknown as Prisma.InputJsonValue },
-        });
-        return result;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+      }
 
-    // Evento único tras confirmar: un reintento (ya APLICADA) no lo re-emite.
-    await this.audit.log({
-      userId: ctx.userId,
-      action: 'price-import-apply',
-      entity: 'LISTA',
-      entityId: revision.listaId,
-      newValues: { revisionId: id, appliedRows: applied.appliedRows, appliedPrices: applied.appliedPrices, tariffs: applied.tariffs },
-      result: 'SUCCESS',
-    });
-    return applied;
+      // 2. Something to write.
+      if (targets.length === 0) {
+        throw new ConflictException({
+          code: PRICE_IMPORT_APPLY_CODES.NOTHING_TO_APPLY,
+          message: 'La revisión no tiene filas válidas con cambios de precio para aplicar.',
+          details: { rejectedRows: rejected.length, unchangedPrices },
+        });
+      }
+
+      // 3. The person must confirm exactly how many rejected rows stay unapplied.
+      const acknowledged = options.acknowledgeRejectedRows;
+      if ((rejected.length > 0 && acknowledged === undefined) || (acknowledged !== undefined && acknowledged !== rejected.length)) {
+        const shown = rejected.filter((r) => {
+          const lista = r.productId ? r.listaId ?? null : r.listaId ?? revision.listaId;
+          return lista ? access.allowsLista(lista) : true;
+        });
+        const list = shown.slice(0, COMPACT_LIST_LIMIT).map((r) => ({
+          rowNumber: r.rowNumber, sku: r.sku, code: ((r.issues as unknown as Array<{ code?: string }> | null)?.[0]?.code) ?? 'REJECTED',
+        }));
+        throw new ConflictException({
+          code: PRICE_IMPORT_APPLY_CODES.REJECTED_ROWS_UNACKNOWLEDGED,
+          message: `La revisión tiene ${rejected.length} fila(s) rechazada(s) que no se aplicarán. Confirma ese número para continuar.`,
+          feedback: list.map((r) => `Fila ${r.rowNumber} (${r.sku}): ${r.code}`),
+          details: { count: rejected.length, rows: list, hiddenRows: rejected.length - shown.length, truncated: shown.length > list.length },
+        });
+      }
+
+      // 4. Large changes need an explicit confirmation in this same call.
+      const large = targets.filter((t) => t.largeChange === true);
+      if (large.length > 0 && options.confirmLargeChanges !== true) {
+        const list = large.slice(0, COMPACT_LIST_LIMIT).map((t) => ({
+          sku: t.sku, tariffCode: t.tariffCode, previous: t.previousValue, new: t.roundedValue,
+          percent: t.changePercent === null || t.changePercent === undefined ? null : new Prisma.Decimal(t.changePercent).toFixed(2),
+        }));
+        throw new ConflictException({
+          code: PRICE_IMPORT_APPLY_CODES.LARGE_CHANGES_UNCONFIRMED,
+          message: `La revisión tiene ${large.length} cambio(s) de precio grande(s). Confírmalos para continuar.`,
+          feedback: list.map((c) => `${c.sku} · ${c.tariffCode}: ${c.previous ?? '—'} → ${c.new} (${c.percent ?? 'sin porcentaje'}%)`),
+          details: { count: large.length, changes: list, truncated: large.length > list.length },
+        });
+      }
+
+      // 5. Lock the products (same pattern as the product import) so a concurrent lista change cannot slip in.
+      const productIds = [...new Set([...owners.values()].filter((o): o is { productId: string; listaId: string | null } => !!o).map((o) => o.productId))].sort();
+      const locked = productIds.length
+        ? await tx.$queryRaw<Array<{ id: string; sku: string; listaId: string | null }>>(
+          Prisma.sql`SELECT id, sku, "listaId" FROM products WHERE id = ANY(${productIds}::text[]) ORDER BY id FOR UPDATE`)
+        : [];
+      const lockedById = new Map(locked.map((p) => [p.id, p]));
+      const currentPrices = productIds.length
+        ? await tx.price.findMany({ where: { productId: { in: productIds } }, select: { id: true, productId: true, priceListId: true, value: true } })
+        : [];
+      const currentByKey = new Map(currentPrices.map((c) => [`${c.productId}:${c.priceListId}`, c]));
+
+      const conflicts: PriceImportRevisionApplyConflict[] = [];
+      const planned: Array<{ productId: string; productSku: string; listaId: string | null; priceListId: string; value: string; previous: string | null; code: string; sku: string; rowNumber: number }> = [];
+      for (const t of targets) {
+        const owner = owners.get(`${t.rowNumber}:${t.sku}`);
+        const product = owner ? lockedById.get(owner.productId) : undefined;
+        if (!owner || !product || (product.listaId ?? null) !== owner.listaId) {
+          conflicts.push({ code: 'MEMBERSHIP_CHANGED', sku: t.sku, tariffCode: t.tariffCode, expected: owner?.listaId ?? 'sin lista', actual: 'la lista del producto cambió o ya no existe' });
+          continue;
+        }
+        if (!t.priceListId) {
+          conflicts.push({ code: 'TARIFF_UNAVAILABLE', sku: t.sku, tariffCode: t.tariffCode, expected: 'tarifa configurada', actual: 'no configurada' });
+          continue;
+        }
+        // Defensa en profundidad (IMP-03): el valor a escribir se revalida antes.
+        const value = normalizeCopPrice(t.roundedValue).rounded;
+        const current = currentByKey.get(`${product.id}:${t.priceListId}`);
+        const currentStr = current ? current.value.toString() : null;
+        if (t.previousValue === null && current) {
+          conflicts.push({ code: 'PRICE_CREATED_ELSEWHERE', sku: t.sku, tariffCode: t.tariffCode, expected: null, actual: currentStr });
+        } else if (t.previousValue !== null && !current) {
+          conflicts.push({ code: 'PRICE_REMOVED', sku: t.sku, tariffCode: t.tariffCode, expected: t.previousValue, actual: null });
+        } else if (current && t.previousValue !== null && !new Prisma.Decimal(current.value).equals(t.previousValue)) {
+          conflicts.push({ code: 'PRICE_CHANGED', sku: t.sku, tariffCode: t.tariffCode, expected: t.previousValue, actual: currentStr });
+        } else {
+          planned.push({ productId: product.id, productSku: product.sku, listaId: product.listaId ?? null, priceListId: t.priceListId, value, previous: t.previousValue, code: t.tariffCode, sku: t.sku, rowNumber: t.rowNumber });
+        }
+      }
+      if (conflicts.length) {
+        throw new ConflictException({
+          code: PRICE_IMPORT_APPLY_CODES.REVISION_CONFLICT,
+          message: 'La revisión ya no coincide con los precios o la configuración vigentes. No se aplicó nada.',
+          feedback: conflicts.map((c) => `${c.sku} · ${c.tariffCode}: ${c.code} (esperado ${c.expected ?? '—'}, actual ${c.actual ?? '—'})`),
+          conflicts,
+          details: { conflicts },
+        });
+      }
+
+      // 6. Write prices (Price.listaId follows the product's CURRENT lista, which may be null) and their history.
+      const batchId = newBatchId();
+      const history: ProductChangeInput[] = [];
+      for (const p of planned) {
+        const current = currentByKey.get(`${p.productId}:${p.priceListId}`);
+        const data = { value: new Prisma.Decimal(p.value), currency: 'COP', listaId: p.listaId };
+        if (current) {
+          await tx.price.update({ where: { id: current.id }, data });
+        } else {
+          await tx.price.create({ data: { productId: p.productId, priceListId: p.priceListId, ...data } });
+        }
+        const field = `${PRICE_FIELD_PREFIX}${p.code}`;
+        history.push(...diffFields(current ? { [field]: new Prisma.Decimal(current.value) } : {}, { [field]: data.value }, [field], {
+          productId: p.productId, sku: p.productSku, source: 'PRICE_IMPORT', sourceRef: id, actorId: ctx.userId ?? null, batchId,
+        }));
+      }
+      await this.changes.record(tx, history);
+
+      // 7. Result, per-lista breakdown and audit, still inside the transaction.
+      const groups = new Map<string | null, { rows: Set<number>; prices: number }>();
+      for (const p of planned) {
+        const group = groups.get(p.listaId) ?? { rows: new Set<number>(), prices: 0 };
+        group.rows.add(p.rowNumber);
+        group.prices += 1;
+        groups.set(p.listaId, group);
+      }
+      const listaIds = [...groups.keys()].filter((k): k is string => !!k);
+      const listas = listaIds.length ? await tx.lista.findMany({ where: { id: { in: listaIds } }, select: { id: true, code: true, name: true } }) : [];
+      const listaById = new Map(listas.map((l) => [l.id, l]));
+      const perLista: PriceImportApplyPerLista[] = [...groups.entries()].map(([listaId, g]) => ({
+        listaId, code: listaId ? listaById.get(listaId)?.code : undefined, name: listaId ? listaById.get(listaId)?.name : undefined, rows: g.rows.size, prices: g.prices,
+      }));
+      const result: PriceImportRevisionApplyResult = {
+        revisionId: id,
+        status: 'APLICADA',
+        alreadyApplied: false,
+        appliedRows: new Set(planned.map((p) => p.rowNumber)).size,
+        appliedPrices: planned.length,
+        tariffs: [...new Set(planned.map((p) => p.code))],
+        appliedAt: now.toISOString(),
+        unchangedPrices,
+        rejectedRows: rejected.length,
+        largeChangesConfirmed: large.length > 0 && options.confirmLargeChanges === true,
+        perLista,
+        batchId,
+      };
+      await tx.priceImportRevision.update({ where: { id }, data: { appliedResult: result as unknown as Prisma.InputJsonValue } });
+      await this.audit.logTx(tx, {
+        userId: ctx.userId,
+        action: 'price-import-apply',
+        entity: 'Price',
+        entityId: id,
+        newValues: {
+          revisionId: id, appliedRows: result.appliedRows, appliedPrices: result.appliedPrices, unchangedPrices, tariffs: result.tariffs,
+          rejectedRows: rejected.length, largeChangesConfirmed: result.largeChangesConfirmed,
+          perLista: perLista.map((l) => ({ listaId: l.listaId, rows: l.rows, prices: l.prices })), batchId,
+        },
+        result: 'SUCCESS',
+      });
+      return { replayed: false as const, result };
+    }, APPLY_TX_OPTIONS);
   }
 
   /** ¿Concede `actionId` el usuario según sus grants vigentes? (legados sin grants → true, transición D5). */
