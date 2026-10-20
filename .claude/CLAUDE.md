@@ -1,3 +1,7 @@
+## Instrucciones del proyecto (fuera de bloques gestionados)
+
+Antes de actuar, leer `AGENTS.md` en la raíz del repositorio y aplicar sus restricciones. En caso de conflicto, prevalece `AGENTS.md`. En particular, el commit automático por tarea del protocolo ODD **no está autorizado**: todo commit, push, despliegue, migración o cambio en servicios o contenedores requiere aprobación explícita del usuario.
+
 <!-- gentle-ai:persona -->
 ## Rules
 

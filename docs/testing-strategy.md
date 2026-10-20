@@ -2,7 +2,7 @@
 
 > **Versión:** 1.0  
 > **Última actualización:** 2026-07-23  
-> **Stack:** NestJS 10 + TypeScript + Prisma ORM + PostgreSQL 16 + JWT + RBAC  
+> **Stack:** NestJS 10 + TypeScript + Prisma ORM + PostgreSQL 18 + JWT + RBAC  
 > **Herramientas:** Jest + Supertest + ts-jest  
 > **Documentos relacionados:** `backend-architecture.md`, `backend-remediation-plan.md`, `auth-architecture.md`
 
