@@ -8,6 +8,9 @@ import type { AccessIdentity } from '../../../common/security/data-scope';
 import { COP_POLICY_VERSION, normalizeCopPrice } from '../../../common/money/cop-policy';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { findProductMatchesBySkus, normalizeSku } from '../../products/helpers/sku-identity';
+import { PriceImportAccess, isSuperAdmin, type ProductRef } from './price-import-authz';
+import { clampChangePercentForStorage } from './price-import-change';
 import { buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
 import {
   profileMatchesHeaders,
@@ -21,7 +24,7 @@ import {
   type RecognitionView,
   type ResolvedReference,
 } from './provider-profile';
-import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_PARSER_VERSION, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PriceImportIssue, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
+import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
 import { deletePriceImportFile, priceImportFileExists, readPriceImportFile, storePriceImportFile } from './price-import-storage';
 
 /** Tarifa configurada resuelta al revisar (se captura como versión en la revisión). */
@@ -36,6 +39,11 @@ interface ConfiguredTariff {
 
 const REVISION_PAGE_SIZE = 25;
 const REVISION_ROWS_PAGE_SIZE = 100;
+/** Stand-in id to ask "may the caller see products without a lista at all" (only a global grant says yes). */
+const UNLISTED_SENTINEL = 'unlisted-products';
+
+/** Internal per-row snapshot persisted with a revision; never returned for rows of inaccessible listas. */
+interface RowSnapshot { productId: string; listaId: string | null }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -126,13 +134,38 @@ export class PriceImportService {
     return this.assertActions(ctx, ['prices:apply', 'prices:read', 'listas:read'], 'No tienes asignada la aplicación de precios.');
   }
 
+  /**
+   * Authorizes `actionIds` over products of SEVERAL listas with one fresh grant
+   * snapshot. Returns the ids the caller may use: a product with a lista needs the
+   * actions on that lista; a product WITHOUT a lista needs them with GLOBAL scope.
+   */
+  async authorizeProductsByLista(
+    products: readonly ProductRef[],
+    ctx: AccessContext,
+    actionIds: readonly string[],
+  ): Promise<Set<string>> {
+    const access = await this.loadAccess(ctx, actionIds);
+    return access.allowedProductIds(products);
+  }
+
+  /** Fresh grant snapshot for this request (Super Admin needs none; no grants service denies everyone else). */
+  private async loadAccess(
+    ctx: AccessContext,
+    actionIds: readonly string[],
+    unlistedActionIds: readonly string[] = actionIds,
+  ): Promise<PriceImportAccess> {
+    const rows = !ctx.userId || isSuperAdmin(ctx) ? [] : (await this.grants?.grantsForUser(ctx.userId)) ?? [];
+    return new PriceImportAccess(rows, ctx, actionIds, unlistedActionIds);
+  }
+
   /** Preview HTTP: recalcula y emite el evento resumido (separado del historial). */
-  async preview(file: Express.Multer.File | undefined, listaId: string, ctx: AccessContext): Promise<PriceImportPreview> {
+  async preview(file: Express.Multer.File | undefined, ctx: AccessContext): Promise<PriceImportPreview> {
     await this.assertPreviewActions(ctx);
-    const { result, tariffs } = await this.computePreview(file, listaId, ctx);
+    const { result, tariffs } = await this.computePreview(file, ctx);
+    const fileHash = createHash('sha256').update((file as Express.Multer.File).buffer).digest('hex');
     await this.audit.log({
-      userId: ctx.userId, action: 'price-import-preview', entity: 'LISTA', entityId: listaId,
-      newValues: { fileHash: createHash('sha256').update((file as Express.Multer.File).buffer).digest('hex'), summary: result.summary, tariffs, rounding: result.rounding },
+      userId: ctx.userId, action: 'price-import-preview', entity: 'Price', entityId: fileHash,
+      newValues: { fileHash, summary: result.summary, tariffs, rounding: result.rounding },
       result: result.issues.length ? 'WARNING' : 'SUCCESS',
     });
     return result;
@@ -141,19 +174,16 @@ export class PriceImportService {
   /**
    * Cálculo puro de la revisión (solo lectura: no escribe precios ni productos).
    * Reutilizado por `preview` y por `saveRevision` (IMP-04).
+   *
+   * R1 (2026-10-20): el archivo se cruza SOLO por SKU, sin lista destino. Cada
+   * producto conserva su lista; la autorización se decide por lista (o con alcance
+   * global si no tiene lista) y una fila de una lista sin permiso se rechaza sin
+   * revelar nombre, id ni precios de esa lista.
    */
   private async computePreview(
     file: Express.Multer.File | undefined,
-    listaId: string,
     ctx: AccessContext,
-  ): Promise<{ result: PriceImportPreview; tariffs: PriceImportTariff[]; configured: Map<string, ConfiguredTariff> }> {
-    await this.acl.assertListaAccess(listaId, ctx, 'view_prices');
-    const lista = await this.prisma.lista.findUnique({ where: { id: listaId }, select: {
-      id: true, isActive: true, archivedAt: true, deletionStatus: true, currency: true,
-    } });
-    if (!lista) throw new NotFoundException('Lista no encontrada.');
-    if (!lista.isActive || lista.archivedAt || lista.deletionStatus) throw new BadRequestException('La lista debe estar activa y disponible para revisar precios.');
-    if (lista.currency !== 'COP') throw new BadRequestException('Esta plantilla solo admite precios en pesos colombianos.');
+  ): Promise<{ result: PriceImportPreview; tariffs: PriceImportTariff[]; configured: Map<string, ConfiguredTariff>; snapshots: Map<number, RowSnapshot> }> {
     if (!file?.buffer || !/\.xlsx$/i.test(file.originalname)) throw new BadRequestException('Selecciona la plantilla de Excel guardada como .xlsx.');
 
     const { tariffs, rows } = readPriceTemplate(file.buffer);
@@ -175,36 +205,77 @@ export class PriceImportService {
       }
     }
 
-    // Search only this Lista: an unknown or foreign reference never discloses another catalog.
+    // Normalized global match (same expression as the unique index): case and spaces never matter.
     const skus = [...new Set(rows.filter((r) => !r.issues.some((i) => i.column === 'REFERENCIA')).map((r) => r.sku))];
-    const products = skus.length ? await this.prisma.product.findMany({
-      where: { listaId, sku: { in: skus, mode: 'insensitive' } },
-      select: { id: true, sku: true, listaId: true },
-    }) : [];
-    // The Lista already permits view_prices. Its only overriding product rule is an explicit restriction.
-    const restrictions = products.length && !this.acl.isListasAdmin(ctx.roles)
+    const matches = skus.length ? await findProductMatchesBySkus(this.prisma, skus, { id: true, sku: true, listaId: true }) : new Map();
+    const single: ProductRef[] = [...matches.values()].filter((c) => c.length === 1).map((c) => c[0] as ProductRef);
+    const access = await this.loadAccess(ctx, ['prices:read']);
+    const allowedIds = access.allowedProductIds(single);
+    const authorized = single.filter((p) => allowedIds.has(p.id));
+    // The lista permits prices:read. The only product-level rule that overrides it is an explicit restriction.
+    const restrictions = authorized.length && !this.acl.isListasAdmin(ctx.roles)
       ? await this.prisma.assignment.findMany({ where: {
-        userId: ctx.userId, resourceType: 'PRODUCT', resourceId: { in: products.map((p) => p.id) }, isActive: false,
+        userId: ctx.userId, resourceType: 'PRODUCT', resourceId: { in: authorized.map((p) => p.id) }, isActive: false,
       }, select: { resourceId: true } }) : [];
-    const restricted = new Set(restrictions.map((a) => a.resourceId));
-    const visible = products.filter((p) => p.listaId === listaId && !restricted.has(p.id));
-    const matched = new Map<string, typeof visible>();
-    for (const product of visible) {
-      const key = product.sku.normalize('NFC').toUpperCase();
-      matched.set(key, [...(matched.get(key) ?? []), product]);
-    }
-    const storedPrices = visible.length ? await this.prisma.price.findMany({
-      where: { productId: { in: visible.map((p) => p.id) }, priceListId: { in: priceLists.filter((p) => !unavailable.has(p.code)).map((p) => p.id) } },
+    const restricted = new Set(restrictions.map((a: { resourceId: string }) => a.resourceId));
+    const listaIds = [...new Set(authorized.map((p) => p.listaId).filter((id): id is string => !!id))];
+    const listas = listaIds.length ? await this.prisma.lista.findMany({
+      where: { id: { in: listaIds } },
+      select: { id: true, code: true, name: true, isActive: true, archivedAt: true, deletionStatus: true, currency: true },
+    }) : [];
+    const listaById = new Map(listas.map((l) => [l.id, l]));
+    const listaUsable = (listaId: string | null) => {
+      if (!listaId) return true;
+      const lista = listaById.get(listaId);
+      return !!lista && lista.isActive && !lista.archivedAt && !lista.deletionStatus && lista.currency === 'COP';
+    };
+    const usable = authorized.filter((p) => !restricted.has(p.id) && listaUsable(p.listaId));
+    const usableIds = new Set(usable.map((p) => p.id));
+    const storedPrices = usable.length ? await this.prisma.price.findMany({
+      where: { productId: { in: usable.map((p) => p.id) }, priceListId: { in: priceLists.filter((p) => !unavailable.has(p.code)).map((p) => p.id) } },
       select: { productId: true, priceListId: true, listaId: true, value: true, currency: true },
     }) : [];
     const previous = new Map(storedPrices.map((p) => [`${p.productId}:${p.priceListId}`, p]));
 
+    const snapshots = new Map<number, RowSnapshot>();
+    let inaccessible = 0;
     for (const row of rows) {
-      const candidates = matched.get(row.sku.toUpperCase()) ?? [];
-      const product = candidates.length === 1 ? candidates[0] : undefined;
-      if (row.sku && !row.issues.some((i) => i.column === 'REFERENCIA') && !product) {
-        row.issues.push({ row: row.row, column: 'REFERENCIA', code: 'REFERENCE_UNAVAILABLE',
-          message: 'Esta referencia no está disponible en la lista elegida. Revisa su asignación; no se creará ni moverá ningún producto.' });
+      const referenceBroken = row.issues.some((i) => i.column === 'REFERENCIA');
+      let product: ProductRef | undefined;
+      row.productId = null;
+      row.listaId = null;
+      row.resolution = null;
+      if (row.sku && !referenceBroken) {
+        const candidates = (matches.get(normalizeSku(row.sku)) ?? []) as ProductRef[];
+        if (candidates.length === 0) {
+          row.listaState = 'UNKNOWN';
+          row.resolution = 'PENDING_PRODUCT';
+          row.issues.push({ row: row.row, column: 'REFERENCIA', code: PRICE_IMPORT_INCIDENCE_CODES.UNKNOWN_REFERENCE,
+            message: 'Esta referencia no existe en el catálogo. No se aplicará su precio; el resto del archivo no se bloquea.' });
+        } else if (candidates.length > 1) {
+          row.issues.push({ row: row.row, column: 'REFERENCIA', code: PRICE_IMPORT_INCIDENCE_CODES.AMBIGUOUS_REFERENCE,
+            message: 'Esta referencia coincide con más de un producto y no se puede elegir uno. Debe revisarla quien administra el catálogo.' });
+        } else if (!allowedIds.has(candidates[0].id)) {
+          // Generic on purpose: no lista name, id, price or "create draft" offer. The snapshot stays internal.
+          snapshots.set(row.row, { productId: candidates[0].id, listaId: candidates[0].listaId });
+          inaccessible += 1;
+          row.issues.push({ row: row.row, column: 'REFERENCIA', code: PRICE_IMPORT_INCIDENCE_CODES.LISTA_FORBIDDEN,
+            message: 'Esta referencia pertenece a una lista sobre la que no tienes permiso de precios. No se aplicará su precio.' });
+        } else if (restricted.has(candidates[0].id)) {
+          snapshots.set(row.row, { productId: candidates[0].id, listaId: candidates[0].listaId });
+          row.issues.push({ row: row.row, column: 'REFERENCIA', code: 'REFERENCE_UNAVAILABLE',
+            message: 'Esta referencia no está disponible para ti. Revisa su asignación; no se creará ni moverá ningún producto.' });
+        } else if (!usableIds.has(candidates[0].id)) {
+          snapshots.set(row.row, { productId: candidates[0].id, listaId: candidates[0].listaId });
+          row.issues.push({ row: row.row, column: 'REFERENCIA', code: PRICE_IMPORT_INCIDENCE_CODES.LISTA_UNAVAILABLE,
+            message: 'La lista de esta referencia no está activa o disponible para revisar precios en pesos colombianos.' });
+        } else {
+          product = candidates[0];
+          row.productId = product.id;
+          row.listaId = product.listaId;
+          row.listaState = product.listaId ? 'LISTA' : 'SIN_LISTA';
+          snapshots.set(row.row, { productId: product.id, listaId: product.listaId });
+        }
       }
       for (const price of row.prices) {
         if (unavailable.has(price.code)) {
@@ -214,7 +285,7 @@ export class PriceImportService {
         if (!product || row.issues.some((i) => i.column === 'REFERENCIA')) continue;
         const stored = previous.get(`${product.id}:${configured.get(price.code)!.id}`);
         if (!stored) continue;
-        if ((stored.listaId && stored.listaId !== listaId) || stored.currency !== 'COP') {
+        if ((stored.listaId && stored.listaId !== product.listaId) || stored.currency !== 'COP') {
           row.issues.push({ row: row.row, column: price.code, code: 'STORED_PRICE_MISMATCH', message: 'El precio guardado tiene una lista o moneda distinta. Debe revisarlo quien administra los precios.' });
           continue;
         }
@@ -227,8 +298,17 @@ export class PriceImportService {
     }
     const valid = rows.filter((r) => r.status === 'valid');
     const prices = valid.flatMap((r) => r.prices);
+    const perLista = new Map<string, PriceImportListaSummary>();
+    for (const row of valid) {
+      if (!row.listaId) continue;
+      const lista = listaById.get(row.listaId);
+      const entry = perLista.get(row.listaId) ?? { listaId: row.listaId, code: lista?.code, name: lista?.name, rows: 0, prices: 0 };
+      entry.rows += 1;
+      entry.prices += row.prices.length;
+      perLista.set(row.listaId, entry);
+    }
     const result: PriceImportPreview = {
-      listaId, fileName: file.originalname.split(/[\\/]/).pop()!.slice(0, 200), currency: 'COP', taxIncluded: true,
+      listaId: null, fileName: file.originalname.split(/[\\/]/).pop()!.slice(0, 200), currency: 'COP', taxIncluded: true,
       rounding: 'HALF_UP', readOnly: true,
       summary: {
         rows: rows.length, validRows: valid.length, errorRows: rows.length - valid.length,
@@ -236,9 +316,14 @@ export class PriceImportService {
         changedPrices: prices.filter((p) => p.change === 'changed').length,
         unchangedPrices: prices.filter((p) => p.change === 'unchanged').length,
         roundedPrices: prices.filter((p) => p.wasRounded).length,
+        byLista: [...perLista.values()],
+        unlistedRows: rows.filter((r) => r.listaState === 'SIN_LISTA').length,
+        unknownRows: rows.filter((r) => r.resolution === 'PENDING_PRODUCT').length,
+        rejectedRows: rows.length - valid.length,
+        rowsInInaccessibleListas: inaccessible,
       }, issues: [...issues, ...rows.flatMap((r) => r.issues)], rows,
     };
-    return { result, tariffs, configured };
+    return { result, tariffs, configured, snapshots };
   }
 
   // ————————————————————————————————————————————————————————————————
@@ -259,13 +344,16 @@ export class PriceImportService {
 
   private toRevisionHeader(
     revision: {
-      id: string; listaId: string; status: string; fileName: string; fileHash: string; fileSize: number;
+      id: string; listaId: string | null; status: string; fileName: string; fileHash: string; fileSize: number;
       idempotencyKey: string; policyVersion: string; parserVersion: string; trailerVersion: string | null;
       tariffs: Prisma.JsonValue; summary: Prisma.JsonValue; createdById: string | null; createdAt: Date;
       appliedAt: Date | null; appliedResult: Prisma.JsonValue | null;
     },
     fileAvailable: boolean,
+    access?: PriceImportAccess,
   ): PriceImportRevisionHeader {
+    const summary = revision.summary as unknown as PriceImportPreview['summary'];
+    const applied = (revision.appliedResult as unknown as PriceImportRevisionApplyResult | null) ?? null;
     return {
       id: revision.id,
       listaId: revision.listaId,
@@ -282,21 +370,37 @@ export class PriceImportService {
       parserVersion: revision.parserVersion,
       trailerVersion: revision.trailerVersion,
       tariffs: (revision.tariffs as unknown as PriceImportRevisionTariff[]) ?? [],
-      summary: revision.summary as unknown as PriceImportPreview['summary'],
+      summary: access ? this.summaryForViewer(summary, access) : summary,
       createdById: revision.createdById,
       createdAt: revision.createdAt.toISOString(),
       appliedAt: revision.appliedAt ? revision.appliedAt.toISOString() : null,
-      appliedResult: (revision.appliedResult as unknown as PriceImportRevisionApplyResult | null) ?? null,
+      appliedResult: applied && access ? this.appliedResultForViewer(applied, access) : applied,
     };
+  }
+
+  /** Names and counts of listas the viewer cannot read never leave the server: they fold into one counter. */
+  private summaryForViewer(summary: PriceImportPreview['summary'], access: PriceImportAccess): PriceImportPreview['summary'] {
+    if (!summary || !Array.isArray(summary.byLista)) return summary;
+    const visible = summary.byLista.filter((l) => access.allowsLista(l.listaId));
+    const hiddenRows = summary.byLista.filter((l) => !access.allowsLista(l.listaId)).reduce((sum, l) => sum + l.rows, 0);
+    return { ...summary, byLista: visible, rowsInInaccessibleListas: (summary.rowsInInaccessibleListas ?? 0) + hiddenRows };
+  }
+
+  private appliedResultForViewer(result: PriceImportRevisionApplyResult, access: PriceImportAccess): PriceImportRevisionApplyResult {
+    if (!Array.isArray(result.perLista)) return result;
+    return { ...result, perLista: result.perLista.filter((l) => (l.listaId ? access.allowsLista(l.listaId) : access.allowsUnlistedProduct(UNLISTED_SENTINEL))) };
   }
 
   /**
    * Guarda la revisión (archivo + filas + precios) en UNA transacción. NO toca
-   * `Price`, `Product` ni identidad (regla 3). Idempotente por `idempotencyKey`.
+   * `Price`, `Product` ni identidad (regla 3). Idempotente por `idempotencyKey`
+   * Y creador: otra persona con la misma clave y archivo nunca recibe la cabecera ajena.
+   *
+   * `revision.listaId` queda SIEMPRE null en las revisiones nuevas: la verdad es la
+   * lista de cada fila (instantánea `listaId`), porque un archivo puede mezclar listas.
    */
   async saveRevision(
     file: Express.Multer.File | undefined,
-    listaId: string,
     idempotencyKey: string | undefined,
     ctx: AccessContext,
   ): Promise<PriceImportRevisionHeader> {
@@ -309,15 +413,16 @@ export class PriceImportService {
     }
     const key = idempotencyKey.trim();
     // Recalcula en servidor: nunca se confía en filas/precios del navegador.
-    const { result, tariffs, configured } = await this.computePreview(file, listaId, ctx);
+    const { result, tariffs, configured, snapshots } = await this.computePreview(file, ctx);
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
 
     const existing = await this.prisma.priceImportRevision.findUnique({ where: { idempotencyKey: key } });
     if (existing) {
-      if (existing.listaId === listaId && existing.fileHash === fileHash) {
-        return this.toRevisionHeader(existing, await priceImportFileExists(existing.fileHash));
+      if (existing.fileHash === fileHash && existing.createdById === (ctx.userId ?? null)) {
+        const access = await this.loadAccess(ctx, ['prices:read']);
+        return this.toRevisionHeader(existing, await priceImportFileExists(existing.fileHash), access);
       }
-      throw new ConflictException('La clave de idempotencia ya se usó con otra lista o contenido.');
+      throw new ConflictException('La clave de idempotencia ya se usó con otro contenido o por otra persona.');
     }
 
     const tariffSnapshot: PriceImportRevisionTariff[] = tariffs.map((code) => {
@@ -335,7 +440,7 @@ export class PriceImportService {
       const created = await this.prisma.$transaction(async (tx) => {
         const revision = await tx.priceImportRevision.create({
           data: {
-            listaId,
+            listaId: null,
             createdById: ctx.userId ?? null,
             fileName: result.fileName,
             fileHash,
@@ -360,6 +465,9 @@ export class PriceImportService {
               sku: r.sku,
               status: r.status,
               issues: r.issues as unknown as Prisma.InputJsonValue,
+              productId: snapshots.get(r.row)?.productId ?? null,
+              listaId: snapshots.get(r.row)?.listaId ?? null,
+              resolution: r.resolution ?? null,
             })),
           });
         }
@@ -376,6 +484,9 @@ export class PriceImportService {
             difference: p.difference,
             wasRounded: p.wasRounded,
             change: p.change,
+            productId: snapshots.get(r.row)?.productId ?? null,
+            changePercent: clampChangePercentForStorage(p.changePercent),
+            largeChange: p.largeChange === true,
           })),
         );
         if (priceRows.length) {
@@ -386,8 +497,8 @@ export class PriceImportService {
       await this.audit.log({
         userId: ctx.userId,
         action: 'price-import-revision-save',
-        entity: 'LISTA',
-        entityId: listaId,
+        entity: 'Price',
+        entityId: created.id,
         newValues: { revisionId: created.id, fileHash, summary: result.summary, tariffs: tariffSnapshot, policyVersion: COP_POLICY_VERSION },
         result: result.issues.length ? 'WARNING' : 'SUCCESS',
       });
@@ -399,59 +510,134 @@ export class PriceImportService {
     }
   }
 
+  /**
+   * Revisions that have rows in `listaId` (join on the row snapshot) plus legacy
+   * ones created for that single lista. The caller needs prices:read on `listaId`;
+   * the other listas of a mixed revision are folded into a counter in each header.
+   */
   async listRevisions(listaId: string, page: number, pageSize: number, ctx: AccessContext): Promise<PriceImportRevisionPage> {
     await this.assertReviewReadActions(ctx);
     await this.acl.assertListaAccess(listaId, ctx, 'view_prices');
     const take = this.clampSize(pageSize, REVISION_PAGE_SIZE);
     const currentPage = this.clampPage(page);
+    const where = { OR: [{ listaId }, { rows: { some: { listaId } } }] };
     const [items, total] = await Promise.all([
-      this.prisma.priceImportRevision.findMany({ where: { listaId }, orderBy: { createdAt: 'desc' }, skip: (currentPage - 1) * take, take }),
-      this.prisma.priceImportRevision.count({ where: { listaId } }),
+      this.prisma.priceImportRevision.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (currentPage - 1) * take, take }),
+      this.prisma.priceImportRevision.count({ where }),
     ]);
-    const withFile = await Promise.all(items.map(async (r) => this.toRevisionHeader(r, await priceImportFileExists(r.fileHash))));
+    const access = await this.loadAccess(ctx, ['prices:read']);
+    const withFile = await Promise.all(items.map(async (r) => this.toRevisionHeader(r, await priceImportFileExists(r.fileHash), access)));
     return { items: withFile, total, page: currentPage, pageSize: take };
+  }
+
+  /** Which lista a stored row belongs to (legacy rows have no snapshot and take the revision's lista). */
+  private rowOwner(row: { productId?: string | null; listaId?: string | null }, revisionListaId: string | null): { listaId: string | null; productId: string | null } {
+    if (row.productId) return { listaId: row.listaId ?? null, productId: row.productId };
+    return { listaId: row.listaId ?? revisionListaId, productId: null };
+  }
+
+  /** A row is visible when the caller can read its lista (or the row is tied to no product at all). */
+  private canSeeRow(row: { productId?: string | null; listaId?: string | null }, revisionListaId: string | null, access: PriceImportAccess): boolean {
+    const owner = this.rowOwner(row, revisionListaId);
+    if (owner.listaId) return access.allowsLista(owner.listaId);
+    if (owner.productId) return access.allowsUnlistedProduct(owner.productId);
+    return true;
   }
 
   async getRevision(id: string, page: number, pageSize: number, ctx: AccessContext): Promise<PriceImportRevisionDetail> {
     await this.assertReviewReadActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
-    await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
+    // Legacy revision of one lista: the original lista-level gate still applies.
+    if (revision.listaId) await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
+    const access = await this.loadAccess(ctx, ['prices:read']);
     const take = this.clampSize(pageSize, REVISION_ROWS_PAGE_SIZE);
     const currentPage = this.clampPage(page);
-    const [rows, totalRows, prices] = await Promise.all([
-      this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' }, skip: (currentPage - 1) * take, take }),
-      this.prisma.priceImportRevisionRow.count({ where: { revisionId: id } }),
-      this.prisma.priceImportRevisionPrice.findMany({ where: { revisionId: id } }),
-    ]);
+
+    const allRows = await this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' } });
+    const visible = allRows.filter((r) => this.canSeeRow(r, revision.listaId, access));
+    const hidden = allRows.length - visible.length;
+    if (hidden > 0 && visible.length === 0 && revision.createdById !== (ctx.userId ?? null)) {
+      throw new ForbiddenException('Sin permiso sobre las listas de esta revisión.');
+    }
+    const pageRows = visible.slice((currentPage - 1) * take, currentPage * take);
+    const visibleNumbers = new Set(visible.map((r) => r.rowNumber));
+    const prices = (await this.prisma.priceImportRevisionPrice.findMany({ where: { revisionId: id } })).filter((p) => visibleNumbers.has(p.rowNumber));
     const byRow = new Map<string, typeof prices>();
     for (const price of prices) {
       const key = `${price.rowNumber}:${price.sku}`;
       byRow.set(key, [...(byRow.get(key) ?? []), price]);
     }
-    const view: PriceImportRow[] = rows.map((r) => ({
-      row: r.rowNumber,
-      sku: r.sku,
-      status: r.status as 'valid' | 'error',
-      issues: (r.issues as unknown as PriceImportIssue[]) ?? [],
-      prices: (byRow.get(`${r.rowNumber}:${r.sku}`) ?? []).map((p) => ({
-        code: p.tariffCode,
-        raw: p.receivedValue,
-        rounded: p.roundedValue,
-        previous: p.previousValue,
-        difference: p.difference,
-        wasRounded: p.wasRounded,
-        change: p.change as 'new' | 'changed' | 'unchanged',
-      })),
-    }));
-    return { ...this.toRevisionHeader(revision, await priceImportFileExists(revision.fileHash)), rows: view, totalRows, page: currentPage, pageSize: take };
+    const view: PriceImportRow[] = pageRows.map((r) => {
+      const owner = this.rowOwner(r, revision.listaId);
+      const resolution = (r.resolution ?? null) as PriceImportRow['resolution'];
+      return {
+        row: r.rowNumber,
+        sku: r.sku,
+        status: r.status as 'valid' | 'error',
+        issues: (r.issues as unknown as PriceImportIssue[]) ?? [],
+        productId: owner.productId,
+        listaId: owner.listaId,
+        listaState: owner.listaId ? 'LISTA' : owner.productId ? 'SIN_LISTA' : resolution === 'PENDING_PRODUCT' ? 'UNKNOWN' : undefined,
+        resolution,
+        prices: (byRow.get(`${r.rowNumber}:${r.sku}`) ?? []).map((p) => ({
+          code: p.tariffCode,
+          raw: p.receivedValue,
+          rounded: p.roundedValue,
+          previous: p.previousValue,
+          difference: p.difference,
+          wasRounded: p.wasRounded,
+          change: p.change as 'new' | 'changed' | 'unchanged',
+          changePercent: p.changePercent === null || p.changePercent === undefined ? null : new Prisma.Decimal(p.changePercent).toFixed(2),
+          largeChange: p.largeChange === true,
+        })),
+      };
+    });
+
+    const perLista = new Map<string, PriceImportListaSummary>();
+    for (const r of visible) {
+      const owner = this.rowOwner(r, revision.listaId);
+      if (!owner.listaId) continue;
+      const entry = perLista.get(owner.listaId) ?? { listaId: owner.listaId, rows: 0, prices: 0 };
+      entry.rows += 1;
+      entry.prices += prices.filter((p) => p.rowNumber === r.rowNumber).length;
+      perLista.set(owner.listaId, entry);
+    }
+    const listas = perLista.size ? await this.prisma.lista.findMany({ where: { id: { in: [...perLista.keys()] } }, select: { id: true, code: true, name: true } }) : [];
+    for (const lista of listas) {
+      const entry = perLista.get(lista.id);
+      if (entry) { entry.code = lista.code; entry.name = lista.name; }
+    }
+    return {
+      ...this.toRevisionHeader(revision, await priceImportFileExists(revision.fileHash), access),
+      rows: view, byLista: [...perLista.values()], rowsInInaccessibleListas: hidden,
+      totalRows: visible.length, page: currentPage, pageSize: take,
+    };
+  }
+
+  /**
+   * Gate for the original file and for discarding: a legacy revision keeps its lista
+   * check; a mixed one needs prices:read on EVERY lista it touches, unless the caller
+   * is the person who uploaded it (it is their own file).
+   */
+  private async assertWholeRevisionAccess(revision: { id: string; listaId: string | null; createdById: string | null }, ctx: AccessContext): Promise<void> {
+    if (revision.listaId) {
+      await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
+      return;
+    }
+    if (revision.createdById && revision.createdById === ctx.userId) return;
+    const access = await this.loadAccess(ctx, ['prices:read']);
+    const rows = await this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: revision.id } });
+    if (rows.some((r) => !this.canSeeRow(r, null, access))) {
+      throw new ForbiddenException('Sin permiso sobre las listas de esta revisión.');
+    }
   }
 
   async getRevisionFile(id: string, ctx: AccessContext): Promise<{ buffer: Buffer; fileName: string }> {
     await this.assertReviewReadActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
-    await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
+    await this.assertWholeRevisionAccess(revision, ctx);
     const buffer = await readPriceImportFile(revision.fileHash);
     if (!buffer) throw new NotFoundException('El archivo original de esta revisión ya no está disponible.');
     return { buffer, fileName: revision.fileName };
@@ -461,7 +647,7 @@ export class PriceImportService {
     await this.assertSaveActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
-    await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
+    await this.assertWholeRevisionAccess(revision, ctx);
     if (revision.status !== 'GUARDADA') {
       throw new ConflictException('Solo se puede descartar una revisión que sigue pendiente de aplicar.');
     }
@@ -470,8 +656,8 @@ export class PriceImportService {
     await this.audit.log({
       userId: ctx.userId,
       action: 'price-import-revision-discard',
-      entity: 'LISTA',
-      entityId: revision.listaId,
+      entity: 'Price',
+      entityId: id,
       oldValues: { status: revision.status },
       newValues: { revisionId: id, status: 'DESCARTADA' },
       result: 'SUCCESS',
@@ -490,6 +676,10 @@ export class PriceImportService {
     await this.assertApplyActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
+    // Mixed-lista revisions (listaId null) are applied by the per-lista apply of T5.
+    if (!revision.listaId) {
+      throw new ConflictException({ code: 'REVISION_APPLY_UNSUPPORTED', message: 'Esta revisión mezcla listas y todavía no se puede aplicar.' });
+    }
     await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
     if (revision.status === 'APLICADA') {
       const stored = revision.appliedResult as unknown as PriceImportRevisionApplyResult | null;

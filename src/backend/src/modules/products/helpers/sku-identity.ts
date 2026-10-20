@@ -18,19 +18,20 @@ export { normalizeSku };
 export type SkuLookupClient = Pick<Prisma.TransactionClient, '$queryRaw' | 'product'>;
 
 /**
- * Finds the existing products whose normalized SKU equals the normalized form
- * of any of `skus`, keyed by normalized SKU. Empty/blank inputs are ignored.
- *
- * If several products share a normalized SKU (only possible before the unique
- * index exists), the one that belongs to a Lista wins, then the oldest.
+ * Finds EVERY existing product whose normalized SKU equals the normalized form of
+ * any of `skus`, keyed by normalized SKU (candidates in lookup order: with Lista
+ * first, then oldest). With the unique normalized index in place each key holds
+ * at most one product; callers that must refuse to guess (price import) use this
+ * variant to detect an ambiguous match defensively.
  */
-export async function findProductsBySkus<S extends Prisma.ProductSelect>(
+export async function findProductMatchesBySkus<S extends Prisma.ProductSelect>(
   client: SkuLookupClient,
   skus: Array<string | null | undefined>,
   select: S,
   where?: Prisma.ProductWhereInput,
-): Promise<Map<string, Prisma.ProductGetPayload<{ select: S }> & { id: string }>> {
-  const result = new Map<string, Prisma.ProductGetPayload<{ select: S }> & { id: string }>();
+): Promise<Map<string, Array<Prisma.ProductGetPayload<{ select: S }> & { id: string }>>> {
+  type Row = Prisma.ProductGetPayload<{ select: S }> & { id: string };
+  const result = new Map<string, Row[]>();
   const normalized = [...new Set(skus.map((s) => normalizeSku(s)).filter((s) => s !== ''))];
   if (normalized.length === 0) return result;
 
@@ -51,11 +52,29 @@ export async function findProductsBySkus<S extends Prisma.ProductSelect>(
 
   for (const match of matches) {
     const row = byId.get(match.id);
+    if (!row) continue;
     const key = normalizeSku(match.sku);
-    if (row && !result.has(key)) {
-      result.set(key, row as Prisma.ProductGetPayload<{ select: S }> & { id: string });
-    }
+    result.set(key, [...(result.get(key) ?? []), row as Row]);
   }
+  return result;
+}
+
+/**
+ * Finds the existing products whose normalized SKU equals the normalized form
+ * of any of `skus`, keyed by normalized SKU. Empty/blank inputs are ignored.
+ *
+ * If several products share a normalized SKU (only possible before the unique
+ * index exists), the one that belongs to a Lista wins, then the oldest.
+ */
+export async function findProductsBySkus<S extends Prisma.ProductSelect>(
+  client: SkuLookupClient,
+  skus: Array<string | null | undefined>,
+  select: S,
+  where?: Prisma.ProductWhereInput,
+): Promise<Map<string, Prisma.ProductGetPayload<{ select: S }> & { id: string }>> {
+  const all = await findProductMatchesBySkus(client, skus, select, where);
+  const result = new Map<string, Prisma.ProductGetPayload<{ select: S }> & { id: string }>();
+  for (const [key, rows] of all) result.set(key, rows[0]);
   return result;
 }
 

@@ -27,6 +27,7 @@ export const PRICE_IMPORT_INCIDENCE_CODES = {
   UNKNOWN_REFERENCE: 'UNKNOWN_REFERENCE',
   LISTA_FORBIDDEN: 'LISTA_FORBIDDEN',
   AMBIGUOUS_REFERENCE: 'AMBIGUOUS_REFERENCE',
+  LISTA_UNAVAILABLE: 'LISTA_UNAVAILABLE',
 } as const;
 export type PriceImportIncidenceCode =
   typeof PRICE_IMPORT_INCIDENCE_CODES[keyof typeof PRICE_IMPORT_INCIDENCE_CODES];
@@ -76,6 +77,9 @@ export interface PriceImportRow {
 
 export interface PriceImportListaSummary {
   listaId: string;
+  /** Only present for listas the caller can view. */
+  code?: string;
+  name?: string;
   rows: number;
   prices: number;
 }
@@ -101,6 +105,8 @@ export interface PriceImportPreview {
     unlistedRows?: number;
     unknownRows?: number;
     rejectedRows?: number;
+    /** Rows whose lista the caller cannot use: counted only, never described. */
+    rowsInInaccessibleListas?: number;
     largeChangePrices?: number;
     largeChangeThresholdPct?: number;
   };
@@ -149,20 +155,57 @@ export interface PriceImportRevisionApplyConflict {
   actual: string | null;
 }
 
+/** Codes of the 409 answers of the apply endpoint (2026-10-20 rules). */
+export const PRICE_IMPORT_APPLY_CODES = {
+  REVISION_CONFLICT: 'REVISION_CONFLICT',
+  LISTA_ACCESS_CHANGED: 'LISTA_ACCESS_CHANGED',
+  REJECTED_ROWS_UNACKNOWLEDGED: 'REJECTED_ROWS_UNACKNOWLEDGED',
+  LARGE_CHANGES_UNCONFIRMED: 'LARGE_CHANGES_UNCONFIRMED',
+  NOTHING_TO_APPLY: 'NOTHING_TO_APPLY',
+  APPLY_SERIALIZATION_CONFLICT: 'APPLY_SERIALIZATION_CONFLICT',
+} as const;
+
+/** Per-lista breakdown of an applied revision (`listaId` null = products without lista). */
+export interface PriceImportApplyPerLista {
+  listaId: string | null;
+  code?: string;
+  name?: string;
+  rows: number;
+  prices: number;
+}
+
 /** IMP-05 — resultado confirmado de aplicar una revisión. */
 export interface PriceImportRevisionApplyResult {
   revisionId: string;
   status: 'APLICADA';
   alreadyApplied: boolean;
+  /** Rows with at least one price written. */
   appliedRows: number;
+  /** Prices written (unchanged prices are skipped and not counted). */
   appliedPrices: number;
   tariffs: string[];
   appliedAt: string;
+  unchangedPrices?: number;
+  rejectedRows?: number;
+  largeChangesConfirmed?: boolean;
+  perLista?: PriceImportApplyPerLista[];
+  /** Groups the ProductChange rows written by this apply. */
+  batchId?: string;
+}
+
+/** Body of the apply endpoint. */
+export interface PriceImportApplyOptions {
+  /** Must equal the current number of rejected rows when there are any. */
+  acknowledgeRejectedRows?: number;
+  confirmLargeChanges?: boolean;
 }
 
 /** IMP-04 — detalle paginado de una revisión (filas y precios guardados). */
 export interface PriceImportRevisionDetail extends PriceImportRevisionHeader {
   rows: PriceImportRow[];
+  /** Visible listas only; rows of other listas are counted in `rowsInInaccessibleListas`. */
+  byLista: PriceImportListaSummary[];
+  rowsInInaccessibleListas: number;
   totalRows: number;
   page: number;
   pageSize: number;
