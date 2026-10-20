@@ -29,6 +29,10 @@
 ## Operación
 
 - [Runbook: importación de listas y agentes](./procedimientos/runbook-importacion-y-agentes.md)
+- [Importación masiva de productos por SKU](./procedimientos/importacion-masiva-productos.md)
+- [Importación masiva de biblioteca vitrina por manifiesto JSON](./procedimientos/importacion-masiva-biblioteca-vitrina.md)
+- [Auditoría del lote oficial de 39 listas](./procedimientos/auditoria-biblioteca-39-listas.md)
+- [Enriquecimiento posterior de nombres de vitrina](./procedimientos/enriquecimiento-nombres-biblioteca.md)
 
 ## Bitácoras
 
