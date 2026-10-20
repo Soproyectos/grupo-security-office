@@ -75,6 +75,17 @@ Una ficha pendiente nunca degrada un producto que ya tenga identidad real o nomb
 
 Para preparar nombres de vitrina después del cargue inicial, seguir el [flujo de propuestas y aprobación](./enriquecimiento-nombres-biblioteca.md). El script y el CSV de revisión viven en este repositorio; ninguna propuesta cambia la base hasta generar y aplicar el manifiesto de nombres aprobados.
 
+## Visibilidad informativa en la web
+
+El storefront reconoce dos clases de registro público:
+
+- **Comercial:** `lifecycleStatus = PUBLISHED`; pasó las reglas existentes de publicación.
+- **Informativo:** tiene el bloque `extraAttributes.biblioteca` escrito por este importador, aunque permanezca `DRAFT`.
+
+La segunda regla permite consultar por nombre o SKU y navegar por categoría mientras se completan los datos. No modifica la FSM, no inventa precios, no activa el producto y no elude la validación comercial. La tarjeta y la ficha muestran **Ficha informativa / Datos en preparación** y no ofrecen cotización hasta que el producto sea comercialmente publicado. Los borradores que no provengan del importador de biblioteca siguen ocultos.
+
+La regla compartida está en `src/backend/src/modules/products/public-catalog-visibility.ts` y se usa tanto en productos como en los conteos del menú de categorías.
+
 ## Seguridad e idempotencia
 
 - Se cruza por SKU normalizado, ignorando mayúsculas y espacios equivalentes.

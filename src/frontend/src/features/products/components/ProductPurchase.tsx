@@ -8,12 +8,16 @@ import { ChatIcon } from './icons';
 const TRUST_ITEMS = ['Distribuidor autorizado', 'Garantía de fábrica', 'Envíos a toda Colombia'];
 
 /** Public price (IVA incluido) or the quote prompt when the product has none. */
-export function ProductPriceBlock({ price }: { price: ProductDetail['price'] }) {
+export function ProductPriceBlock({ price, isInformational = false }: { price: ProductDetail['price']; isInformational?: boolean }) {
   if (price === null) {
     return (
       <div>
-        <p className="text-2xl font-bold text-neutral-950">Precio a consultar</p>
-        <p className="text-sm text-neutral-500">Solicita una cotización y te respondemos por WhatsApp.</p>
+        <p className="text-2xl font-bold text-neutral-950">
+          {isInformational ? 'Ficha informativa' : 'Precio a consultar'}
+        </p>
+        <p className="text-sm text-neutral-500">
+          {isInformational ? 'Estamos completando los datos comerciales de este producto.' : 'Solicita una cotización y te respondemos por WhatsApp.'}
+        </p>
       </div>
     );
   }
@@ -28,15 +32,17 @@ export function ProductPriceBlock({ price }: { price: ProductDetail['price'] }) 
 export function ProductCtas({ product }: { product: ProductDetail }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row">
-      <a
-        href={quoteUrl(product)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={cx(ui.btnPrimary, 'sm:min-w-52')}
-      >
-        <ChatIcon className="h-4 w-4" />
-        Cotizar por WhatsApp
-      </a>
+      {!product.isInformational && (
+        <a
+          href={quoteUrl(product)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cx(ui.btnPrimary, 'sm:min-w-52')}
+        >
+          <ChatIcon className="h-4 w-4" />
+          Cotizar por WhatsApp
+        </a>
+      )}
       <a href={SALES_PHONE_HREF} className={cx(ui.btnOutline, 'sm:min-w-32')}>
         Llamar
       </a>
@@ -81,12 +87,16 @@ export function ProductMobileBar({ product }: { product: ProductDetail }) {
             <p className="text-[11px] text-neutral-500">IVA incluido</p>
           </>
         ) : (
-          <p className="text-sm font-semibold text-neutral-700">Precio a consultar</p>
+          <p className="text-sm font-semibold text-neutral-700">
+            {product.isInformational ? 'Ficha informativa' : 'Precio a consultar'}
+          </p>
         )}
       </div>
-      <a href={quoteUrl(product)} target="_blank" rel="noopener noreferrer" className={ui.btnPrimarySm}>
-        Cotizar por WhatsApp
-      </a>
+      {!product.isInformational && (
+        <a href={quoteUrl(product)} target="_blank" rel="noopener noreferrer" className={ui.btnPrimarySm}>
+          Cotizar por WhatsApp
+        </a>
+      )}
     </div>
   );
 }

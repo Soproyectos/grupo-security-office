@@ -41,6 +41,11 @@ export default function PublicProductCard({ product }: { product: PublicProductR
             {product.name}
           </span>
           <span className="font-mono text-micro text-ink-500">{product.sku}</span>
+          {product.isInformational && (
+            <span className="w-fit rounded-full bg-surface-100 px-2 py-0.5 text-micro font-semibold text-ink-600">
+              Ficha informativa
+            </span>
+          )}
           <span className="mt-auto pt-2">
             {product.price !== null ? (
               <>
@@ -51,10 +56,14 @@ export default function PublicProductCard({ product }: { product: PublicProductR
               </>
             ) : (
               <>
-                <span className="block font-condensed text-lg font-bold text-ink-700">Precio a consultar</span>
-                <span className="mt-1 inline-flex rounded-full border border-security-500 px-3 py-0.5 text-micro font-bold text-security-500">
-                  Cotizar
+                <span className="block font-condensed text-lg font-bold text-ink-700">
+                  {product.isInformational ? 'Datos en preparación' : 'Precio a consultar'}
                 </span>
+                {!product.isInformational && (
+                  <span className="mt-1 inline-flex rounded-full border border-security-500 px-3 py-0.5 text-micro font-bold text-security-500">
+                    Cotizar
+                  </span>
+                )}
               </>
             )}
           </span>

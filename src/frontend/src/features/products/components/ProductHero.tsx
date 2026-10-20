@@ -133,7 +133,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
           {product.brand && <p className="mt-1 text-sm text-neutral-500">Marca: {product.brand}</p>}
         </div>
 
-        <ProductPriceBlock price={product.price} />
+        <ProductPriceBlock price={product.price} isInformational={product.isInformational} />
 
         {product.highlights.length > 0 ? (
           <ul className="space-y-2.5">
