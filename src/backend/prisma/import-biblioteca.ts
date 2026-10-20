@@ -10,6 +10,7 @@
  * Uso (ts-node, estilo prisma/seed.ts):
  *   npm run db:import-biblioteca                      → DRY-RUN (cero escrituras en BD)
  *   npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import.json
+ *   npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import.json --artifacts-dir=..\..\biblioteca
  *   npm run db:import-biblioteca -- --manifest=..\..\biblioteca-import.json --updates-only
  *   npm run db:import-biblioteca -- --apply --confirm=IMPORTAR-BIBLIOTECA-2026
  *
@@ -62,6 +63,7 @@ function parseArgs(argv: string[]): {
   apply: boolean;
   confirm: string | null;
   manifest: string | null;
+  artifactsDir: string | null;
   updatesOnly: boolean;
 } {
   const apply = argv.includes('--apply');
@@ -70,10 +72,13 @@ function parseArgs(argv: string[]): {
   const confirm = confirmArg ? confirmArg.slice('--confirm='.length) : null;
   const manifestArg = argv.find((a) => a.startsWith('--manifest=') || a.startsWith('--file='));
   const manifest = manifestArg ? manifestArg.slice(manifestArg.indexOf('=') + 1) : null;
-  return { apply, confirm, manifest, updatesOnly };
+  const artifactsArg = argv.find((a) => a.startsWith('--artifacts-dir='));
+  const artifactsDir = artifactsArg ? artifactsArg.slice('--artifacts-dir='.length) : null;
+  return { apply, confirm, manifest, artifactsDir, updatesOnly };
 }
 
 function writeJsonArtifact(dir: string, name: string, payload: unknown): string {
+  fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, name);
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
   return filePath;
@@ -106,7 +111,7 @@ async function createMissingBrands(
 }
 
 async function main(): Promise<void> {
-  const { apply, confirm, manifest, updatesOnly } = parseArgs(process.argv.slice(2));
+  const { apply, confirm, manifest, artifactsDir, updatesOnly } = parseArgs(process.argv.slice(2));
   const now = new Date();
   const ts = formatTimestamp(now);
 
@@ -119,6 +124,7 @@ async function main(): Promise<void> {
   }
 
   const manifestPath = manifest ? path.resolve(process.cwd(), manifest) : null;
+  const outputDir = artifactsDir ? path.resolve(process.cwd(), artifactsDir) : FICHAS_DIR;
   const inputLabel = manifestPath ?? FICHAS_DIR;
   console.log(`[import-biblioteca] leyendo fichas de ${inputLabel}`);
   const { valid: fichas, invalid } = manifestPath
@@ -200,11 +206,12 @@ async function main(): Promise<void> {
       ).length,
     });
     const artifact = writeJsonArtifact(
-      FICHAS_DIR,
+      outputDir,
       `import-dry-run-${ts}.json`,
       report,
     );
     printSummary(report, artifact, false);
+    if (report.totals.invalid > 0 || report.totals.errors > 0) process.exitCode = 1;
     return;
   }
 
@@ -223,7 +230,7 @@ async function main(): Promise<void> {
       extraAttributes: p.extraAttributes,
     }));
   const backupPath = writeJsonArtifact(
-    FICHAS_DIR,
+    outputDir,
     `backup-identidad-${ts}.json`,
     { generatedAt: now.toISOString(), products: backupRows },
   );
@@ -441,8 +448,9 @@ async function main(): Promise<void> {
     brandsCreated,
     rowErrors,
   });
-  const artifact = writeJsonArtifact(FICHAS_DIR, `import-report-${ts}.json`, report);
+  const artifact = writeJsonArtifact(outputDir, `import-report-${ts}.json`, report);
   printSummary(report, artifact, true);
+  if (report.totals.invalid > 0 || report.totals.errors > 0) process.exitCode = 1;
 }
 
 function printSummary(
