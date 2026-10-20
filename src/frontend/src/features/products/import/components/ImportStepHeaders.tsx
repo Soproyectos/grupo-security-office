@@ -3,7 +3,7 @@ import { useImportStore } from '../store/import.store';
 import { detectHeaderMappings } from '../utils/header-detection';
 import type { SystemField } from '../types/import.types';
 
-const REQUIRED_FIELDS: SystemField[] = ['sku', 'name'];
+const REQUIRED_FIELDS: SystemField[] = ['sku'];
 
 const SYSTEM_FIELD_LABELS: Record<SystemField, string> = {
   sku: 'SKU',
@@ -104,6 +104,9 @@ export default function ImportStepHeaders() {
         </h2>
         <p className="mt-1 text-sm text-gray-500">
           Revise las coincidencias detectadas para las {preview.detectedHeaders.length} columnas encontradas.
+        </p>
+        <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          El SKU es el único campo obligatorio. Las filas sin identidad comercial quedan como borradores pendientes.
         </p>
       </div>
 

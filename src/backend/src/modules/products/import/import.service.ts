@@ -408,6 +408,7 @@ export class ImportService {
             errors: result.errors.length,
             defaultsByMissingInference: result.defaultsByMissingInference ?? { category: 0, brand: 0 },
             identityChangesDetected: result.identityChangesDetected ?? 0,
+            pendingEnrichment: result.pendingEnrichment ?? 0,
           },
           executionErrors: result.errors,
           durationMs: result.durationMs,
@@ -789,7 +790,7 @@ export class ImportService {
         entries: mapping.map((m) => ({
           sourceColumn: m.sourceColumn,
           targetField: m.targetField,
-          isRequired: ['sku', 'name'].includes(m.targetField),
+          isRequired: ['sku'].includes(m.targetField),
           confidence: 1.0,
         })),
         confirmed: true,

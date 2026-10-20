@@ -60,6 +60,15 @@ Implementar una arquitectura híbrida con 4 pilares:
 - Escritura solo desde import pipeline
 - Reemplazo completo en re-import (no merge)
 
+## Actualización de contrato — 2026-10-20
+
+El flujo actual mantiene el SKU como único campo obligatorio. Nombre, descripción,
+categoría, marca, especificaciones y precios pueden llegar después. Una fila que
+solo trae SKU (con o sin precio) crea un producto `DRAFT`, inactivo y no visible,
+marcado como pendiente de enriquecimiento. El detalle operativo y la limitación
+actual de libros multihoja están en
+[`docs/procedimientos/importacion-masiva-productos.md`](../procedimientos/importacion-masiva-productos.md).
+
 ---
 
 ## Implementación Realizada
@@ -85,7 +94,7 @@ Implementar una arquitectura híbrida con 4 pilares:
 |---------|--------|
 | `types/import.types.ts` | `+'__extra'` a SystemField |
 | `components/MappingLine.tsx` | Label "Atributo adicional", badge purple, fondo `bg-purple-50` |
-| `components/ImportStepMapping.tsx` | `REQUIRED_FIELDS = ['sku', 'name']`, resumen de mapeo, info box extras |
+| `components/ImportStepMapping.tsx` | `REQUIRED_FIELDS = ['sku']`, resumen de mapeo, info box extras y aviso de pendientes |
 | `components/ImportStepHeaders.tsx` | `+'__extra'` en SYSTEM_FIELD_LABELS |
 | `utils/header-detection.ts` | `+'__extra': []` en FIELD_SYNONYMS |
 
@@ -100,7 +109,7 @@ Implementar una arquitectura híbrida con 4 pilares:
      │
 3. MAP ───── ColumnMapper: unmapped→__extra, desambiguación
      │
-4. VALIDATE ─ RowValidator: sku/name requeridos, category/brand opcionales
+4. VALIDATE ─ RowValidator: sku requerido; nombre, category y brand opcionales
      │
 5. NORMALIZE ─ RowNormalizer: parsea precios, recolecta extras en extraAttributes
      │

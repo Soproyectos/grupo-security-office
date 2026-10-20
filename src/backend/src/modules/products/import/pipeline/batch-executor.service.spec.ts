@@ -141,6 +141,43 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
     );
   });
 
+  it('crea una fila SKU-only como borrador pendiente y no visible', async () => {
+    mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-pendiente', defaultVisibility: true });
+
+    const skuOnlyRow = {
+      ...normalizedRow,
+      sku: 'SKU-PENDIENTE-1',
+      name: 'SKU-PENDIENTE-1',
+      description: undefined,
+      categoryName: '',
+      brandName: '',
+      technicalSpecs: {},
+      extraAttributes: undefined,
+      prices: [],
+      nameIsFallback: true,
+    };
+
+    const result = await service.execute([skuOnlyRow], makeCtx({ listaId: 'lista-pendiente' }));
+
+    expect(result.created).toBe(1);
+    expect(result.pendingEnrichment).toBe(1);
+    expect(mockPrisma.product.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: 'SKU-PENDIENTE-1',
+          isActive: false,
+          isVisible: false,
+          lifecycleStatus: 'DRAFT',
+          publishStatus: 'borrador',
+          extraAttributes: {
+            importStatus: 'pending_enrichment',
+            pendingReason: 'missing_identity',
+          },
+        }),
+      }),
+    );
+  });
+
   it('no asigna catalogId al producto creado (catálogo eliminado)', async () => {
     mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-x', defaultVisibility: false });
 

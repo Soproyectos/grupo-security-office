@@ -16,7 +16,7 @@ import { resolveEffectiveName, normalizeSku, PRODUCT_NAME_MAX_LENGTH } from '../
  *
  * Reglas de validación:
  * - SKU: requerido, string no vacío, sin espacios
- * - Nombre: requerido, string no vacío
+ * - Nombre/descripción: opcionales; si faltan, el SKU queda como nombre provisional
  * - Categoría: opcional (se usa "Sin categoría" como default si falta)
  * - Marca: opcional (se usa "Sin marca" como default si falta)
  * - Precios: si están presentes, deben ser numéricos positivos
@@ -113,7 +113,7 @@ export class RowValidatorService {
       }
     }
 
-    // === Validar Nombre ===
+    // === Validar Nombre (opcional) ===
     // Un nombre explícito no es la única fuente válida: si la columna de nombre
     // no viene mapeada o está vacía, RowNormalizerService deriva un nombre breve
     // desde la descripción (ver resolveEffectiveName). Y si tampoco hay
