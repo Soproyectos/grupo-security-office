@@ -1,6 +1,5 @@
 import api from '../../services/api'
 import { useAuthStore } from '../../stores/auth.store'
-import { ROLES } from '../../lib/roles'
 
 export interface Promotion {
   flyer?: string | null
