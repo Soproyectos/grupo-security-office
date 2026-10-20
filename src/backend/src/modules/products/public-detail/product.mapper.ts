@@ -145,6 +145,7 @@ export function toProductDetailDto(p: ProductRecord, base: PublicProductDetail):
     id: base.id,
     slug: p.catalogSlug ?? '',
     price: base.price,
+    isInformational: base.isInformational,
     description: base.description,
     brand: nonEmpty(p.catalogBrand) ?? base.brand?.name ?? '',
     model: nonEmpty(p.catalogModel) ?? base.sku,

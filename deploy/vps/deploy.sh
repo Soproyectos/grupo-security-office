@@ -133,6 +133,12 @@ cd "$DEPLOY_DIR" || die "cannot enter deploy directory $DEPLOY_DIR"
 [[ -f deploy/vps/docker-compose.override.yml ]] || die "deploy/vps/docker-compose.override.yml not found in $DEPLOY_DIR"
 [[ -r .env ]] || die ".env is missing or not readable in $DEPLOY_DIR"
 
+# Persistent exchange directory for audited manifests, dry-run reports and
+# identity backups. The import job runs with the host deploy uid/gid, so files
+# remain manageable without making this directory world-writable.
+mkdir -p "$DEPLOY_DIR/data/imports"
+chmod 2770 "$DEPLOY_DIR/data/imports"
+
 # Single run at a time. The lock is held on the directory itself, so it needs
 # only read access (no lock file that another user could own).
 exec 9<"$DEPLOY_DIR"

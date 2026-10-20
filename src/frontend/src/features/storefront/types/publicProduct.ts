@@ -17,6 +17,8 @@ export interface PublicProductResult {
   categoryName: string
   categorySlug: string
   brandName: string | null
+  /** Official library record still awaiting commercial publication. */
+  isInformational: boolean
   price: PublicPrice | null
 }
 

@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException, BadRequestException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { PUBLIC_CATALOG_VISIBILITY } from '../products/public-catalog-visibility';
 
 type MenuCategoryRecord = {
   id: string;
@@ -23,7 +24,7 @@ export type MenuCategory = {
   iconUrl: string | null;
   isFeatured: boolean;
   sortOrder: number;
-  /** Productos PUBLISHED de la categoría y de todas sus descendientes activas. */
+  /** Productos públicos de la categoría y de todas sus descendientes activas. */
   productCount: number;
   children: MenuCategory[];
 };
@@ -81,7 +82,7 @@ export class CategoriesService {
   }
 
   /**
-   * Una sola consulta agrupada de productos PUBLISHED por categoría; los
+   * Una sola consulta agrupada de productos públicos por categoría; los
    * conteos se acumulan hacia los ancestros en memoria.
    */
   private async publishedCountsByCategory(
@@ -89,7 +90,7 @@ export class CategoriesService {
   ): Promise<Map<string, number>> {
     const grouped = await this.prisma.product.groupBy({
       by: ['categoryId'],
-      where: { lifecycleStatus: 'PUBLISHED' },
+      where: PUBLIC_CATALOG_VISIBILITY,
       _count: { _all: true },
     });
 
