@@ -1,5 +1,6 @@
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
+import { ProductRevisionsService } from './product-revisions.service';
 
 describe('ProductsController — alias limit/take en findAll', () => {
   let controller: ProductsController;
@@ -9,7 +10,7 @@ describe('ProductsController — alias limit/take en findAll', () => {
 
   beforeEach(() => {
     findAll = jest.fn().mockResolvedValue({ data: [], meta: {} });
-    controller = new ProductsController({ findAll } as unknown as ProductsService);
+    controller = new ProductsController({ findAll } as unknown as ProductsService, {} as unknown as ProductRevisionsService);
   });
 
   it('?limit=10 sin take resuelve take=10', async () => {

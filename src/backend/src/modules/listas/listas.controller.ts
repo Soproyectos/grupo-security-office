@@ -24,11 +24,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { AclService } from '../../common/acl/acl.service';
+import { ListaActionGuard } from './lista-action.guard';
 
 @ApiTags('Listas')
 @ApiBearerAuth()
 @Controller('api/listas')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ListaActionGuard)
 export class ListasController {
   constructor(private readonly listasService: ListasService) {}
 
@@ -94,14 +95,14 @@ export class ListasController {
   }
 
   @Get(':id/assignments')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Accesos (assignments LISTA) de una Lista' })
   findAssignments(@Param('id') id: string, @CurrentUser() user: any) {
     return this.listasService.findAssignments(id, this.ctx(user));
   }
 
   @Get(':id/audit')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Auditoría de una Lista' })
   findAudit(@Param('id') id: string, @CurrentUser() user: any) {
     return this.listasService.findAudit(id, this.ctx(user));
@@ -109,7 +110,7 @@ export class ListasController {
 
   @Post()
   @Permissions('listas:create')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear Lista' })
   @ApiResponse({ status: 201, description: 'Lista creada' })
@@ -121,7 +122,7 @@ export class ListasController {
 
   @Post(':id/duplicate')
   @Permissions('listas:duplicate')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Duplicar Lista (copia de configuración; nace inactiva)' })
   @ApiResponse({ status: 201, description: 'Lista duplicada (isActive false)' })
@@ -132,14 +133,14 @@ export class ListasController {
   }
 
   @Patch(':id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Editar Lista (edit+) / archivar (manage)' })
   update(@Param('id') id: string, @Body() dto: UpdateListaDto, @CurrentUser() user: any) {
     return this.listasService.update(id, dto, this.ctx(user));
   }
 
   @Patch(':id/toggle-active')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Activar / desactivar Lista (edit+)' })
   toggleActive(@Param('id') id: string, @CurrentUser() user: any) {
     return this.listasService.toggleActive(id, this.ctx(user));
@@ -147,7 +148,7 @@ export class ListasController {
 
   @Patch(':id/archive')
   @Permissions('listas:archive')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Archivar Lista lógicamente (manage)' })
   archive(@Param('id') id: string, @CurrentUser() user: any) {
     return this.listasService.archive(id, this.ctx(user));
@@ -155,15 +156,34 @@ export class ListasController {
 
   @Patch(':id/restore')
   @Permissions('listas:archive')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Restaurar Lista archivada (manage)' })
   restore(@Param('id') id: string, @CurrentUser() user: any) {
     return this.listasService.restore(id, this.ctx(user));
   }
 
+  /**
+   * CAT-01 §4 — acción explícita `listas:unlink`: retira el producto de la
+   * Lista sin borrar su ficha, medios ni precios. Sin `@Permissions` mientras
+   * D5/COM-01 no resuelvan la revisión de rutas (no se habilitan acciones
+   * nuevas en esta unidad).
+   */
+  @Patch(':id/products/:productId/unlink')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Desvincular producto de la Lista (conserva ficha, medios y precios)' })
+  @ApiResponse({ status: 400, description: 'Parámetros inválidos' })
+  @ApiResponse({ status: 404, description: 'Producto no encontrado en la Lista' })
+  unlinkProduct(
+    @Param('id') id: string,
+    @Param('productId') productId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.listasService.unlinkProduct(id, productId, this.ctx(user));
+  }
+
   @Post(':id/deletion-request')
   @Permissions('listas:delete')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Solicitar eliminación diferida de Lista (90 días)' })
   @ApiResponse({ status: 200, description: 'Solicitud de eliminación registrada' })
   @ApiResponse({ status: 403, description: 'Sin permiso global listas:delete' })
@@ -180,7 +200,7 @@ export class ListasController {
 
   @Delete(':id')
   @Permissions('listas:delete')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

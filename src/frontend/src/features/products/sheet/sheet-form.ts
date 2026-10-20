@@ -55,6 +55,10 @@ export const LIMITS = {
   highlights: 20,
   features: 12,
   availableModels: 50,
+  /** CAT-03 (H4): identificadores del fabricante (part number, EAN…). */
+  manufacturerRefs: 20,
+  manufacturerRefLength: 120,
+  internalNotes: 4000,
   specGroups: 40,
   itemsPerGroup: 100,
   resources: 60,
@@ -80,6 +84,20 @@ export interface ProductSheetApi {
   imageAlt: string | null
   specsDisclaimer: string | null
   firmwareNote: string | null
+  /** CAT-03 (H4): identificadores del fabricante (públicos en la ficha editable). */
+  manufacturerRefs: string[]
+  /**
+   * CAT-03 (H1): notas INTERNAS. `null` cuando el actor no tiene `products:notes`
+   * (el servidor las conserva en ese caso y no las devuelve nunca al API público).
+   */
+  internalNotes: string | null
+  /**
+   * CAT-03 (`frontend-tecnicos`): el actor puede ver/editar notas internas.
+   * Distingue «sin notas» de «sin permiso» (UI honesta).
+   */
+  canSeeInternalNotes: boolean
+  /** CAT-03 (H2): versión vigente de la ficha; se envía como `expectedVersion`. */
+  version: number
   specGroups: { key: string; title: string; items: { label: string; value: string }[] }[]
   resources: {
     kind: SheetResourceKind
@@ -110,6 +128,15 @@ export interface ProductSheetPayload {
   imageAlt: string | null
   specsDisclaimer: string | null
   firmwareNote: string | null
+  /** CAT-03 (H4): lista de identificadores del fabricante (el servidor deduplica). */
+  manufacturerRefs: string[]
+  /**
+   * CAT-03 (H1): OMITIR el campo conserva las notas vigentes; solo un actor con
+   * `products:notes` puede cambiarlas (string) o borrarlas (null explícito).
+   */
+  internalNotes?: string | null
+  /** CAT-03 (H2): OCC — versión que el cliente leyó; atrasada → 409 sin escribir. */
+  expectedVersion?: number
   specGroups: { key?: string; title: string; items: { label: string; value: string }[] }[]
   resources: {
     kind: SheetResourceKind
@@ -172,10 +199,18 @@ export interface SheetForm {
   highlights: TextRow[]
   features: FeatureRow[]
   availableModels: TextRow[]
+  /** CAT-03 (H4): identificadores del fabricante. */
+  manufacturerRefs: TextRow[]
   specGroups: SpecGroupRow[]
   resources: ResourceRow[]
   specsDisclaimer: string
   firmwareNote: string
+  /**
+   * CAT-03 (H1/`frontend-tecnicos`): texto de las notas internas, o `null`
+   * cuando el actor NO puede verlas (el payload las omite → el servidor las
+   * conserva). Vacío con permiso = borrarlas.
+   */
+  internalNotes: string | null
 }
 
 let uidCounter = 0
@@ -197,6 +232,7 @@ export function toForm(sheet: ProductSheetApi): SheetForm {
     highlights: textRows(sheet.highlights),
     features: sheet.features.map((f) => ({ uid: nextUid(), id: f.id, label: f.label, icon: f.icon })),
     availableModels: textRows(sheet.availableModels),
+    manufacturerRefs: textRows(sheet.manufacturerRefs ?? []),
     specGroups: sheet.specGroups.map((g) => ({
       uid: nextUid(),
       key: g.key,
@@ -216,6 +252,7 @@ export function toForm(sheet: ProductSheetApi): SheetForm {
     })),
     specsDisclaimer: sheet.specsDisclaimer ?? '',
     firmwareNote: sheet.firmwareNote ?? '',
+    internalNotes: sheet.canSeeInternalNotes ? (sheet.internalNotes ?? '') : null,
   }
 }
 
@@ -243,10 +280,14 @@ export function toPayload(form: SheetForm): ProductSheetPayload {
       icon: f.icon,
     })),
     availableModels: nonBlank(form.availableModels),
+    manufacturerRefs: nonBlank(form.manufacturerRefs),
     imageUrl: orNull(form.imageUrl),
     imageAlt: orNull(form.imageAlt),
     specsDisclaimer: orNull(form.specsDisclaimer),
     firmwareNote: orNull(form.firmwareNote),
+    // CAT-03: sin permiso las NOTAS se OMITEN del cuerpo (omitir = conservar en
+    // el servidor); con permiso, texto vacío las borra explícitamente (null).
+    ...(form.internalNotes === null ? {} : { internalNotes: orNull(form.internalNotes) }),
     specGroups: form.specGroups.map((g) => ({
       ...(g.key ? { key: g.key } : {}),
       title: g.title.trim(),
@@ -293,8 +334,21 @@ export function validateForm(form: SheetForm): SheetErrors {
   if (nonBlank(form.availableModels).length > LIMITS.availableModels) {
     errors.availableModels = `Máximo ${LIMITS.availableModels} modelos.`
   }
+  const refs = nonBlank(form.manufacturerRefs)
+  if (refs.length > LIMITS.manufacturerRefs) {
+    errors.manufacturerRefs = `Máximo ${LIMITS.manufacturerRefs} identificadores.`
+  }
+  form.manufacturerRefs.forEach((row, i) => {
+    if (row.value.trim().length > LIMITS.manufacturerRefLength) {
+      errors[`manufacturerRefs.${i}`] = `Máximo ${LIMITS.manufacturerRefLength} caracteres.`
+    }
+  })
   if (form.specGroups.length > LIMITS.specGroups) errors.specGroups = `Máximo ${LIMITS.specGroups} grupos.`
   if (form.resources.length > LIMITS.resources) errors.resources = `Máximo ${LIMITS.resources} documentos y firmware.`
+
+  if (form.internalNotes !== null && form.internalNotes.length > LIMITS.internalNotes) {
+    errors.internalNotes = `Máximo ${LIMITS.internalNotes} caracteres.`
+  }
 
   form.features.forEach((f, i) => {
     if (!f.label.trim()) errors[`features.${i}.label`] = 'Escribe el texto de la característica.'
@@ -380,3 +434,43 @@ export const newResource = (section: ResourceSection): ResourceRow => ({
   region: '',
   requiresLicense: section === 'firmware',
 })
+
+// ------------------------------ OCC (CAT-03 H2) ------------------------------
+
+/**
+ * Body del PUT con la versión que el cliente LEYÓ (`sheet.version`). El servidor
+ * responde 409 si otro guardado la adelantó — así dos ediciones no se pisan.
+ */
+export const savePayloadWithVersion = (form: SheetForm, sheet: ProductSheetApi): ProductSheetPayload => ({
+  ...toPayload(form),
+  expectedVersion: sheet.version,
+})
+
+export interface SheetConflict {
+  /** Versión vigente leída del error; null si el cuerpo no la trae. */
+  currentVersion: number | null
+}
+
+/**
+ * Reconoce el 409 `sheet-version-conflict` de `PUT /products/:id/sheet`. El
+ * filtro global reenvía el detalle solo en `feedback` (strings). Un 409 de OTRO
+ * conflicto (slug, revisión, lista) NO cuenta como conflicto de versión.
+ */
+export function detectVersionConflict(error: unknown): SheetConflict | null {
+  const response = (error as { response?: { status?: number; data?: { message?: unknown; feedback?: unknown } } })?.response
+  if (!response || response.status !== 409) return null
+  const data = response.data ?? {}
+  const feedback = Array.isArray(data.feedback) ? data.feedback.filter((f): f is string => typeof f === 'string') : []
+  const message = typeof data.message === 'string' ? data.message : ''
+  const isSheetVersion = feedback.some((f) => f.startsWith('sheet-version-conflict')) || message.includes('La ficha cambió')
+  if (!isSheetVersion) return null
+  const match = /versión vigente (\d+)/i.exec([...feedback, message].join(' '))
+  return { currentVersion: match ? Number(match[1]) : null }
+}
+
+/** Mensaje del banner de conflicto: versión vigente + qué hacer, sin falso éxito. */
+export function versionConflictMessage(conflict: SheetConflict): string {
+  return conflict.currentVersion === null
+    ? 'La ficha cambió en el servidor mientras la editabas. Tus cambios NO se guardaron: recarga la versión vigente y vuelve a aplicarlos.'
+    : `La ficha cambió en el servidor (versión vigente ${conflict.currentVersion}). Tus cambios NO se guardaron: recarga la versión vigente y vuelve a aplicarlos.`
+}

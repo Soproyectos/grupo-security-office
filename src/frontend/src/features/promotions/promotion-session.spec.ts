@@ -31,25 +31,25 @@ describe('promotion publisher session identity', () => {
     expect(api.get).toHaveBeenCalledWith('/promotions/manage')
     expect(api.post).toHaveBeenCalledWith('/promotions', payload)
   })
-  it('sincroniza Vendedor y no publica si otra pestaña cambió la cuenta', async () => {
+  it('sincroniza la identidad y no publica si otra pestaña cambió la cuenta', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: seller })
-    await expect(publishPromotion(payload)).rejects.toThrow('La sesión actual no corresponde')
+    await expect(publishPromotion(payload)).rejects.toThrow('La cuenta de la sesión cambió')
     expect(useAuthStore.getState().user?.roles).toEqual(['Vendedor'])
     expect(api.post).not.toHaveBeenCalled()
   })
   it('no publica silenciosamente con otro Super Admin', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...admin, id: 'other-admin-fixture' } })
-    await expect(publishPromotion(payload)).rejects.toThrow('La cuenta o el rol')
+    await expect(publishPromotion(payload)).rejects.toThrow('La cuenta de la sesión cambió')
     expect(api.post).not.toHaveBeenCalled()
   })
-  it('no transforma una publicación global en publicación de equipo por cambio de rol', async () => {
+  it('el cargo no bloquea por sí solo a quien conserva la misma identidad; decide el servidor por grants', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...admin, roles: ['Supervisor'] } })
-    await expect(publishPromotion(payload)).rejects.toThrow('La cuenta o el rol')
-    expect(api.post).not.toHaveBeenCalled()
+    await publishPromotion(payload)
+    expect(api.post).toHaveBeenCalledWith('/promotions', payload)
   })
-  it('no solicita la gestión cuando la cookie pertenece al vendedor', async () => {
+  it('no solicita la gestión cuando la cookie pertenece a otra cuenta', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: seller })
-    await expect(fetchManagedPromotions()).rejects.toThrow('La sesión actual no corresponde')
+    await expect(fetchManagedPromotions()).rejects.toThrow('La cuenta de la sesión cambió')
     expect(api.get).not.toHaveBeenCalledWith('/promotions/manage')
   })
   it('comprueba sesión antes de editar, retirar y quitar imagen', async () => {
@@ -63,7 +63,7 @@ describe('promotion publisher session identity', () => {
   })
   it('no sube una imagen si cambió la sesión a Vendedor', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: seller })
-    await expect(uploadPromotionFlyer('notice-fixture', {} as File)).rejects.toThrow('La sesión actual no corresponde')
+    await expect(uploadPromotionFlyer('notice-fixture', {} as File)).rejects.toThrow('La cuenta de la sesión cambió')
     expect(api.post).not.toHaveBeenCalled()
   })
 })

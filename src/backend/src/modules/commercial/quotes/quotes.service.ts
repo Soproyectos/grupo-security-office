@@ -9,13 +9,26 @@ import { Prisma, Quote, QuoteItem } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { HierarchyService } from '../../../common/hierarchy/hierarchy.service';
-import { isPersonalSeller } from '../../../common/rbac/personal-seller';
+import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
+import { resolveAccess } from '../../../common/security/data-scope';
+import type { AccessIdentity } from '../../../common/security/data-scope';
 import { AuditService } from '../../audit/audit.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
-import { AddQuoteItemDto } from './dto/add-quote-item.dto';
-import { UpdateQuoteItemDto } from './dto/update-quote-item.dto';
+import { AddQuoteItemDto, DISCOUNT_NOT_ALLOWED_IN_ADD } from './dto/add-quote-item.dto';
+import {
+  UpdateQuoteItemDto,
+  DISCOUNT_NOT_ALLOWED_IN_GENERAL_EDIT,
+} from './dto/update-quote-item.dto';
+import { UpdateQuoteItemDiscountDto } from './dto/update-quote-item-discount.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
+
+/**
+ * Contexto de acceso del módulo: `AccessContext` + `jti` de la sesión viva
+ * (Passport ya la atestiguó en esta petición; alimenta `AccessIdentity` de
+ * `resolveAccess`; cada operación consume grants vigentes en el servicio.
+ */
+export type QuotesAccessContext = AccessContext & { jti?: string };
 
 /**
  * Matriz de transiciones válidas de la cotización (sigue el patrón
@@ -32,18 +45,6 @@ const QUOTE_TRANSITIONS: Record<string, string[]> = {
   cancelada: [],
 };
 
-/**
- * Quién mueve cada estado. A diferencia de las órdenes de compra (solo
- * admins), una cotización la maneja su comercial dueño: cualquier rol de
- * escritura puede transicionar SI está en scope (dueño o su jerarquía).
- */
-const QUOTE_STATUS_ROLES: Record<string, string[]> = {
-  enviada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
-  negociacion: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
-  ganada: ['Super Admin', 'Admin Comercial', 'Supervisor'],
-  perdida: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
-  cancelada: ['Super Admin', 'Admin Comercial', 'Supervisor', 'Vendedor'],
-};
 
 /** Estados en los que los ítems todavía se pueden agregar/editar/quitar. */
 const ITEM_EDITABLE_STATUSES = ['borrador', 'enviada', 'negociacion'] as const;
@@ -74,23 +75,32 @@ export class QuotesService {
     private acl: AclService,
     private hierarchy: HierarchyService,
     private audit: AuditService,
+    private grants: AccessAssignmentsService,
   ) {}
 
   /**
-   * Condición de visibilidad por jerarquía. Devuelve `null` para admins
-   * (sin filtro), cartera propia para Vendedor o jerarquía para los otros roles.
+   * Condición de visibilidad derivada del grant quotes:read.
    */
-  private async scopeWhere(
-    ctx: AccessContext,
-  ): Promise<Prisma.QuoteWhereInput | null> {
-    if (this.acl.isListasAdmin(ctx.roles)) return null;
-    if (isPersonalSeller(ctx.roles)) {
-      return { ownerId: { in: ctx.userId ? [ctx.userId] : [] } };
-    }
-    const ids = ctx.userId
-      ? await this.hierarchy.getSubordinateIds(ctx.userId, { includeSelf: true })
-      : [];
-    return { ownerId: { in: ids } };
+  private async identity(ctx: QuotesAccessContext, grants: Awaited<ReturnType<AccessAssignmentsService['grantsForUser']>>): Promise<AccessIdentity> {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    return { userId: ctx.userId, ...(ctx.jti ? { jti: ctx.jti } : {}), verified: true,
+      active: true, sessionValid: true, sessionUserId: ctx.userId,
+      superAdmin: ctx.roles.includes('Super Admin'), teamOwnerIds: ctx.roles.includes('Super Admin') || !grants.some((grant) => grant.scope === 'team')
+        ? [] : await this.hierarchy.getSubordinateIds(ctx.userId) };
+  }
+
+  private async decide(actionId: string, ctx: QuotesAccessContext, resource?: {id:string; ownerId?:string|null}) {
+    const grants = await this.grants.grantsForUser(ctx.userId!);
+    return resolveAccess({ identity: await this.identity(ctx, grants), actionId, grants,
+      ...(resource ? { resource: { ...resource, kind: 'quote' as const, ownerId: resource.ownerId ?? undefined } } : {}) });
+  }
+
+  private async scopeWhere(ctx: QuotesAccessContext): Promise<Prisma.QuoteWhereInput> {
+    const decision = await this.decide('quotes:read', ctx);
+    if (!decision.allowed) throw new ForbiddenException('Sin permiso quotes:read');
+    if (decision.scope === 'global') return {};
+    if (decision.scope === 'team') return { ownerId: { in: [...new Set([ctx.userId!, ...(await this.hierarchy.getSubordinateIds(ctx.userId!))])] } };
+    return { ownerId: ctx.userId };
   }
 
   /**
@@ -111,13 +121,13 @@ export class QuotesService {
     return quote;
   }
 
-  async findAll(query: QuoteQueryDto, ctx: AccessContext) {
+  async findAll(query: QuoteQueryDto, ctx: QuotesAccessContext) {
     const { search, status, customerId, ownerId, skip = 0, take = 50 } = query;
 
     const and: Prisma.QuoteWhereInput[] = [];
 
     const scope = await this.scopeWhere(ctx);
-    if (scope) and.push(scope);
+    if (Object.keys(scope).length > 0) and.push(scope);
     if (customerId) and.push({ customerId });
     if (ownerId) and.push({ ownerId });
     if (status) and.push({ status });
@@ -151,7 +161,7 @@ export class QuotesService {
    * catálogo. Lo que sí se bloquea sin acceso vigente a la Lista es AGREGAR
    * o EDITAR ítems (ver assertItemOperationAccess).
    */
-  async findOne(id: string, ctx: AccessContext) {
+  async findOne(id: string, ctx: QuotesAccessContext) {
     const quote = await this.prisma.quote.findUnique({
       where: { id },
       include: {
@@ -164,26 +174,23 @@ export class QuotesService {
     });
     if (!quote) throw new NotFoundException('Cotización no encontrada');
 
-    const scope = await this.scopeWhere(ctx);
-    if (scope) {
-      const scoped = scope.ownerId as { in: string[] };
-      if (!scoped.in.includes(quote.ownerId)) {
-        // 404 (no 403) para no revelar la existencia fuera de scope.
-        throw new NotFoundException('Cotización no encontrada');
-      }
+    const decision = await this.decide('quotes:read', ctx, { id, ownerId: quote.ownerId });
+    if (!decision.allowed) {
+      // 404 para no revelar la existencia fuera de alcance.
+      throw new NotFoundException('Cotización no encontrada');
     }
 
     return this.effectiveStatus(quote);
   }
 
-  async create(dto: CreateQuoteDto, ctx: AccessContext) {
+  async create(dto: CreateQuoteDto, ctx: QuotesAccessContext) {
     if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    if (!(await this.decide('quotes:create', ctx)).allowed) throw new ForbiddenException('Sin permiso quotes:create');
 
     const customer = await this.prisma.customer.findUnique({
       where: { id: dto.customerId },
     });
-    if (!customer || !customer.isActive ||
-        (isPersonalSeller(ctx.roles) && customer.ownerId !== ctx.userId)) {
+    if (!customer || !customer.isActive || !(await this.customerReadable(customer.id, customer.ownerId, ctx))) {
       throw new NotFoundException('Cliente no encontrado');
     }
 
@@ -223,6 +230,8 @@ export class QuotesService {
 
   /**
    * Agregar ítem. Reglas:
+   * - COM-03 §3: el alta NO lleva descuento (`discountPct` → 400 sin escritura);
+   *   el descuento se aplica después con `updateItemDiscount` (quotes:discount)
    * - acceso producto con view_prices (issue #16)
    * - acceso vigente a la Lista de la cotización (agregar/editar sí se bloquea)
    * - precio vigente en la priceList de la cotización (misma regla de vigencia
@@ -231,7 +240,12 @@ export class QuotesService {
    * - si no hay precio vigente → 409 citando el SKU (nunca precio 0)
    * - snapshot: unitPrice/sku/name quedan CONGELADOS en el QuoteItem
    */
-  async addItem(quoteId: string, dto: AddQuoteItemDto, ctx: AccessContext) {
+  async addItem(quoteId: string, dto: AddQuoteItemDto, ctx: QuotesAccessContext) {
+    // Rechazo ANTES de leer o escribir (COM-02 §3, sin cambio parcial).
+    if (dto.discountPct !== undefined) {
+      throw new BadRequestException(DISCOUNT_NOT_ALLOWED_IN_ADD);
+    }
+
     const quote = await this.assertItemableQuote(quoteId, ctx);
 
     await this.acl.assertProductAccess(dto.productId, ctx, 'view_prices');
@@ -268,8 +282,9 @@ export class QuotesService {
       where: { id: dto.productId },
     });
 
-    const discountPct = dto.discountPct !== undefined ? Number(dto.discountPct) : 0;
-    assertValidDiscountPct(discountPct);
+    // Línea nueva SIEMPRE con descuento 0: aplicarlo es la operación dedicada
+    // `PATCH /:id/items/:itemId/discount` (COM-03 §3), nunca el alta.
+    const discountPct = 0;
     const unitPrice = Number(vigente.value);
 
     const item = await this.prisma.quoteItem.create({
@@ -295,12 +310,24 @@ export class QuotesService {
     return this.findOne(quoteId, ctx);
   }
 
+  /**
+   * Edición GENERAL de la línea: SOLO cantidad (COM-03 §3, regla 2).
+   * `discountPct` en el payload → 400 `discount-not-allowed-in-general-edit`
+   * ANTES de leer o escribir: ni la cantidad se aplica (sin cambio parcial).
+   * El descuento previo se conserva SIEMPRE y `lineTotal` se re-deriva sobre
+   * esa misma fórmula con el descuento conservado (regla 3: nada histórico
+   * se recalcula).
+   */
   async updateItem(
     quoteId: string,
     itemId: string,
     dto: UpdateQuoteItemDto,
-    ctx: AccessContext,
+    ctx: QuotesAccessContext,
   ) {
+    if (dto.discountPct !== undefined) {
+      throw new BadRequestException(DISCOUNT_NOT_ALLOWED_IN_GENERAL_EDIT);
+    }
+
     await this.assertItemableQuote(quoteId, ctx);
 
     const item = await this.prisma.quoteItem.findUnique({ where: { id: itemId } });
@@ -309,8 +336,8 @@ export class QuotesService {
     }
 
     const quantity = dto.quantity !== undefined ? dto.quantity : item.quantity;
-    const discountPct =
-      dto.discountPct !== undefined ? Number(dto.discountPct) : Number(item.discountPct);
+    // El descuento NUNCA se lee del DTO aquí: sale del ítem persistido.
+    const discountPct = Number(item.discountPct);
     assertValidDiscountPct(discountPct);
 
     await this.prisma.quoteItem.update({
@@ -326,7 +353,61 @@ export class QuotesService {
     return this.findOne(quoteId, ctx);
   }
 
-  async removeItem(quoteId: string, itemId: string, ctx: AccessContext) {
+  /**
+   * Operación dedicada de descuento por línea (COM-03 §3, DISENO:189
+   * «Descuentos de cotización: `quotes:discount`, además de edición de la
+   * cotización»). Orden de rechazo, todo ANTES de escribir:
+   *  (1) cotización en scope + estado editable + Lista con view_prices → 404/409/403;
+   *  (2) ítem pertenece a la cotización → 404;
+   *  (3) concesión `quotes:discount` sobre el recurso vía `resolveAccess` → 403;
+   *  (4) rango 0–100 → 400.
+   * Conserva `quantity` (no viaja en el DTO) y re-deriva `lineTotal` con el
+   * descuento nuevo y el `unitPrice` snapshot (regla 3).
+   */
+  async updateItemDiscount(
+    quoteId: string,
+    itemId: string,
+    dto: UpdateQuoteItemDiscountDto,
+    ctx: QuotesAccessContext,
+  ) {
+    const quote = await this.assertItemableQuote(quoteId, ctx);
+
+    const item = await this.prisma.quoteItem.findUnique({ where: { id: itemId } });
+    if (!item || item.quoteId !== quoteId) {
+      throw new NotFoundException('Ítem no encontrado en esta cotización');
+    }
+
+    await this.assertActionAllowed('quotes:discount', quote, ctx);
+
+    const discountPct = Number(dto.discountPct);
+    assertValidDiscountPct(discountPct);
+
+    const quantity = item.quantity;
+    await this.prisma.quoteItem.update({
+      where: { id: itemId },
+      data: {
+        discountPct,
+        lineTotal: this.computeLineTotal(Number(item.unitPrice), quantity, discountPct),
+      },
+    });
+
+    await this.recalculateTotals(quoteId);
+
+    // DISENO:159 «aplicación de descuentos cuando se delegue»: selectiva y
+    // sin PII — solo el porcentaje antes/después por ítem (patrón COM-02 §5.3).
+    await this.audit.log({
+      userId: ctx.userId,
+      action: 'discount_change',
+      entity: 'QuoteItem',
+      entityId: itemId,
+      oldValues: { discountPct: Number(item.discountPct) },
+      newValues: { discountPct },
+    });
+
+    return this.findOne(quoteId, ctx);
+  }
+
+  async removeItem(quoteId: string, itemId: string, ctx: QuotesAccessContext) {
     await this.assertItemableQuote(quoteId, ctx);
 
     const item = await this.prisma.quoteItem.findUnique({ where: { id: itemId } });
@@ -339,8 +420,9 @@ export class QuotesService {
     return this.findOne(quoteId, ctx);
   }
 
-  async updateStatus(id: string, dto: UpdateQuoteStatusDto, ctx: AccessContext) {
+  async updateStatus(id: string, dto: UpdateQuoteStatusDto, ctx: QuotesAccessContext) {
     const quote = await this.findOne(id, ctx);
+    await this.assertActionAllowed('quotes:status', quote, ctx);
     const from = quote.status;
     // `vencida` (estado efectivo) se trata como su estado persistido: no se
     // puede transicionar desde una cotización vencida.
@@ -350,17 +432,15 @@ export class QuotesService {
 
     const allowed = QUOTE_TRANSITIONS[persistedFrom] ?? [];
     if (!allowed.includes(dto.status)) {
-      throw new BadRequestException(
+      // F7 (COM-03 §6): conflicto de ESTADO → 409, igual que el resto del
+      // módulo (ítems no editables `:441`, doble ganada `:563`). Antes era
+      // 400; reversión de un solo punto si la auditoría final prefiere el
+      // 400 documentado en Swagger. El mensaje no cambia (la UI lo pinta tal cual).
+      throw new ConflictException(
         `No se puede pasar de ${persistedFrom} a ${dto.status}`,
       );
     }
 
-    const roleAllowed = QUOTE_STATUS_ROLES[dto.status] ?? ['Super Admin'];
-    if (!ctx.roles.some((r) => roleAllowed.includes(r))) {
-      throw new ForbiddenException(
-        `El estado '${dto.status}' requiere rol: ${roleAllowed.join(' o ')}`,
-      );
-    }
 
     if (dto.status === 'perdida' && !dto.lostReason) {
       throw new BadRequestException('Perdida requiere lostReason');
@@ -433,8 +513,9 @@ export class QuotesService {
    * Cotización en scope + en estado que permita editar ítems + acceso
    * vigente a la Lista (agregar/editar SÍ se bloquea sin acceso; leer no).
    */
-  private async assertItemableQuote(quoteId: string, ctx: AccessContext) {
+  private async assertItemableQuote(quoteId: string, ctx: QuotesAccessContext) {
     const quote = await this.findOne(quoteId, ctx);
+    await this.assertActionAllowed('quotes:edit', quote, ctx);
     if (
       !ITEM_EDITABLE_STATUSES.includes(quote.status as never)
     ) {
@@ -444,6 +525,43 @@ export class QuotesService {
     }
     await this.acl.assertListaAccess(quote.listaId, ctx, 'view_prices');
     return quote;
+  }
+
+  private async customerReadable(id: string, ownerId: string | null, ctx: QuotesAccessContext): Promise<boolean> {
+    const grants = await this.grants.grantsForUser(ctx.userId!);
+    const decision = resolveAccess({ identity: await this.identity(ctx, grants), actionId: 'customers:read',
+      grants,
+      resource: { id, kind: 'customer', ownerId: ownerId ?? undefined } });
+    return decision.allowed;
+  }
+
+  /**
+   * Decide `quotes:discount` SOBRE la cotización con `resolveAccess` (patrón
+   * COM-02 §4 customers.service.ts): la identidad se construye en servidor
+   * (los guards atestiguaron la sesión en ESTA petición), las concesiones
+   * salen de `grantsForUser` y el alcance `team` se cubre con la jerarquía
+   * actual. Sin cobertura → 403 con el motivo del resolver; NO se inventa
+   * ningún permiso global — Super Admin es excepción EXPLÍCITA del resolver
+   * y la dependencia `quotes:edit` se exige dentro del propio resolver.
+   * El módulo sigue sin `@Permissions` (D5 pendiente, decisión del coordinador).
+   */
+  private async assertActionAllowed(
+    actionId: 'quotes:discount' | 'quotes:edit' | 'quotes:status',
+    quote: { id: string; ownerId: string | null },
+    ctx: QuotesAccessContext,
+  ): Promise<void> {
+    const grants = await this.grants.grantsForUser(ctx.userId!);
+    const decision = resolveAccess({
+      identity: await this.identity(ctx, grants),
+      actionId,
+      grants,
+      resource: { id: quote.id, kind: 'quote', ownerId: quote.ownerId ?? undefined },
+    });
+    if (!decision.allowed) {
+      throw new ForbiddenException(
+        `Sin permiso ${actionId} sobre esta cotización (${decision.reason ?? 'denegado'})`,
+      );
+    }
   }
 
   private computeLineTotal(

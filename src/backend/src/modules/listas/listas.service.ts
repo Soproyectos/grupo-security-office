@@ -6,9 +6,11 @@ import {
   BadRequestException,
   Optional,
 } from '@nestjs/common';
+import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
+import { concessionAssertAction } from '../../common/security/d5-action';
 import { primaryImageInclude } from '../products/helpers/primary-image';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.service';
+import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateListaDto } from './dto/create-lista.dto';
 import { UpdateListaDto } from './dto/update-lista.dto';
@@ -24,6 +26,7 @@ export class ListasService {
     private acl: AclService,
     private audit: AuditService,
     private files: FilesService,
+    @Optional() private grants?: AccessAssignmentsService,
   ) {}
 
   /** Lista de Listas autorizadas (deny-by-default). */
@@ -197,7 +200,7 @@ export class ListasService {
 
   /** Accesos (assignments LISTA) de una Lista — requiere manage_access (checklist 30). */
   async findAssignments(id: string, ctx: AccessContext) {
-    await this.acl.assertListaAccess(id, ctx, 'manage_access');
+    await this.acl.assertListaAction(id, ctx, 'assignments:manage');
     const assignments = await this.prisma.assignment.findMany({
       where: { resourceType: 'LISTA', resourceId: id },
       orderBy: { createdAt: 'desc' },
@@ -207,7 +210,7 @@ export class ListasService {
 
   /** Auditoría de una Lista — requiere manage. */
   async findAudit(id: string, ctx: AccessContext) {
-    await this.assertManage(id, ctx);
+    await this.acl.assertListaAction(id, ctx, 'assignments:manage');
     const [logs, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where: { entity: 'LISTA', entityId: id },
@@ -219,12 +222,9 @@ export class ListasService {
     return { data: logs, meta: { total } };
   }
 
-  /** Crear Lista — Super Admin y Admin Comercial (el creador queda auto-asignado con manage_access; otros accesos los gestiona después el Super Admin). */
+  /** Crear Lista exige la acción global vigente, sin heredarla del cargo. */
   async create(dto: CreateListaDto, ctx: AccessContext) {
-    const canCreate = ['Super Admin', 'Admin Comercial'].some((r) => ctx.roles?.includes(r));
-    if (!canCreate) {
-      throw new ForbiddenException('Solo Super Admin o Admin Comercial pueden crear Listas');
-    }
+    await concessionAssertAction(this.grants, 'listas:create', ctx);
 
     const existing = await this.prisma.lista.findUnique({
       where: { code: dto.code },
@@ -279,28 +279,6 @@ export class ListasService {
       },
     });
 
-    // Auto-asignación del creador (deny-by-default del findAll): sin este
-    // assignment, una Lista creada por un Admin Comercial no aparece en su
-    // propio listado. Es su recurso recién creado, no un otorgamiento a
-    // terceros (la anti-escalada del módulo assignments aplica a terceros).
-    await this.prisma.assignment.upsert({
-      where: {
-        userId_resourceType_resourceId: {
-          userId: ctx.userId,
-          resourceType: 'LISTA',
-          resourceId: created.id,
-        },
-      },
-      create: {
-        userId: ctx.userId,
-        resourceType: 'LISTA',
-        resourceId: created.id,
-        level: 'manage_access',
-        isActive: true,
-      },
-      update: { level: 'manage_access', isActive: true },
-    });
-
     return created;
   }
 
@@ -322,7 +300,7 @@ export class ListasService {
   async duplicateLista(id: string, ctx: AccessContext) {
     const source = await this.prisma.lista.findUnique({ where: { id } });
     if (!source) throw new NotFoundException('Lista no encontrada');
-    await this.acl.assertListaAccess(id, ctx, 'manage');
+    await this.acl.assertListaAction(id, ctx, 'listas:duplicate');
 
     const nameSuffix = ' (copia)';
     const name = `${source.name.slice(0, this.LISTA_NAME_MAX - nameSuffix.length)}${nameSuffix}`;
@@ -411,11 +389,10 @@ export class ListasService {
     // Para archivar/restaurar se usa assertListaRestoreAccess: NO exige isActive/archivedAt,
     // así una Lista ya archivada (isActive=false) puede restaurarse (BUG-3).
     const requiresManage = dto.archivedAt !== undefined;
-    if (requiresManage) {
-      await this.acl.assertListaRestoreAccess(id, ctx, 'manage');
-    } else {
-      await this.acl.assertListaAccess(id, ctx, 'edit_products');
-    }
+    await this.acl.assertListaAction(
+      id, ctx, dto.archivedAt ? 'listas:archive' : 'listas:update',
+      { allowInactive: requiresManage },
+    );
 
     if (dto.code && dto.code !== lista.code) {
       const dup = await this.prisma.lista.findUnique({ where: { code: dto.code }, select: { id: true } });
@@ -442,6 +419,8 @@ export class ListasService {
     if (dto.archivedAt !== undefined) {
       data.archivedAt = dto.archivedAt ? new Date(dto.archivedAt) : null;
       if (dto.archivedAt) data.isActive = false;
+      // CAT-01 C5/H1: desarchivar vía PATCH también repone `isActive`.
+      else if (lista.archivedAt) data.isActive = true;
     }
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.defaultVisibility !== undefined) data.defaultVisibility = dto.defaultVisibility;
@@ -472,7 +451,7 @@ export class ListasService {
 
     const lista = await this.prisma.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
-    await this.acl.assertListaAccess(id, ctx, 'edit_products');
+    await this.acl.assertListaAction(id, ctx, 'listas:update');
 
     const updated = await this.prisma.lista.update({
       where: { id },
@@ -500,7 +479,7 @@ export class ListasService {
 
     const lista = await this.prisma.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
-    await this.acl.assertListaAccess(id, ctx, 'manage');
+    await this.acl.assertListaAction(id, ctx, 'listas:archive');
 
     const updated = await this.prisma.lista.update({
       where: { id },
@@ -530,11 +509,15 @@ export class ListasService {
 
     const lista = await this.prisma.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
-    await this.acl.assertListaRestoreAccess(id, ctx, 'manage');
+    await this.acl.assertListaAction(id, ctx, 'listas:update', { allowInactive: true });
 
+    const wasArchived = !!lista.archivedAt;
     const updated = await this.prisma.lista.update({
       where: { id },
-      data: { archivedAt: null },
+      // CAT-01 C5 / H1: restaurar repondrá `archivedAt = null` E `isActive`
+      // (solo si estaba archivada; un restore sobre una Lista nunca archivada
+      // no debe reactivar nada).
+      data: { archivedAt: null, ...(wasArchived && { isActive: true }) },
     });
 
     await this.audit.log({
@@ -552,39 +535,25 @@ export class ListasService {
   /**
    * Eliminación física de una Lista — Super Admin y Admin Comercial (isListasAdmin).
    *
-   * Comportamiento por impacto:
-   * - SIN datos asociados (products=0, prices=0, assignments activos=0): borra normal,
-   *   sin pedir clave maestra (flujo histórico).
-   * - CON datos asociados y SIN `dto.masterKey` → 409 (exige la clave maestra).
-   * - CON datos asociados y clave maestra inválida/no configurada → 403.
-   * - CON datos asociados y clave maestra válida → borrado FORZADO en cascada dentro
-   *   de una transacción (orden por FKs: stock → productImage → price(product) →
-   *   price(lista) → product → assignment → lista).
+   * CAT-01 §3 (conservación): al borrar una Lista desaparece **solo la Lista**.
+   * `Product`, `ProductImage`, `UploadedFile` (bytes), `Price` y `Stock`
+   * sobreviven con sus IDs intactos; `Product.listaId` queda `null` (FK
+   * `ON DELETE SET NULL` ya existente en `products_listaId_fkey`) y los
+   * accesos (`Assignment`) de la Lista se retiran. NO se ejecuta ningún
+   * `deleteMany` sobre productos, imágenes o precios, ni `files.deleteByUrl`
+   * sobre los bytes (riesgo R1 del contrato).
    *
-   * El historial de auditoría NO bloquea (decisión de negocio): al borrar la Lista se
-   * conserva como rastro la tabla AuditLog (no se borra con la lista), y el evento
-   * `delete` se registra ANTES del borrado físico para dejar constancia del código/
-   * nombre. En el borrado forzado se anota `forced: true` con los counts previos.
+   * Comportamiento:
+   * - Lista con cotizaciones (`Quote.listaId` FK RESTRICT) → **409** con motivo
+   *   explícito precomprobado (antes Prisma P2003 → 500; riesgo R2 / §6).
+   * - Sin `dto.confirm: true` → 400 y ninguna escritura.
+   * - Snapshot de conservación (C1): `prepareAuditSnapshot` se persiste en la
+   *   fila de `AuditLog` del evento `delete`, escrita ANTES del borrado para
+   *   dejar `listaId/code/name/conteos` como referencia histórica (§3).
    *
-   * Fix H9: solo los accesos ACTIVOS de terceros bloquean. Las assignments
-   * soft-deleted (isActive=false) son ruido interno y NO bloquean el borrado,
-   * y al eliminar la Lista se hace hard-delete de TODAS sus assignments
-   * (Assignment no tiene FK a Lista) para no dejar registros huérfanos.
-   */
-  /**
-   * Elimina una Lista físicamente y, en la misma transacción, sus productos
-   * huérfanos con todo lo que cuelga de ellos (precios, imágenes, inventario,
-   * accesos). El inventario (`Stock`) no se borra a mano: su FK tiene
-   * `onDelete: Cascade` y desaparece solo al borrar el producto.
-   *
-   * Antes este método dejaba los productos vivos con `listaId = null` — la FK
-   * de `Product.listaId` es `ON DELETE SET NULL`, así que Postgres los
-   * desconectaba en vez de borrarlos — contradiciendo el comentario que decía
-   * "se eliminan en cascada". `prisma/cleanup-orphaned-list-products.ts` existe
-   * porque ese hueco dejaba huérfanos que había que limpiar a mano después.
-   *
-   * `AuditLog.productId` y `QuoteItem.productId` son opcionales con
-   * `onDelete: SetNull`: sobreviven al borrado, sin bloquear la transacción.
+   * El historial de auditoría NO bloquea (decisión de negocio): `AuditLog` no
+   * tiene FK a Lista y sobrevive al borrado. `AuditLog.productId` y
+   * `QuoteItem.productId` son `SetNull`: sobreviven sin bloquear la transacción.
    */
   async removeLista(id: string, dto: DeleteListaDto, ctx: AccessContext) {
     // CHECK: Lista bloqueada por eliminación pendiente
@@ -592,15 +561,24 @@ export class ListasService {
       throw new ConflictException('No se puede eliminar físicamente una Lista con solicitud de eliminación pendiente. Use los endpoints de cancelación o restauración.');
     }
 
-    if (!this.acl.isListasAdmin(ctx.roles)) {
-      throw new ForbiddenException('Solo Super Admin o Admin Comercial pueden eliminar Listas');
-    }
+    await this.acl.assertListaAction(id, ctx, 'listas:delete');
 
     const lista = await this.prisma.lista.findUnique({
       where: { id },
       select: { id: true, name: true, code: true },
     });
     if (!lista) throw new NotFoundException('Lista no encontrada');
+
+    // R2/§6: `Quote.listaId` es obligatoria con FK RESTRICT. Sin esta
+    // precomprobación `lista.delete` revierte la transacción y el API
+    // responde 500. Mientras no exista el flujo de resolución del destino de
+    // `Quote.listaId` (decisión C2), se rechaza con 409 y motivo explícito.
+    const quotes = await this.prisma.quote.count({ where: { listaId: id } });
+    if (quotes > 0) {
+      throw new ConflictException(
+        `La Lista tiene ${quotes} cotización${quotes === 1 ? '' : 'es'} asociada${quotes === 1 ? '' : 's'}: no se puede eliminar hasta resolver Quote.listaId (destino de la referencia).`,
+      );
+    }
 
     const productIds = (
       await this.prisma.product.findMany({ where: { listaId: id }, select: { id: true } })
@@ -625,28 +603,23 @@ export class ListasService {
     ]);
 
     const impact: string[] = [];
-    if (productIds.length > 0) impact.push(`${productIds.length} producto${productIds.length === 1 ? '' : 's'}`);
-    if (prices > 0) impact.push(`${prices} precio${prices === 1 ? '' : 's'}`);
+    if (productIds.length > 0) impact.push(`${productIds.length} producto${productIds.length === 1 ? '' : 's'} que se desvincula${productIds.length === 1 ? '' : 'n'} (conservando ficha, medios y precios)`);
+    if (prices > 0) impact.push(`${prices} precio${prices === 1 ? '' : 's'} que se conservan`);
     if (assignments > 0) impact.push(`${assignments} accesos`);
 
-    // Borrado físico destructivo: exige confirmación explícita, igual que el
-    // borrado de un producto (`DeleteProductDto`). Sin ella no se ejecuta
-    // ninguna escritura.
+    // Borrado físico: exige confirmación explícita, igual que el borrado de un
+    // producto (`DeleteProductDto`). Sin ella no se ejecuta ninguna escritura.
     if (dto?.confirm !== true) {
       throw new BadRequestException(
         impact.length > 0
-          ? `Esta Lista tiene datos asociados que se eliminarán en cascada: ${impact.join(', ')}. Confirma con confirm: true.`
+          ? `Esta Lista tiene datos asociados que se retiran con ella: ${impact.join(', ')}. Confirma con confirm: true.`
           : 'Debes confirmar el borrado físico con confirm: true',
       );
     }
 
-    // Las imágenes se borran del almacenamiento después de confirmar el commit
-    // en BD, no antes: si el archivo se borrara primero y la transacción
-    // fallara, quedaría una fila ProductImage apuntando a un archivo inexistente.
-    const images = await this.prisma.productImage.findMany({
-      where: { productId: { in: productIds } },
-      select: { url: true },
-    });
+    // Snapshot de conservación (C1) calculado ANTES de borrar: la fila de
+    // auditoría queda como referencia histórica de la Lista inexistente.
+    const snapshot = await this.prepareAuditSnapshot(id);
 
     await this.audit.log({
       userId: ctx.userId,
@@ -654,34 +627,71 @@ export class ListasService {
       entity: 'LISTA',
       entityId: lista.id,
       oldValues: { name: lista.name, code: lista.code },
-      newValues: { code: lista.code, name: lista.name, productosEliminados: productIds.length },
+      newValues: {
+        code: lista.code,
+        name: lista.name,
+        snapshot,
+        productosConservados: productIds.length,
+      },
     });
 
+    // §3: desaparece SOLO la Lista. `Product.listaId` → null de forma explícita
+    // (la FK también haría SET NULL al borrar la Lista); los precios quedan con
+    // `Price.listaId = null` por la misma FK `ON DELETE SET NULL` y el snapshot
+    // conserva code/name/conteos. Los accesos PRODUCT de los productos vivos se
+    // conservan junto a sus productos.
     await this.prisma.$transaction([
-      // Fix H9: hard-delete de las assignments de la Lista (Assignment no tiene FK a
-      // Lista) para no dejar registros huérfanos, sean activos o soft-deleted.
       this.prisma.assignment.deleteMany({ where: { resourceType: 'LISTA', resourceId: id } }),
-      this.prisma.assignment.deleteMany({
-        where: { resourceType: 'PRODUCT', resourceId: { in: productIds } },
+      this.prisma.product.updateMany({
+        where: { id: { in: productIds } },
+        data: { listaId: null },
       }),
-      this.prisma.productImage.deleteMany({ where: { productId: { in: productIds } } }),
-      this.prisma.price.deleteMany({
-        where: { OR: [{ listaId: id }, { productId: { in: productIds } }] },
-      }),
-      this.prisma.product.deleteMany({ where: { id: { in: productIds } } }),
       this.prisma.lista.delete({ where: { id } }),
     ]);
 
-    for (const image of images) {
-      await this.files.deleteByUrl(image.url);
-    }
-
-    return { message: 'Lista eliminada exitosamente', productosEliminados: productIds.length };
+    return { message: 'Lista eliminada exitosamente', productosConservados: productIds.length };
   }
 
-  /** Alias interno: require manage (incluye deny-by-default por inactiva/archivada). */
-  private async assertManage(id: string, ctx: AccessContext): Promise<void> {
-    await this.acl.assertListaAccess(id, ctx, 'manage');
+  /**
+   * Desvincular un producto de una Lista — acción explícita `listas:unlink`
+   * (CAT-01 §4, ADR «Retirar un producto exige una acción explícita»).
+   *
+   * Pone `Product.listaId = null` sin borrar la ficha, sus medios ni sus
+   * precios, y sin añadirlo a otra lista (sin reasignación implícita, regla 3).
+   * Alcance/ACL: `edit_products` sobre la Lista (mismo nivel que la
+   * reasignación de `PUT /products/:id`); deny-by-default por assignment.
+   */
+  async unlinkProduct(listaId: string, productId: string, ctx: AccessContext) {
+    if (await this.isBlockedByDeletion(listaId)) {
+      throw new ConflictException(
+        'No se puede desvincular productos de una Lista con solicitud de eliminación pendiente',
+      );
+    }
+    await this.acl.assertListaAction(listaId, ctx, 'listas:unlink');
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, sku: true, name: true, listaId: true },
+    });
+    if (!product || product.listaId !== listaId) {
+      throw new NotFoundException('Producto no encontrado en esta Lista');
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id: productId },
+      data: { listaId: null },
+    });
+
+    await this.audit.log({
+      userId: ctx.userId,
+      action: 'unlink',
+      entity: 'LISTA',
+      entityId: listaId,
+      oldValues: { productId, sku: product.sku, listaId },
+      newValues: { listaId: null },
+    });
+
+    return updated;
   }
 
   /**
@@ -690,8 +700,7 @@ export class ListasService {
    */
   private async userCanSeePrices(listaId: string, ctx: AccessContext): Promise<boolean> {
     if (this.acl.isListasAdmin(ctx.roles)) return true;
-    const level = await this.acl.getUserLevel(ctx.userId!, listaId, ctx.roles);
-    return !!level && (LEVEL_RANK[level] ?? 0) >= (LEVEL_RANK['view_prices'] ?? 0);
+    return this.acl.can(listaId, ctx, 'view_prices');
   }
 
   /**
@@ -781,14 +790,7 @@ export class ListasService {
     if (!ctx.userId) throw new ForbiddenException('Usuario no autenticado');
 
     // CHECK: Permiso global `listas:delete`.
-    if (!ctx.roles?.includes('Super Admin') && !ctx.roles?.includes('Admin Comercial')) {
-      throw new ForbiddenException('Se requiere permiso global listas:delete');
-    }
-
-    // CHECK: Acceso `manage` sobre la Lista, salvo Super Admin.
-    if (!this.acl.isListasAdmin(ctx.roles)) {
-      await this.acl.assertListaAccess(id, ctx, 'manage');
-    }
+    await this.acl.assertListaAction(id, ctx, 'listas:delete');
 
     // CHECK: Rechazar Lista inexistente, archivada o ya pendiente de eliminación.
     const lista = await this.prisma.lista.findUnique({
@@ -822,10 +824,11 @@ export class ListasService {
   }
 
   /**
-   * Prepara un snapshot de auditoría de una Lista antes de una futura purga.
-   * El snapshot contiene el identificador, nombre/código y conteos
-   * de hijos (productos, precios, assignments) sin borrar los registros.
-   * Este snapshot se conservará incluso después de la purga física.
+   * Prepara un snapshot de auditoría de una Lista antes de su eliminación
+   * (CAT-01 C1 — referencia histórica). El snapshot contiene el identificador,
+   * el `code`/`name` de la Lista y conteos de hijos (productos, precios,
+   * assignments) sin borrar los registros: se persiste en la fila de
+   * `AuditLog` del evento `delete` y sobrevive a la Lista borrada.
    *
    * @param id Identificador de la Lista
    * @returns Objeto con los datos del snapshot
@@ -841,7 +844,7 @@ export class ListasService {
     const [lista, products, prices, assignments] = await Promise.all([
       this.prisma.lista.findUnique({
         where: { id },
-        select: { id: true, name: true, codigo: true },
+        select: { id: true, name: true, code: true },
       }),
       this.prisma.product.count({ where: { listaId: id } }),
       this.prisma.price.count({ where: { listaId: id } }),
@@ -851,7 +854,7 @@ export class ListasService {
     return {
       listaId: lista?.id ?? id,
       name: lista?.name ?? '',
-      code: lista?.codigo ?? null,
+      code: lista?.code ?? null,
       productCount: products,
       priceCount: prices,
       assignmentCount: assignments,

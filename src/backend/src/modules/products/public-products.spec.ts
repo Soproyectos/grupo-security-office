@@ -104,7 +104,7 @@ describe('PublicCatalogService.search', () => {
     expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          lifecycleStatus: 'PUBLISHED',
+          lifecycleStatus: 'PUBLISHED', catalogPublished: true,
           OR: [
             { name: { contains: 'domo', mode: 'insensitive' } },
             { sku: { contains: 'domo', mode: 'insensitive' } },
@@ -122,7 +122,7 @@ describe('PublicCatalogService.search', () => {
 
     expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { lifecycleStatus: 'PUBLISHED' },
+        where: { lifecycleStatus: 'PUBLISHED', catalogPublished: true },
         take: 24,
       }),
     );

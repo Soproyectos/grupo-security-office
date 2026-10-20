@@ -1,15 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Modal, Input, Select, Button, Alert } from '../../../components/ui'
+import { customerErrorMessage } from '../../../services/customers.service'
 import {
   CUSTOMER_SOURCES,
   CUSTOMER_SOURCE_LABELS,
   CUSTOMER_STATUSES,
   CUSTOMER_STATUS_LABELS,
-  type Customer,
-  type CustomerPayload,
-  type CustomerSource,
-  type CustomerStatus,
 } from '../types/customer.types'
+import type {
+  Customer,
+  CustomerPayload,
+  CustomerSource,
+  CustomerStatus,
+} from '../types/customer.types'
+import {
+  EMPTY_CUSTOMER_FORM,
+  buildCustomerPayload,
+  toCustomerFormState,
+  type CustomerFormState,
+} from '../customer-form'
 
 interface CustomerFormModalProps {
   open: boolean
@@ -19,57 +28,14 @@ interface CustomerFormModalProps {
   isSubmitting?: boolean
 }
 
-interface FormState {
-  name: string
-  documentType: string
-  documentId: string
-  email: string
-  phone: string
-  city: string
-  address: string
-  status: CustomerStatus
-  source: '' | CustomerSource
-  sourceDetail: string
-  notes: string
-}
-
-const EMPTY_FORM: FormState = {
-  name: '',
-  documentType: '',
-  documentId: '',
-  email: '',
-  phone: '',
-  city: '',
-  address: '',
-  status: 'LEAD',
-  source: '',
-  sourceDetail: '',
-  notes: '',
-}
-
-function toFormState(customer: Customer | null | undefined): FormState {
-  if (!customer) return EMPTY_FORM
-  return {
-    name: customer.name,
-    documentType: customer.documentType ?? '',
-    documentId: customer.documentId ?? '',
-    email: customer.email ?? '',
-    phone: customer.phone ?? '',
-    city: customer.city ?? '',
-    address: customer.address ?? '',
-    status: customer.status,
-    source: customer.source ?? '',
-    sourceDetail: customer.sourceDetail ?? '',
-    notes: customer.notes ?? '',
-  }
-}
-
+/**
+ * El mensaje que se pinta: el del servidor tal cual si lo hay (400 de
+ * validación, 403 de transición sin concesiones, 404, 409 de documento
+ * duplicado) y si no uno claro por estado — `customerErrorMessage` cubre tanto
+ * el error tipado del servicio como un error axios crudo (POST de creación).
+ */
 function errorMessage(err: unknown): string {
-  const response = (err as { response?: { data?: { message?: string | string[] } } })
-    ?.response?.data
-  const message = response?.message
-  if (Array.isArray(message)) return message.join('. ')
-  return message || 'No se pudo guardar el cliente'
+  return customerErrorMessage(err, 'No se pudo guardar el cliente')
 }
 
 export default function CustomerFormModal({
@@ -79,40 +45,29 @@ export default function CustomerFormModal({
   onSubmit,
   isSubmitting = false,
 }: CustomerFormModalProps) {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [form, setForm] = useState<CustomerFormState>(EMPTY_CUSTOMER_FORM)
   const [error, setError] = useState<string | null>(null)
+
+  // El modo decide el contrato: en edición NO se construye `status`
+  // (COM-02 §3 — el PATCH general responde 400 status-not-allowed-in-general-edit).
+  const mode: 'create' | 'edit' = customer ? 'edit' : 'create'
 
   useEffect(() => {
     if (open) {
-      setForm(toFormState(customer))
+      setForm(toCustomerFormState(customer))
       setError(null)
     }
   }, [open, customer])
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
 
-    const trimmed = (v: string) => v.trim() || undefined
-    const payload: CustomerPayload = {
-      name: form.name.trim(),
-      documentType: trimmed(form.documentType),
-      documentId: trimmed(form.documentId),
-      email: trimmed(form.email),
-      phone: trimmed(form.phone),
-      city: trimmed(form.city),
-      address: trimmed(form.address),
-      status: form.status,
-      source: form.source || undefined,
-      sourceDetail: trimmed(form.sourceDetail),
-      notes: trimmed(form.notes),
-    }
-
     try {
-      await onSubmit(payload)
+      await onSubmit(buildCustomerPayload(form, mode))
       onClose()
     } catch (err) {
       setError(errorMessage(err))
@@ -205,16 +160,31 @@ export default function CustomerFormModal({
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Select
-            label="Estado"
-            name="status"
-            value={form.status}
-            onChange={(e) => set('status', e.target.value as CustomerStatus)}
-            options={CUSTOMER_STATUSES.map((s) => ({
-              value: s,
-              label: CUSTOMER_STATUS_LABELS[s],
-            }))}
-          />
+          {mode === 'create' ? (
+            <Select
+              label="Estado"
+              name="status"
+              value={form.status}
+              onChange={(e) => set('status', e.target.value as CustomerStatus)}
+              options={CUSTOMER_STATUSES.map((s) => ({
+                value: s,
+                label: CUSTOMER_STATUS_LABELS[s],
+              }))}
+            />
+          ) : (
+            // F1 pendiente en backend: NO se promete cambiar estado desde la
+            // edición general; sólo se informa dónde ocurre hoy.
+            <div className="space-y-1.5">
+              <span className="block text-sm font-medium text-neutral-800">Estado</span>
+              <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-700">
+                {CUSTOMER_STATUS_LABELS[customer?.status ?? form.status]}
+              </p>
+              <p className="text-xs text-neutral-500">
+                El estado no se modifica en la edición de contacto: se cambia con la acción
+                «Convertir» (lead a cliente) o desactivando el registro.
+              </p>
+            </div>
+          )}
           <Select
             label="Origen"
             name="source"

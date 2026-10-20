@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Input, Modal } from '../../../components/ui'
-import { extractBackendMessage, useQuoteMutations } from '../hooks/useQuoteMutations'
+import { useQuoteMutations } from '../hooks/useQuoteMutations'
+import { quoteErrorMessage } from '../../../services/quotes.service'
 import { fetchListaProducts } from '../../../services/listas.service'
 import type { Quote } from '../types/quote.types'
 
@@ -29,8 +30,10 @@ function useDebounced<T>(value: T, delayMs = 300): T {
 /**
  * Agrega un producto de la Lista de la cotización. El backend toma el precio
  * vigente de la tarifa (snapshot) y calcula los totales — el frontend solo
- * envía productId + quantity + discountPct. Si no hay precio vigente el
- * backend responde 409 y su mensaje se muestra tal cual.
+ * envía productId + quantity (COM-03 §3: el alta NO lleva descuento; la línea
+ * nace con 0 y aplicarlo es la operación dedicada `PATCH
+ * /:id/items/:itemId/discount`). Si no hay precio vigente el backend responde
+ * 409 y su mensaje se muestra tal cual.
  */
 export default function AddQuoteItemModal({
   open,
@@ -40,7 +43,6 @@ export default function AddQuoteItemModal({
   const { addItem } = useQuoteMutations()
   const [search, setSearch] = useState('')
   const [quantity, setQuantity] = useState('1')
-  const [discountPct, setDiscountPct] = useState('0')
   const [selected, setSelected] = useState<ListaProductOption | null>(null)
   const [error, setError] = useState<string | null>(null)
   const debouncedSearch = useDebounced(search)
@@ -67,7 +69,6 @@ export default function AddQuoteItemModal({
   const handleClose = () => {
     setSearch('')
     setQuantity('1')
-    setDiscountPct('0')
     setSelected(null)
     setError(null)
     onClose()
@@ -87,13 +88,13 @@ export default function AddQuoteItemModal({
         payload: {
           productId: selected.id,
           quantity: qty,
-          discountPct: discountPct || undefined,
         },
       })
       handleClose()
     } catch (err) {
-      // Incluye el 409 "no hay precio vigente" del backend, mostrado tal cual.
-      setError(extractBackendMessage(err))
+      // Incluye 403/404 de producto/lista ajeno y el 409 "no hay precio
+      // vigente": mensaje del servidor tal cual (errores tipados del servicio).
+      setError(quoteErrorMessage(err))
     }
   }
 
@@ -172,16 +173,6 @@ export default function AddQuoteItemModal({
             step={1}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
-          />
-          <Input
-            label="Descuento (%)"
-            name="discount-pct"
-            type="number"
-            min={0}
-            max={100}
-            step="0.01"
-            value={discountPct}
-            onChange={(e) => setDiscountPct(e.target.value)}
           />
         </div>
         {error && (

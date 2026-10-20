@@ -47,6 +47,8 @@ import {
   type Price,
 } from '../services/prices.service'
 import { ProductFichaTab } from '../features/products/sheet/ProductFichaTab'
+import { ValidationSection } from '../features/catalog-validation/ValidationSection'
+import { ProductPublicationSection } from '../features/catalog-publication/ProductPublicationPanel'
 import { ProductAuditTab } from '../features/products/audit/ProductAuditTab'
 
 type DetailTab = 'ficha' | 'prices' | 'stock' | 'publish' | 'audit'
@@ -1529,33 +1531,49 @@ export default function ProductDetailPage() {
 
         <div className="p-6">
           {effectiveTab === 'ficha' && (
-            <ProductFichaTab
-              product={product}
-              categories={categories}
-              brands={brands}
-              isContextual={isContextual}
-              canEditSheet={canEdit}
-              onDirtyChange={setFichaDirty}
-            />
+            <div className="space-y-6">
+              {/* CAT-05: un solo motor — el informe vive en la revisión de trabajo. */}
+              <section className="border border-neutral-200 rounded-xl p-5 space-y-4" aria-label="Validación de la ficha">
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-800">Validación</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    Reglas compartidas del catálogo sobre la revisión de trabajo. Editar la ficha deja el resultado obsoleto; publicar corresponde a su propio flujo.
+                  </p>
+                </div>
+                <ValidationSection productId={product.id} canEditSheet={canEdit} />
+              </section>
+              <ProductFichaTab
+                product={product}
+                categories={categories}
+                brands={brands}
+                isContextual={isContextual}
+                canEditSheet={canEdit}
+                onDirtyChange={setFichaDirty}
+              />
+            </div>
           )}
           {effectiveTab === 'prices' && <PricesTab product={product} />}
           {effectiveTab === 'stock' && <StockTab product={product} />}
           {effectiveTab === 'publish' && (
-            <PublishTab
-              product={product}
-              allowed={detailAllowed}
-              canEdit={canEdit || hasPermission('publish:manage')}
-              pending={transition.isPending}
-              error={transition.error}
-              onDirect={(event) => runTransition({ event })}
-              onOpenAction={(event) => setLifecycleModal({ event: event as LifecycleModalEvent })}
-              onDelete={handleDeleteOpen}
-              scheduleActive={scheduleActive}
-              scheduledAt={scheduledAt}
-              onSchedule={openSchedule}
-              onReprogram={openReprogram}
-              onCancelSchedule={openCancelSchedule}
-            />
+            <div className="space-y-6">
+              <PublishTab
+                product={product}
+                allowed={detailAllowed}
+                canEdit={canEdit || hasPermission('publish:manage')}
+                pending={transition.isPending}
+                error={transition.error}
+                onDirect={(event) => runTransition({ event })}
+                onOpenAction={(event) => setLifecycleModal({ event: event as LifecycleModalEvent })}
+                onDelete={handleDeleteOpen}
+                scheduleActive={scheduleActive}
+                scheduledAt={scheduledAt}
+                onSchedule={openSchedule}
+                onReprogram={openReprogram}
+                onCancelSchedule={openCancelSchedule}
+              />
+              {/* CAT-06 frontend: qué revisión exacta se publicó/programó y cada bloqueo (solo lectura del contrato de servidor). */}
+              <ProductPublicationSection productId={product.id} />
+            </div>
           )}
           {effectiveTab === 'audit' && <ProductAuditTab productId={product.id} />}
         </div>

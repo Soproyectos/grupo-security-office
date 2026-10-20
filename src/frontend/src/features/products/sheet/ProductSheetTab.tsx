@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert } from '../../../components/ui'
 import { getApiErrorMessage } from '../../../lib/apiError'
 import { ProductSheetEditor } from './ProductSheetEditor'
-import { fetchProductSheet, saveProductSheet, sheetKeys } from './sheet.service'
-import type { ProductSheetPayload } from './sheet-form'
+import { detectVersionConflict, type ProductSheetPayload } from './sheet-form'
+import { latestValidation } from './sheet-revisions'
+import { fetchProductRevisions, fetchProductSheet, saveProductSheet, sheetKeys, uploadProductAsset } from './sheet.service'
 
 interface ProductSheetTabProps {
   productId: string
@@ -26,12 +27,35 @@ export function ProductSheetTab({ productId, lifecycleStatus, onDirtyChange, hid
     refetchOnWindowFocus: false,
   })
 
+  // CAT-03 (regla 5): estado de VALIDACIÓN leído del resumen de revisiones
+  // (CAT-02). Solo informativa: validar/publicar pertenece a CAT-05/CAT-06.
+  const revisionsQuery = useQuery({
+    queryKey: sheetKeys.revisions(productId),
+    queryFn: () => fetchProductRevisions(productId),
+    refetchOnWindowFocus: false,
+  })
+
   const mutation = useMutation({
     mutationFn: (payload: ProductSheetPayload) => saveProductSheet(productId, payload),
     onSuccess: (saved) => {
       queryClient.setQueryData(sheetKeys.detail(productId), saved)
       queryClient.invalidateQueries({ queryKey: ['product', productId] })
+      // Tras guardar, el backend marca revisión pendiente: refrescar el estado.
+      queryClient.invalidateQueries({ queryKey: sheetKeys.revisions(productId) })
     },
+  })
+
+  // CAT-03 (H2): el 409 `sheet-version-conflict` merece un aviso propio — el
+  // borrador local se CONSERVA (el error no toca la caché) y se muestra la
+  // versión vigente. Otros errores siguen con el mensaje genérico.
+  const conflict = mutation.isError ? detectVersionConflict(mutation.error) : null
+  const saveError =
+    mutation.isError && !conflict ? getApiErrorMessage(mutation.error, 'No se pudo guardar la ficha.') : null
+
+  // CAT-04 (D5): subida verificada de un documento del editor de ficha. El
+  // servidor comprueba el contenido real (PDF/imagen) y devuelve la URL.
+  const uploadAsset = useMutation({
+    mutationFn: (file: File) => uploadProductAsset(productId, 'DOCUMENT', file),
   })
 
   const handleDirtyChange = useCallback(
@@ -69,9 +93,17 @@ export function ProductSheetTab({ productId, lifecycleStatus, onDirtyChange, hid
       sheet={query.data}
       lifecycleStatus={lifecycleStatus}
       saving={mutation.isPending}
-      saveError={mutation.isError ? getApiErrorMessage(mutation.error, 'No se pudo guardar la ficha.') : null}
+      saveError={saveError}
       saved={mutation.isSuccess}
+      conflict={conflict}
+      validation={latestValidation(revisionsQuery.data)}
+      onReload={() => {
+        // Descarta el borrador local y trae la versión vigente del servidor.
+        void query.refetch()
+        mutation.reset()
+      }}
       onSave={(payload) => mutation.mutate(payload)}
+      onUploadAsset={(file) => uploadAsset.mutateAsync(file)}
       onDirtyChange={handleDirtyChange}
       hideNav={hideNav}
     />

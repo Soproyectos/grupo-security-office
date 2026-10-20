@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { CanActivate, ExecutionContext, ForbiddenException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
 import * as request from 'supertest';
 import { AclService } from '../../../common/acl/acl.service';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -84,6 +85,8 @@ describe('ProductSheetController (HTTP)', () => {
       product: { update: jest.fn().mockResolvedValue({}) },
       productCatalogSpecGroup: { deleteMany: jest.fn(), create: jest.fn() },
       productCatalogResource: { deleteMany: jest.fn(), createMany: jest.fn() },
+      // CAT-04 (D4): marcado de archivos con licencia dentro de la transacción.
+      uploadedFile: { updateMany: jest.fn().mockResolvedValue({ count: 0 }), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
     };
     prisma = {
       product: { findUnique: jest.fn().mockResolvedValue(row()), findFirst: jest.fn().mockResolvedValue(null) },
@@ -96,7 +99,8 @@ describe('ProductSheetController (HTTP)', () => {
     const module = await Test.createTestingModule({
       controllers: [ProductSheetController],
       providers: [
-        ProductSheetService,
+      { provide: AccessAssignmentsService, useValue: { grantsForUser: jest.fn().mockResolvedValue([{ sourceId: 's-r', actionId: 'products:read', scope: 'global' }, { sourceId: 's-w', actionId: 'products:write', scope: 'global' }, { sourceId: 's-n', actionId: 'products:notes', scope: 'global' }]) } },
+      ProductSheetService,
         RolesGuard,
         { provide: PrismaService, useValue: prisma },
         { provide: AclService, useValue: acl },
@@ -141,6 +145,7 @@ describe('ProductSheetController (HTTP)', () => {
 
   it.each(['Super Admin', 'Admin Comercial'])('PUT as %s saves, audits and returns the new sheet in the {data} envelope', async (role) => {
     prisma.product.findUnique
+      .mockResolvedValueOnce(row()) // authorizeProduct select
       .mockResolvedValueOnce(row())
       .mockResolvedValueOnce(row({ catalogName: 'DVR AcuSense', catalogSlug: 'ids-e04hqhi-d', catalogPublished: true }));
 

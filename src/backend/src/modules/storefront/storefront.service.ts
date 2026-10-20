@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { CustomerAccount, Prisma } from "@prisma/client";
+import { applyRevisionLens, loadActiveRevisionContents } from '../products/public-revision-lens';
 import * as bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { isEmail } from "class-validator";
@@ -415,6 +416,8 @@ export class StorefrontService {
   private publishedWhere(query: StorefrontQueryDto): Prisma.ProductWhereInput {
     return {
       lifecycleStatus: "PUBLISHED",
+      // CAT-02: la tienda solo sirve productos del catálogo (visibilidad unificada).
+      catalogPublished: true,
       isActive: true,
       isVisible: true,
       AND: [
@@ -489,6 +492,7 @@ export class StorefrontService {
           description: true,
           technicalSpecs: true,
           documents: true,
+          publicRevisionId: true,
           category: { select: { name: true, slug: true } },
           brand: { select: { name: true } },
           images: {

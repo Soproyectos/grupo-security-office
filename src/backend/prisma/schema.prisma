@@ -9,42 +9,48 @@ datasource db {
 }
 
 model User {
-  assignedActivities      TeamActivity[]   @relation("ActivityAssignee")
-  createdActivities       TeamActivity[]   @relation("ActivityCreator")
-  teamRequests            TeamRequest[]    @relation("RequestCreator")
-  reviewedRequests        TeamRequest[]    @relation("RequestReviewer")
-  id                      String           @id @default(uuid())
-  email                   String           @unique
+  assignedActivities      TeamActivity[]      @relation("ActivityAssignee")
+  createdActivities       TeamActivity[]      @relation("ActivityCreator")
+  updatedActivities       TeamActivity[]      @relation("ActivityUpdatedBy")
+  activityEvents          TeamActivityEvent[] @relation("ActivityEventActor")
+  teamRequests            TeamRequest[]       @relation("RequestCreator")
+  reviewedRequests        TeamRequest[]       @relation("RequestReviewer")
+  id                      String              @id @default(uuid())
+  email                   String              @unique
   name                    String
-  isActive                Boolean          @default(true)
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  isActive                Boolean             @default(true)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
   password                String
   supervisorId            String?
   passwordChangedAt       DateTime?
   assignments             Assignment[]
   auditLogs               AuditLog[]
-  createdCustomers        Customer[]       @relation("CustomerCreator")
-  ownedCustomers          Customer[]       @relation("CustomerOwner")
-  createdListas           Lista[]          @relation("ListaCreator")
-  deletionRequestedListas Lista[]          @relation("ListaDeletionRequester")
-  responsibleListas       Lista[]          @relation("ListaResponsible")
-  updatedListas           Lista[]          @relation("ListaUpdater")
+  createdCustomers        Customer[]          @relation("CustomerCreator")
+  ownedCustomers          Customer[]          @relation("CustomerOwner")
+  createdListas           Lista[]             @relation("ListaCreator")
+  deletionRequestedListas Lista[]             @relation("ListaDeletionRequester")
+  responsibleListas       Lista[]             @relation("ListaResponsible")
+  updatedListas           Lista[]             @relation("ListaUpdater")
   notionToken             NotionToken?
-  publishedProducts       Product[]        @relation("ProductPublishedBy")
-  ownedQuotes             Quote[]          @relation("QuoteOwner")
-  salesOrders             SalesOrder[]     @relation("SalesOrderOwner")
-  salesTargetsSet         SalesTarget[]    @relation("TargetSetter")
-  salesTargetsOwned       SalesTarget[]    @relation("TargetOwner")
+  publishedProducts       Product[]           @relation("ProductPublishedBy")
+  ownedQuotes             Quote[]             @relation("QuoteOwner")
+  salesOrders             SalesOrder[]        @relation("SalesOrderOwner")
+  salesTargetsSet         SalesTarget[]       @relation("TargetSetter")
+  salesTargetsOwned       SalesTarget[]       @relation("TargetOwner")
   sessions                Session[]
   stepUpGrants            StepUpGrant[]
   mfa                     UserMfa?
+  productRevisions        ProductRevision[]   @relation("ProductRevisionCreatedBy")
+  priceImportRevisions    PriceImportRevision[] @relation("PriceImportRevisionCreatedBy")
+  priceImportRevisionsApplied PriceImportRevision[] @relation("PriceImportRevisionAppliedBy")
   extraPermissions        UserPermission[]
+  accessState             AccessState?
   roles                   UserRole[]
   salesPromotions         SalesPromotion[]
   notifications           Notification[]
-  supervisor              User?            @relation("UserHierarchy", fields: [supervisorId], references: [id])
-  subordinates            User[]           @relation("UserHierarchy")
+  supervisor              User?               @relation("UserHierarchy", fields: [supervisorId], references: [id])
+  subordinates            User[]              @relation("UserHierarchy")
 
   @@index([supervisorId])
   @@map("users")
@@ -134,6 +140,7 @@ model Lista {
   prices                Price[]
   products              Product[]
   quotes                Quote[]   @relation("QuoteLista")
+  priceImportRevisions  PriceImportRevision[]
 
   @@index([isActive])
   @@index([archivedAt])
@@ -184,6 +191,13 @@ model Product {
   catalogPublished       Boolean                   @default(false)
   catalogSlug            String?                   @unique
   catalogSpecsDisclaimer String?
+  /// CAT-03 (H1): notas INTERNAS de la ficha. No se publican en la tienda ni
+  /// salen en una exportación ordinaria; leerlas/editarlas exige `products:notes`.
+  catalogInternalNotes   String?
+  /// CAT-03 (H4): identificadores del fabricante (part number, EAN…). Público.
+  catalogManufacturerRefs String[]                 @default([])
+  /// CAT-03 (H2): versión de la ficha para el control de concurrencia (OCC).
+  sheetVersion           Int                       @default(0)
   catalogStatus          ProductCatalogStatus?     @default(ACTIVE)
   auditLogs              AuditLog[]
   prices                 Price[]
@@ -194,6 +208,15 @@ model Product {
   category               Category                  @relation(fields: [categoryId], references: [id])
   lista                  Lista?                    @relation(fields: [listaId], references: [id])
   publishedBy            User?                     @relation("ProductPublishedBy", fields: [publishedById], references: [id])
+  /// CAT-02/K2: referencia pública ACTIVA (la revisión publicada que sirve el catálogo).
+  publicRevisionId       String?
+  publicRevision         ProductRevision?          @relation("ProductPublicRevision", fields: [publicRevisionId], references: [id], onDelete: SetNull)
+  /// CAT-06 (T2): revisión CONGELADA al programar la publicación. El scheduler
+  /// publica esta revisión (nunca el borrador posterior). Sin FK dura: borrar
+  /// la revisión no debe borrar el producto; el disparo la resuelve con
+  /// fallback defensivo si ya no existe (documentado en el contrato §3.2).
+  scheduledRevisionId    String?
+  revisions              ProductRevision[]
   quoteItems             QuoteItem[]               @relation("QuoteItemProduct")
   stock                  Stock?
 
@@ -203,6 +226,7 @@ model Product {
   @@index([publishStatus])
   @@index([publishAt])
   @@index([unpublishAt])
+  @@index([publicRevisionId])
   @@index([isActive, isVisible])
   @@index([lifecycleStatus])
   @@index([catalogPublished, catalogBrand])
@@ -289,6 +313,211 @@ model Brand {
   @@map("brands")
 }
 
+/// CAT-02 §3 — revisión de producto: snapshot del contenido publicable con
+/// versión (OCC) y estados; la referencia pública activa es `Product.publicRevisionId`.
+model ProductRevision {
+  id          String         @id
+  productId   String
+  createdById String?
+  status      RevisionStatus
+  notes       String?        @db.Text
+  /// Versión esperada para OCC (pasos backend-borradores).
+  version     Int
+  /// Snapshot del contenido publicable (identidad, ficha y referencias de medios).
+  content     Json
+  publishedAt DateTime?
+  /// CAT-05 (D4): informe de validación VINCULADO A ESTA REVISIÓN — fecha del
+  /// run, versión de reglas vigente y incidencias. Obsoleto si la revisión deja
+  /// de ser la de trabajo, si cambia `rulesVersion` o si editar crea una nueva.
+  validatedAt  DateTime?
+  rulesVersion String?
+  issues       Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy   User?          @relation("ProductRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// La referencia pública activa (SetNull: borrar revisión no borra producto).
+  publicFor   Product[]      @relation("ProductPublicRevision")
+
+  @@unique([productId, version])
+  @@index([productId, status])
+  @@map("product_revisions")
+}
+
+/// CAT-06 (P4): historial de publicación — quién/qué revisión/cuándo/resultado.
+/// actorId null = scheduler. `issues` es la instantánea de incidencias si hubo
+/// bloqueo (nunca se miente: un fallo queda registrado, no silencioso).
+model PublicationEvent {
+  id        String   @id @default(uuid())
+  productId String
+  revisionId String?
+  action    String // PUBLISH | UNPUBLISH | SCHEDULE | UNSCHEDULE | SCHEDULE_PUBLISHED | SCHEDULE_BLOCKED
+  result    String // ok | blocked | failed
+  actorId   String?
+  issues    Json?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([action, createdAt])
+  @@map("publication_events")
+}
+
+/// CAT-07 — Contrato COMÚN de trabajos persistidos (diseño :314 sin broker
+/// externo; :322 estados; :343 reclamo con arrendamiento + checkpoint).
+/// El arriendo se pierde por reloj (`leaseUntil` vencido): el siguiente tick lo
+/// reclama y REANUDA desde `checkpoint`; la unidad procesada jamás se repite
+/// (ver `CatalogJobUnit`).
+model CatalogJob {
+  id             String    @id @default(uuid())
+  kind           String // VALIDATION_SCAN (ahora) | EXPORT_BUNDLE (CAT-08, reservado)
+  actorId        String // creador; la re-verificación de permisos al ejecutar es sobre él
+  scope          Json // {mode:'ids',ids:[…]} | {mode:'filters',listaId?,search?,lifecycleStatus?}
+  state          String    @default("QUEUED") // QUEUED|RUNNING|COMPLETED|COMPLETED_WITH_ERRORS|FAILED|CANCELLED|EXPIRED
+  progressDone   Int       @default(0)
+  progressTotal  Int       @default(0)
+  checkpoint     Json? // cursor reasumible {lastUnitId} + contadores del lote en curso
+  attempt        Int       @default(0)
+  maxAttempts    Int       @default(3)
+  leaseUntil     DateTime?
+  retryKey       String?
+  resultSummary  Json? // derivado de las UNIDADES (nunca sumas a mano) — caso 1
+  error          String? // p.ej. 'permission-revoked'
+  cancelRequested Boolean  @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  units CatalogJobUnit[]
+  exportBundle ExportBundle?
+
+  // Dedupe de reintentos (diseño :339 «clave de reintento»): el mismo
+  // (kind, actor, retryKey) reencolado devuelve el trabajo existente.
+  @@unique([kind, actorId, retryKey], map: "catalog_jobs_kind_actor_retry_key_key")
+  @@index([state, leaseUntil])
+  @@index([actorId, createdAt])
+  @@map("catalog_jobs")
+}
+
+/// Private export artifact. Retention is optional until the business policy is confirmed.
+model ExportBundle {
+  id           String    @id @default(uuid())
+  jobId        String    @unique
+  actorId      String
+  bundleBytes  Bytes
+  sizeBytes    Int
+  sha256       String
+  manifestJson Json
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime?
+  job          CatalogJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, createdAt])
+  @@index([expiresAt])
+  @@map("export_bundles")
+}
+
+/// CAT-07 — Unidad de trabajo: la garantía de «una misma unidad no se procesa
+/// dos veces». `state=DONE` es idempotente y los contadores del resumen se
+/// DERIVAN de las unidades.
+model CatalogJobUnit {
+  jobId    String
+  unitId   String
+  state    String   @default("PENDING") // PENDING|DONE|OMITTED|FAILED
+  error    String?
+  attempts Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
+
+  job CatalogJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, unitId])
+  @@index([jobId, state])
+  @@map("catalog_job_units")
+}
+
+/// IMP-04 — Estado de una revisión comercial de precios guardada.
+enum PriceImportRevisionStatus {
+  GUARDADA
+  APLICADA
+  DESCARTADA
+}
+
+/// IMP-04 — Revisión comercial de precios guardada (recuperable). Persistir NO
+/// modifica Price ni identidad (regla 3); el archivo original vive en
+/// almacenamiento privado (fuera del prefijo estático). El evento resumido del
+/// preview (audit `price-import-preview`) se conserva aparte de este historial.
+model PriceImportRevision {
+  id             String                    @id @default(uuid())
+  listaId        String
+  createdById    String?
+  fileName       String
+  fileHash       String
+  fileSize       Int
+  storagePath    String?
+  idempotencyKey String
+  status         PriceImportRevisionStatus @default(GUARDADA)
+  currency       String                    @default("COP")
+  taxIncluded    Boolean                   @default(true)
+  rounding       String                    @default("HALF_UP")
+  policyVersion  String
+  parserVersion  String
+  trailerVersion String?
+  tariffs        Json
+  summary        Json
+  appliedAt      DateTime?
+  appliedById    String?
+  appliedResult  Json?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  lista          Lista                     @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  createdBy      User?                     @relation("PriceImportRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  appliedBy      User?                     @relation("PriceImportRevisionAppliedBy", fields: [appliedById], references: [id], onDelete: SetNull)
+  rows           PriceImportRevisionRow[]
+  prices         PriceImportRevisionPrice[]
+
+  @@unique([idempotencyKey])
+  @@index([listaId, status])
+  @@index([createdById])
+  @@index([status])
+  @@map("price_import_revisions")
+}
+
+/// IMP-04 — Fila del archivo dentro de una revisión (estado + incidencias).
+model PriceImportRevisionRow {
+  id         String              @id @default(uuid())
+  revisionId String
+  rowNumber  Int
+  sku        String
+  status     String
+  issues     Json
+  revision   PriceImportRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, rowNumber])
+  @@index([revisionId, status])
+  @@map("price_import_revision_rows")
+}
+
+/// IMP-04 — Valor por fila×tarifa: recibido (texto exacto), normalizado y anterior.
+model PriceImportRevisionPrice {
+  id            String              @id @default(uuid())
+  revisionId    String
+  rowNumber     Int
+  sku           String
+  tariffCode    String
+  priceListId   String?
+  receivedValue String
+  roundedValue  String
+  previousValue String?
+  difference    String?
+  wasRounded    Boolean
+  change        String
+  revision      PriceImportRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, rowNumber, tariffCode], map: "price_import_revision_prices_revisionId_rowNumber_tariffCode_ke")
+  @@index([revisionId])
+  @@map("price_import_revision_prices")
+}
+
 model ProductImage {
   id        String           @id @default(uuid())
   productId String
@@ -316,12 +545,24 @@ model UploadedFile {
   mimeType  String
   data      Bytes
   createdAt DateTime @default(now())
+  /// CAT-04 (D1): metadatos de activos — columnas ADITIVAS; las filas antiguas
+  /// quedan visibility='PUBLIC' con metadata NULL (compatibilidad K4 y caché
+  /// immutable). sha256 en hex minúscula; detectedKind por firma mágica
+  /// (IMAGE|PDF|ZIP|UNKNOWN), no por el mimeType declarado.
+  sizeBytes      Int?
+  sha256         String?
+  detectedKind   String?
+  originalName   String?
+  visibility     String @default("PUBLIC")
+  ownerProductId String?
 
+  @@index([ownerProductId])
+  @@index([visibility])
   @@map("uploaded_files")
 }
 
 model PriceList {
-  customerAccounts CustomerAccount[]
+  customerAccounts        CustomerAccount[]
   portalTiers             PortalTier[]
   id                      String                   @id @default(uuid())
   name                    String
@@ -464,6 +705,109 @@ model UserPermission {
   @@map("user_permissions")
 }
 
+/// Alcances admitidos por una concesión de acción (BASE-02 §7).
+enum AccessScopeKind {
+  own
+  team
+  list
+  product
+  global
+}
+
+/// Procedencia de una fuente de concesiones (BASE-04 §5): manual o plantilla.
+enum AccessSourceKind {
+  manual
+  template
+}
+
+/// Quién ejecuta una operación idempotente sobre concesiones.
+enum AccessActorType {
+  user
+  service
+  anonymous
+}
+
+/// Estado de una operación idempotente de concesiones (409 en conflicto).
+enum AccessOutcome {
+  started
+  completed
+  denied
+  failed
+  partial
+  cancelled
+}
+
+/// Fila técnica de versión por usuario para concesiones (OCC). Vacía por
+/// diseño: la migración NO siembra filas ni concede nada a cuentas existentes
+/// (ficha regla 3); la crea el servicio de asignaciones al primer alta.
+model AccessState {
+  userId    String         @id
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version   Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  sources   AccessSource[]
+
+  @@map("access_states")
+}
+
+/// Fuente/procedencia de un bloque de concesiones: paquete+versión, manual o
+/// plantilla. Retirar una fuente no afecta a las demás (BASE-02 §5.2).
+model AccessSource {
+  id             String           @id @default(uuid())
+  userId         String
+  state          AccessState      @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  kind           AccessSourceKind
+  templateId     String?
+  catalogVersion String
+  grantedById    String
+  reason         String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  grants         AccessGrant[]
+
+  @@index([userId])
+  @@map("access_sources")
+}
+
+/// Una fila por acción+alcance concedidos; `resourceId` vacío solo para
+/// own/team/global. `actionId` siempre en formato `apartado:acción`.
+model AccessGrant {
+  id         String          @id @default(uuid())
+  sourceId   String
+  source     AccessSource    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  actionId   String
+  scopeKind  AccessScopeKind
+  resourceId String          @default("")
+  createdAt  DateTime        @default(now())
+
+  @@unique([sourceId, actionId, scopeKind, resourceId])
+  @@index([actionId, scopeKind, resourceId])
+  @@map("access_grants")
+}
+
+/// Operación idempotente sobre concesiones: la clave por actor impide que un
+/// reintento duplique un alta (409 `idempotency-conflict`/`access-version-conflict`).
+model AccessOperation {
+  id             String          @id @default(uuid())
+  actorType      AccessActorType
+  actorId        String
+  idempotencyKey String
+  actionId       String
+  targetType     String
+  targetId       String
+  requestHash    String          @db.Char(64)
+  catalogVersion String
+  outcome        AccessOutcome   @default(started)
+  result         Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([actorType, actorId, idempotencyKey])
+  @@index([actorType, actorId, actionId, targetId])
+  @@map("access_operations")
+}
+
 /// Concesiones de re-autenticación (step-up). Una operación crítica exige haber
 /// revalidado contraseña + TOTP recientemente; esta tabla guarda esa ventana.
 model StepUpGrant {
@@ -502,7 +846,7 @@ model AuditLog {
 }
 
 model Notification {
-  id        String           @id @default(uuid())
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String
   type      NotificationType
   title     String
@@ -565,6 +909,47 @@ model ImportMapping {
   @@map("import_mappings")
 }
 
+/// IMP-07B (07B) — perfil de proveedor reutilizable. Fija hoja, fila de
+/// encabezado, separadores, moneda, columnas de tarifas y la huella de
+/// encabezados esperada (para detectar cambios de estructura). No guarda
+/// precios ni identidad de producto; solo la forma del archivo del proveedor.
+model ProviderProfile {
+  id                 String                @id @default(uuid())
+  providerName       String                @unique
+  sheet              String
+  headerRow          Int                   @default(1)
+  thousandsSeparator String                @default("")
+  decimalSeparator   String                @default(".")
+  currency           String                @default("COP")
+  tariffs            Json
+  expectedColumns    Json
+  version            Int                   @default(1)
+  createdById        String?
+  updatedById        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  equivalences       ProviderEquivalence[]
+
+  @@map("provider_profiles")
+}
+
+/// IMP-07B (07B) — equivalencia explícita y autorizada referencia externa →
+/// producto, por proveedor. Única por (perfil, referencia externa): una
+/// referencia ambigua no se resuelve por parecido (deja fila pendiente).
+model ProviderEquivalence {
+  id                String          @id @default(uuid())
+  providerProfileId String
+  externalRef       String
+  productId         String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  profile           ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([providerProfileId, externalRef])
+  @@index([productId])
+  @@map("provider_equivalences")
+}
+
 /// Estado del wizard de importación (preview → execute) persistido en BD.
 /// Antes vivía en un Map en memoria del proceso de ImportService: si Hostinger
 /// enruta la petición de `execute` a otra instancia/proceso distinto al que
@@ -587,9 +972,9 @@ model ImportSession {
 /// lead→cliente no copia filas ni rompe referencias de cotizaciones).
 /// `city` es texto libre por decisión de producto (no se modelan sedes/ciudades).
 model Customer {
-  webAccount CustomerAccount?
-  id             String          @id @default(uuid())
-  code           String          @unique
+  webAccount     CustomerAccount?
+  id             String           @id @default(uuid())
+  code           String           @unique
   name           String
   documentType   String?
   documentId     String?
@@ -597,7 +982,7 @@ model Customer {
   phone          String?
   city           String?
   address        String?
-  status         String          @default("LEAD")
+  status         String           @default("LEAD")
   source         String?
   sourceDetail   String?
   ownerId        String?
@@ -605,14 +990,14 @@ model Customer {
   convertedAt    DateTime?
   lastContactAt  DateTime?
   notes          String?
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  createdBy      User?           @relation("CustomerCreator", fields: [createdById], references: [id])
-  owner          User?           @relation("CustomerOwner", fields: [ownerId], references: [id])
-  portalAccounts PortalAccount[] @relation("PortalAccountCustomer")
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  createdBy      User?            @relation("CustomerCreator", fields: [createdById], references: [id])
+  owner          User?            @relation("CustomerOwner", fields: [ownerId], references: [id])
+  portalAccounts PortalAccount[]  @relation("PortalAccountCustomer")
   quotes         Quote[]
-  salesOrders    SalesOrder[]    @relation("CustomerSalesOrder")
+  salesOrders    SalesOrder[]     @relation("CustomerSalesOrder")
 
   @@unique([documentType, documentId])
   @@index([ownerId, status])
@@ -835,6 +1220,16 @@ model NotionToken {
   @@map("notion_tokens")
 }
 
+/// CAT-02 §3: estados de revisión de publicación de Biblioteca
+/// (DISENO-CATALOGO:200 + PUBLICADA para la referencia activa).
+enum RevisionStatus {
+  SIN_REVISAR
+  CON_PROBLEMAS
+  LISTA_PARA_PUBLICAR
+  REVISION_PENDIENTE
+  PUBLICADA
+}
+
 enum ProductCatalogStatus {
   ACTIVE
   DISCONTINUED
@@ -882,6 +1277,8 @@ model SalesPromotion {
   startsAt    DateTime
   endsAt      DateTime
   isActive    Boolean           @default(true)
+  /// COM-08 §3/J1: null = borrador (preparado, NO visible); con fecha = publicado.
+  publishedAt DateTime?
   audience    PromotionAudience
   createdById String
   createdBy   User              @relation(fields: [createdById], references: [id], onDelete: Restrict)
@@ -894,37 +1291,107 @@ model SalesPromotion {
 }
 
 model TeamActivity {
-  id          String    @id @default(uuid())
-  title       String
-  kind        String
-  startsAt    DateTime
-  status      String    @default("PENDING")
-  assigneeId  String
-  creatorId   String
-  assignee    User      @relation("ActivityAssignee", fields: [assigneeId], references: [id])
-  creator     User      @relation("ActivityCreator", fields: [creatorId], references: [id])
-  createdAt   DateTime  @default(now())
-  completedAt DateTime?
+  id                String              @id @default(uuid())
+  title             String
+  kind              String
+  startsAt          DateTime
+  status            String              @default("PENDING")
+  assigneeId        String
+  creatorId         String
+  updatedById       String?
+  /// Clave de deduplicación de la conversión (BASE-03 D6):
+  /// `productId|regla|revisión`. Sólo la conversión EXPLÍCITA la rellena; el
+  /// índice único hace imposible una segunda actividad con la misma
+  /// combinación. NULL en las actividades creadas a mano: Postgres trata los
+  /// NULL como distintos, así que no colisionan entre sí.
+  dedupKey          String?             @unique
+  assignee          User                @relation("ActivityAssignee", fields: [assigneeId], references: [id])
+  creator           User                @relation("ActivityCreator", fields: [creatorId], references: [id])
+  updatedBy         User?               @relation("ActivityUpdatedBy", fields: [updatedById], references: [id])
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @default(now()) @updatedAt
+  completedAt       DateTime?
+  events            TeamActivityEvent[]
+  links             TeamActivityLink[]
+  convertedRequests TeamRequest[]       @relation("RequestConversion")
 
   @@index([assigneeId, startsAt])
   @@map("team_activities")
 }
 
+/// Tipo de recurso al que puede apuntar un enlace de actividad
+/// (DISENO-CATALOGO:88 — «una lista, producto, importación o revisión»).
+/// `LISTA` es la lista del catálogo (modelo `Lista`, la única pertenencia de
+/// `Product.listaId` según ADR-20261014); `PRICE_LIST` cubre el otro modelo de
+/// lista del schema (`PriceList`, listas de tarifas de cotización/portales).
+/// No existe PRICE_REVISION: el schema actual no modela revisiones (verificado
+/// con `rg '^model ' prisma/schema.prisma`); el tipo se añadirá al existir.
+enum ActivityLinkTarget {
+  PRODUCT
+  LISTA
+  PRICE_LIST
+  IMPORT_SESSION
+}
+
+/// Vínculo actividad → recurso. Sólo guarda la referencia (targetId) y, como
+/// snapshot, el label del recurso en el momento de enlazar.
+///
+/// REGLA DURA (ficha BASE-03 y DISENO-CATALOGO:88): el enlace NO concede
+/// acceso al recurso — el alta no toca AccessGrant/UserPermission y la
+/// revelación del detalle se decide al LEER, con `resolveAccess` (§6.3).
+/// Sin concesión vigente la API devuelve `revealed:false` con sólo
+/// targetType/targetId (trazabilidad sin detalle).
+model TeamActivityLink {
+  id         String             @id @default(uuid())
+  activityId String
+  targetType ActivityLinkTarget
+  targetId   String
+  /// Snapshot del nombre del recurso en el alta; se devuelve ÚNICAMENTE con
+  /// `revealed:true`. Nunca es fuente de acceso.
+  label      String?
+  createdAt  DateTime           @default(now())
+  activity   TeamActivity       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("team_activity_links")
+}
+
+model TeamActivityEvent {
+  id         String       @id @default(uuid())
+  activityId String
+  actorId    String
+  type       String
+  at         DateTime     @default(now())
+  activity   TeamActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  actor      User         @relation("ActivityEventActor", fields: [actorId], references: [id])
+
+  @@index([activityId, at])
+  @@map("team_activity_events")
+}
+
 model TeamRequest {
-  id         String    @id @default(uuid())
-  kind       String
-  detail     String
-  status     String    @default("PENDING")
-  creatorId  String
-  reviewerId String?
-  response   String?
-  creator    User      @relation("RequestCreator", fields: [creatorId], references: [id])
-  reviewer   User?     @relation("RequestReviewer", fields: [reviewerId], references: [id])
-  createdAt  DateTime  @default(now())
-  reviewedAt DateTime?
+  id                  String        @id @default(uuid())
+  kind                String
+  detail              String
+  status              String        @default("PENDING")
+  creatorId           String
+  reviewerId          String?
+  response            String?
+  /// Rastro de la conversión en tarea (BASE-03 D6): la solicitud NO se borra
+  /// ni cambia de estado («historial no se borra»); sólo apunta a la
+  /// actividad creada. Idempotencia: una segunda conversión reutiliza esta
+  /// referencia en vez de crear otra actividad.
+  convertedActivityId String?
+  convertedActivity   TeamActivity? @relation("RequestConversion", fields: [convertedActivityId], references: [id], onDelete: SetNull)
+  creator             User          @relation("RequestCreator", fields: [creatorId], references: [id])
+  reviewer            User?         @relation("RequestReviewer", fields: [reviewerId], references: [id])
+  createdAt           DateTime      @default(now())
+  reviewedAt          DateTime?
 
   @@index([creatorId, createdAt])
   @@index([status, createdAt])
+  @@index([convertedActivityId])
   @@map("team_requests")
 }
 
@@ -944,13 +1411,13 @@ model PortalTier {
 }
 
 model CustomerAccount {
-  id              String   @id @default(uuid())
-  email           String   @unique
+  id              String                @id @default(uuid())
+  email           String                @unique
   name            String
   company         String?
   profile         String
   passwordHash    String?
-  status          String   @default("UNVERIFIED")
+  status          String                @default("UNVERIFIED")
   emailVerifiedAt DateTime?
   consentAt       DateTime
   consentVersion  String
@@ -958,27 +1425,27 @@ model CustomerAccount {
   reviewedById    String?
   reviewReason    String?
   priceListId     String?
-  priceList       PriceList? @relation(fields: [priceListId], references: [id], onDelete: SetNull)
-  customerId      String? @unique
-  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  failedLogins    Int      @default(0)
+  priceList       PriceList?            @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  customerId      String?               @unique
+  customer        Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  failedLogins    Int                   @default(0)
   lockedUntil     DateTime?
   sessions        CustomerSession[]
   tokens          CustomerAccessToken[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([status, createdAt])
   @@map("customer_accounts")
 }
 
 model CustomerSession {
-  id        String @id @default(uuid())
+  id        String          @id @default(uuid())
   accountId String
   account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tokenHash String @unique
+  tokenHash String          @unique
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime        @default(now())
 
   @@index([accountId])
   @@index([expiresAt])
@@ -986,14 +1453,14 @@ model CustomerSession {
 }
 
 model CustomerAccessToken {
-  id        String @id @default(uuid())
+  id        String          @id @default(uuid())
   accountId String
   account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tokenHash String @unique
+  tokenHash String          @unique
   purpose   String
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime        @default(now())
 
   @@index([accountId, purpose])
   @@index([expiresAt])
@@ -1001,15 +1468,15 @@ model CustomerAccessToken {
 }
 
 model StorefrontInquiry {
-  id        String @id @default(uuid())
-  name      String
-  email     String
-  topic     String
-  message   String
-  productId String?
-  status    String @default("OPEN")
-  createdAt DateTime @default(now())
-  resolvedAt DateTime?
+  id           String    @id @default(uuid())
+  name         String
+  email        String
+  topic        String
+  message      String
+  productId    String?
+  status       String    @default("OPEN")
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
   resolvedById String?
 
   @@index([status, createdAt])
@@ -1017,10 +1484,21 @@ model StorefrontInquiry {
 }
 
 model StorefrontSettings {
-  id        String @id @default("default")
-  data      Json @default("{}")
+  id        String   @id @default("default")
+  data      Json     @default("{}")
   updatedAt DateTime @updatedAt
 
   @@map("storefront_settings")
 }
 
+/// Editable home banners (draft and published copy). Created by migration 20261009160000.
+model StorefrontBanner {
+  id            String   @id
+  draft         Json
+  publishedData Json?
+  revision      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("storefront_banners")
+}

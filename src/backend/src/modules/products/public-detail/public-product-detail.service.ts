@@ -3,6 +3,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { PublicCatalogService } from '../public-catalog.service';
 import type { ProductDetailDto } from './dto/product-detail.dto';
 import { toProductDetailDto, productDetailInclude, type ProductRecord } from './product.mapper';
+import { applyRevisionLens, loadActiveRevisionContents } from '../public-revision-lens';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/i;
@@ -28,7 +29,11 @@ export class PublicProductDetailService {
     ]);
     if (!enriched) throw new NotFoundException('Producto no encontrado');
 
-    return toProductDetailDto(enriched as unknown as ProductRecord, base);
+    // CAT-02: el sheet también respeta el snapshot activo (catalogName/catalogModel/…)
+    const contents = await loadActiveRevisionContents(this.prisma, [(enriched as { publicRevisionId?: string | null }).publicRevisionId]);
+    const lensed = applyRevisionLens(enriched as never, contents);
+
+    return toProductDetailDto(lensed as unknown as ProductRecord, base);
   }
 
   private async resolveId(idOrSlug: string): Promise<string> {

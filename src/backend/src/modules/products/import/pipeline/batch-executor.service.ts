@@ -13,6 +13,17 @@ import { generateSlug } from '../helpers/text-normalizer';
 import { findProductsBySkus, normalizeSku } from '../../helpers/sku-identity';
 
 /**
+ * CAT-01 unidad B (contrato §3 fila «Carga masiva», §5.2/§5.3): códigos de
+ * conflicto por fila viajando como prefijo de `BatchError.error`. El servicio
+ * no tiene enum de errores de fila y la interfaz compartida `BatchError`
+ * (import-context.ts) queda fuera de los writePaths de esta unidad, así que
+ * el código se transporta en el mensaje — documentado y testeado.
+ */
+export const BATCH_ERROR_OWNERSHIP = 'OWNERSHIP';
+export const BATCH_ERROR_UNLINKED_TARGET = 'UNLINKED_TARGET';
+export const BATCH_ERROR_SKU_CONFLICT = '409 CONFLICT';
+
+/**
  * Configuración de batch execution.
  */
 interface BatchConfig {
@@ -261,6 +272,39 @@ export class BatchExecutorService {
           const brandMapKeysBefore = new Set(brandMap.keys());
           const priceListMapKeysBefore = new Set(priceListMap.keys());
 
+          // CAT-01 (§3 fila «Carga masiva», §5.2/§5.3): gate de propiedad
+          // ANTES de resolver categorías/marcas o escribir cualquier cosa. La
+          // carga masiva NUNCA mueve `Product.listaId` de un producto
+          // existente: solo actualiza productos que pertenecen a la Lista
+          // destino. Una referencia de otra lista → conflicto OWNERSHIP sin
+          // escritura de precios; una referencia sin lista → conflicto
+          // UNLINKED_TARGET (vincular exige `listas:link`, que está en el
+          // catálogo pero sin endpoint habilitado — D5 pendiente —, así que
+          // la carga no vincula). El bloqueo FOR UPDATE de la fila serializa
+          // esta carga contra PUT /api/products/:id {listaId} (vínculo
+          // manual) y contra otra carga simultánea: la operación que lee
+          // estado obsoleto recibe el conflicto; la otra gana.
+          const existingProduct = existingSkuMap.get(normalizeSku(row.sku));
+          if (existingProduct) {
+            const ownership = await this.assertProductOwnership(
+              tx,
+              existingProduct.id,
+              listaId,
+            );
+            if (!ownership.ok) {
+              batchResult.errors.push({
+                rowIndex: row.rowIndex,
+                sku: row.sku,
+                error:
+                  ownership.code === BATCH_ERROR_OWNERSHIP
+                    ? `${BATCH_ERROR_OWNERSHIP}: el producto pertenece a otra Lista (listaId=${ownership.currentListaId}); la carga no lo mueve ni escribe precios`
+                    : `${BATCH_ERROR_UNLINKED_TARGET}: el producto no tiene Lista; vincular exige listas:link (sin habilitar); la carga no escribe precios`,
+              });
+              batchResult.skipped++;
+              continue;
+            }
+          }
+
           await tx.$executeRawUnsafe('SAVEPOINT row_sp');
 
           try {
@@ -283,9 +327,8 @@ export class BatchExecutorService {
               batchResult.defaults,
             );
 
-            const existingProduct = existingSkuMap.get(normalizeSku(row.sku));
+            // existingProduct ya resuelto arriba (gate de propiedad CAT-01).
             const pendingEnrichment = isPendingEnrichmentRow(row);
-
             if (existingProduct) {
               // UPDATE: producto ya existe.
               // Guard de identidad bloqueada (ADR-002): si el producto tiene
@@ -415,7 +458,16 @@ export class BatchExecutorService {
             batchResult.errors.push({
               rowIndex: row.rowIndex,
               sku: row.sku,
-              error: error.message || 'Error desconocido',
+              // CAT-01 (§5.3): una carrera de CREATE por el mismo SKU
+              // normalizado (dos cargas o carga vs vínculo) pierde por el
+              // índice único (P2002 en `sku` o en
+              // products_sku_normalized_key) y se marca con semántica 409:
+              // exactamente una escritura gana; la unicidad se conserva.
+              error:
+                error instanceof Prisma.PrismaClientKnownRequestError &&
+                error.code === 'P2002'
+                  ? `${BATCH_ERROR_SKU_CONFLICT}: SKU '${row.sku}' ya creado por una operación concurrente; se conserva la unicidad y la fila no escribe`
+                  : error.message || 'Error desconocido',
             });
             batchResult.skipped++;
           }
@@ -431,9 +483,48 @@ export class BatchExecutorService {
   }
 
   /**
+   * CAT-01 (§3 fila «Carga masiva», §5.2/§5.3): bloqueo pesimista de la fila
+   * de producto (`SELECT … FOR UPDATE`) y gate de propiedad. Devuelve ok solo
+   * cuando el producto existente pertenece a la Lista destino. El bloqueo se
+   * sostiene hasta el commit del lote y serializa la carga contra el vínculo
+   * manual (`PUT /api/products/:id {listaId}` → prisma.product.update toma el
+   * mismo bloqueo de fila) y contra otra carga simultánea sobre el mismo
+   * producto: la operación que lee estado obsoleto recibe el conflicto, la
+   * otra gana — sin escritura cruzada de precios ni movimiento implícito de
+   * `Product.listaId`.
+   */
+  private async assertProductOwnership(
+    tx: any,
+    productId: string,
+    targetListaId: string,
+  ): Promise<{
+    ok: boolean;
+    code?: typeof BATCH_ERROR_OWNERSHIP | typeof BATCH_ERROR_UNLINKED_TARGET;
+    currentListaId?: string | null;
+  }> {
+    const rows: Array<{ id: string; listaId: string | null }> = await tx.$queryRaw(
+      Prisma.sql`SELECT id, "listaId" FROM products WHERE id = ${productId} FOR UPDATE`,
+    );
+    const currentListaId = rows[0]?.listaId ?? null;
+    if (currentListaId === null) {
+      return { ok: false, code: BATCH_ERROR_UNLINKED_TARGET, currentListaId: null };
+    }
+    if (currentListaId !== targetListaId) {
+      return { ok: false, code: BATCH_ERROR_OWNERSHIP, currentListaId };
+    }
+    return { ok: true };
+  }
+
+  /**
    * Resuelve la Lista destino de la importación.
-   * Si viene ctx.listaId, valida su existencia (404 si no existe);
-   * si no viene, usa la Lista LISTA-GENERAL (fallback documentado).
+   * Si viene ctx.listaId, valida su existencia (404 si no existe) y que esté
+   * activa y no archivada (CAT-01 §3/§5.2/C7: cargar en lista archivada o
+   * inactiva queda denegado por regla explícita al inicio de execute; 404
+   * coherente con acl.service.assertListaAccess — lista inactiva/archivada
+   * → se oculta la existencia — y con el 404 de lista inexistente de este
+   * mismo método). Si no viene ctx.listaId, usa la Lista LISTA-GENERAL
+   * (fallback documentado): ahí NO se aplica la regla de archivada, porque
+   * no es un destino elegido por el usuario sino el default del sistema.
    * También expone defaultVisibility para propagarla al producto creado.
    */
   private async resolveLista(
@@ -442,12 +533,12 @@ export class BatchExecutorService {
     if (ctx.listaId) {
       const lista = await this.prisma.lista.findUnique({
         where: { id: ctx.listaId },
-        select: { id: true, defaultVisibility: true },
+        select: { id: true, defaultVisibility: true, isActive: true, archivedAt: true },
       });
-      if (!lista) {
+      if (!lista || !lista.isActive || lista.archivedAt) {
         throw new NotFoundException('Lista no encontrada');
       }
-      return lista;
+      return { id: lista.id, defaultVisibility: lista.defaultVisibility };
     }
 
     const defaultLista = await this.prisma.lista.findUnique({
@@ -743,6 +834,14 @@ export class BatchExecutorService {
         }
       }
 
+      // CAT-01 (§5.3): el evento de auditoría registra el resultado por tipo
+      // de conflicto además de los contadores globales, de modo que dos
+      // operaciones simultáneas quedan ambas auditadas con su actor y su
+      // desenlace (creada / actualizada / conflicto OWNERSHIP / UNLINKED /
+      // 409 de unicidad).
+      const countConflict = (prefix: string) =>
+        result.errors.filter((e) => e.error.startsWith(prefix)).length;
+
       await this.auditService.log({
         userId: ctx.userId,
         action: 'IMPORT_PRODUCTS',
@@ -758,6 +857,9 @@ export class BatchExecutorService {
           durationMs: result.durationMs,
           defaultsByMissingInference: result.defaultsByMissingInference,
           identityChangesDetected: result.identityChangesDetected,
+          ownershipConflicts: countConflict(`${BATCH_ERROR_OWNERSHIP}:`),
+          unlinkedTargetConflicts: countConflict(`${BATCH_ERROR_UNLINKED_TARGET}:`),
+          skuUniqueConflicts: countConflict(BATCH_ERROR_SKU_CONFLICT),
           pendingEnrichment: result.pendingEnrichment,
           columnsMapped,
           columnsExtra,

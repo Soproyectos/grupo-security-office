@@ -16,6 +16,19 @@ import {
  */
 const GRANTABLE_PREFIXES = ['dashboard:pack:', 'dashboard:block:'];
 
+/**
+ * ¿Es este permiso una concesión individual (clase revalidable), y no una
+ * capacidad de rol ni una acción del catálogo BASE-04?
+ *
+ * La frontera es el mismo `GRANTABLE_PREFIXES`: sólo los packs/bloques de
+ * dashboard se conceden por usuario (`UserPermission`); las acciones
+ * `apartado:acción` se conceden por fuente (`AccessGrant`) y se resuelven con
+ * `data-scope`, no con esta vía.
+ */
+export function isConcessionPermission(permission: string): boolean {
+  return GRANTABLE_PREFIXES.some((prefix) => permission.startsWith(prefix));
+}
+
 export interface GrantedPermission {
   permission: string;
   effect: string;

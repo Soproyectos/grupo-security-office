@@ -68,7 +68,7 @@ describe('DashboardService', () => {
       const result = await service.getPersonalSalesGoal({ userId: 'seller', roles: ['Vendedor'] });
       expect(result).toEqual({
         period: '2026-10', target: { amount: '100.00', currency: 'COP' },
-        invoiced: { amount: '60.00', currency: 'COP', mixedCurrency: false },
+        invoiced: { amount: '60.00', currency: 'COP', mixedCurrency: false , source: 'invoice-reference-manual', sourceStatus: 'erp-not-connected' },
         remaining: { amount: '40.00', currency: 'COP' }, progressPercent: 60,
       });
       expect(prisma.salesTarget.findUnique).toHaveBeenCalledWith(expect.objectContaining({
@@ -100,7 +100,7 @@ describe('DashboardService', () => {
       prisma.salesTarget.findUnique.mockResolvedValue({ amount: '100', currency: 'COP' });
       prisma.salesOrder.findMany.mockResolvedValue([{ total: '40', currency: 'COP' }, { total: '200', currency: 'USD' }]);
       const result = await service.getPersonalSalesGoal(COMERCIAL);
-      expect(result.invoiced).toEqual({ amount: '40.00', currency: 'COP', mixedCurrency: true });
+      expect(result.invoiced).toEqual({ amount: '40.00', currency: 'COP', mixedCurrency: true, source: 'invoice-reference-manual', sourceStatus: 'erp-not-connected' });
       expect(result.remaining).toBeNull();
       expect(result.progressPercent).toBeNull();
     });
@@ -299,6 +299,8 @@ describe('DashboardService', () => {
         amount: '500000.00',
         currency: 'COP',
         mixedCurrency: false,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       expect(res.commercial!.remaining).toEqual({
         amount: '500000.00',
@@ -337,6 +339,8 @@ describe('DashboardService', () => {
         amount: '400000.00',
         currency: 'COP',
         mixedCurrency: true,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       // remaining sigue calculado solo sobre montos en la moneda de la meta.
       expect(res.commercial!.remaining!.amount).toBe('600000.00');
@@ -411,6 +415,8 @@ describe('DashboardService', () => {
         amount: '600000.00',
         currency: 'COP',
         mixedCurrency: false,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
       expect(ana.remaining).toEqual({ amount: '400000.00', currency: 'COP' });
       expect(ana.pipeline).toEqual({ amount: '200000.00', count: 1 });
@@ -428,6 +434,8 @@ describe('DashboardService', () => {
           amount: '700000.00',
           currency: 'COP',
           mixedCurrency: false,
+        source: 'invoice-reference-manual',
+        sourceStatus: 'erp-not-connected',
         },
       });
     });
@@ -476,6 +484,8 @@ describe('DashboardService', () => {
         amount: '600000.00',
         currency: 'COP',
         mixedCurrency: true,
+      source: 'invoice-reference-manual',
+      sourceStatus: 'erp-not-connected',
       });
     });
 

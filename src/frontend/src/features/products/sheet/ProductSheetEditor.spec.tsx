@@ -101,6 +101,127 @@ describe('ProductSheetEditor (render)', () => {
     expect(html).toContain('Ya existe otro producto con ese slug')
   })
 
+  it('CAT-03 (H4): muestra los identificadores del fabricante en Identidad', () => {
+    const html = render()
+    expect(html).toContain('Identificadores del fabricante')
+    expect(html).toContain('value="DS-E04HQHI-D/PN"')
+    expect(html).toContain('value="7798123456789"')
+    expect(html).toContain('Agregar identificador')
+  })
+
+  it('CAT-03 (H2): el 409 de versión avisa con la versión vigente, ofrece recargar y NO finge éxito', () => {
+    const reloaded: string[] = []
+    const html = render({
+      conflict: { currentVersion: 9 },
+      onReload: () => reloaded.push('reload'),
+      saved: false,
+    })
+    expect(html).toContain('versión vigente 9')
+    expect(html).toContain('NO se guardaron')
+    expect(html).toContain('Descartar cambios y recargar')
+    // Sin falso éxito: el aviso verde de guardado no aparece durante el conflicto.
+    expect(html).not.toContain('Ficha guardada.')
+  })
+
+  it('CAT-03 (H2): durante el conflicto el banner es el de versión, no el error genérico', () => {
+    const html = render({ conflict: { currentVersion: 4 }, saveError: 'otro error' })
+    expect(html).toContain('versión vigente 4')
+    expect(html).not.toContain('otro error')
+  })
+
+  it('CAT-03 (frontend-tecnicos): las notas internas se pintan MARCADAS como privadas y separadas de las públicas', () => {
+    const html = render()
+    expect(html).toContain('Notas internas (privadas)')
+    expect(html).toContain('Nunca se publican')
+    expect(html).toContain('Almacén Bodega 2')
+    // Separación explícita: las notas públicas van etiquetadas como públicas.
+    expect(html).toContain('Aviso de especificaciones (público)')
+    expect(html).toContain('Nota de firmware (pública)')
+  })
+
+  it('CAT-03 (frontend-tecnicos): sin permiso el campo no aparece y se avisa que se conservan', () => {
+    const html = render({
+      sheet: sheetFixture({ canSeeInternalNotes: false, internalNotes: null }),
+    })
+    expect(html).not.toContain('Notas internas (privadas)')
+    expect(html).not.toContain('Almacén Bodega 2')
+    expect(html).toContain('No tienes permiso para ver ni editar las notas internas')
+    expect(html).toContain('se conservan al guardar')
+  })
+
+  it('CAT-03 (frontend-tecnicos): Modelos es solo lista de modelos — sin precio/stock (no hay variantes nuevas)', () => {
+    const html = render()
+    const start = html.indexOf('id="ficha-modelos"')
+    const end = html.indexOf('id="ficha-especificaciones"')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const modelos = html.slice(start, end)
+    expect(modelos).not.toMatch(/type="number"/)
+    expect(modelos).not.toMatch(/<label[^>]*>\s*(Precio|Stock|Existencias|Variante)/i)
+    expect(modelos).toContain('Agregar modelo')
+  })
+
+  it('CAT-03 (regla 5): muestra el estado de validación y el aviso de revisión pendiente', () => {
+    const pendiente = render({ validation: { status: 'REVISION_PENDIENTE', label: 'revisión pendiente', pending: true } })
+    expect(pendiente).toContain('Estado de validación:')
+    expect(pendiente).toContain('revisión pendiente')
+    expect(pendiente).toContain('la tienda sigue mostrando la última versión publicada')
+    // Sin falso éxito ni autorización implícita: no hay botón/enlace de publicar
+    // (el copy del editor puede nombrar la publicación; la acción no existe aquí).
+    expect(pendiente).not.toMatch(/<(button|a)[^>]*>(?:\s*<svg[\s\S]*?<\/svg>\s*)?Publicar[^<]*<\/(button|a)>/i)
+
+    const publicada = render({ validation: { status: 'PUBLICADA', label: 'publicada', pending: false } })
+    expect(publicada).toContain('Estado de validación:')
+    expect(publicada).toContain('publicada')
+    expect(publicada).not.toContain('la tienda sigue mostrando la última versión publicada')
+  })
+
+  it('CAT-04 (frontend-documentos): aviso de descarga autorizada, hint de subida de firmware y PDF opcional', () => {
+    const html = render({
+      onUploadAsset: async () => ({ url: '/api/files/x' }),
+      sheet: sheetFixture({
+        resources: [
+          { kind: 'MANUAL', title: 'Manual con licencia', language: 'es', url: '/api/files/doc-1', fileName: 'manual.pdf', version: null, region: null, requiresLicense: true },
+        ],
+      }),
+    })
+    expect(html).toContain('La ficha técnica (PDF) es opcional')
+    expect(html).toContain('Este archivo queda PRIVADO')
+    expect(html).toContain('Descarga autorizada')
+    // Firmware: NO se ofrece subida (diferido con motivo); sí se ve el hint.
+    expect(html).toContain('inventario de formatos')
+    expect(html).toContain('Subir archivo…')
+    // La subida solo aparece en documentos, nunca en la sección firmware.
+    const fwStart = html.indexOf('Firmware y notas de versión')
+    const fwSection = html.slice(fwStart, html.indexOf('id="ficha-notas"'))
+    expect(fwSection).not.toContain('Subir archivo…')
+  })
+
+  it('CAT-04 (frontend-documentos): sin el prop de subida no se ofrece el botón (ni con licencias ni sin ellas)', () => {
+    const html = render()
+    expect(html).not.toContain('Subir archivo…')
+    // La subida de firmware sigue sin ofrecerse para nadie (E1).
+    const fwStart = html.indexOf('Firmware y notas de versión')
+    expect(html.slice(fwStart)).toContain('inventario de formatos')
+  })
+
+  it('CAT-03 (regla 2): Destacados son beneficios — sin campos de tienda ni precio/stock', () => {
+    const html = render()
+    expect(html).toContain('Puntos fuertes o beneficios del producto')
+    expect(html).toContain('No fijan precio ni stock')
+    // La sección de destacados no contiene campos editables de tienda
+    // (ni inputs numéricos de precio/stock, ni labels de esos campos):
+    // solo filas de frases. El hint las MENCIONA para prohibirlas, no las pinta.
+    const start = html.indexOf('id="ficha-destacados"')
+    const end = html.indexOf('id="ficha-caracteristicas"')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const destacados = html.slice(start, end)
+    expect(destacados).not.toMatch(/type="number"/)
+    expect(destacados).not.toMatch(/<label[^>]*>\s*(Precio|Stock|Existencias)/i)
+    expect(destacados).toContain('Agregar destacado')
+  })
+
   it('renders an empty sheet without crashing, with empty states', () => {
     const html = render({
       sheet: sheetFixture({

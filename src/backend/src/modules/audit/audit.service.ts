@@ -39,6 +39,7 @@ const ENTITY_CANONICAL_MAP: Record<string, string> = {
   PRICELIST: 'PriceList',
   STOCK: 'Stock',
   USER: 'User',
+  USERACCESS: 'UserAccess',
   ROLE: 'Role',
   ASSIGNMENT: 'Assignment',
   USERROLE: 'UserRole',

@@ -4,6 +4,11 @@ import {
   updateCustomer,
   convertCustomer,
   deleteCustomer,
+  reassignCustomerInCache,
+} from '../../../services/customers.service'
+import type {
+  CustomerEditPayload,
+  ReassignCustomerInput,
 } from '../../../services/customers.service'
 import type { CustomerPayload } from '../types/customer.types'
 
@@ -19,7 +24,7 @@ export function useCustomerMutations() {
   })
 
   const update = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: CustomerPayload }) =>
+    mutationFn: ({ id, payload }: { id: string; payload: CustomerEditPayload }) =>
       updateCustomer(id, payload),
     onSuccess: invalidate,
   })
@@ -34,5 +39,11 @@ export function useCustomerMutations() {
     onSuccess: invalidate,
   })
 
-  return { create, update, convert, remove }
+  // El refetch lo hace el propio orquestador (solo con 200): un 403/404 no
+  // invalida la caché, así que la fila sigue viendo lo que autoriza el servidor.
+  const reassign = useMutation({
+    mutationFn: (input: ReassignCustomerInput) => reassignCustomerInCache(queryClient, input),
+  })
+
+  return { create, update, convert, remove, reassign }
 }

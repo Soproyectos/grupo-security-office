@@ -1,5 +1,6 @@
-import { IsString, IsNumber, Min, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsDateString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCopPrice, RoundCopPrice } from '../../../common/money/cop-price.validator';
 
 /**
  * Entrada de precio inline para create/update de productos.
@@ -12,7 +13,10 @@ export class PriceInputDto {
 
   @ApiProperty({ example: 1500000 })
   @IsNumber()
-  @Min(0.01)
+  // IMP-03 — el inline de ficha no tiene servicio escribible en este paso: se
+  // redondea/valida aquí con la misma política COP que la plantilla y la API.
+  @RoundCopPrice()
+  @IsCopPrice()
   value: number;
 
   @ApiPropertyOptional({ example: 'COP' })

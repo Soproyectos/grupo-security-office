@@ -29,11 +29,17 @@ export class UpsertSalesTargetDto {
   )
   amount: string;
 
-  @ApiPropertyOptional({ description: 'Moneda ISO (default COP)', default: 'COP' })
-  @IsOptional()
+  @ApiProperty({
+    description:
+      'Moneda ISO 4217 de 3 letras, EXPLÍCITA (COM-04 regla 3 / G3: sin default; el servicio valida COP/USD/EUR)',
+    example: 'COP',
+  })
   @IsString()
-  @MaxLength(3)
-  currency?: string;
+  @IsNotEmpty({ message: 'currency es obligatoria (moneda explícita)' })
+  @Matches(/^[A-Za-z]{3}$/, {
+    message: 'currency debe ser ISO 4217 de 3 letras',
+  })
+  currency: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { sheetFixture } from './fixtures'
 import {
   appendItem,
+  detectVersionConflict,
+  LIMITS,
   moveItem,
   moveWithinGroup,
   newFeature,
@@ -11,11 +13,13 @@ import {
   newTextRow,
   removeAt,
   replaceAt,
+  savePayloadWithVersion,
   sectionOfKind,
   snapshot,
   toForm,
   toPayload,
   validateForm,
+  versionConflictMessage,
 } from './sheet-form'
 
 describe('toForm / toPayload', () => {
@@ -209,5 +213,128 @@ describe('validateForm', () => {
     expect(validateForm(form).imageUrl).toBeDefined()
     form.imageUrl = ''
     expect(validateForm(form).imageUrl).toBeUndefined()
+  })
+})
+
+describe('CAT-03 · identificadores del fabricante (H4)', () => {
+  it('round-trips manufacturerRefs through form and payload', () => {
+    const sheet = sheetFixture()
+    const form = toForm(sheet)
+    expect(form.manufacturerRefs.map((r) => r.value)).toEqual(['DS-E04HQHI-D/PN', '7798123456789'])
+
+    const payload = toPayload(form)
+    expect(payload.manufacturerRefs).toEqual(['DS-E04HQHI-D/PN', '7798123456789'])
+  })
+
+  it('trims and drops blank rows', () => {
+    const form = toForm(sheetFixture({ manufacturerRefs: [] }))
+    form.manufacturerRefs = [newTextRow('  PN-1  '), newTextRow(''), newTextRow('   ')]
+    expect(toPayload(form).manufacturerRefs).toEqual(['PN-1'])
+  })
+
+  it('validates count and length limits', () => {
+    const form = toForm(sheetFixture({ manufacturerRefs: [] }))
+    form.manufacturerRefs = Array.from({ length: LIMITS.manufacturerRefs + 1 }, (_, i) => newTextRow(`PN-${i}`))
+    expect(validateForm(form).manufacturerRefs).toMatch(/Máximo/)
+
+    form.manufacturerRefs = [newTextRow('X'.repeat(LIMITS.manufacturerRefLength + 1))]
+    expect(validateForm(form)['manufacturerRefs.0']).toMatch(/caracteres/)
+
+    form.manufacturerRefs = [newTextRow('PN-OK')]
+    expect(validateForm(form).manufacturerRefs).toBeUndefined()
+  })
+
+  it('con permiso las notas viajan en el payload; sin permiso se OMITEN (el servidor las conserva)', () => {
+    // Con `canSeeInternalNotes: true` (fixture) el editor de Notas manda el
+    // texto (y vacío = null explícito para borrarlas).
+    const visible = toPayload(toForm(sheetFixture()))
+    expect(visible.internalNotes).toBe('Almacén Bodega 2: último lote sin garantía extendida.')
+    const cleared = toPayload({ ...toForm(sheetFixture()), internalNotes: '   ' })
+    expect(cleared.internalNotes).toBeNull()
+
+    // Sin permiso: `toForm` deja `internalNotes` en null y el payload OMITE la
+    // clave — undefined no viaja en JSON y el servidor conserva lo vigente.
+    const hiddenForm = toForm(sheetFixture({ canSeeInternalNotes: false, internalNotes: null }))
+    expect(hiddenForm.internalNotes).toBeNull()
+    const hidden = toPayload(hiddenForm)
+    expect('internalNotes' in hidden).toBe(false)
+    expect(JSON.parse(JSON.stringify(hidden))).not.toHaveProperty('internalNotes')
+  })
+
+  it('valida la longitud de las notas internas (espejo del DTO: 4000)', () => {
+    const form = toForm(sheetFixture())
+    form.internalNotes = 'x'.repeat(LIMITS.internalNotes + 1)
+    expect(validateForm(form).internalNotes).toMatch(/Máximo/)
+    form.internalNotes = 'nota corta'
+    expect(validateForm(form).internalNotes).toBeUndefined()
+    // Sin permiso no se valida (el campo ni existe en la UI).
+    form.internalNotes = null
+    expect(validateForm(form).internalNotes).toBeUndefined()
+  })
+})
+
+describe('CAT-03 · OCC del editor de ficha (H2)', () => {
+  it('savePayloadWithVersion envía la versión que el cliente leyó', () => {
+    const sheet = sheetFixture({ version: 7 })
+    const payload = savePayloadWithVersion(toForm(sheet), sheet)
+    expect(payload.expectedVersion).toBe(7)
+    expect(payload.manufacturerRefs).toEqual(sheet.manufacturerRefs)
+  })
+
+  const httpError = (status: number, data: unknown) => ({ response: { status, data } })
+
+  it('detectVersionConflict reconoce el 409 de ficha por feedback y extrae la versión', () => {
+    const conflict = detectVersionConflict(
+      httpError(409, {
+        message: 'La ficha cambió (versión vigente 9). Revisa la versión nueva antes de volver a guardar.',
+        feedback: ['sheet-version-conflict: la versión vigente de la ficha es 9'],
+      }),
+    )
+    expect(conflict).toEqual({ currentVersion: 9 })
+    expect(versionConflictMessage(conflict!)).toContain('versión vigente 9')
+  })
+
+  it('detecta también el 409 de ficha si solo llega el message', () => {
+    const conflict = detectVersionConflict(httpError(409, { message: 'La ficha cambió (versión vigente 3).' }))
+    expect(conflict).toEqual({ currentVersion: 3 })
+  })
+
+  it('un 409 de OTRO conflicto (slug, revisión) no es conflicto de versión', () => {
+    expect(detectVersionConflict(httpError(409, { message: 'Ya existe otro producto con ese slug' }))).toBeNull()
+    expect(
+      detectVersionConflict(
+        httpError(409, { message: 'La revisión cambió (última versión 2).', feedback: ['revision-version-conflict: versión vigente 2'] }),
+      ),
+    ).toBeNull()
+  })
+
+  it('otros estados y errores de red no son conflicto de versión', () => {
+    expect(detectVersionConflict(httpError(400, { message: 'Slug inválido' }))).toBeNull()
+    expect(detectVersionConflict(httpError(403, { message: 'Sin permiso products:write' }))).toBeNull()
+    expect(detectVersionConflict(new Error('network'))).toBeNull()
+    expect(detectVersionConflict(undefined)).toBeNull()
+  })
+
+  it('si el cuerpo no trae el número, el mensaje sigue siendo útil (sin falso éxito)', () => {
+    const conflict = detectVersionConflict(httpError(409, { message: 'La ficha cambió' }))
+    expect(conflict).toEqual({ currentVersion: null })
+    expect(versionConflictMessage(conflict!)).toContain('NO se guardaron')
+  })
+})
+
+describe('CAT-03 · frontend-tecnicos (sin PDF obligatorio)', () => {
+  it('publicar SIN documentos ni ficha técnica NO produce errores', () => {
+    const form = toForm(sheetFixture({ resources: [], specGroups: [] }))
+    form.published = true
+    form.slug = 'sin-datos'
+    expect(validateForm(form)).toEqual({})
+  })
+
+  it('la única exigencia al publicar sigue siendo el slug', () => {
+    const form = toForm(sheetFixture({ resources: [] }))
+    form.published = true
+    form.slug = ''
+    expect(validateForm(form).slug).toMatch(/slug/)
+    expect(Object.keys(validateForm(form))).toEqual(['slug'])
   })
 })

@@ -4,12 +4,15 @@ import {
   createQuote,
   removeQuoteItem,
   updateQuoteItem,
-  updateQuoteStatus,
+  updateQuoteItemDiscountInCache,
+  updateQuoteStatusInCache,
 } from '../../../services/quotes.service'
 import type {
-  AddQuoteItemPayload,
+  QuoteItemAddPayload,
+  QuoteItemEditPayload,
+} from '../../../services/quotes.service'
+import type {
   CreateQuotePayload,
-  UpdateQuoteItemPayload,
   UpdateQuoteStatusPayload,
 } from '../types/quote.types'
 
@@ -18,6 +21,11 @@ import type {
  * El backend devuelve `{ message: string | string[] }` en errores (p. ej. el
  * 409 "no hay precio vigente" al agregar un ítem); NUNCA se reemplaza por un
  * mensaje genérico si existe uno del servidor.
+ *
+ * Para las mutaciones cuyo servicio devuelve `QuoteServiceError` (tipado,
+ * sin `response`) la UI usa `quoteErrorMessage` de `services/quotes.service`
+ * — este helper queda para las superficies que aún envuelven axios crudo
+ * (alta de cotización, factura externa).
  */
 export function extractBackendMessage(err: unknown): string {
   const data = (err as { response?: { data?: { message?: unknown } } })
@@ -54,7 +62,7 @@ export function useQuoteMutations() {
       payload,
     }: {
       quoteId: string
-      payload: AddQuoteItemPayload
+      payload: QuoteItemAddPayload
     }) => addQuoteItem(quoteId, payload),
     onSuccess: (_quote, vars) => invalidateQuote(vars.quoteId),
   })
@@ -67,9 +75,20 @@ export function useQuoteMutations() {
     }: {
       quoteId: string
       itemId: string
-      payload: UpdateQuoteItemPayload
+      payload: QuoteItemEditPayload
     }) => updateQuoteItem(quoteId, itemId, payload),
     onSuccess: (_quote, vars) => invalidateQuote(vars.quoteId),
+  })
+
+  /**
+   * Descuento por línea — operación DEDICADA (COM-03 §3). El refetch vive
+   * dentro de `updateQuoteItemDiscountInCache` (solo con 200): sin
+   * `onSuccess` no hay doble invalidación, y en 403 la fila no se toca —
+   * el error se pinta en la tabla y el editor sigue abierto.
+   */
+  const updateItemDiscount = useMutation({
+    mutationFn: (input: { quoteId: string; itemId: string; discountPct: string }) =>
+      updateQuoteItemDiscountInCache(queryClient, input),
   })
 
   const removeItem = useMutation({
@@ -78,6 +97,13 @@ export function useQuoteMutations() {
     onSuccess: (_quote, vars) => invalidateQuote(vars.quoteId),
   })
 
+  /**
+   * Transición de estado. El refetch vive dentro de
+   * `updateQuoteStatusInCache`: con 200 refetchea una vez, y con 409
+   * (transición inválida / doble ganada) también — para que la página
+   * muestre el estado y el pedido REALES del servidor — re-propagando el
+   * error con el mensaje del servidor para pintarlo en su alerta.
+   */
   const updateStatus = useMutation({
     mutationFn: ({
       quoteId,
@@ -85,9 +111,8 @@ export function useQuoteMutations() {
     }: {
       quoteId: string
       payload: UpdateQuoteStatusPayload
-    }) => updateQuoteStatus(quoteId, payload),
-    onSuccess: (_quote, vars) => invalidateQuote(vars.quoteId),
+    }) => updateQuoteStatusInCache(queryClient, { quoteId, payload }),
   })
 
-  return { create, addItem, updateItem, removeItem, updateStatus }
+  return { create, addItem, updateItem, updateItemDiscount, removeItem, updateStatus }
 }

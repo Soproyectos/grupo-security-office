@@ -1557,6 +1557,13 @@ describe('ProductsService', () => {
     let svc: ProductsService;
 
     beforeEach(() => {
+      (mockPrisma as any).accessGrant = { findMany: jest.fn(async (args: any) =>
+        args?.where?.source?.userId === VIEWER.userId
+          ? ['listas:read', 'products:read'].map((actionId) => ({
+              sourceId: 'viewer-grant', actionId, scopeKind: 'list', resourceId: LISTA_ID,
+            }))
+          : [],
+      ) };
       acl = new AclService(mockPrisma as any);
       svc = new ProductsService(mockPrisma as any, acl, mockAudit as any, mockFiles as any);
       mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
@@ -1611,24 +1618,24 @@ describe('ProductsService', () => {
       expect(res.id).toBe('prod-1');
     });
 
-    it('view no edita (toggleVisibility de publicado exige publish:manage â†’ 403)', async () => {
+    it('view no edita (toggleVisibility exige permiso de publicación y oculta la Lista)', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({
         ...mockProduct,
         listaId: LISTA_ID,
         publishStatus: 'publicado',
         isVisible: true,
         lifecycleStatus: 'PUBLISHED'});
-      await expect(svc.toggleVisibility('prod-1', VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.toggleVisibility('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
     });
 
-    it('create: usuario view sobre la Lista no puede crear producto (403, falta edit)', async () => {
+    it('create: usuario view sobre la Lista no puede crear producto sin escritura', async () => {
       mockPrisma.product.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
       mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
       mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
 
       const dto = { sku: 'NEW-1', name: 'X', categoryId: 'cat-1', brandId: 'brand-1', listaId: LISTA_ID };
-      await expect(svc.create(dto as any, VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.create(dto as any, VIEWER)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -1779,7 +1786,7 @@ describe('ProductsService', () => {
         return { id: 'p2', sku: 'SKU2', listaId: 'lista-a', lifecycleStatus: 'PUBLISHED', publishStatus: 'publicado', isActive: true, isVisible: true };
       });
       mockPrisma.product.update.mockResolvedValue({ id: 'p1', sku: 'SKU1' });
-      const r = await service.scheduleListaProducts('lista-a', { publishAt: '2099-01-01T00:00:00.000Z' }, baseCtx);
+      const r = await service.scheduleListaProducts('lista-a', { publishAt: '2099-01-01T00:00:00.000Z' }, { userId: 'user-1', roles: ['Super Admin'] }); // per-product publish needs a grant or Super Admin
       expect(r.succeeded).toBe(1);
       expect(r.skipped).toBe(1);
       expect(r.failed).toBe(0);

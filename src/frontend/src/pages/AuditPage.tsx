@@ -108,6 +108,7 @@ const ENTITY_OPTIONS = [
   { value: 'Category', label: 'Categorías' },
   { value: 'Brand', label: 'Marcas' },
   { value: 'User', label: 'Usuarios' },
+  { value: 'UserAccess', label: 'Accesos de usuarios' },
   { value: 'Price', label: 'Precios' },
 ] as const
 

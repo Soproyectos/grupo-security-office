@@ -1,13 +1,14 @@
 import { createPrismaMock } from '../../__test__/mocks/prisma.mock';
 
 const mockPrisma = createPrismaMock();
+(mockPrisma as any).accessGrant = { findMany: jest.fn() };
 
 jest.mock('../../prisma/prisma.service', () => ({
   PrismaService: jest.fn().mockImplementation(() => mockPrisma),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PricesService } from './prices.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService } from '../../common/acl/acl.service';
@@ -548,6 +549,74 @@ describe('PricesService', () => {
     });
   });
 
+  // --- IMP-03: COP unificado (redondeo HALF_UP y límite único) ---
+  describe('IMP-03 COP en la API manual de precios', () => {
+    it('createPrice redondea HALF_UP a entero COP', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
+      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1', currency: 'COP' });
+      mockPrisma.price.findUnique.mockResolvedValue(null);
+      mockPrisma.price.create.mockResolvedValue(mockPriceWithRelations);
+
+      await service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 1500000.49 } as any);
+
+      expect(mockPrisma.price.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ value: 1500000 }) }),
+      );
+    });
+
+    it('createPrice redondea 0.50 a 1 y rechaza 0.49 con 400', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
+      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1', currency: 'COP' });
+      mockPrisma.price.findUnique.mockResolvedValue(null);
+      mockPrisma.price.create.mockResolvedValue(mockPriceWithRelations);
+
+      await service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 0.5 } as any);
+      expect(mockPrisma.price.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ value: 1 }) }),
+      );
+
+      await expect(service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 0.49 } as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('createPrice rechaza el desbordamiento tras redondear (9999999999.5)', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
+      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1', currency: 'COP' });
+      mockPrisma.price.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 9999999999.5 } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.price.create).not.toHaveBeenCalled();
+    });
+
+    it('createPrice no impone la precisión COP a otra moneda (USD)', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
+      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1', currency: 'USD' });
+      mockPrisma.price.findUnique.mockResolvedValue(null);
+      mockPrisma.price.create.mockResolvedValue(mockPriceWithRelations);
+
+      await service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 123.45 } as any);
+
+      expect(mockPrisma.price.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ value: 123.45, currency: 'USD' }) }),
+      );
+    });
+
+    it('updatePrice redondea HALF_UP a entero COP', async () => {
+      mockPrisma.price.findUnique.mockResolvedValue({ ...mockPrice, currency: 'COP' });
+      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.price.update.mockResolvedValue({ ...mockPriceWithRelations, value: 1600001 });
+
+      await service.updatePrice('price-1', { value: 1600000.5 } as any);
+
+      expect(mockPrisma.price.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ value: 1600001 }) }),
+      );
+    });
+  });
+
   // --- Historial inmutable de precios (checklist 22) ---
   describe('historial inmutable de precios', () => {
     it('updatePrice audita con oldValues completos y newValues con origin manual', async () => {
@@ -599,12 +668,15 @@ describe('PricesService', () => {
     const VIEW_PRICES = { userId: 'price-viewer', roles: ['Operador'] }; // view_prices sobre LISTA
     const NOAUTH = { userId: 'none-1', roles: ['Operador'] }; // sin assignments
 
-    const listaAssignments: Record<string, { resourceId: string; level: string; isActive: boolean }[]> = {
-      [VIEWER.userId]: [{ resourceId: LISTA_ID, level: 'view', isActive: true }],
-      [VIEW_PRICES.userId]: [{ resourceId: LISTA_ID, level: 'view_prices', isActive: true }],
-      [EDIT_PRICES.userId]: [{ resourceId: LISTA_ID, level: 'edit_prices', isActive: true }],
+    const grants: Record<string, { sourceId: string; actionId: string; scopeKind: 'list'; resourceId: string }[]> = {
+      [VIEWER.userId]: [],
+      [VIEW_PRICES.userId]: [],
+      [EDIT_PRICES.userId]: [],
       [ADMIN.userId]: [],
       [NOAUTH.userId]: [],
+    };
+    const assignGrant = (userId: string, actionId: string) => {
+      grants[userId].push({ sourceId: `${userId}-${actionId}`, actionId, scopeKind: 'list', resourceId: LISTA_ID });
     };
     let acl: AclService;
     let svc: PricesService;
@@ -612,26 +684,22 @@ describe('PricesService', () => {
     beforeEach(() => {
       acl = new AclService(mockPrisma as any);
       svc = new PricesService(mockPrisma as any, acl, mockAudit as any);
+      for (const userId of Object.keys(grants)) grants[userId] = [];
+      assignGrant(VIEWER.userId, 'listas:read');
+      for (const actionId of ['listas:read', 'prices:read']) assignGrant(VIEW_PRICES.userId, actionId);
+      for (const actionId of ['listas:read', 'prices:read', 'prices:apply']) assignGrant(EDIT_PRICES.userId, actionId);
+      (mockPrisma as any).accessGrant.findMany.mockImplementation(async (args: any) =>
+        grants[args?.where?.source?.userId] ?? [],
+      );
       mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
-        const u = args?.where?.userId;
-        const rt = args?.where?.resourceType;
-        const rid = args?.where?.resourceId;
-        const active = args?.where?.isActive;
-        const levels = args?.where?.level?.in;
-        let out = (listaAssignments[u] ?? []).filter(
-          (a) => rt === undefined || rt === 'LISTA',
-        ) as any[];
-        if (rid) out = out.filter((a) => a.resourceId === rid);
-        if (active === true) out = out.filter((a) => a.isActive);
-        if (levels) out = out.filter((a) => levels.includes(a.level));
-        return out;
+        return [];
       });
       mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
     });
 
-    it('findPricesByProduct: view no ve precios (403, exige edit_prices)', async () => {
+    it('findPricesByProduct: view sin concesión de prices:read no revela precios', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.findPricesByProduct('prod-1', VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.findPricesByProduct('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
     });
 
     it('findPricesByProduct: edit_prices ve precios de su Lista', async () => {
@@ -648,28 +716,26 @@ describe('PricesService', () => {
       expect(res.data).toHaveLength(1);
     });
 
-    it('createPrice: view_prices NO puede crear precio (403, sigue exigiendo edit_prices)', async () => {
+    it('createPrice: view_prices sin prices:apply no permite crear precio', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
       mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
       mockPrisma.price.findUnique.mockResolvedValue(null);
       const dto = { productId: 'prod-1', priceListId: 'pl-1', value: 1500000 };
-      await expect(svc.createPrice(dto, VIEW_PRICES)).rejects.toThrow(ForbiddenException);
+      await expect(svc.createPrice(dto, VIEW_PRICES)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.price.create).not.toHaveBeenCalled();
     });
 
-    it('updatePrice: view_prices NO puede editar precio (403)', async () => {
+    it('updatePrice: view_prices sin prices:apply no permite editar precio', async () => {
       mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.updatePrice('price-1', { value: 1600000 }, VIEW_PRICES)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(svc.updatePrice('price-1', { value: 1600000 }, VIEW_PRICES)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.price.update).not.toHaveBeenCalled();
     });
 
-    it('removePrice: view_prices NO puede eliminar precio (403)', async () => {
+    it('removePrice: view_prices sin prices:apply no permite eliminar precio', async () => {
       mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.removePrice('price-1', VIEW_PRICES)).rejects.toThrow(ForbiddenException);
+      await expect(svc.removePrice('price-1', VIEW_PRICES)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.price.delete).not.toHaveBeenCalled();
     });
 
@@ -696,18 +762,24 @@ describe('PricesService', () => {
       await expect(svc.findPricesByProduct('prod-1', NOAUTH)).rejects.toThrow(NotFoundException);
     });
 
+    it('Admin Comercial sin grants no obtiene precios por su rol', async () => {
+      const comercial = { userId: 'commercial-empty', roles: ['Admin Comercial'] };
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
+      await expect(svc.findPricesByProduct('prod-1', comercial)).rejects.toThrow(NotFoundException);
+    });
+
     it('findPricesByPriceList: usuario sin assignment ve lista vacía (deny)', async () => {
       mockPrisma.price.findMany.mockResolvedValue([]);
       const res = await svc.findPricesByPriceList('pl-1', NOAUTH);
       expect(res.data).toHaveLength(0);
     });
 
-    it('createPrice: view no puede crear precio (403, falta edit)', async () => {
+    it('createPrice: view sin prices:apply no permite crear precio', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
       mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
       mockPrisma.price.findUnique.mockResolvedValue(null);
       const dto = { productId: 'prod-1', priceListId: 'pl-1', value: 1500000 };
-      await expect(svc.createPrice(dto, VIEWER)).rejects.toThrow(ForbiddenException);
+      await expect(svc.createPrice(dto, VIEWER)).rejects.toThrow(NotFoundException);
     });
 
     it('Super Admin evita filtrado (ve precios de la priceList sin scope)', async () => {

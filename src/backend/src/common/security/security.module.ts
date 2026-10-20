@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { HierarchyModule } from '../hierarchy/hierarchy.module';
 import { PasswordPolicyService } from './password-policy.service';
 import { AccountLockoutService } from './account-lockout.service';
 import { MfaCryptoService } from './mfa-crypto.service';
@@ -8,6 +9,8 @@ import { MfaService } from './mfa.service';
 import { SessionService } from './session.service';
 import { PrivilegedAccountService } from './privileged-account.service';
 import { UserPermissionsService } from './user-permissions.service';
+import { AccessAssignmentsService } from './access-assignments.service';
+import { LiveAdminIdentityService } from './live-admin-identity.service';
 import { AuditModule } from '../../modules/audit/audit.module';
 
 /**
@@ -19,7 +22,7 @@ import { AuditModule } from '../../modules/audit/audit.module';
  */
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule, AuditModule],
+  imports: [ConfigModule, PrismaModule, AuditModule, HierarchyModule],
   providers: [
     PasswordPolicyService,
     AccountLockoutService,
@@ -28,6 +31,8 @@ import { AuditModule } from '../../modules/audit/audit.module';
     SessionService,
     PrivilegedAccountService,
     UserPermissionsService,
+    AccessAssignmentsService,
+    LiveAdminIdentityService,
   ],
   exports: [
     PasswordPolicyService,
@@ -37,6 +42,8 @@ import { AuditModule } from '../../modules/audit/audit.module';
     SessionService,
     PrivilegedAccountService,
     UserPermissionsService,
+    AccessAssignmentsService,
+    LiveAdminIdentityService,
   ],
 })
 export class SecurityModule {}

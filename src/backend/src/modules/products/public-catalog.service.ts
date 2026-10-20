@@ -11,6 +11,7 @@ import {
 } from './public-catalog.helpers';
 import { PublicPrice, PublicPricingService } from './public-pricing.service';
 import { PUBLIC_CATALOG_VISIBILITY } from './public-catalog-visibility';
+import { applyRevisionLens, loadActiveRevisionContents } from './public-revision-lens';
 
 /** Fila del listado público: solo campos aptos para un visitante anónimo. */
 export interface PublicProductListItem {
@@ -114,6 +115,7 @@ export class PublicCatalogService {
           sku: true,
           name: true,
           lifecycleStatus: true,
+          publicRevisionId: true,
           category: { select: { name: true, slug: true } },
           brand: { select: { name: true } },
           images: {
@@ -134,18 +136,24 @@ export class PublicCatalogService {
       products.filter((p) => p.lifecycleStatus === 'PUBLISHED').map((p) => p.id),
     );
 
+    // CAT-02: the list serves the active snapshot when there is one (live columns as fallback).
+    const contents = await loadActiveRevisionContents(this.prisma, products.map((p) => p.publicRevisionId));
+
     return {
-      data: products.map((p) => ({
-        id: p.id,
-        sku: p.sku,
-        name: p.name,
-        imageUrl: p.images[0]?.url ?? null,
-        categoryName: p.category.name,
-        categorySlug: p.category.slug,
-        brandName: p.brand.name,
-        isInformational: p.lifecycleStatus !== 'PUBLISHED',
-        price: p.lifecycleStatus === 'PUBLISHED' ? (prices.get(p.id) ?? null) : null,
-      })),
+      data: products.map((raw) => {
+        const p = applyRevisionLens(raw, contents);
+        return {
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          imageUrl: p.images[0]?.url ?? null,
+          categoryName: p.category.name,
+          categorySlug: p.category.slug,
+          brandName: p.brand.name,
+          isInformational: p.lifecycleStatus !== 'PUBLISHED',
+          price: p.lifecycleStatus === 'PUBLISHED' ? (prices.get(p.id) ?? null) : null,
+        };
+      }),
       meta: { total, offset, limit },
     };
   }
@@ -162,6 +170,7 @@ export class PublicCatalogService {
         sku: true,
         name: true,
         lifecycleStatus: true,
+        publicRevisionId: true,
         description: true,
         technicalSpecs: true,
         documents: true,
@@ -175,6 +184,9 @@ export class PublicCatalogService {
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
+    // CAT-02: el snapshot activo pisa la ficha; columnas vivas = fallback (K4).
+    const lensed = applyRevisionLens(product, await loadActiveRevisionContents(this.prisma, [product.publicRevisionId]));
+
     const [price, breadcrumb] = await Promise.all([
       this.pricing.getPublicPrice(product.id),
       this.breadcrumbOf(product.category?.parentId ?? null),
@@ -184,16 +196,16 @@ export class PublicCatalogService {
     const images = [...product.images].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
 
     return {
-      id: product.id,
-      sku: product.sku,
-      name: product.name,
-      description: product.description ?? null,
+      id: lensed.id,
+      sku: lensed.sku,
+      name: lensed.name,
+      description: lensed.description ?? null,
       brand: product.brand ? { name: product.brand.name, slug: product.brand.slug } : null,
       category: product.category ? { name: product.category.name, slug: product.category.slug } : null,
       breadcrumb,
       images: images.map((image) => ({ url: image.url, alt: image.alt ?? null })),
-      technicalSpecs: sanitizeTechnicalSpecs(product.technicalSpecs),
-      datasheets: sanitizeDatasheets(product.documents),
+      technicalSpecs: sanitizeTechnicalSpecs(lensed.technicalSpecs),
+      datasheets: sanitizeDatasheets(lensed.documents),
       price: product.lifecycleStatus === 'PUBLISHED' ? price : null,
       isInformational: product.lifecycleStatus !== 'PUBLISHED',
     };

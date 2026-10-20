@@ -202,8 +202,15 @@ export const createPrismaMock = () => ({
   },
   uploadedFile: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
     delete: jest.fn(),
+  },
+  productCatalogResource: {
+    findMany: jest.fn(),
+    count: jest.fn(),
   },
   salesTarget: {
     findUnique: jest.fn(),

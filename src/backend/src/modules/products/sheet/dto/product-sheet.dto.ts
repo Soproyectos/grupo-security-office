@@ -3,11 +3,13 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -224,6 +226,36 @@ export class UpdateProductSheetDto {
   @MaxLength(1000)
   firmwareNote?: string | null;
 
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'CAT-03 (H4): identificadores del fabricante (part number, EAN…).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  manufacturerRefs?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'CAT-03 (H1): notas INTERNAS de la ficha. No se publican ni salen en la exportación ordinaria. Sin la acción `products:notes` se conservan y no se devuelven; omitirlas también las conserva; solo `null` explícito (con la acción) las borra.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  internalNotes?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'CAT-03 (H2): versión de la ficha que el cliente vio (OCC). Si no coincide con la vigente → 409 sin escribir.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
+
   @ApiProperty({ type: [SheetSpecGroupDto] })
   @IsArray()
   @ArrayMaxSize(40)
@@ -240,10 +272,19 @@ export class UpdateProductSheetDto {
 }
 
 /** Read model: the editable sheet plus read-only product context. */
-export interface ProductSheetView extends Required<Omit<UpdateProductSheetDto, 'features' | 'specGroups' | 'resources'>> {
+export interface ProductSheetView
+  extends Required<
+    Omit<UpdateProductSheetDto, 'features' | 'specGroups' | 'resources' | 'expectedVersion' | 'internalNotes'>
+  > {
   productId: string;
   sku: string;
   productName: string;
+  /** Notas internas (CAT-03 H1): `null` cuando el actor no tiene `products:notes`. */
+  internalNotes: string | null;
+  /** CAT-03 frontend-tecnicos: el actor puede ver/editar las notas internas. */
+  canSeeInternalNotes: boolean;
+  /** Versión vigente de la ficha (CAT-03 H2): envíala como `expectedVersion`. */
+  version: number;
   features: { id: string; label: string; icon: SheetFeatureIcon }[];
   specGroups: { key: string; title: string; items: { label: string; value: string }[] }[];
   resources: {

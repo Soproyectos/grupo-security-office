@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Alert, Button } from '../../../components/ui'
+import { getApiErrorMessage } from '../../../lib/apiError'
+import { AUTHORIZED_DOWNLOAD_NOTICE, PDF_OPTIONAL_NOTICE, uploadHintFor } from './document-assets'
 import { FeatureGlyph } from '../components/icons'
 import { FichaSection } from './FichaSection'
 import {
@@ -19,13 +21,15 @@ import {
   newTextRow,
   removeAt,
   replaceAt,
+  savePayloadWithVersion,
   sectionOfKind,
   snapshot,
   toForm,
-  toPayload,
   validateForm,
+  versionConflictMessage,
   type ResourceRow,
   type ResourceSection,
+  type SheetConflict,
   type SheetErrors,
   type SheetForm,
   type SheetFeatureIcon,
@@ -35,6 +39,7 @@ import {
   type SpecGroupRow,
   type TextRow,
 } from './sheet-form'
+import { PENDING_VALIDATION_NOTICE, type ValidationState } from './sheet-revisions'
 
 const inputClass =
   'w-full px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)] focus:border-[var(--color-primary)] text-sm bg-white'
@@ -254,16 +259,38 @@ function ResourcesSection({
   resources,
   errors,
   onChange,
+  onUploadAsset,
 }: {
   section: ResourceSection
   resources: ResourceRow[]
   errors: SheetErrors
   onChange: (resources: ResourceRow[]) => void
+  /** CAT-04 (D5): subida verificada de documentos (solo la sección documents). */
+  onUploadAsset?: (file: File) => Promise<{ url: string }>
 }) {
   const kinds = section === 'firmware' ? FIRMWARE_KINDS : DOCUMENT_KINDS
   const noun = section === 'firmware' ? 'firmware' : 'documento'
   const inSection = (r: ResourceRow) => sectionOfKind(r.kind) === section
   const entries = resources.map((row, index) => ({ row, index })).filter(({ row }) => inSection(row))
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
+
+  const handleUpload = async (index: number, file: File | undefined) => {
+    if (!file || !onUploadAsset) return
+    setUploadingIndex(index)
+    setUploadError(null)
+    try {
+      const { url } = await onUploadAsset(file)
+      const current = resources[index]
+      if (current) {
+        onChange(replaceAt(resources, index, { ...current, url, fileName: current.fileName || file.name }))
+      }
+    } catch (error) {
+      setUploadError(getApiErrorMessage(error, 'No se pudo subir el documento. El contenido real debe ser PDF o imagen; máximo 16 MB.'))
+    } finally {
+      setUploadingIndex(null)
+    }
+  }
 
   const update = (index: number, patch: Partial<ResourceRow>) => {
     const current = resources[index]
@@ -298,9 +325,37 @@ function ResourcesSection({
                 </Field>
                 <div className="md:col-span-4">
                   <Field label="URL" error={err('url')} hint="https://… o una ruta /api/files/…">
-                    <input type="text" value={row.url} onChange={(e) => update(index, { url: e.target.value })} className={`${inputClass} ${err('url') ? invalidClass : ''}`} />
+                    <div className="flex gap-2">
+                      <input type="text" value={row.url} onChange={(e) => update(index, { url: e.target.value })} className={`${inputClass} ${err('url') ? invalidClass : ''}`} />
+                      {section === 'documents' && onUploadAsset && (
+                        <label className={`shrink-0 inline-flex items-center gap-1 px-3 text-xs font-medium rounded border border-neutral-300 text-neutral-700 hover:bg-neutral-50 ${uploadingIndex === index ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                          {uploadingIndex === index ? 'Subiendo…' : 'Subir archivo…'}
+                          <input
+                            type="file"
+                            accept="application/pdf,image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              void handleUpload(index, f)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
                   </Field>
+                  {row.requiresLicense && (
+                    <p role="note" data-testid="authorized-download-notice" className="text-xs text-amber-700 mt-1">
+                      {AUTHORIZED_DOWNLOAD_NOTICE}
+                    </p>
+                  )}
                 </div>
+                {section === 'documents' && (
+                  <label className="flex items-center gap-2 text-sm text-neutral-700 md:col-span-4">
+                    <input type="checkbox" checked={row.requiresLicense} onChange={(e) => update(index, { requiresLicense: e.target.checked })} />
+                    Descarga autorizada (el archivo queda privado: solo con acceso al producto)
+                  </label>
+                )}
                 {section === 'documents' ? (
                   <div className="md:col-span-2">
                     <Field label="Nombre de archivo (opcional)">
@@ -333,6 +388,16 @@ function ResourcesSection({
           </div>
         )
       })}
+      {uploadError && (
+        <p role="alert" className="text-xs text-red-600">
+          {uploadError}
+        </p>
+      )}
+      {uploadHintFor(section) && (
+        <p role="note" data-testid="firmware-upload-deferred" className="text-xs text-neutral-500">
+          {uploadHintFor(section)}
+        </p>
+      )}
       <Button type="button" variant="secondary" disabled={resources.length >= LIMITS.resources} onClick={() => onChange(appendItem(resources, newResource(section)))}>
         {section === 'firmware' ? 'Agregar firmware o notas de versión' : 'Agregar documento'}
       </Button>
@@ -349,6 +414,14 @@ export interface ProductSheetEditorProps {
   saving: boolean
   saveError: string | null
   saved: boolean
+  /** CAT-03 (H2): 409 `sheet-version-conflict` — la ficha cambió en el servidor. */
+  conflict?: SheetConflict | null
+  /** CAT-03 (regla 5): estado de validación (revisiones CAT-02). Informativo. */
+  validation?: ValidationState | null
+  /** Descarta el borrador local y recarga la versión vigente del servidor. */
+  onReload?: () => void
+  /** CAT-04 (D5): subida verificada de un documento (rellena URL + archivo). */
+  onUploadAsset?: (file: File) => Promise<{ url: string }>
   onSave: (payload: ProductSheetPayload) => void
   onDirtyChange?: (dirty: boolean) => void
   /** The page already renders one navigation for every block of the Ficha tab. */
@@ -361,6 +434,10 @@ export function ProductSheetEditor({
   saving,
   saveError,
   saved,
+  conflict = null,
+  validation = null,
+  onReload,
+  onUploadAsset,
   onSave,
   onDirtyChange,
   hideNav = false,
@@ -387,7 +464,10 @@ export function ProductSheetEditor({
       setShowErrors(true)
       return
     }
-    onSave(toPayload(form))
+    // CAT-03 (H2): el PUT lleva la versión que este cliente leyó; si otro
+    // guardado la adelantó, el servidor responde 409 sin escribir (se conserva
+    // el borrador local y se muestra la versión vigente).
+    onSave(savePayloadWithVersion(form, sheet))
   }
 
   const publicHref = `/catalogo/productos/${sheet.productId}`
@@ -475,9 +555,22 @@ export function ProductSheetEditor({
             max={LIMITS.badges}
           />
         </div>
+        {/* CAT-03 (H4): identificadores del fabricante — parte de Identidad. */}
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-neutral-700">Identificadores del fabricante</p>
+          <TextListEditor
+            rows={form.manufacturerRefs}
+            onChange={(rows) => set('manufacturerRefs', rows)}
+            noun="Identificador"
+            placeholder="Ej. Part number, EAN…"
+            addLabel="Agregar identificador"
+            error={errors.manufacturerRefs}
+            max={LIMITS.manufacturerRefs}
+          />
+        </div>
       </FichaSection>
 
-      <FichaSection id="destacados" title="Destacados" hint="Frases cortas que aparecen junto a la imagen, en el orden indicado.">
+      <FichaSection id="destacados" title="Destacados" hint="Puntos fuertes o beneficios del producto: frases cortas que aparecen junto a la imagen, en el orden indicado. No fijan precio ni stock y no sustituyen al inicio de la tienda.">
         <TextListEditor
           rows={form.highlights}
           onChange={(rows) => set('highlights', rows)}
@@ -586,11 +679,11 @@ export function ProductSheetEditor({
         </div>
       </FichaSection>
 
-      <FichaSection id="documentos" title="Documentos y firmware" hint="Fichas técnicas, manuales y guías; y archivos de firmware o notas de versión (con licencia opcional).">
+      <FichaSection id="documentos" title="Documentos y firmware" hint={`Fichas técnicas, manuales y guías; y archivos de firmware o notas de versión. ${PDF_OPTIONAL_NOTICE}`}>
         <div className="space-y-6">
           <div className="space-y-2">
             <p className="text-sm font-medium text-neutral-700">Documentos</p>
-            <ResourcesSection section="documents" resources={form.resources} errors={errors} onChange={(r) => set('resources', r)} />
+            <ResourcesSection section="documents" resources={form.resources} errors={errors} onChange={(r) => set('resources', r)} onUploadAsset={onUploadAsset} />
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium text-neutral-700">Firmware y notas de versión</p>
@@ -604,12 +697,31 @@ export function ProductSheetEditor({
         </div>
       </FichaSection>
 
-      <FichaSection id="notas" title="Notas">
+      <FichaSection id="notas" title="Notas" hint="Las notas internas son privadas; las avisos públicas aparecen en la ficha del cliente.">
         <div className="grid grid-cols-1 gap-4">
-          <Field label="Aviso de especificaciones (disclaimer)">
+          {form.internalNotes !== null ? (
+            <Field
+              label="Notas internas (privadas)"
+              error={errors.internalNotes}
+              hint="Nunca se publican: no salen a la tienda, ni al API público, ni a una exportación ordinaria. Solo el equipo con permiso las ve."
+            >
+              <textarea
+                rows={3}
+                data-testid="internal-notes"
+                value={form.internalNotes}
+                onChange={(e) => set('internalNotes', e.target.value)}
+                className={`${inputClass} ${errors.internalNotes ? invalidClass : ''}`}
+              />
+            </Field>
+          ) : (
+            <p role="note" className="text-xs text-neutral-500">
+              No tienes permiso para ver ni editar las notas internas: si existen, se conservan al guardar.
+            </p>
+          )}
+          <Field label="Aviso de especificaciones (público)">
             <textarea rows={3} value={form.specsDisclaimer} onChange={(e) => set('specsDisclaimer', e.target.value)} className={inputClass} />
           </Field>
-          <Field label="Nota de firmware">
+          <Field label="Nota de firmware (pública)">
             <textarea rows={3} value={form.firmwareNote} onChange={(e) => set('firmwareNote', e.target.value)} className={inputClass} />
           </Field>
         </div>
@@ -621,16 +733,36 @@ export function ProductSheetEditor({
             Corrige {errorCount} {errorCount === 1 ? 'campo' : 'campos'} marcado{errorCount === 1 ? '' : 's'} antes de guardar.
           </Alert>
         )}
-        {saveError && <Alert variant="error">{saveError}</Alert>}
-        {saved && !dirty && <Alert variant="success">Ficha guardada. La tienda puede tardar hasta 5 minutos en mostrar los cambios (caché del navegador).</Alert>}
+        {conflict && (
+          <Alert variant="error">
+            <span className="block">{versionConflictMessage(conflict)}</span>
+            {onReload && (
+              <Button type="button" variant="secondary" className="mt-2" onClick={onReload}>
+                Descartar cambios y recargar
+              </Button>
+            )}
+          </Alert>
+        )}
+        {!conflict && saveError && <Alert variant="error">{saveError}</Alert>}
+        {!conflict && saved && !dirty && <Alert variant="success">Ficha guardada. La tienda puede tardar hasta 5 minutos en mostrar los cambios (caché del navegador).</Alert>}
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-neutral-500" aria-live="polite">
             {dirty ? 'Hay cambios sin guardar en la ficha pública.' : 'Sin cambios pendientes.'}
+            {validation && (
+              <>
+                {' '}· Estado de validación:{' '}
+                <strong data-testid="validation-status" className={validation.pending ? 'text-amber-700' : 'text-neutral-600'}>
+                  {validation.label}
+                </strong>
+              </>
+            )}
           </span>
           <Button type="submit" loading={saving} disabled={!dirty}>
             Guardar ficha pública
           </Button>
         </div>
+        {/* CAT-03 regla 5: editar deja la validación PENDIENTE; no la autoriza. */}
+        {validation?.pending && <Alert variant="warning">{PENDING_VALIDATION_NOTICE}</Alert>}
       </div>
     </form>
   )

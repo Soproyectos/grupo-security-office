@@ -3,11 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, Table } from '../components/ui'
 import CustomerStatusBadge from '../features/customers/components/CustomerStatusBadge'
 import CustomerFormModal from '../features/customers/components/CustomerFormModal'
+import ReassignCustomerModal from '../features/customers/components/ReassignCustomerModal'
+import { customersAccess } from '../features/customers/access'
 import { useCustomers } from '../features/customers/hooks/useCustomers'
 import { useCustomerMutations } from '../features/customers/hooks/useCustomerMutations'
 import { fetchUsers } from '../services/users.service'
+import { toCustomerEditPayload, type ReassignCustomerPayload } from '../services/customers.service'
 import { useAuthStore } from '../stores/auth.store'
-import { ROLES } from '../lib/roles'
 import {
   CUSTOMER_STATUSES,
   CUSTOMER_STATUS_LABELS,
@@ -19,12 +21,6 @@ import {
 } from '../features/customers/types/customer.types'
 
 const PAGE_SIZE = 20
-
-const OWNER_COLUMN_ROLES: string[] = [
-  ROLES.SUPER_ADMIN,
-  ROLES.ADMIN_COMERCIAL,
-  ROLES.SUPERVISOR,
-]
 
 function formatDocument(customer: Customer): string {
   if (!customer.documentId) return '-'
@@ -39,12 +35,13 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
+  const [reassigning, setReassigning] = useState<Customer | null>(null)
 
   const currentUser = useAuthStore((state) => state.user)
-  const showOwnerColumn = useMemo(
-    () => !personal && OWNER_COLUMN_ROLES.some((r) => currentUser?.roles?.includes(r)),
-    [currentUser, personal]
-  )
+  // Criterio mínimo documentado en `features/customers/access.ts`: el rol solo
+  // decide qué se OFRECE; si el servidor no lo concede responde 403 con su
+  // mensaje (fuente de verdad, aceptación 2).
+  const { showOwnerColumn, canReassign } = customersAccess(currentUser, personal)
 
   const filters: CustomerFilters = useMemo(
     () => ({ search: search || undefined, status: statusFilter, ownerId: personal ? currentUser?.id : undefined }),
@@ -56,7 +53,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     page,
     pageSize: PAGE_SIZE,
   })
-  const { create, update, convert, remove } = useCustomerMutations()
+  const { create, update, convert, remove, reassign } = useCustomerMutations()
 
   // Nombres de responsables para la columna "Responsable" (solo roles que ven
   // más de su propia cartera). Si la consulta falla, la columna muestra '—'.
@@ -72,14 +69,25 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     return map
   }, [ownersQuery.data])
 
-  const submitting = create.isPending || update.isPending
+  const submitting = create.isPending || update.isPending || reassign.isPending
 
   const handleSubmit = async (payload: CustomerPayload) => {
     if (editing) {
-      await update.mutateAsync({ id: editing.id, payload })
+      // Sin `status`/`ownerId`/`isActive`: el PATCH general responde 400 si
+      // vienen (COM-02 §11) — el tipo lo impide y además se limpia aquí.
+      await update.mutateAsync({ id: editing.id, payload: toCustomerEditPayload(payload) })
     } else {
       await create.mutateAsync(payload)
     }
+  }
+
+  const handleReassign = async (payload: ReassignCustomerPayload) => {
+    if (!reassigning) return
+    await reassign.mutateAsync({
+      id: reassigning.id,
+      payload,
+      expected: { ownerId: reassigning.ownerId },
+    })
   }
 
   const handleConvert = (customer: Customer) => {
@@ -178,6 +186,20 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
               Convertir
             </Button>
           )}
+          {canReassign && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="px-2 py-1 text-xs"
+              disabled={reassign.isPending}
+              onClick={(event) => {
+                event.stopPropagation()
+                setReassigning(c)
+              }}
+            >
+              Reasignar
+            </Button>
+          )}
           {!personal && <Button
             type="button"
             variant="ghost"
@@ -195,7 +217,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     })
 
     return cols
-  }, [showOwnerColumn, ownerNames, convert.isPending, remove.isPending, personal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showOwnerColumn, canReassign, ownerNames, convert.isPending, reassign.isPending, remove.isPending, personal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -327,6 +349,14 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
         customer={editing}
         onSubmit={handleSubmit}
         isSubmitting={submitting}
+      />
+
+      <ReassignCustomerModal
+        open={Boolean(reassigning)}
+        onClose={() => setReassigning(null)}
+        customer={reassigning}
+        onSubmit={handleReassign}
+        isSubmitting={reassign.isPending}
       />
     </div>
   )

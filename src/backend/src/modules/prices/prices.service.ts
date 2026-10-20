@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../common/acl/acl.service';
+import { CopPriceError, isCopCurrency, normalizeCopPrice, resolvePriceCurrency } from '../../common/money/cop-policy';
 import { AuditService } from '../audit/audit.service';
 import { CreatePriceDto } from './dto/create-price.dto';
 import { UpdatePriceDto } from './dto/update-price.dto';
@@ -97,6 +98,22 @@ export class PricesService {
       throw new BadRequestException(
         'La fecha de fin (validUntil) no puede ser anterior a la fecha de inicio (validFrom)',
       );
+    }
+  }
+
+  /**
+   * IMP-03 — normaliza el valor de un precio cuando la moneda efectiva es COP
+   * (misma política que el preview: entero, HALF_UP, límite único). Otras monedas
+   * conservan su precisión (no se les impone COP). El valor entero COP ≤
+   * 9999999999 es exacto como número JS y como Decimal(12,2).
+   */
+  private normalizeCopInput(value: number, currency: string): number {
+    if (!isCopCurrency(currency)) return value;
+    try {
+      return Number(normalizeCopPrice(value).rounded);
+    } catch (error) {
+      if (error instanceof CopPriceError) throw new BadRequestException(error.message);
+      throw error;
     }
   }
 
@@ -406,6 +423,12 @@ export class PricesService {
 this.validateCurrency(dto.currency);
     this.validatePrice(dto.value, dto.validFrom, dto.validUntil);
 
+    // IMP-03 — COP final entero (HALF_UP, límite único) en la escritura manual.
+    const persistedValue = this.normalizeCopInput(
+      dto.value,
+      resolvePriceCurrency(dto.currency, priceList.currency),
+    );
+
     // Fechas normalizadas a Date (string 'YYYY-MM-DD' → Date) para evitar 500 de Prisma.
     const validFrom = this.parsePriceDate(dto.validFrom);
     const validUntil = this.parsePriceDate(dto.validUntil);
@@ -425,7 +448,7 @@ this.validateCurrency(dto.currency);
         productId: dto.productId,
         priceListId: dto.priceListId,
         ...(productListaId ? { listaId: dto.listaId ?? productListaId } : {}),
-        value: dto.value,
+        value: persistedValue,
         currency: dto.currency ?? priceList.currency ?? 'COP',
         validFrom,
         validUntil,
@@ -497,6 +520,11 @@ this.validateCurrency(dto.currency);
       price.validUntil,
     );
 
+    // IMP-03 — COP final entero (HALF_UP, límite único) también en la edición manual.
+    const persistedValue = dto.value !== undefined
+      ? this.normalizeCopInput(dto.value, resolvePriceCurrency(dto.currency, price.currency))
+      : undefined;
+
     // Control de solapamiento (checklist 21): 409 si otro precio del mismo producto
     // (misma priceListId o misma Lista) se solapa con la nueva vigencia (excluye este precio).
     // Fechas normalizadas a Date (string 'YYYY-MM-DD' → Date) para evitar 500 de Prisma (BUG-1).
@@ -514,7 +542,7 @@ this.validateCurrency(dto.currency);
     });
 
     const data = {
-      ...(dto.value !== undefined && { value: dto.value }),
+      ...(persistedValue !== undefined && { value: persistedValue }),
       ...(dto.listaId !== undefined && { listaId: dto.listaId }),
       ...(dto.currency && { currency: dto.currency }),
       ...(dto.validFrom !== undefined && { validFrom: newFrom }),
@@ -546,7 +574,7 @@ this.validateCurrency(dto.currency);
         validUntil: price.validUntil,
       },
       newValues: {
-        value: dto.value !== undefined ? dto.value : price.value,
+        value: persistedValue !== undefined ? persistedValue : price.value,
         currency: dto.currency !== undefined ? dto.currency : price.currency,
         listaId: dto.listaId !== undefined ? dto.listaId : price.listaId,
         validFrom: newFrom,

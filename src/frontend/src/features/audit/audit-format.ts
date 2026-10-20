@@ -47,6 +47,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   Category: 'categoría',
   Brand: 'marca',
   User: 'usuario',
+  UserAccess: 'acceso del usuario',
   Price: 'precio',
 }
 
@@ -56,6 +57,7 @@ export const ENTITY_GENDER: Record<string, 'm' | 'f'> = {
   Category: 'f',
   Brand: 'f',
   User: 'm',
+  UserAccess: 'm',
   Price: 'm',
 }
 
@@ -126,6 +128,10 @@ const ACTION_VERBS: Record<string, Record<string, string>> = {
     restore: 'restauró el usuario',
     password_change: 'cambió la contraseña del usuario',
     role_change: 'cambió el rol del usuario',
+  },
+  UserAccess: {
+    replacesource: 'actualizó los accesos del usuario',
+    removesource: 'retiró un conjunto de accesos del usuario',
   },
   Price: {
     create: 'creó el precio',
@@ -242,6 +248,7 @@ const FIELD_LABELS: Record<string, string> = {
   lastName: 'Apellido',
   fullName: 'Nombre completo',
   role: 'Rol',
+  grants: 'Permisos',
   phone: 'Teléfono',
   avatar: 'Avatar',
   lastLoginAt: 'Último acceso',

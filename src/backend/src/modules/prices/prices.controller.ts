@@ -10,11 +10,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { PriceActionGuard } from './price-action.guard';
 
 @ApiTags('Price Lists')
 @ApiBearerAuth()
 @Controller('api/prices')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PriceActionGuard)
 export class PricesController {
   constructor(private readonly pricesService: PricesService) {}
 
@@ -37,7 +38,7 @@ export class PricesController {
   }
 
   @Post('lists')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Crear lista de precios (tarifa)' })
   @ApiResponse({ status: 201, description: 'Lista creada' })
   createPriceList(@Body() dto: CreatePriceListDto, @CurrentUser() user: any) {
@@ -45,7 +46,7 @@ export class PricesController {
   }
 
   @Put('lists/:id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Actualizar lista de precios (tarifa)' })
   updatePriceList(
     @Param('id') id: string,
@@ -56,7 +57,7 @@ export class PricesController {
   }
 
   @Patch('lists/:id/toggle-active')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Alternar estado activo de la lista de precios' })
   @ApiResponse({ status: 200, description: 'Lista actualizada' })
   togglePriceListActive(@Param('id') id: string, @CurrentUser() user: any) {
@@ -64,7 +65,7 @@ export class PricesController {
   }
 
   @Delete('lists/:id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Eliminar lista de precios (tarifa)' })
   removePriceList(@Param('id') id: string, @CurrentUser() user: any) {
     return this.pricesService.removePriceList(id, user?.sub ?? user?.id);
@@ -85,7 +86,7 @@ export class PricesController {
   }
 
   @Post()
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Crear precio' })
   @ApiResponse({ status: 201, description: 'Precio creado' })
   createPrice(@Body() dto: CreatePriceDto, @CurrentUser() user: any) {
@@ -93,14 +94,14 @@ export class PricesController {
   }
 
   @Put(':id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Actualizar precio' })
   updatePrice(@Param('id') id: string, @Body() dto: UpdatePriceDto, @CurrentUser() user: any) {
     return this.pricesService.updatePrice(id, dto, this.ctx(user));
   }
 
   @Delete(':id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Eliminar precio' })
   removePrice(@Param('id') id: string, @CurrentUser() user: any) {
     return this.pricesService.removePrice(id, this.ctx(user));

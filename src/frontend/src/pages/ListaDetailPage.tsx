@@ -2,7 +2,7 @@ import { useState, useMemo, type FormEvent } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import api from '../services/api'
-import { fetchListaById, fetchListaProducts, fetchListaPrices, fetchListaAssignments, fetchListaAudit, updateLista, archiveLista, restoreLista, downloadListaTemplateCsv } from '../services/listas.service'
+import { fetchListaById, fetchListaProducts, fetchListaPrices, fetchListaAssignments, fetchListaAudit, updateLista, archiveLista, restoreLista, unlinkProduct, listaErrorMessage, LISTA_UNLINK_CONSERVATION_NOTICE } from '../services/listas.service'
 import { fetchPriceLists, createPrice, updatePrice, deletePrice } from '../services/prices.service'
 import type { Price, PricePayload, UpdatePricePayload } from '../services/prices.service'
 import { fetchCategories, createCategory, type Category as SettingsCategory, type CategoryPayload } from '../services/settings.service'
@@ -17,8 +17,20 @@ import { useImportStore } from '../features/products/import/store/import.store'
 import { useImportModalStore } from '../features/products/import/store/importModal.store'
 import type { Category, Brand, Product } from '../features/products/types/product.types'
 import { ProductIndicators } from '../features/products/components/ProductIndicators'
+import PriceImportPreviewPanel from '../features/price-import/PriceImportPreviewPanel'
+import { JobPanel } from '../features/catalog-jobs/JobPanel'
 
-type Tab = 'products' | 'prices' | 'access' | 'audit' | 'settings'
+type Tab = 'products' | 'prices' | 'review' | 'jobs' | 'access' | 'audit' | 'settings'
+
+/**
+ * COM-05/COM-06 — gate de la revisión de precios. Mismo criterio que el backend
+ * (acción `prices:preview` con alcance `view_prices` sobre la Lista). El
+ * endpoint revalida por solicitud; aquí sólo se decide qué se muestra. El rol
+ * `canManageListas()` conserva la capa legada (transición D5 de la tanda).
+ */
+function canReviewPrices(): boolean {
+  return hasPermission('prices:preview') || canManageListas()
+}
 
 function StatusBadge({ isActive }: { isActive: boolean }) {
   return (
@@ -132,17 +144,6 @@ export default function ListaDetailPage() {
                 variant="secondary"
                 icon={
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                }
-                onClick={() => downloadListaTemplateCsv(`plantilla-lista-${lista.code}-${lista.id.slice(0, 8)}.csv`)}
-              >
-                Descargar plantilla
-              </Button>
-              <Button
-                variant="secondary"
-                icon={
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 }
@@ -163,6 +164,8 @@ export default function ListaDetailPage() {
           {([
             { key: 'products', label: 'Productos' },
             { key: 'prices', label: 'Precios' },
+            ...(canReviewPrices() ? [{ key: 'review' as Tab, label: 'Revisar precios' }] : []),
+            { key: 'jobs', label: 'Trabajos' },
             { key: 'access', label: 'Accesos' },
             { key: 'audit', label: 'Auditoría' },
             { key: 'settings', label: 'Configuración' },
@@ -188,6 +191,8 @@ export default function ListaDetailPage() {
       {tab === 'prices' && (
         <PreciosTab products={products ?? []} prices={prices ?? []} listaId={id ?? ''} />
       )}
+      {tab === 'review' && id && <PriceImportPreviewPanel listaId={id} />}
+      {tab === 'jobs' && id && <JobPanel listaId={id} />}
       {tab === 'access' && <AccesosTab assignments={assignments ?? []} />}
       {tab === 'audit' && <AuditoriaTab logs={auditLogs ?? []} />}
       {tab === 'settings' && (
@@ -216,6 +221,8 @@ function ProductosTab({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [moveTarget, setMoveTarget] = useState<MoveCategoryTarget | null>(null)
   const [view, setView] = useState<'table' | 'folder'>('table')
+  const [unlinkError, setUnlinkError] = useState<string | null>(null)
+  const [unlinkNotice, setUnlinkNotice] = useState<string | null>(null)
   const canEdit = canManage || hasPermission('products:write')
 
   const { data: categories } = useQuery({
@@ -227,6 +234,31 @@ function ProductosTab({
     queryKey: ['brands'],
     queryFn: async () => (await api.get('/brands')).data.data as Brand[],
   })
+
+  // CAT-01 — «Quitar de la lista»: desvincular explícito (acción del servidor
+  // `listas:unlink`, roles Super Admin/Admin Comercial — mismos roles que el
+  // botón). Conserva ficha, imágenes y precios; no añade a otra lista.
+  const unlinkMutation = useMutation({
+    mutationFn: (productId: string) => unlinkProduct(listaId, productId),
+    onSuccess: () => {
+      setUnlinkError(null)
+      setUnlinkNotice('Producto quitado de la Lista. Su ficha, imágenes y precios se conservan.')
+      queryClient.invalidateQueries({ queryKey: ['lista-products', listaId] })
+      queryClient.invalidateQueries({ queryKey: ['lista', listaId] })
+      queryClient.invalidateQueries({ queryKey: ['listas'] })
+    },
+    onError: (err) => {
+      setUnlinkNotice(null)
+      setUnlinkError(listaErrorMessage(err, 'No se pudo quitar el producto de la Lista'))
+    },
+  })
+
+  const requestUnlink = (product: any) => {
+    const ok = window.confirm(
+      `¿Quitar «${product.name}» de esta Lista?\n\n${LISTA_UNLINK_CONSERVATION_NOTICE}`,
+    )
+    if (ok) unlinkMutation.mutate(product.id)
+  }
 
   if (products.length === 0) {
     return (
@@ -241,6 +273,22 @@ function ProductosTab({
 
   return (
     <>
+      {unlinkError && (
+        <div
+          className="mb-3 flex items-start gap-3 p-3.5 rounded-lg border text-sm bg-red-50 border-red-200 text-red-800"
+          role="alert"
+        >
+          <span className="flex-1">{unlinkError}</span>
+        </div>
+      )}
+      {unlinkNotice && (
+        <div
+          className="mb-3 flex items-start gap-3 p-3.5 rounded-lg border text-sm bg-emerald-50 border-emerald-200 text-emerald-800"
+          role="status"
+        >
+          <span className="flex-1">{unlinkNotice}</span>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-3">
         <div className="flex gap-1.5 bg-neutral-100 rounded-lg p-1 text-xs font-medium text-neutral-600">
           <button
@@ -319,6 +367,16 @@ function ProductosTab({
                             className="px-2.5 py-1 text-xs font-medium text-neutral-600 hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-bg-subtle)] rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
                           >
                             Mover
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            onClick={() => requestUnlink(p)}
+                            title={LISTA_UNLINK_CONSERVATION_NOTICE}
+                            disabled={unlinkMutation.isPending}
+                            className="px-2.5 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                          >
+                            Quitar de la lista
                           </button>
                         )}
                       </div>
@@ -1016,7 +1074,8 @@ const FIELD_CLASS =
 
 const CONFIG_CURRENCIES = ['COP', 'USD', 'EUR']
 
-function ConfiguracionTab({
+/** Exportado para la spec (CAT-01): verifica badge «Archivada» + «Restaurar». */
+export function ConfiguracionTab({
   lista,
   products,
   listaId,
@@ -1122,7 +1181,7 @@ function ConfiguracionTab({
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     },
-    onError: (err) => setFormError(getApiErrorMessage(err, 'No se pudo cambiar el estado de la Lista')),
+    onError: (err) => setFormError(listaErrorMessage(err, 'No se pudo cambiar el estado de la Lista')),
   })
 
   const submit = (e: FormEvent) => {

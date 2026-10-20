@@ -22,6 +22,10 @@ export const sheetFixture = (over: Partial<ProductSheetApi> = {}): ProductSheetA
   imageAlt: null,
   specsDisclaimer: 'Pruebas en entorno controlado.',
   firmwareNote: 'Actualiza al firmware más reciente.',
+  manufacturerRefs: ['DS-E04HQHI-D/PN', '7798123456789'],
+  internalNotes: 'Almacén Bodega 2: último lote sin garantía extendida.',
+  canSeeInternalNotes: true,
+  version: 4,
   specGroups: [
     {
       key: 'video',

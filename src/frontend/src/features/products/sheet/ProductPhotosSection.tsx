@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api, { resolveAssetUrl } from '../../../services/api'
 import type { Product } from '../types/product.types'
 import { getApiErrorMessage } from '../../../lib/apiError'
 import { Alert } from '../../../components/ui'
+import { publishedImagesNotice, type ImagesNotice } from './published-images'
+import { fetchPublishedImages } from './sheet.service'
 import {
   uploadProductImage,
   deleteProductImage,
@@ -45,10 +47,37 @@ function AltEditor({
   )
 }
 
+/**
+ * CAT-04 (frontend-imagenes): diferencia entre el borrador vivo y lo que la
+ * tienda muestra hoy (galería del detalle público = lente de la revisión
+ * publicada). Extraído para poder probarlo sin red.
+ */
+export function PublishedImagesNotice({ notice }: { notice: ImagesNotice }) {
+  if (notice.state !== 'difiere') return null
+  return (
+    <Alert variant="info">
+      <span data-testid="published-images-notice">{notice.message}</span>
+      <span className="block text-xs text-neutral-500 mt-1">
+        Subir, quitar o reordenar fotos aquí NO cambia lo que ve la tienda: la versión publicada anterior se conserva hasta la próxima publicación.
+      </span>
+    </Alert>
+  )
+}
+
 export function ProductPhotosSection({ product }: { product: Product }) {
   const queryClient = useQueryClient()
   const images = product.images ?? []
   const IMAGE_TYPES = ['PORTADA', 'LOGO', 'PRINCIPAL', 'COMPLEMENTARIA', 'EXTRA'] as const
+
+  // CAT-04: lo publicado llega del detalle PÚBLICO (ya lensado por la revisión
+  // publicada). 404/no publicada → null: no hay «anterior» que comparar.
+  const publishedQuery = useQuery({
+    queryKey: ['published-images', product.id],
+    queryFn: () => fetchPublishedImages(product.id),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
+  const notice = publishedImagesNotice(images.map((img) => img.url), publishedQuery.data ?? null)
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['product', product.id] })
@@ -94,6 +123,7 @@ export function ProductPhotosSection({ product }: { product: Product }) {
       {updateAlt.isError && isNotImplemented(updateAlt.error) && (
         <Alert variant="info">Editar el texto alternativo estará disponible próximamente.</Alert>
       )}
+      <PublishedImagesNotice notice={notice} />
 
       <label className="inline-flex items-center gap-2 px-4 py-2.5 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 cursor-pointer transition-colors">
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

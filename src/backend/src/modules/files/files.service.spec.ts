@@ -24,20 +24,24 @@ describe('FilesService', () => {
   });
 
   describe('store', () => {
-    it('debe guardar los bytes y devolver la URL pública', async () => {
-      mockPrisma.uploadedFile.create.mockResolvedValue({
-        id: 'file-1',
+    it('debe guardar los bytes con su registro de activos (CAT-04 D1) y devolver la URL', async () => {
+      const bytes = Buffer.from('bytes');
+      mockPrisma.uploadedFile.create.mockResolvedValue({ id: 'file-1', detectedKind: 'UNKNOWN' });
+
+      const result = await service.store(bytes, 'image/png', { originalName: 'logo.png', ownerProductId: 'p-1' });
+
+      expect(result).toEqual({ id: 'file-1', url: '/api/files/file-1', detectedKind: 'UNKNOWN' });
+      const { data } = mockPrisma.uploadedFile.create.mock.calls[0][0];
+      expect(data).toMatchObject({
         mimeType: 'image/png',
-        data: Buffer.from('bytes'),
-        createdAt: new Date(),
+        sizeBytes: bytes.length,
+        originalName: 'logo.png',
+        ownerProductId: 'p-1',
+        visibility: 'PUBLIC',
       });
-
-      const result = await service.store(Buffer.from('bytes'), 'image/png');
-
-      expect(result).toEqual({ id: 'file-1', url: '/api/files/file-1' });
-      expect(mockPrisma.uploadedFile.create).toHaveBeenCalledWith({
-        data: { mimeType: 'image/png', data: Buffer.from('bytes') },
-      });
+      // sha256 hex de 'bytes' y detectedKind calculados SIEMPRE por el servidor.
+      expect(data.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(typeof data.detectedKind).toBe('string');
     });
   });
 
@@ -64,32 +68,76 @@ describe('FilesService', () => {
     });
   });
 
-  describe('deleteByUrl', () => {
-    it('debe borrar el archivo cuando la URL apunta a este almacén', async () => {
+  describe('release (CAT-04 D3: no borra bytes referenciados)', () => {
+    const zeroRefs = () => {
+      mockPrisma.productImage.count.mockResolvedValue(0);
+      mockPrisma.productCatalogResource.count.mockResolvedValue(0);
+      mockPrisma.$queryRaw.mockResolvedValue([{ count: 0n }]);
+    };
+
+    it('debe borrar el archivo solo cuando NO queda ninguna referencia', async () => {
+      zeroRefs();
       mockPrisma.uploadedFile.delete.mockResolvedValue({});
 
-      await service.deleteByUrl('/api/files/file-1');
+      const result = await service.release('/api/files/file-1');
 
+      expect(result).toEqual({ deleted: true });
       expect(mockPrisma.uploadedFile.delete).toHaveBeenCalledWith({ where: { id: 'file-1' } });
     });
 
-    it('no debe hacer nada si la URL es externa (no gestionada por este almacén)', async () => {
-      await service.deleteByUrl('https://example.com/logo.png');
+    it('RETIENE los bytes si una imagen viva los referencia', async () => {
+      zeroRefs();
+      mockPrisma.productImage.count.mockResolvedValue(1);
 
+      const result = await service.release('/api/files/file-1');
+
+      expect(result.deleted).toBe(false);
+      expect(result.retainedReason).toBe('referenced');
       expect(mockPrisma.uploadedFile.delete).not.toHaveBeenCalled();
     });
 
-    it('no debe hacer nada si la URL es null o undefined', async () => {
-      await service.deleteByUrl(null);
-      await service.deleteByUrl(undefined);
+    it('RETIENE si el contenido de una revisión (histórica o pública) los referencia', async () => {
+      zeroRefs();
+      // Primera consulta = products (sin refs); segunda = revisions (1 ref).
+      mockPrisma.$queryRaw.mockReset();
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ count: 0n }])
+        .mockResolvedValueOnce([{ count: 1n }]);
 
+      const result = await service.release('/api/files/file-1');
+
+      expect(result.deleted).toBe(false);
+      expect(mockPrisma.uploadedFile.delete).not.toHaveBeenCalled();
+    });
+
+    it('no debe hacer nada si la URL es externa (no gestionada por este almacén)', async () => {
+      const result = await service.release('https://example.com/logo.png');
+      expect(result.deleted).toBe(false);
+      expect(result.retainedReason).toBe('external-url');
       expect(mockPrisma.uploadedFile.delete).not.toHaveBeenCalled();
     });
 
     it('no debe lanzar si el archivo ya no existe en BD', async () => {
+      zeroRefs();
       mockPrisma.uploadedFile.delete.mockRejectedValue(new Error('Record not found'));
 
-      await expect(service.deleteByUrl('/api/files/no-existe')).resolves.toBeUndefined();
+      await expect(service.release('/api/files/no-existe')).resolves.toEqual({ deleted: false, retainedReason: 'not-found' });
+    });
+
+    it('deleteByUrl conserva la firma antigua (delegación en release)', async () => {
+      zeroRefs();
+      mockPrisma.uploadedFile.delete.mockResolvedValue({});
+      await expect(service.deleteByUrl('/api/files/file-1')).resolves.toBeUndefined();
+      expect(mockPrisma.uploadedFile.delete).toHaveBeenCalled();
+    });
+
+    it('excludeImageId saca la propia fila del recuento (borrar SU imagen no se auto-retiene)', async () => {
+      zeroRefs();
+      mockPrisma.uploadedFile.delete.mockResolvedValue({});
+      await service.release('/api/files/file-1', { excludeImageId: 'img-9' });
+      expect(mockPrisma.productImage.count).toHaveBeenCalledWith({
+        where: { url: '/api/files/file-1', id: { not: 'img-9' } },
+      });
     });
   });
 });

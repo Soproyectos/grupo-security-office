@@ -16,10 +16,13 @@ describe('QuotesService', () => {
   };
   let hierarchy: { getSubordinateIds: jest.Mock };
   let audit: { log: jest.Mock };
+  let grants: { grantsForUser: jest.Mock };
   let service: QuotesService;
 
   const adminCtx = { userId: 'admin-1', roles: ['Super Admin'] };
   const operadorCtx = { userId: 'op-1', roles: ['Operador'] };
+  /** Misma identidad que el controller arma (jti aporta la sesión viva). */
+  const operadorCtxJti = { ...operadorCtx, jti: 'jti-op-1' };
 
   const baseQuote = {
     id: 'q1',
@@ -50,6 +53,9 @@ describe('QuotesService', () => {
     };
     hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['op-1']) };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
+    grants = { grantsForUser: jest.fn().mockResolvedValue([
+      'customers:read', 'quotes:read', 'quotes:create', 'quotes:edit', 'quotes:status', 'quotes:discount',
+    ].map((actionId) => ({ sourceId: 'test', actionId, scope: 'own' }))) };
     // $transaction con callback: ejecuta sobre el mismo mock (patrón del codebase).
     prisma.$transaction.mockImplementation((fn: any) => fn(prisma));
     service = new QuotesService(
@@ -57,6 +63,7 @@ describe('QuotesService', () => {
       acl as any,
       hierarchy as any,
       audit as any,
+      grants as any,
     );
 
     // Defaults: quote encontrada con sus relaciones para findOne.
@@ -67,7 +74,7 @@ describe('QuotesService', () => {
   // ---------- Totales y snapshot ----------
 
   it('crea una cotización y agrega un ítem con precio vigente: totales correctos', async () => {
-    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', isActive: true });
+    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', isActive: true, ownerId: 'op-1' });
     prisma.quote.findFirst.mockResolvedValue(null);
     prisma.quote.findUnique
       .mockResolvedValueOnce(null) // chequeo de código duplicado en create
@@ -423,6 +430,9 @@ describe('QuotesService', () => {
     acl.isListasAdmin.mockReturnValue(false);
     const supCtx = { userId: 'sup-1', roles: ['Supervisor'] };
     hierarchy.getSubordinateIds.mockResolvedValue(['sup-1', 'op-1', 'op-2']);
+    grants.grantsForUser.mockResolvedValue([
+      { sourceId: 'team-read', actionId: 'quotes:read', scope: 'team' },
+    ]);
     prisma.quote.findMany.mockResolvedValue([]);
     prisma.quote.count.mockResolvedValue(0);
 
@@ -436,14 +446,15 @@ describe('QuotesService', () => {
     );
   });
 
-  it('un Operador no puede cerrar como ganada (rol no permitido)', async () => {
+  it('un Operador con quotes:status y alcance propio puede cerrar como ganada', async () => {
     prisma.quote.findUnique.mockResolvedValue({
       ...baseQuote,
       status: 'enviada',
     });
-    await expect(
-      service.updateStatus('q1', { status: 'ganada' }, operadorCtx),
-    ).rejects.toThrow(ForbiddenException);
+    await service.updateStatus('q1', { status: 'ganada' }, operadorCtx);
+    expect(prisma.quote.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'q1' }, data: expect.objectContaining({ status: 'ganada' }),
+    }));
   });
 
   it('estado efectivo "vencida" al leer cuando validUntil ya pasó', async () => {
@@ -466,7 +477,7 @@ describe('QuotesService', () => {
       prisma.quote.count.mockResolvedValue(0);
       await service.findAll({}, seller);
       const where = prisma.quote.findMany.mock.calls[0][0].where;
-      expect(where.AND).toContainEqual({ ownerId: { in: ['seller-1'] } });
+      expect(where.AND).toContainEqual({ ownerId: 'seller-1' });
       expect(prisma.quote.count).toHaveBeenCalledWith({ where });
       expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
     });
@@ -496,6 +507,279 @@ describe('QuotesService', () => {
       expect(prisma.quote.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ owner: { connect: { id: seller.userId } } }),
       }));
+    });
+  });
+
+  // ================= COM-03 · Aceptación 1 =================
+  // «Editar cantidad no introduce descuento nuevo no autorizado ni borra
+  //  descuento previo autorizado.» (ficha, textual)
+  describe('COM-03 · cantidades separadas de descuentos', () => {
+    const storedItem = {
+      id: 'item-1',
+      quoteId: 'q1',
+      unitPrice: 1000,
+      quantity: 3,
+      discountPct: 10,
+    };
+
+    beforeEach(() => {
+      prisma.quoteItem.findUnique.mockResolvedValue({ ...storedItem });
+      prisma.quoteItem.update.mockResolvedValue({});
+      prisma.quote.findUniqueOrThrow.mockResolvedValue({
+        ...baseQuote,
+        items: [{ lineTotal: 2700 }],
+      });
+    });
+
+    it('editar SOLO quantity → 200 con discountPct/unitPrice/quantity previos intactos', async () => {
+      await service.updateItem('q1', 'item-1', { quantity: 5 }, operadorCtx);
+
+      expect(prisma.quoteItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        // lineTotal = 1000 * 5 * (1 - 10/100) = 4500 → el descuento PREVIO se conserva
+        data: { quantity: 5, discountPct: 10, lineTotal: 4500 },
+      });
+      const written = prisma.quoteItem.update.mock.calls[0][0].data;
+      expect(written.unitPrice).toBeUndefined();
+      expect(written.priceCapturedAt).toBeUndefined();
+    });
+
+    it('payload mixto { quantity, discountPct } → 400 SIN escritura parcial (ni la cantidad)', async () => {
+      const err: any = await service
+        .updateItem('q1', 'item-1', { quantity: 5, discountPct: '20' }, operadorCtx)
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toContain('discount-not-allowed-in-general-edit');
+      expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+      expect(prisma.quote.update).not.toHaveBeenCalled();
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('alta de ítem con discountPct en rango → 400 (el descuento se aplica en la operación dedicada)', async () => {
+      const err: any = await service
+        .addItem('q1', { productId: 'p1', quantity: 1, discountPct: '10' }, operadorCtx)
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toContain('discount-not-allowed-in-add');
+      expect(prisma.quoteItem.create).not.toHaveBeenCalled();
+    });
+
+    it('PATCH .../discount SIN quotes:discount → 403 y sin escritura', async () => {
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's1', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:edit', scope: 'own' },
+      ]);
+
+      const err: any = await service
+        .updateItemDiscount('q1', 'item-1', { discountPct: '25' }, operadorCtxJti)
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err.message).toContain('quotes:discount');
+      expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('PATCH .../discount CON quotes:discount → 200: aplica el descuento y conserva la cantidad', async () => {
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's1', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:edit', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:discount', scope: 'own' },
+      ]);
+
+      await service.updateItemDiscount('q1', 'item-1', { discountPct: '15' }, operadorCtxJti);
+
+      const written = prisma.quoteItem.update.mock.calls[0][0];
+      expect(written.where).toEqual({ id: 'item-1' });
+      expect(written.data.discountPct).toBe(15);
+      expect(written.data.quantity).toBeUndefined(); // la cantidad no se toca
+      // lineTotal = 1000 * 3 * (1 - 15/100) = 2550 con la cantidad CONSERVADA
+      expect(written.data.lineTotal).toBe(2550);
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'discount_change',
+          entity: 'QuoteItem',
+          entityId: 'item-1',
+          oldValues: { discountPct: 10 },
+          newValues: { discountPct: 15 },
+        }),
+      );
+    });
+
+    it('PATCH .../discount fuera de 0-100 → 400 antes de escribir', async () => {
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's1', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:edit', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:discount', scope: 'own' },
+      ]);
+
+      await expect(
+        service.updateItemDiscount('q1', 'item-1', { discountPct: '101' }, operadorCtxJti),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateItemDiscount('q1', 'item-1', { discountPct: '-1' }, operadorCtxJti),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+    });
+
+    it('PATCH .../discount sobre cotización ajena → 404 sin revelar existencia', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue(['op-1']);
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, ownerId: 'op-otro' });
+
+      await expect(
+        service.updateItemDiscount('q1', 'item-1', { discountPct: '10' }, operadorCtxJti),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ================= COM-03 · Aceptación 2 =================
+  // «Producto/tarifa ajeno se rechaza.» (ficha, textual)
+  describe('COM-03 · producto/tarifa ajeno se rechaza', () => {
+    it('producto de Lista sin nivel view_prices → 403 y ninguna fila creada', async () => {
+      acl.assertProductAccess.mockRejectedValue(
+        new ForbiddenException('No tienes permisos suficientes sobre esta Lista'),
+      );
+
+      await expect(
+        service.addItem('q1', { productId: 'p-ajeno', quantity: 1 }, operadorCtx),
+      ).rejects.toThrow(ForbiddenException);
+      expect(acl.assertProductAccess).toHaveBeenCalledWith(
+        'p-ajeno',
+        operadorCtx,
+        'view_prices',
+      );
+      expect(prisma.quoteItem.create).not.toHaveBeenCalled();
+    });
+
+    it('producto inexistente o de Lista no autorizada → 404 (no revela existencia)', async () => {
+      acl.assertProductAccess.mockRejectedValue(new NotFoundException('Producto no encontrado'));
+
+      await expect(
+        service.addItem('q1', { productId: 'p-no-existe', quantity: 1 }, operadorCtx),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.quoteItem.create).not.toHaveBeenCalled();
+    });
+
+    it('producto propio con view_prices → crea la línea con snapshot de precio vigente', async () => {
+      prisma.quoteItem.findFirst.mockResolvedValue(null);
+      prisma.price.findMany.mockResolvedValue([
+        {
+          id: 'price-1',
+          productId: 'p-propio',
+          priceListId: 'pl-1',
+          value: 800,
+          currency: 'COP',
+          validFrom: null,
+          validUntil: null,
+          updatedAt: new Date(),
+        },
+      ]);
+      prisma.product.findUnique.mockResolvedValue({
+        id: 'p-propio',
+        sku: 'SKU-PROPIO',
+        name: 'Producto propio',
+      });
+      prisma.quoteItem.create.mockResolvedValue({});
+      prisma.quote.findUniqueOrThrow.mockResolvedValue({ ...baseQuote, items: [] });
+
+      await service.addItem('q1', { productId: 'p-propio', quantity: 2 }, operadorCtx);
+
+      expect(prisma.quoteItem.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitPrice: 800, quantity: 2, discountPct: 0 }),
+        }),
+      );
+    });
+
+    it('cotización sin tarifa (priceListId) → 409 y ninguna fila creada', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, priceListId: null });
+
+      await expect(
+        service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.quoteItem.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ================= COM-03 · Aceptación 3 =================
+  // «Ganada conserva pedido interno idempotente sin contar factura inexistente.»
+  describe('COM-03 · ganada idempotente sin factura fantasma', () => {
+    it('segunda transición a ganada → 409 y NO se crea un segundo pedido', async () => {
+      prisma.quote.findUnique.mockResolvedValue({
+        ...baseQuote,
+        status: 'ganada',
+        closedAt: new Date(),
+      });
+
+      const err: any = await service
+        .updateStatus('q1', { status: 'ganada' }, adminCtx)
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.message).toMatch(/No se puede pasar de ganada a ganada/);
+      expect(prisma.salesOrder.create).not.toHaveBeenCalled();
+      expect(prisma.quote.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('el pedido interno nace SIN externalInvoiceNumber (no es una factura)', async () => {
+      prisma.quote.findUnique
+        .mockResolvedValueOnce({ ...baseQuote, status: 'enviada', validUntil: null, total: 500 })
+        .mockResolvedValue({ ...baseQuote, status: 'ganada', closedAt: new Date() });
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+      prisma.quote.update.mockResolvedValue({});
+      prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', status: 'CLIENTE' });
+      prisma.salesOrder.findFirst.mockResolvedValue({ code: 'SO-0001' });
+      prisma.salesOrder.findUnique.mockResolvedValue(null);
+      prisma.salesOrder.create.mockResolvedValue({ id: 'so-1' });
+
+      // Un vendedor con quotes:status y alcance propio puede cerrar la venta.
+      await service.updateStatus('q1', { status: 'ganada' }, operadorCtx);
+
+      const payload = prisma.salesOrder.create.mock.calls[0][0].data;
+      // Sin referencia de factura: Prisma deja el campo en null y el dashboard
+      // solo cuenta `externalInvoiceNumber: { not: null }` (dashboard.service.ts:152).
+      expect(payload).not.toHaveProperty('externalInvoiceNumber');
+      expect(payload).not.toHaveProperty('externalInvoiceDate');
+      expect(payload).toMatchObject({
+        quote: { connect: { id: 'q1' } },
+        total: 500,
+      });
+    });
+
+    it('una sola ganada concurrente que choca con P2002 → 409 sin segundo pedido', async () => {
+      prisma.quote.findUnique.mockResolvedValueOnce({
+        ...baseQuote,
+        status: 'negociacion',
+        validUntil: null,
+      });
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+      prisma.quote.update.mockResolvedValue({});
+      prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', status: 'CLIENTE' });
+
+      const p2002 = new (await import('@prisma/client')).Prisma
+        .PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.22.0',
+          meta: { target: ['quoteId'] },
+        } as any);
+      prisma.salesOrder.create.mockRejectedValue(p2002);
+
+      const err: any = await service
+        .updateStatus('q1', { status: 'ganada' }, adminCtx)
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.message).toBe('Ya existe un pedido para esta cotización');
+      // La transacción revirtió: el estado de la cotización no avanzó.
+      expect(prisma.quote.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'ganada' }) }),
+      );
+      expect(audit.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'status_change' }),
+      );
     });
   });
 

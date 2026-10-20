@@ -5,6 +5,8 @@ import {
   LIFECYCLE_STATUS_LABEL,
 } from '../features/products/lib/lifecycle'
 import { useProducts } from '../features/products/hooks/useProducts'
+import { ValidationBatchButton } from '../features/catalog-validation/ValidationBatchButton'
+import { PublicationBoardSection } from '../features/catalog-publication/PublicationBoardPanel'
 import { ProductCard } from '../features/products/components/ProductCard'
 import { ProductTableRow } from '../features/products/components/ProductTableRow'
 import { ProductPagination } from '../components/ProductPagination'
@@ -114,7 +116,12 @@ export default function ProductsPage() {
             Catálogo global de consulta. La creación y edición se realizan desde la Lista correspondiente.
           </p>
         </div>
+        {/* CAT-05: validar el alcance mostrado (los autorizados de lo que se ve). */}
+        <ValidationBatchButton productIds={currentProducts.map((p) => p.id)} />
       </div>
+
+      {/* CAT-06: bandeja de publicación por alcance — lectura del contrato de servidor. */}
+      <PublicationBoardSection />
 
       {/* Search and filters */}
       <SearchFilterBar

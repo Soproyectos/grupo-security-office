@@ -1,10 +1,11 @@
-import { IsNumber, Min, IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, IsDateString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCopPrice } from '../../../common/money/cop-price.validator';
 
 export class UpdatePriceDto {
   @ApiPropertyOptional({ example: 1600000 })
   @IsNumber()
-  @Min(0)
+  @IsCopPrice()
   @IsOptional()
   value?: number;
 

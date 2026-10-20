@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { ProductsModule } from './modules/products/products.module';
+import { CatalogJobsModule } from './modules/catalog-jobs/catalog-jobs.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
@@ -58,6 +59,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     UsersModule,
     RolesModule,
     ProductsModule,
+    // CAT-07: trabajador común en PostgreSQL (sin broker); registra su @Cron.
+    CatalogJobsModule,
     CategoriesModule,
     BrandsModule,
     AssignmentsModule,

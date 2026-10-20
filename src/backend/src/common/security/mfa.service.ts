@@ -8,6 +8,7 @@ import { generateSecret, generateURI, verifySync } from 'otplib';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import * as QRCode from 'qrcode';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MfaCryptoService, safeCompare } from './mfa-crypto.service';
 import { BCRYPT_ROUNDS } from './password.constants';
@@ -98,11 +99,23 @@ export class MfaService {
 
     const secret = generateSecret();
 
-    await this.prisma.userMfa.create({
-      data: { userId, secret: this.crypto.encrypt(secret), enabled: false },
-    });
-
-    return this.buildEnrollment(secret, email);
+    try {
+      await this.prisma.userMfa.create({
+        data: { userId, secret: this.crypto.encrypt(secret), enabled: false },
+      });
+      return this.buildEnrollment(secret, email);
+    } catch (error) {
+      // Dos solicitudes simultáneas pueden ver que todavía no existe MFA.
+      // Sólo una crea la fila; la otra debe reutilizar ese mismo secreto.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+      }
+      const pending = await this.prisma.userMfa.findUnique({ where: { userId } });
+      if (!pending || pending.enabled) {
+        throw new BadRequestException('El segundo factor ya está activo.');
+      }
+      return this.buildEnrollment(this.crypto.decrypt(pending.secret), email);
+    }
   }
 
   /** Arma el `otpauth://` y su QR para un secreto dado. */

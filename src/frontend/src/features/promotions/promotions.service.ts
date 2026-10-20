@@ -1,6 +1,5 @@
 import api from '../../services/api'
 import { useAuthStore } from '../../stores/auth.store'
-import { ROLES } from '../../lib/roles'
 
 export interface Promotion {
   flyer?: string | null
@@ -13,9 +12,8 @@ export interface Promotion {
 export interface ManagedPromotion extends Promotion {
   isActive: boolean
   audience: 'GLOBAL' | 'TEAM'
-}
-export function canPublishPromotions(roles: readonly string[] = []): boolean {
-  return roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.SUPERVISOR)
+  /** COM-08: null = borrador (preparado, NO publicado); ausente = dato legacy tratado como publicado. */
+  publishedAt?: string | null
 }
 export async function fetchCurrentPromotions(): Promise<Promotion[]> {
   return (await api.get('/promotions/current')).data as Promotion[]
@@ -31,13 +29,8 @@ export async function verifyPromotionPublisher(): Promise<void> {
     throw new Error('No se pudo comprobar la sesión. Vuelve a iniciar sesión.')
   }
   useAuthStore.getState().login(current)
-  if (!canPublishPromotions(current.roles)) {
-    throw new Error('La sesión actual no corresponde a Supervisor o Super Admin. Inicia sesión con la cuenta que publicará el aviso.')
-  }
-  if (!previous || previous.id !== current.id ||
-      canPublishPromotions(previous.roles) !== canPublishPromotions(current.roles) ||
-      previous.roles.includes(ROLES.SUPER_ADMIN) !== current.roles.includes(ROLES.SUPER_ADMIN)) {
-    throw new Error('La cuenta o el rol de la sesión cambió en otra pestaña. Revisa el perfil actual antes de publicar de nuevo.')
+  if (!previous || previous.id !== current.id) {
+    throw new Error('La cuenta de la sesión cambió en otra pestaña. Revisa el perfil actual antes de continuar.')
   }
 }
 export async function fetchManagedPromotions(): Promise<ManagedPromotion[]> {
@@ -52,11 +45,21 @@ export async function withdrawPromotion(id: string): Promise<void> {
   await verifyPromotionPublisher()
   await api.patch(`/promotions/${id}/withdraw`)
 }
+/**
+ * COM-08: publicación EXPLÍCITA de un borrador (acción `commercialPromotions:publish`
+ * en servidor; 409 si ya estaba publicado, 400 si la vigencia venció, 403 sin permiso).
+ */
+export async function publishDraftPromotion(id: string): Promise<ManagedPromotion> {
+  await verifyPromotionPublisher()
+  return (await api.patch(`/promotions/${id}/publish`)).data as ManagedPromotion
+}
 export function promotionDate(value: string): string {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value))
 }
 
 export function promotionStatus(promotion: ManagedPromotion, now = Date.now()): string {
+  // COM-08: preparar NO publica — un borrador nunca se presenta como vigente.
+  if (promotion.publishedAt === null) return 'Borrador'
   if (!promotion.isActive) return 'Retirada'
   if (new Date(promotion.endsAt).getTime() <= now) return 'Vencida'
   return new Date(promotion.startsAt).getTime() > now ? 'Programada' : 'Vigente'

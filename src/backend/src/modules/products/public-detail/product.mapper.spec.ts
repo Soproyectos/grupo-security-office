@@ -67,6 +67,23 @@ const enriched: ProductRecord = {
 };
 
 describe('toProductDetailDto', () => {
+  it('CAT-03: nunca expone las notas internas ni la versión de la ficha (H1)', () => {
+    // El registro del editor puede traer las notas internas y la versión OCC;
+    // el DTO público se construye campo a campo y no debe filtrarlas.
+    const record = {
+      ...enriched,
+      catalogInternalNotes: 'nota-interna-secreta',
+      sheetVersion: 5,
+    } as unknown as ProductRecord;
+
+    const dto = toProductDetailDto(record, base);
+
+    expect(JSON.stringify(dto)).not.toContain('nota-interna-secreta');
+    expect(dto).not.toHaveProperty('internalNotes');
+    expect(dto).not.toHaveProperty('catalogInternalNotes');
+    expect(dto).not.toHaveProperty('sheetVersion');
+  });
+
   it('maps a bare product from its base data', () => {
     const dto = toProductDetailDto(bare, base);
 

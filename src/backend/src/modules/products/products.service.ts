@@ -10,8 +10,13 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.service';
+import { ProductRevisionsService } from './product-revisions.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
+import { detectKind, declaredMatchesDetected, sha256Hex } from '../files/file-signature';
+import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
+import { d5AssertAction } from '../../common/security/d5-action';
+import { ProductValidationService } from './validation/validation.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PublishProductDto } from './dto/publish-product.dto';
@@ -43,6 +48,7 @@ const ALLOWED_IMAGE_MIMETYPES: Record<string, string> = {
   'image/gif': 'gif',
 };
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8 MB
+const MAX_DOCUMENT_SIZE = 16 * 1024 * 1024; // 16 MB (CAT-04 documentos)
 
 /** Reporte de un tick del scheduler P6 (cron cada minuto). */
 export interface SchedulerTickReport {
@@ -78,6 +84,25 @@ export class ProductsService {
     private acl: AclService,
     private audit: AuditService,
     private files: FilesService,
+    /**
+     * CAT-02 alternativas: enruta ediciones legacy a REVISION_PENDIENTE.
+     * Opcional para conservar construcciones de 4 argumentos en specs previos;
+     * Nest lo inyecta (ProductsModule lo provee).
+     */
+    @Optional() private readonly revisions?: ProductRevisionsService,
+    /**
+     * CAT-04 §4: la subida/borrado de activos exige `products:write` cuando el
+     * usuario tiene concesiones (transición D5; sin grants manda @Roles+ACL).
+     * Opcional por el mismo motivo que `revisions` (SecurityModule @Global).
+     */
+    @Optional() private readonly grants?: AccessAssignmentsService,
+    /**
+     * CAT-06 (P2): antes de publicar/programar se re-ejecuta el motor de
+     * validacion CAT-05 (nunca se confía en un informe guardado). Opcional por
+     * el mismo motivo que `grants` (los specs previos siguen construyendo sin
+     * el; Nest lo inyecta via ProductsModule).
+     */
+    @Optional() private readonly validation?: ProductValidationService,
     ) {}
 
   /**
@@ -760,6 +785,10 @@ export class ProductsService {
       await this.upsertPrices(id, listaId, dto.prices);
     }
 
+    // CAT-02 alternativas: la edición legacy deja revisión pendiente; la
+    // presentación pública no cambia (lente de revisión activo).
+    await this.revisions?.markPendingFromLive(id);
+
     return updated;
   }
 
@@ -768,6 +797,7 @@ export class ProductsService {
    * con razón obligatoria (audit 'unpublish').
    */
   async unpublish(id: string, dto: UnpublishProductDto, ctx?: AccessContext) {
+    if (ctx) await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -889,6 +919,7 @@ export class ProductsService {
    * - `unpublishAt` se ignora (no existe auto-despublicación).
    */
   async publish(id: string, dto: PublishProductDto, ctx?: AccessContext) {
+    if (ctx) await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -918,6 +949,9 @@ export class ProductsService {
           publishedAt: null,
           publishedById: null,
           unpublishReason: null,
+          // CAT-06: cancelar la programación libera la revisión congelada SOLO
+          // si existía pin (no altera la forma del update para filas legacy).
+          ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}),
         },
       });
       await this.audit.log({
@@ -928,6 +962,7 @@ export class ProductsService {
         oldValues: { lifecycleStatus: status, publishAt: currentPublishAt },
         newValues: { lifecycleStatus: status, publishAt: null, isActive: false, isVisible: false },
       });
+      await this.logPublicationEvent('UNSCHEDULE', id, product.scheduledRevisionId ?? null, 'ok', ctx?.userId ?? null);
       return updated;
     }
 
@@ -960,6 +995,15 @@ export class ProductsService {
     }
 
     // Programación sobre DRAFT: persiste estado canónico DRAFT completo con publishAt.
+    // CAT-06 (T3, MISMO servicio que schedulePublication): programar exige
+    // validación vigente AHORA (motor CAT-05 re-ejecutado) y CONGELA la revisión
+    // que el scheduler publicará al vencer — caso 1 de la ficha.
+    let scheduledRevisionId: string | null | undefined;
+    if (this.validation && this.revisions) {
+      await this.assertPublicationReady(id, ctx?.userId ?? null, true);
+      // Reprogramar vuelve a congelar el estado DE HOY (no el pin anterior).
+      scheduledRevisionId = await this.resolvePinnedRevision(product, false);
+    }
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -971,6 +1015,7 @@ export class ProductsService {
         unpublishAt: null,
         publishedAt: null,
         unpublishReason: null,
+        ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
       },
     });
     await this.audit.log({
@@ -981,6 +1026,7 @@ export class ProductsService {
       oldValues: { lifecycleStatus: status, publishAt: product.publishAt ?? null },
       newValues: { lifecycleStatus: status, publishAt, isActive: false, isVisible: false },
     });
+    await this.logPublicationEvent('SCHEDULE', id, scheduledRevisionId ?? null, 'ok', ctx?.userId ?? null);
     return updated;
   }
 
@@ -1261,6 +1307,14 @@ export class ProductsService {
       } catch (error) {
         const reasons = error instanceof Error ? error.message : 'Error interno';
         publishFailed.push({ id: product.id, reasons });
+        // CAT-06 (caso 2): el disparo bloqueado NUNCA se pierde en silencio.
+        // Si el bloqueo vino del motor, `assertPublicationReady` ya registró
+        // `SCHEDULE_BLOCKED` con las incidencias; aquí solo se cubren los
+        // bloqueos del checklist legacy u otros fallos del tick.
+        const code = (error as { response?: { code?: string } })?.response?.code;
+        if (code !== 'publication-not-ready') {
+          await this.logPublicationEvent('SCHEDULE_BLOCKED', product.id, null, 'blocked', null, { reason: reasons });
+        }
         this.logger.warn(
           `[scheduler] publicación programada de "${product.name}" (${product.sku}): ${reasons}`,
         );
@@ -1276,6 +1330,9 @@ export class ProductsService {
     ctx?: AccessContext,
     skipHumanAccessChecks = false,
   ) {
+    if (!skipHumanAccessChecks && ctx && (dto.event === 'PUBLISH' || dto.event === 'UNPUBLISH')) {
+      await this.assertCatalogProductAction(id, 'products:publish', ctx);
+    }
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -1309,6 +1366,16 @@ export class ProductsService {
       throw new BadRequestException(`El evento ${event} requiere confirmación (confirm: true)`);
     }
 
+    // CAT-06 (P5, regla 1): publicar/retirar exige además la acción del catálogo
+    // `products:publish` cuando el usuario tiene concesiones (transición D5: sin
+    // grants manda la capa RBAC+ACL de arriba, intacta). El scheduler
+    // (skipHumanAccessChecks) es proceso interno: no porta contexto humano.
+    if (!skipHumanAccessChecks && ctx && (event === 'PUBLISH' || event === 'UNPUBLISH')) {
+      await d5AssertAction(this.grants, 'products:publish', ctx, {
+        id, kind: 'product', productId: id, listId: product.listaId ?? undefined,
+      });
+    }
+
     // Transición válida según estado actual.
     if (!rule.from.includes(status)) {
       throw new BadRequestException(
@@ -1322,10 +1389,26 @@ export class ProductsService {
         const detail = failures.map((f, i) => `${i + 1}) ${f}`).join('; ');
         throw new BadRequestException(`No se puede publicar. Requisitos incumplidos: ${detail}`);
       }
+      // CAT-06 (P2, diseño §6): ANTES de escribir se re-ejecuta el motor de
+      // validación CAT-05 sobre el estado vivo — nunca se confía en un informe
+      // guardado. Resultado bloqueante u obsoleto → 409 `publication-not-ready`
+      // con cero escritura (caso 2 de la ficha). Con specs de 6 argumentos
+      // (motor ausente) se preserva el comportamiento previo.
+      if (this.validation) {
+        await this.assertPublicationReady(id, skipHumanAccessChecks ? null : (ctx?.userId ?? null), skipHumanAccessChecks);
+      }
     }
 
     const data = this.buildTransitionData(event, product, dto, ctx);
     const oldValues = this.lifecycleSnapshot(product);
+
+    // CAT-06 (P1/T1/T2): PUBLISH pinea la revisión EXACTA y UNPUBLISH despinea,
+    // en UNA transacción revisión+producto+historial (caso 3: un fallo no deja
+    // mezcla de datos). Sin el mecanismo de revisiones inyectado (construcciones
+    // legacy de los specs), se mantiene la escritura única anterior.
+    if (this.validation && this.revisions && (event === 'PUBLISH' || event === 'UNPUBLISH')) {
+      return this.applyTransitionWithPin(id, product, event, data, oldValues, ctx, skipHumanAccessChecks);
+    }
 
     const updated = await this.prisma.product.update({ where: { id }, data });
 
@@ -1342,11 +1425,150 @@ export class ProductsService {
     const allowed = ctx ? await this.allowedActions(updated, ctx) : undefined;
     return allowed ? { ...updated, allowedActions: allowed } : updated;
   }
+
+  /**
+   * CAT-06 (P2): re-ejecuta el motor (via `runFresh`, que persiste el informe en
+   * la revisión de trabajo) y bloquea con 409 si hay incidencias `error`. La
+   * programación que falla al vencer queda registrada como `SCHEDULE_BLOCKED`
+   * — el scheduler nunca falla en silencio.
+   */
+  private async assertPublicationReady(productId: string, actorId: string | null, fromScheduler = false): Promise<void> {
+    const { report } = await this.validation!.runFresh(productId);
+    if (report.status === 'CON_PROBLEMAS') {
+      const errors = report.issues.filter((i) => i.severity === 'error');
+      await this.logPublicationEvent(fromScheduler ? 'SCHEDULE_BLOCKED' : 'PUBLISH', productId, report.revisionId, 'blocked', actorId, report.issues);
+      throw new ConflictException({
+        code: 'publication-not-ready',
+        message: 'Publicación bloqueada: la validación vigente tiene problemas bloqueantes (o quedó obsoleta al editar).',
+        feedback: errors.slice(0, 8).map((i) => `${i.code} (${i.section}): ${i.message}`),
+      });
+    }
+  }
+
+  /**
+   * CAT-06 (caso 1): la revisión a pinear. Prioridad a la congelada al programar
+   * (`scheduledRevisionId`) — se publica ESA, nunca el borrador posterior. Si no
+   * (publicación inmediata), la revisión de trabajo vigente; si no hay, se foto-
+   * graphía el estado vivo con el mecanismo CAT-02 (`markPendingFromLive`).
+   */
+  private async resolvePinnedRevision(
+    product: { id: string; scheduledRevisionId: string | null },
+    preferScheduled = true,
+  ): Promise<string | null> {
+    if (preferScheduled && product.scheduledRevisionId) {
+      const frozen = await this.prisma.productRevision.findUnique({
+        where: { id: product.scheduledRevisionId },
+        select: { id: true, productId: true },
+      });
+      if (frozen && frozen.productId === product.id) return frozen.id;
+      // Defensivo: la revisión congelada ya no existe (borrada a mano) → se
+      // resuelve por el estado vivo; jamás se publica `null` a ciegas.
+    }
+    const draft = await this.prisma.productRevision.findFirst({
+      where: { productId: product.id, status: { not: 'PUBLICADA' as never } },
+      orderBy: { version: 'desc' },
+      select: { id: true },
+    });
+    if (draft) return draft.id;
+    const created = await this.revisions!.markPendingFromLive(product.id);
+    return created?.id ?? null;
+  }
+
+  /**
+   * CAT-06 (P1): PUBLISH en una sola transacción — la revisión pineada pasa a
+   * `PUBLICADA` (inmutable desde ya) y el producto queda publicado apuntando
+   * `publicRevisionId` a esa revisión exacta (lente CAT-02: la tienda muestra la
+   * revisión, no las columnas vivas). UNPUBLISH despinea (T1): el producto
+   * vuelve a DRAFT y `publicRevisionId := null`; la revisión publicada anterior
+   * permanece como historial. `scheduledRevisionId` se consume/cancela siempre.
+   */
+  private async applyTransitionWithPin(
+    id: string,
+    product: Product,
+    event: 'PUBLISH' | 'UNPUBLISH',
+    data: Prisma.ProductUncheckedUpdateInput,
+    oldValues: Record<string, unknown>,
+    ctx?: AccessContext,
+    fromScheduler = false,
+  ) {
+    const pinnedId = event === 'PUBLISH' ? await this.resolvePinnedRevision(product) : null;
+    const previousPublicRevisionId = product.publicRevisionId ?? null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (event === 'PUBLISH') {
+        if (pinnedId) {
+          await tx.productRevision.update({
+            where: { id: pinnedId },
+            data: { status: 'PUBLICADA', publishedAt: new Date() },
+          });
+        }
+        return tx.product.update({
+          where: { id },
+          data: { ...data, publicRevisionId: pinnedId, scheduledRevisionId: null },
+        });
+      }
+      return tx.product.update({
+        where: { id },
+        data: { ...data, publicRevisionId: null, scheduledRevisionId: null },
+      });
+    });
+
+    await this.audit.log({
+      userId: ctx?.userId,
+      action: EVENT_AUDIT_ACTION[event],
+      entity: 'Product',
+      entityId: id,
+      oldValues,
+      newValues: { ...this.statePick(updated), ...this.statePick(data) },
+    });
+    await this.logPublicationEvent(
+      event === 'PUBLISH' ? (fromScheduler ? 'SCHEDULE_PUBLISHED' : 'PUBLISH') : 'UNPUBLISH',
+      id,
+      event === 'PUBLISH' ? pinnedId : previousPublicRevisionId,
+      'ok',
+      ctx?.userId ?? null,
+    );
+
+    const allowed = ctx ? await this.allowedActions(updated, ctx) : undefined;
+    return allowed ? { ...updated, allowedActions: allowed } : updated;
+  }
+
+  /**
+   * CAT-06 (P4): historial de publicación (`publication_events`). Nunca rompe la
+   * transición principal: si el registro falla se avisa (la auditoría sigue
+   * siendo el registro canónico del cambio de estado).
+   */
+  private async logPublicationEvent(
+    action: string,
+    productId: string,
+    revisionId: string | null,
+    result: 'ok' | 'blocked' | 'failed',
+    actorId: string | null,
+    issues?: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.publicationEvent.create({
+        data: {
+          productId,
+          revisionId,
+          action,
+          result,
+          actorId,
+          issues: issues === undefined ? undefined : (issues as Prisma.InputJsonValue),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `[publication] No se pudo registrar el historial ${action}/${productId}: ${error instanceof Error ? error.message : 'error interno'}`,
+      );
+    }
+  }
   async schedulePublication(
     id: string,
     dto: SchedulePublicationDto,
     ctx: AccessContext,
   ): Promise<Product> {
+    await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
     if (product.listaId) {
@@ -1381,9 +1603,17 @@ export class ProductsService {
       throw new BadRequestException('publishAt debe ser una fecha futura');
     }
     const previous = product.publishAt ? new Date(product.publishAt) : null;
+    // CAT-06 (T3, mismo servicio que la ruta legacy): programar exige validación
+    // vigente AHORA y congela la revisión que el scheduler publicará al vencer
+    // (caso 1: publica la revisión programada, NUNCA el borrador posterior).
+    let scheduledRevisionId: string | null | undefined;
+    if (this.validation && this.revisions) {
+      await this.assertPublicationReady(id, ctx.userId, true);
+      scheduledRevisionId = await this.resolvePinnedRevision(product, false);
+    }
     // La FSM es la fuente de verdad de isActive/isVisible/lifecycleStatus/publishStatus.
     // Este helper solo persiste publishAt, sin escribir directamente isActive/isVisible.
-    const updated = await this.persistScheduledPublishAt(id, publishAt, ctx);
+    const updated = await this.persistScheduledPublishAt(id, publishAt, ctx, scheduledRevisionId);
     await this.audit.log({
       userId: ctx.userId,
       action: 'schedule_publish',
@@ -1393,6 +1623,7 @@ export class ProductsService {
       newValues: { lifecycleStatus: status, publishAt, publishStatus: product.publishStatus ?? 'borrador' },
       result: 'SUCCESS',
     });
+    await this.logPublicationEvent('SCHEDULE', id, scheduledRevisionId ?? null, 'ok', ctx.userId);
     return updated;
   }
   /**
@@ -1403,6 +1634,7 @@ export class ProductsService {
     id: string,
     ctx: AccessContext,
   ): Promise<Product> {
+    await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
     if (product.listaId) {
@@ -1426,7 +1658,9 @@ export class ProductsService {
     }
     const updated = await this.prisma.product.update({
       where: { id },
-      data: { publishAt: null },
+      // CAT-06: cancelar la programación libera la revisión congelada SOLO si
+      // existía pin (la forma del update legacy se conserva).
+      data: { publishAt: null, ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}) },
     });
     await this.audit.log({
       userId: ctx.userId,
@@ -1437,6 +1671,7 @@ export class ProductsService {
       newValues: { lifecycleStatus: status, publishAt: null },
       result: 'SUCCESS',
     });
+    await this.logPublicationEvent('UNSCHEDULE', id, product.scheduledRevisionId ?? null, 'ok', ctx.userId);
     return updated;
   }
   /**
@@ -1448,12 +1683,14 @@ export class ProductsService {
     id: string,
     publishAt: Date,
     ctx: AccessContext,
+    scheduledRevisionId?: string | null,
   ): Promise<Product> {
     return this.prisma.product.update({
       where: { id },
       data: {
         publishAt,
         publishedAt: null,
+        ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
       },
     });
   }
@@ -1589,16 +1826,34 @@ export class ProductsService {
 
   /**
    * Sube una imagen para un producto y registra la fila ProductImage.
-   * Valida tipo (jpeg/png/webp/gif) y tamaño máximo (8 MB).
+   * CAT-04 (D5, caso 3): valida tipo declarado (jpeg/png/webp/gif), tamaño
+   * (8 MB) y **contenido real** (firma mágica); bytes y fila se crean en UNA
+   * transacción — un fallo de asociación no deja huérfanos. §4: con concesiones
+   * exige la acción `products:write` (transición D5).
    */
+  private async assertCatalogProductAction(id: string, actionId: string, ctx: AccessContext): Promise<void> {
+    // Availability is not resource authorization. Read only identity/list before
+    // comparing the actual target with this action's current scoped grants.
+    await d5AssertAction(this.grants, actionId, ctx);
+    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true, listaId: true } });
+    if (!product) throw new NotFoundException('Producto no encontrado');
+    await d5AssertAction(this.grants, actionId, ctx, {
+      id, kind: 'product', productId: id, listId: product.listaId ?? undefined,
+    });
+  }
+
   async uploadImage(
     productId: string,
     file: Express.Multer.File,
     isPrimary = false,
     ctx?: AccessContext,
   ) {
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true, listaId: true } });
     if (!product) throw new NotFoundException('Producto no encontrado');
+
+    if (ctx) await d5AssertAction(this.grants, 'products:write', ctx, {
+      id: productId, kind: 'product', productId, listId: product.listaId ?? undefined,
+    });
 
     // Subir imagen exige `edit_products` sobre el producto (checklist 29/30).
     if (ctx && product.listaId) {
@@ -1617,42 +1872,132 @@ export class ProductsService {
       throw new BadRequestException('El archivo excede el tamaño máximo de 8MB');
     }
 
-    const { url } = await this.files.store(file.buffer, file.mimetype);
-
-    if (isPrimary) {
-      await this.prisma.productImage.updateMany({
-        where: { productId, isPrimary: true },
-        data: { isPrimary: false },
+    // CAT-04 (G1): el tipo REAL se comprueba por firma mágica — el MIME es solo
+    // una declaración del cliente.
+    const detected = detectKind(file.buffer);
+    if (detected !== 'IMAGE') {
+      throw new BadRequestException({
+        code: 'asset-type-mismatch',
+        message: 'El contenido real del archivo no es una imagen.',
+        feedback: [`asset-type-mismatch: contenido detectado ${detected}, declarado ${file.mimetype}`],
       });
     }
 
-    return this.prisma.productImage.create({
-      data: {
-        productId,
-        url,
-        alt: file.originalname || null,
-        isPrimary,
-        sortOrder: 0,
-      },
+    // CAT-04 (D5): todo o nada — el archivo y su asociación viajan juntos.
+    return this.prisma.$transaction(async (tx) => {
+      const { url } = await this.files.store(file.buffer, file.mimetype, {
+        tx,
+        originalName: file.originalname ?? null,
+        ownerProductId: productId,
+      });
+      if (isPrimary) {
+        await tx.productImage.updateMany({
+          where: { productId, isPrimary: true },
+          data: { isPrimary: false },
+        });
+      }
+      return tx.productImage.create({
+        data: {
+          productId,
+          url,
+          alt: file.originalname || null,
+          isPrimary,
+          sortOrder: 0,
+        },
+      });
     });
   }
 
   /**
-   * Elimina una imagen: borra el registro y los bytes almacenados.
+   * CAT-04 (D5): subida verificada de activos del producto.
+   *  - IMAGE: delega en `uploadImage` (transacción con ProductImage).
+   *  - DOCUMENT: guarda el archivo (dueño = producto) y devuelve su URL y su
+   *    registro de activos (tamaño real, sha256, tipo detectado) para asociarlo
+   *    en la ficha; el recurso con licencia pasa a PRIVADO al guardar la ficha.
+   *  - FIRMWARE: **fuera de alcance** — el diseño :267 exige antes inventario
+   *    de formatos, lista permitida, tamaño máximo, origen y revisión de
+   *    seguridad (insumo externo). No se inventa; se responde con motivo.
+   */
+  async uploadAsset(
+    productId: string,
+    kind: 'IMAGE' | 'DOCUMENT' | 'FIRMWARE',
+    file: Express.Multer.File,
+    ctx?: AccessContext,
+  ) {
+    if (kind === 'FIRMWARE') {
+      throw new BadRequestException({
+        code: 'firmware-upload-deferred',
+        message:
+          'La subida de firmware está diferida: requiere inventario de formatos, lista permitida, tamaño máximo, origen y revisión de seguridad (diseño :267).',
+        feedback: ['firmware-upload-deferred: pendiente de insumo externo (inventario de formatos)'],
+      });
+    }
+    if (kind === 'IMAGE') {
+      const image = await this.uploadImage(productId, file, false, ctx);
+      return { kind: 'IMAGE' as const, image };
+    }
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, listaId: true },
+    });
+    if (!product) throw new NotFoundException('Producto no encontrado');
+    if (ctx) await d5AssertAction(this.grants, 'products:write', ctx, {
+      id: productId, kind: 'product', productId, listId: product.listaId ?? undefined,
+    });
+    if (ctx && product.listaId) {
+      await this.acl.assertProductAccess(productId, ctx, 'edit_products');
+    }
+    if (!file) throw new BadRequestException('Archivo requerido en el campo "file"');
+    if (file.size > MAX_DOCUMENT_SIZE) {
+      throw new BadRequestException('El documento excede el tamaño máximo de 16MB');
+    }
+    const detected = detectKind(file.buffer);
+    if (!declaredMatchesDetected(file.mimetype, detected)) {
+      throw new BadRequestException({
+        code: 'asset-type-mismatch',
+        message: 'El tipo declarado no coincide con el contenido real del documento.',
+        feedback: [`asset-type-mismatch: contenido detectado ${detected}, declarado ${file.mimetype}`],
+      });
+    }
+    const { id, url, detectedKind } = await this.files.store(file.buffer, file.mimetype, {
+      originalName: file.originalname ?? null,
+      ownerProductId: productId,
+    });
+    return {
+      kind: 'DOCUMENT' as const,
+      id,
+      url,
+      asset: { sizeBytes: file.size, sha256: sha256Hex(file.buffer), detectedKind },
+    };
+  }
+
+  /**
+   * Elimina una imagen: borra el registro; los bytes se RETIENEN si cualquier
+   * referencia viva o histórica (imágenes, recursos, documents, contenido de
+   * revisiones) los sigue usando — CAT-04 D3 (diseño :212/:345: «sustituir no
+   * rompe la revisión pública anterior»). La retención se audita; nunca es 409.
    */
   async deleteImage(imageId: string, ctx?: AccessContext) {
     const image = await this.prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image) throw new NotFoundException('Imagen no encontrada');
+
+    if (ctx) await this.assertCatalogProductAction(image.productId, 'products:write', ctx);
 
     // Eliminar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
     if (ctx && image.productId) {
       await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
     }
 
-    await this.files.deleteByUrl(image.url);
+    const release = await this.files.release(image.url, { userId: ctx?.userId, excludeImageId: imageId });
 
     await this.prisma.productImage.delete({ where: { id: imageId } });
-    return { message: 'Imagen eliminada exitosamente' };
+    return {
+      message: release.deleted
+        ? 'Imagen eliminada exitosamente'
+        : 'Imagen eliminada; los bytes se conservan porque siguen referenciados',
+      retained: !release.deleted,
+    };
   }
 
   /**
@@ -1671,6 +2016,7 @@ export class ProductsService {
 
     // Actualizar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
     if (ctx) {
+      await this.assertCatalogProductAction(image.productId, 'products:write', ctx);
       await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
     }
 
