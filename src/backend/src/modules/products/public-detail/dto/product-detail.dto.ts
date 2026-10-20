@@ -31,6 +31,8 @@ export interface ProductDetailDto {
   slug: string;
   /** Public price (same list and rules as `GET /api/public/products/:id`), or null. */
   price: { value: number; currency: string } | null;
+  /** True for an official library record still awaiting commercial publication. */
+  isInformational: boolean;
   description: string | null;
   /** Gallery, primary image first. */
   images: { src: string; alt: string }[];

@@ -25,6 +25,7 @@ const bare: ProductDetail = {
   id: 'prod-1',
   slug: '',
   price: { value: 118258.8, currency: 'COP' },
+  isInformational: false,
   description: 'Cámara IP de 4 MP con visión nocturna.',
   brand: 'Hikvision',
   model: 'DS-2CD2143',
@@ -204,6 +205,16 @@ describe('ficha de un producto sin datos enriquecidos', () => {
     expect(markup).not.toContain('IVA incluido')
     expect(markup).not.toContain('$ ')
     expect(markup).toContain('Cotizar por WhatsApp')
+  })
+
+  it('identifica una ficha informativa y no ofrece cotizar datos incompletos', () => {
+    queryMock.data = { ...bare, price: null, isInformational: true }
+
+    const markup = renderRoute()
+
+    expect(markup).toContain('Ficha informativa')
+    expect(markup).toContain('Estamos completando los datos comerciales')
+    expect(markup).not.toContain('Cotizar por WhatsApp')
   })
 
   it('ofrece solo la sección con datos en la barra de secciones', () => {
