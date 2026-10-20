@@ -1,5 +1,7 @@
 # Subir precios en tres pasos sin volver a mapear columnas
 
+> **Enmienda 2026-10-20.** Las reglas de este documento sobre lista destino, referencias desconocidas, filas con errores y cambios grandes quedaron reemplazadas por las decisiones de la sección «Enmienda 2026-10-20» al final y por la [enmienda del ADR](adr/ADR-20261014-producto-una-sola-lista.md#enmienda-2026-10-20-carga-de-precios-por-referencia-sin-lista-destino). Donde el texto original las contradice, rige la enmienda; el texto afectado lleva la marca «(enmendado)».
+
 **Estado al 14 de octubre de 2026: diseño aprobado y revisión de plantilla implementada localmente.** Desarrolla la carga de listas del [panel Catálogo y precios](DISENO-PANEL-CATALOGO-Y-PRECIOS-2026-10-14.md). La [entrega de revisión](IMPLEMENTACION-REVISION-PRECIOS-2026-10-14.md) incorpora una pantalla y API separadas que reconocen la plantilla y comparan precios sin guardarlos. Todavía faltan la aplicación de cambios, su historial y la validación con PostgreSQL; no se ha desplegado esta función. La [plantilla XLSX v3](plantillas/PLANTILLA-PRECIOS-GRUPO-SECURITY-v3.xlsx) conserva PRECIOS e INSTRUCCIONES y la edición del usuario.
 
 ## Decisiones confirmadas por el usuario
@@ -10,7 +12,7 @@
 - **Corrección posterior del usuario:** todas las tarifas son precios finales **con IVA incluido**. No hay opción de importar tarifas sin IVA ni una selección de tratamiento fiscal durante la carga.
 - **Corrección posterior del usuario:** conservar los encabezados editados en PRECIOS, simplificar las instrucciones y retirar las hojas EJEMPLO, TARIFAS y CONTRATO. Los datos ya introducidos no se descartan al ajustar el formato.
 - **Aclaración del recorrido:** se subirá este mismo Excel con sus dos hojas; la web leerá solo PRECIOS. No se pedirá borrar la guía, convertir a CSV ni entregar otro archivo. El nombre del archivo puede cambiar sin cambiar el formato de sus datos.
-- **Regla confirmada posteriormente:** un producto no puede repetirse en varias listas. Su referencia pertenece a cero o una lista; cargarla de nuevo en esa misma lista actualiza sus precios y cargarla en otra señala conflicto, sin duplicar ni mover el producto. Varias tarifas en una fila son válidas y no duplican la pertenencia.
+- **Regla confirmada posteriormente (enmendado):** un producto no puede repetirse en varias listas. Su referencia pertenece a cero o una lista. Desde el 20 de octubre la carga no elige lista: cruza por referencia y actualiza el precio del producto en su propia lista, sin duplicarlo ni moverlo; las filas de listas sin permiso se rechazan. Varias tarifas en una fila son válidas y no duplican la pertenencia.
 - El objetivo es reducir los pasos para relacionar columnas, mediante una plantilla reconocible que Compras pueda rellenar según lo recibido del proveedor.
 - Las listas actualizan precios. No importan ni alteran nombre, marca, categoría, imágenes, documentos o demás identidad de Biblioteca.
 
@@ -30,13 +32,13 @@ No se recomienda obligar a rehacer todos los archivos de proveedores para siempr
 
 Desde **Catálogo y precios → Listas → Importar**, o desde una lista ya abierta:
 
-1. **Subir archivo:** lista destino o Crear lista, archivo y modalidad Plantilla Grupo Security / Formato de proveedor. Cuando se entra desde una lista, el destino ya está elegido. Moneda, fecha de vigencia y tarifas se muestran sin repetirlas por fila.
+1. **Subir archivo (enmendado):** archivo y modalidad Plantilla Grupo Security / Formato de proveedor, sin lista destino: el archivo puede mezclar listas y marcas, y cada referencia se cruza con su producto. Moneda, fecha de vigencia y tarifas se muestran sin repetirlas por fila.
 2. **Revisar cambios:** cantidad de referencias, precios nuevos/modificados/sin cambios, redondeos, advertencias y errores. Una sola pantalla paginada permite filtrar por problema y descargar sus filas con el motivo.
-3. **Aplicar actualización:** confirmar la revisión concreta, con resumen de la lista y sus tarifas. Si tiene permiso de preparar y de aplicar, la misma persona termina el proceso; si no, deja el trabajo preparado para quien sí lo tenga.
+3. **Aplicar actualización:** confirmar la revisión concreta, con resumen por lista y sus tarifas, las filas rechazadas que quedan sin aplicar y los cambios superiores al 30 %. Si tiene permiso de preparar y de aplicar, la misma persona termina el proceso; si no, deja el trabajo preparado para quien sí lo tenga.
 
 Las etapas técnicas Parsear, Validar y Normalizar siguen ejecutándose en el servidor. Se eliminan pantallas innecesarias del recorrido, no los controles. Progreso e historial siguen disponibles al cerrar y volver a abrir la pestaña.
 
-**Descargar plantilla** permite elegir las tarifas que actualizará. Ofrece «Vacía» o «Con las referencias de esta lista»; esta última puede incluir valores actuales como referencia si la persona tiene lectura/exportación. Referencias y tarifas omitidas conservan sus valores. No se deja que un archivo elija otra lista destino o consiga acceso adicional.
+**Descargar plantilla** permite elegir las tarifas que actualizará. Ofrece «Vacía» o «Con las referencias de una lista»; esta última puede incluir valores actuales como referencia si la persona tiene lectura/exportación. Referencias y tarifas omitidas conservan sus valores. El archivo no puede conseguir acceso adicional: cada fila se autoriza por la lista de su producto.
 
 ### El archivo que Compras subirá
 
@@ -74,8 +76,8 @@ La hoja conserva 2 000 filas preparadas por comodidad y los valores que el usuar
 - Si el proveedor usa otra referencia, mantener una equivalencia explícita y autorizada proveedor + referencia externa → producto, configurada una vez. Sin correspondencia única se deja pendiente.
 - Comprobar la pertenencia sobre el producto identificado, no únicamente sobre el texto recibido: dos equivalencias de proveedor que apuntan al mismo producto no permiten asignarlo a listas diferentes.
 - No eliminar caracteres internos o aplicar coincidencia aproximada sin avisar. Una corrección de espacios exteriores puede proponerse con su comparación; colisiones o identificadores ambiguos se bloquean.
-- Las referencias desconocidas quedan pendientes: no se crean productos desde esta carga. Resolverlas en Biblioteca requiere permiso explícito y no se exige ese permiso a quien solo actualiza precios.
-- Comprobar la lista asignada a cada referencia encontrada. Si coincide con el destino, proponer actualización. Si es otra lista, rechazar esa referencia sin modificarla; no exponer datos de la lista ajena sin permiso. Una lista archivada sigue siendo su lista asignada. Si no tiene lista, la vinculación debe mostrarse y confirmarse con la acción correspondiente.
+- Las referencias desconocidas (enmendado) se rechazan como fila y no bloquean el resto. Quien tenga permiso de Biblioteca puede crear el producto como ficha borrador oculta «pendiente de ficha» (SKU, nombre, marca, categoría), y su precio del archivo se aplica; o puede omitir la fila. La carga no crea productos por sí sola y no se exige ese permiso a quien solo actualiza precios.
+- Comprobar la lista asignada a cada referencia encontrada (enmendado). Si la persona tiene permiso sobre esa lista, proponer actualización; si no, rechazar la fila sin modificarla ni exponer el nombre ni los precios de esa lista. Una lista archivada sigue siendo su lista asignada. Si el producto no tiene lista, se actualiza su precio y se marca «sin lista»; no se vincula automáticamente (exige `prices:apply` y `products:write` globales).
 
 ## 4. Datos numéricos y redondeo
 
@@ -107,13 +109,13 @@ No migrar precios ya almacenados ni recalcular cotizaciones/facturas históricas
 
 ## 5. Comparación y aplicación
 
-Revisar **todas** las filas incluidas, no solo la muestra de pantalla. Comparación por producto, lista destino y tarifa: nuevo precio normalizado, precio anterior, diferencia absoluta/porcentual y advertencias de cambios llamativos. Un aumento grande no es necesariamente un error; se señala y la persona confirma sin inventar una aprobación obligatoria de ventas.
+Revisar **todas** las filas incluidas, no solo la muestra de pantalla. Comparación por producto (con su propia lista) y tarifa: nuevo precio normalizado, precio anterior, diferencia absoluta/porcentual y advertencias de cambios llamativos. Un cambio superior al 30 % (al alza o a la baja) no es necesariamente un error: se señala con precio anterior, nuevo y porcentaje, y la persona lo confirma al aplicar, sin inventar una aprobación obligatoria de ventas.
 
-Las filas con errores quedan visibles con celda/fila/motivo. La actualización seleccionada solo se aplica cuando sus filas están correctas. Excluir incidencias exige elección expresa y muestra los totales pendientes; jamás decir «todo actualizado» si quedaron filas sin aplicar. Generar una lista nueva no implica publicar productos ni crear sus fichas.
+Las filas con errores quedan visibles con celda/fila/motivo. (Enmendado) Una fila rechazada no bloquea la revisión: se aplican las filas válidas, y la persona debe confirmar de forma explícita el número de filas rechazadas que quedan sin aplicar; jamás decir «todo actualizado» si quedaron filas sin aplicar. Cero, negativos, no numéricos y fuera de rango se rechazan siempre. Generar una lista nueva no implica publicar productos ni crear sus fichas.
 
 Aplicar confirma una revisión comercial concreta. Conservar archivo original, hash, autor, lista, perfil/plantilla y sus versiones, política de redondeo, tarifas autorizadas, vigencia, valores recibidos/normalizados/anteriores y resultado por fila. No guardar todo el Excel en campos públicos del producto.
 
-Una nueva carga es una revisión de la misma lista, no otra lista que se apropia de sus productos. El precio nuevo sustituye al vigente de esa referencia/tarifa únicamente al aplicar la actualización autorizada; el precio anterior permanece en el historial. No se crean productos ni pertenencias adicionales para conservar ese historial.
+Una nueva carga es otra revisión de precios sobre los mismos productos, no una lista que se apropia de ellos. El precio nuevo sustituye al vigente de esa referencia/tarifa únicamente al aplicar la actualización autorizada; el precio anterior permanece en el historial. No se crean productos ni pertenencias adicionales para conservar ese historial.
 
 Si cambiaron precios, referencias o configuración entre revisar y aplicar, señalar conflicto antes de sobrescribirlos. Verificar nuevamente permisos y alcance al ejecutar; revocar permisos impide los cambios todavía no confirmados. Un reintento no duplica la actualización ni eventos de éxito.
 
@@ -127,7 +129,7 @@ Revisión estática local, sin importaciones reales ni consulta de BD:
 - `numeric-parser.ts` infiere separadores y usa `parseFloat`; `row-validator.service.ts` tiene otro parser. Pueden discrepar: el caso `1,5` se trata de forma distinta. Reemplazar esa divergencia por un único contrato de importación de precios.
 - `row-normalizer.service.ts:24–31`: siete códigos hardcoded, incluyendo dos sin IVA y `DPP_ORO_IVA`; no conoce `ORO_IVA` ni prueba su presencia en BD. Es evidencia del importador anterior, no la definición de la plantilla simplificada. El flujo nuevo solo admite las tarifas con IVA configuradas para él. `prisma/seed.ts:268` deja las tarifas fuera del seed actual.
 - `batch-executor.service.ts:253–350`: puede resolver/crear marcas/categorías, modificar identidad no bloqueada y crear productos. **No sirve sin cambios como ejecutor exclusivo de precios.** El nuevo ejecutor no llama esas rutas de escritura ni necesita nombre/marca/categoría.
-- `schema.prisma:289–310`: precio único por producto + tarifa; `Product.listaId` expresa una lista por producto. Es una base compatible con la decisión confirmada, sin necesitar una relación muchos-a-muchos. `upsertPrices` no escribe `listaId` en el camino revisado: hay que comprobar coherencia con la lista del producto, permisos, vigencia e historial. No permitir que una carga destinada a otra lista sobrescriba su precio.
+- `schema.prisma:289–310`: precio único por producto + tarifa; `Product.listaId` expresa una lista por producto. Es una base compatible con la decisión confirmada, sin necesitar una relación muchos-a-muchos. `upsertPrices` no escribe `listaId` en el camino revisado: hay que comprobar coherencia con la lista del producto, permisos, vigencia e historial. No permitir que una carga sin permiso sobre la lista del producto sobrescriba su precio.
 
 La separación propuesta incorpora: reconocimiento de plantilla/perfil → propuesta de precios tipada → validación y normalización decimal única → comparación → revisión comercial persistida → aplicación autorizada y auditada. Reutiliza carga, sesiones, progreso y almacenamiento cuando sus contratos sean compatibles; evita reescribir el importador de Biblioteca.
 
@@ -145,7 +147,7 @@ La primera entrega de implementación se limita a la revisión del archivo y sus
 ## 8. Comprobaciones antes de considerarlo funcional
 
 - [ ] La plantilla se reconoce sin mapear; las tarifas no seleccionadas o vacías conservan su precio.
-- [ ] SKU textual conserva ceros y sufijos; referencias desconocidas/ambiguas quedan pendientes sin crear productos.
+- [ ] SKU textual conserva ceros y sufijos; referencias desconocidas/ambiguas se rechazan sin bloquear (enmendado) y solo se crean como borrador oculto con permiso de Biblioteca.
 - [ ] No se modifican nombres, marcas, categorías, imágenes, atributos ni documentos al cargar precios.
 - [ ] COP termina en pesos enteros mediante la misma política en carga, edición y API. Mostrar el valor recibido y cada redondeo antes de aplicar.
 - [ ] Fallan textos inválidos/ambiguos, fórmulas no admitidas, precios no finitos, ceros/negativos y valores fuera de rango antes/después del redondeo.
@@ -156,8 +158,9 @@ La primera entrega de implementación se limita a la revisión del archivo y sus
 - [ ] Se puede subir el mismo Excel con su guía y con otro nombre de archivo, sin convertirlo ni borrar hojas; no se aceptan columnas cambiadas solo porque el nombre parece correcto.
 - [ ] Se comprueban todas las filas aunque la revisión tenga paginación; excluir errores es explícito.
 - [ ] Una tarifa/lista no autorizada se rechaza por API y por archivo, incluso al ejecutar un perfil antiguo.
-- [ ] La misma referencia/tarifa en otra lista no recibe cambios por accidente; no se alteran cotizaciones/facturas históricas.
-- [ ] Una referencia no se repite entre listas. Se rechaza una carga a otra lista, también si la asignada está archivada; recargar la misma actualiza sin duplicar. La pertenencia no se cambia implícitamente al aplicar, duplicar una lista o reintentar una carga.
+- [ ] (Enmendado) Un archivo mixto actualiza las listas permitidas y rechaza las demás sin revelar sus nombres ni precios; una referencia desconocida no bloquea el resto.
+- [ ] Una referencia solo cambia si la persona tiene permiso sobre su lista; no se alteran cotizaciones/facturas históricas.
+- [ ] Una referencia no se repite entre listas. Una carga nunca mueve el producto, también si la lista asignada está archivada; recargar actualiza sin duplicar. La pertenencia no se cambia implícitamente al aplicar, duplicar una lista o reintentar una carga.
 - [ ] Reintento, reinicio, cambio concurrente o revocación no duplica ni sobrescribe operaciones indebidamente.
 - [ ] Un proveedor con formato cambiado pide revisar el perfil y no asigna precios a otra tarifa por similitud del encabezado.
 
@@ -170,3 +173,15 @@ Consultadas el 14 de octubre de 2026; documentación oficial como apoyo al contr
 - [PostgreSQL 16: tipos numéricos](https://www.postgresql.org/docs/16/datatype-numeric.html). Fundamenta representación decimal exacta y diferencias de redondeo frente a flotantes. Conservar precisión en BD no impone el formato visible; Grupo Security decide COP entero.
 
 La revisión local reconoce la plantilla y compara los precios. Los perfiles de proveedor, la aplicación de cambios y una política uniforme con la edición manual siguen pendientes, junto con la verificación en el ambiente elegido. La lista de comprobaciones anterior describe el flujo completo; no se marca como terminada por haber completado únicamente la revisión.
+
+## 10. Enmienda 2026-10-20: reglas de mezcla de listas, desconocidos, cambios grandes e historial
+
+Decisiones confirmadas por el usuario. Reemplazan lo contrario de las secciones anteriores; la invariante «un producto, como máximo una lista» se mantiene.
+
+- **R1, sin lista destino.** El archivo se cruza solo por referencia. El producto conserva su lista y la carga nunca lo mueve. Los productos sin lista se actualizan y se marcan «sin lista» sin vincularlos. Las filas de listas sin permiso se rechazan.
+- **R2, referencia desconocida.** Fila rechazada que no bloquea. Con permiso de Biblioteca se crea como ficha borrador oculta «pendiente de ficha» y se aplica su precio, o se omite. Las omitidas no se recuerdan.
+- **R3, cambios grandes.** Superior al 30 % (alza o baja): se señala con anterior, nuevo y porcentaje, no bloquea y exige confirmación. Cero, negativos, no numéricos y fuera de rango se rechazan siempre. Celda vacía conserva el precio.
+- **R4, historial.** Por revisión (ya existe) y por producto, con quién, cuándo, valor anterior, valor nuevo y origen. La cobertura es parcial al inicio: no incluye imágenes, ficha de vitrina, importaciones heredadas y de Biblioteca, borrado definitivo ni desvinculación de lista, y la API lo indica.
+- **R5, plantilla v3.** Sin cambios: REFERENCIA, INSTALADOR_IVA, TIENDA_IVA, ORO_IVA, DPP_PLATINO_IVA, CLIENTE_FINAL_IVA, precios finales con IVA, pesos enteros, HALF_UP.
+- **Aplicar con filas rechazadas.** Se aplican las válidas y la persona confirma el número de filas rechazadas sin aplicar.
+- **Valores por defecto adoptados.** Los grandes cambios se confirman en la misma llamada de aplicar. La misma persona puede preparar y aplicar. Si se revoca un permiso entre revisar y aplicar, toda la aplicación responde 409. Los archivos de revisiones aplicadas se conservan hasta definir una política de retención.
