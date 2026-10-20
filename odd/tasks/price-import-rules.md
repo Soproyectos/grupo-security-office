@@ -47,8 +47,8 @@ The 3-step screen, the purchasing package and its assignment, Supabase data comp
 
 ## Delivery
 
-- Branch `feat/price-import-rules`, based on `feat/panels-price-import-base` (pushed, no PR yet).
-- Strategy: `ask-on-risk` (default). The forecast is about 3,000 authored lines, over the 400-line heuristic, so the chain strategy must be chosen before the next commit: PENDING user answer.
+- Stacked PRs into main (user decision, 2026-10-20). PR 0: `feat/panels-price-import-base` -> main. Block 1 (T8, T1, T4): `feat/price-import-rules-1` based on the base. Block 2 (T2, T3, T5): `feat/price-import-rules-2` based on block 1. Block 3 (T6, T7): `feat/price-import-rules-3` based on block 2. Each PR targets the previous branch; after a PR merges, the next one is retargeted to main.
+- Strategy: `ask-on-risk` with chain strategy `stacked-to-main` (chosen by the user), because the forecast is about 3,000 authored lines.
 - TDD: off (no project or session configuration); RDD unavailable (`gentle-ai` is not installed); functional checks per task.
 - Engram mirror `odd/price-import-rules/tasks`: pending (Engram tools unavailable in this session).
 
