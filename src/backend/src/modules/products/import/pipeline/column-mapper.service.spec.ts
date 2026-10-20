@@ -51,7 +51,7 @@ describe('ColumnMapperService', () => {
   });
 
   describe('validateMapping', () => {
-    it('debe validar campos requeridos faltantes', () => {
+    it('debe aceptar un mapping que solo trae SKU', () => {
       const mapping = {
         entries: [
           { sourceColumn: 'SKU', targetField: 'sku' as SystemField, isRequired: true, confidence: 1.0 },
@@ -61,8 +61,8 @@ describe('ColumnMapperService', () => {
 
       const missing = service.validateMapping(mapping);
 
-      // name está faltante
-      expect(missing).toContain('name');
+      // El nombre puede completarse después.
+      expect(missing).not.toContain('name');
       // sku está presente
       expect(missing).not.toContain('sku');
     });
@@ -94,7 +94,7 @@ describe('ColumnMapperService', () => {
       expect(missing).toHaveLength(0);
     });
 
-    it('debe marcar name como faltante cuando no hay name ni description', () => {
+    it('debe aceptar ausencia de name y description para permitir SKU-only', () => {
       const mapping = {
         entries: [
           { sourceColumn: 'SKU', targetField: 'sku' as SystemField, isRequired: true, confidence: 1.0 },
@@ -103,7 +103,7 @@ describe('ColumnMapperService', () => {
       };
 
       const missing = service.validateMapping(mapping);
-      expect(missing).toContain('name');
+      expect(missing).toEqual([]);
     });
   });
 

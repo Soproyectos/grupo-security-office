@@ -55,7 +55,14 @@ export interface ValidationRowError {
 
 export interface ImportExecutionResult {
   importId: string;
-  summary: { total: number; created: number; updated: number; skipped: number; errors: number };
+  summary: {
+    total: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: number;
+    pendingEnrichment?: number;
+  };
   executionErrors: Array<{ rowIndex: number; sku: string; error: string }>;
   durationMs: number;
   completedAt: string;

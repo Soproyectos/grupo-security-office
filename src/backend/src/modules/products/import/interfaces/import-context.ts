@@ -228,6 +228,9 @@ export interface BatchExecutionResult {
    * revisión humana — nunca fallan el import ni sobrescriben la identidad.
    */
   identityChangesDetected?: number;
+
+  /** Productos nuevos creados como borrador por falta de identidad comercial. */
+  pendingEnrichment?: number;
 }
 
 /**
