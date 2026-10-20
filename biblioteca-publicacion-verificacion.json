@@ -1,0 +1,17 @@
+{
+  "verifiedAt": "2026-10-20T19:50:55.304240+00:00",
+  "officialSkuCount": 5038,
+  "previouslyPublicSkuCount": 497,
+  "requiredUnionCount": 5056,
+  "publicTotal": 5056,
+  "officialVisible": 5038,
+  "officialInformational": 4559,
+  "officialCommercial": 479,
+  "officialWithoutCategory": [],
+  "officialWithoutName": [],
+  "missingOfficialSkus": [],
+  "missingPreviouslyPublicSkus": [],
+  "duplicatePublicSkus": [],
+  "status": "ok",
+  "errors": []
+}

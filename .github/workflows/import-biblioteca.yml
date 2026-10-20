@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Dry-run validates without writes; apply takes a verified backup and imports all 5,038 SKU."
+        description: "Dry-run validates; apply backs up and imports; verify only reconciles the public web."
         required: true
         default: dry-run
         type: choice
         options:
           - dry-run
           - apply
+          - verify
 
 concurrency:
   group: biblioteca-production
@@ -21,7 +22,7 @@ permissions:
 
 jobs:
   import:
-    name: ${{ inputs.mode == 'apply' && 'Apply official library' || 'Dry-run official library' }}
+    name: ${{ inputs.mode == 'apply' && 'Apply official library' || inputs.mode == 'verify' && 'Verify public library' || 'Dry-run official library' }}
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -38,11 +39,13 @@ jobs:
           sha256sum -c biblioteca-import-39-listas.sha256
 
       - name: Require deployment configuration
+        if: ${{ inputs.mode != 'verify' }}
         run: |
           test -n "$DEPLOY_HOST" || { echo "::error::DEPLOY_HOST is not configured"; exit 1; }
           test -n "${{ vars.DEPLOY_USER }}" || { echo "::error::DEPLOY_USER is not configured"; exit 1; }
 
       - name: Copy audited artifacts to VPS
+        if: ${{ inputs.mode != 'verify' }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -54,6 +57,7 @@ jobs:
           overwrite: true
 
       - name: Run guarded import on VPS
+        if: ${{ inputs.mode != 'verify' }}
         uses: appleboy/ssh-action@v1.2.0
         env:
           IMPORT_MODE: ${{ env.IMPORT_MODE }}
@@ -67,16 +71,17 @@ jobs:
           script: bash /opt/grupo-security/deploy/vps/import-biblioteca.sh "$IMPORT_MODE"
 
       - name: Verify all official SKU on the public web
-        if: ${{ inputs.mode == 'apply' }}
+        if: ${{ inputs.mode == 'apply' || inputs.mode == 'verify' }}
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
+          test -n "$DEPLOY_URL" || { echo "::error::DEPLOY_URL is not configured"; exit 1; }
           python3 scripts/verificar_biblioteca_publica.py \
             --api "${DEPLOY_URL%/}/api/public/products" \
             --output biblioteca-publicacion-verificacion.json
 
       - name: Upload public reconciliation
-        if: ${{ inputs.mode == 'apply' && always() }}
+        if: ${{ (inputs.mode == 'apply' || inputs.mode == 'verify') && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: biblioteca-publicacion-verificacion-${{ github.run_id }}
