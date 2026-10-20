@@ -26,9 +26,9 @@ New features: mixed lists, unknown-SKU draft panel, >30% alert, per-product hist
 Single branch `feat/panels-price-import-base`, no push. Strategy: ask-on-risk. RDD: unavailable (gentle-ai not installed). TDD: off (restoration task; no project/session TDD config); functional checks only. Engram mirror: pending (Engram tools unavailable in this session).
 
 ## Tasks (route: delegated writer)
-- [ ] T1 Base: overlay B/src on 5449ecb2 (no `current/`), then keep only non-conflicting assets from A.
-- [ ] T2 Merge current origin/main with the documented conflict policy.
-- [ ] T3 Restore `StorefrontBanner` in schema.prisma, check migration drift, verify the 3 packages and prices:* / listas:* actions.
+- [x] T1 Base: overlay B/src on 5449ecb2 (no `current/`), then keep only non-conflicting assets from A. Commits 92167d2, b5f20b1. Evidence: 94 files existed only in A; 14 kept (11 docs, banners migration SQL, 2 images), 80 dropped.
+- [x] T2 Merge current origin/main with the documented conflict policy. Commit 89f7361. Evidence: 69 conflicted files resolved (35 takeover side, 19 main side, 15 hand-merged from d8ba797); no conflict markers left; main added no migrations.
+- [x] T3 Restore `StorefrontBanner` in schema.prisma, check migration drift, verify the 3 packages and prices:* / listas:* actions.
 - [ ] T4 Green: backend/frontend tsc 0, lint 0 errors, jest and vitest failing only for pre-existing or environment reasons.
 - [ ] T5 Security notes on the merge resolutions (document only, no behavior change).
 
@@ -39,4 +39,4 @@ Single branch `feat/panels-price-import-base`, no push. Strategy: ask-on-risk. R
 - Migrations consistent with schema.prisma (or drift reported).
 
 ## Progress
-(none yet)
+- T3: `StorefrontBanner` added to schema.prisma (matches migration 20261009160000). `prisma migrate diff --from-migrations --to-schema-datamodel` printed 3 drifts before the fix and an empty migration after it. Schema-only fixes (no new migration): `Notification.id` is `@db.Uuid` with `gen_random_uuid()` default (as in migration 20261005160000), `CatalogJobUnit.updatedAt` gets `@default(now())`, and the long unique index on `price_import_revision_prices` keeps its truncated name through `map:`. The three packages exist in `access-catalog.ts` and `prices:read|preview|save|apply`, `listas:*`, `providers:*` are all defined there and used by the prices controllers.

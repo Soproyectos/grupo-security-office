@@ -426,7 +426,7 @@ model CatalogJobUnit {
   state    String   @default("PENDING") // PENDING|DONE|OMITTED|FAILED
   error    String?
   attempts Int      @default(0)
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 
   job CatalogJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
@@ -513,7 +513,7 @@ model PriceImportRevisionPrice {
   change        String
   revision      PriceImportRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
-  @@unique([revisionId, rowNumber, tariffCode])
+  @@unique([revisionId, rowNumber, tariffCode], map: "price_import_revision_prices_revisionId_rowNumber_tariffCode_ke")
   @@index([revisionId])
   @@map("price_import_revision_prices")
 }
@@ -846,7 +846,7 @@ model AuditLog {
 }
 
 model Notification {
-  id        String           @id @default(uuid())
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String
   type      NotificationType
   title     String
@@ -1489,4 +1489,16 @@ model StorefrontSettings {
   updatedAt DateTime @updatedAt
 
   @@map("storefront_settings")
+}
+
+/// Editable home banners (draft and published copy). Created by migration 20261009160000.
+model StorefrontBanner {
+  id            String   @id
+  draft         Json
+  publishedData Json?
+  revision      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("storefront_banners")
 }
