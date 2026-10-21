@@ -21,7 +21,7 @@ const IGNORED_HEADER = /^PRECIO [A-Z ]+ \(SIN IVA\)$/;
 const MAX_TEMPLATE_COLUMNS = 8;
 const NOTE_ROW = /^nota:/i;
 
-const headerText = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toUpperCase();
+const headerText = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').replace(/ ?\*$/, '').toUpperCase();
 
 export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[]; rows: PriceImportRow[]; ignoredColumns: string[] } {
   const dataSheet = validatePriceWorkbookStructure(readBoundedXlsxParts(buffer));
@@ -67,7 +67,10 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
       continue;
     }
     if (formula(cell) || !code || tariffs.includes(code)) {
-      throw new BadRequestException('Revisa los títulos de las columnas: solo se admiten las tarifas con IVA de la plantilla, sin repetirlas.');
+      const where = `columna ${XLSX.utils.encode_col(col)}`;
+      const shown = String(cell?.v ?? '').trim().slice(0, 60) || '(vacío)';
+      const why = formula(cell) ? 'es una fórmula' : code ? 'está repetida' : 'no es una tarifa de la plantilla';
+      throw new BadRequestException(`Revisa el título de la ${where}: «${shown}» ${why}. Solo se admiten las tarifas con IVA de la plantilla, sin repetirlas.`);
     }
     columns.push(code);
     tariffs.push(code);

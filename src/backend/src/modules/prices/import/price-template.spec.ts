@@ -166,6 +166,14 @@ describe('Price template contract using actual XLSX files', () => {
       expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO PLATA (CON IVA)'], ['FIXTURE-A', 10]]))).toThrow(BadRequestException);
     });
 
+    it('names the column and title that cannot be read, and tolerates a trailing asterisk', () => {
+      expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA)', 'PRECIO PLATA (CON IVA)'], ['FIXTURE-A', 1, 2]])))
+        .toThrow(/columna C: «PRECIO PLATA \(CON IVA\)» no es una tarifa/);
+      expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA)', 'PRECIO TIENDA (CON IVA)'], ['FIXTURE-A', 1, 2]])))
+        .toThrow(/columna C: «PRECIO TIENDA \(CON IVA\)» está repetida/);
+      expect(readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA) *'], ['FIXTURE-A', 1]])).tariffs).toEqual(['TIENDA_IVA']);
+    });
+
     it('rejects workbooks that carry both data sheets', () => {
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers.slice(0, 2), ['FIXTURE-A', 10]]), 'PRECIOS');
