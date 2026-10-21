@@ -25,8 +25,18 @@ export interface PriceImportRow {
   prices: PreviewPrice[]
 }
 
+/** Extra counters of the mixed-lista preview (SKU matching, 30 % alert); absent in old responses. */
+export interface PriceImportMixedSummary {
+  unlistedRows?: number
+  unknownRows?: number
+  rejectedRows?: number
+  rowsInInaccessibleListas?: number
+  largeChangePrices?: number
+  largeChangeThresholdPct?: number
+}
+
 export interface PriceImportPreview {
-  listaId: string
+  listaId?: string | null
   fileName: string
   currency: 'COP'
   taxIncluded: true
@@ -41,9 +51,17 @@ export interface PriceImportPreview {
     changedPrices: number
     unchangedPrices: number
     roundedPrices: number
-  }
+  } & PriceImportMixedSummary
   issues: PriceImportIssue[]
   rows: PriceImportRow[]
+}
+
+/** Single-template preview: rows are matched by SKU across the catalog, so no lista is sent. */
+export async function previewPriceFile(file: File, signal?: AbortSignal): Promise<PriceImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await api.post<PriceImportPreview>('/prices/import/preview', form, { signal })
+  return response.data
 }
 
 export async function previewPriceImport(listaId: string, file: File, signal?: AbortSignal): Promise<PriceImportPreview> {
@@ -113,11 +131,14 @@ export interface PriceImportRevisionApplyResult {
   appliedPrices: number
   tariffs: string[]
   appliedAt: string
+  unchangedPrices?: number
+  rejectedRows?: number
+  largeChangesConfirmed?: boolean
 }
 
 export interface PriceImportRevisionHeader {
   id: string
-  listaId: string
+  listaId: string | null
   status: 'GUARDADA' | 'APLICADA' | 'DESCARTADA'
   fileName: string
   fileHash: string
@@ -190,9 +211,72 @@ export async function getPriceRevision(id: string, page?: number, pageSize?: num
   return response.data
 }
 
+/** Single-template save: the server recalculates; no lista is sent. */
+export async function savePriceFileRevision(file: File, idempotencyKey: string, signal?: AbortSignal): Promise<PriceImportRevisionHeader> {
+  const form = new FormData()
+  form.append('idempotencyKey', idempotencyKey)
+  form.append('file', file)
+  const response = await api.post<PriceImportRevisionHeader>('/prices/import/revisions', form, { signal })
+  return response.data
+}
+
+export interface ApplyPriceRevisionOptions {
+  /** Must equal the number of rejected rows left unapplied when there are any. */
+  acknowledgeRejectedRows?: number
+  confirmLargeChanges?: boolean
+}
+
 /** Aplica la revisión (acción separada `prices:apply`). Reintento idempotente por el servidor. */
-export async function applyPriceRevision(id: string): Promise<PriceImportRevisionApplyResult> {
-  const response = await api.post<PriceImportRevisionApplyResult>(`/prices/import/revisions/${id}/apply`)
+export async function applyPriceRevision(id: string, options?: ApplyPriceRevisionOptions): Promise<PriceImportRevisionApplyResult> {
+  const response = await api.post<PriceImportRevisionApplyResult>(`/prices/import/revisions/${id}/apply`, options ?? {})
+  return response.data
+}
+
+// ─── Unknown SKUs of an applied revision: hidden draft "pending ficha" or skip ───
+
+export interface UnknownReferenceItem {
+  rowNumber: number
+  sku: string
+  canCreate: boolean
+  prices: Array<{ tariffCode: string; received: string; value: string }>
+}
+
+export interface UnknownReferencesView {
+  revisionId: string
+  status: string
+  canCreate: boolean
+  defaults: { brandId: string | null; categoryId: string | null }
+  items: UnknownReferenceItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type UnknownReferenceResolution =
+  | { rowNumber: number; action: 'SKIP' }
+  | { rowNumber: number; action: 'CREATE'; name: string; brandId: string; categoryId: string }
+
+export interface UnknownReferenceOutcome {
+  rowNumber: number
+  status: 'CREATED' | 'SKIPPED' | 'FAILED'
+  code?: string
+  message?: string
+  productId?: string
+}
+
+export async function listUnknownReferences(revisionId: string): Promise<UnknownReferencesView> {
+  const response = await api.get<UnknownReferencesView>(`/prices/import/revisions/${revisionId}/unknown-references`)
+  return response.data
+}
+
+export async function resolveUnknownReferences(
+  revisionId: string,
+  items: UnknownReferenceResolution[],
+): Promise<{ revisionId: string; results: UnknownReferenceOutcome[] }> {
+  const response = await api.post<{ revisionId: string; results: UnknownReferenceOutcome[] }>(
+    `/prices/import/revisions/${revisionId}/unknown-references/resolve`,
+    { items },
+  )
   return response.data
 }
 

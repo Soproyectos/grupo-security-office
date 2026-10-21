@@ -118,7 +118,7 @@ describe('IMP-06 — revisión persistida, aplicar e historial', () => {
   it('applyPriceRevision usa la ruta de aplicar (permiso separado)', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: { status: 'APLICADA', alreadyApplied: false } })
     const result = await applyPriceRevision('rev-9')
-    expect(api.post).toHaveBeenCalledWith('/prices/import/revisions/rev-9/apply')
+    expect(api.post).toHaveBeenCalledWith('/prices/import/revisions/rev-9/apply', {})
     expect(result).toMatchObject({ status: 'APLICADA', alreadyApplied: false })
   })
 
