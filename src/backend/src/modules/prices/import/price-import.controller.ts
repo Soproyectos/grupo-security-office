@@ -180,6 +180,16 @@ export class PriceImportController {
     res.send(buffer);
   }
 
+  @Get('template/official')
+  @ApiOperation({ summary: 'Descargar la plantilla oficial vacía (hoja PLANTILLA, tarifas con IVA); no necesita lista.' })
+  async downloadOfficialTemplate(@CurrentUser() user: { sub: string; roles: string[] }, @Res() res: Response) {
+    const { buffer, fileName } = await this.service.downloadOfficialTemplate({ userId: user.sub, roles: user.roles });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    // @Res() sin passthrough: Nest no aplica el TransformInterceptor al cuerpo.
+    res.send(buffer);
+  }
+
   @Get('export')
   @ApiOperation({ summary: 'Exportar referencias y precios vigentes de una lista (solo tarifas autorizadas; IMP-07).' })
   async exportLista(

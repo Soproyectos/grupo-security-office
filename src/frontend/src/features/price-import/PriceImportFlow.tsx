@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Button } from '../../components/ui'
 import { getApiErrorMessage } from '../../lib/apiError'
 import {
-  applyPriceRevision, createRevisionIdempotencyKey, listUnknownReferences, previewPriceFile, resolveUnknownReferences,
-  savePriceFileRevision, type PriceImportPreview, type PriceImportRevisionApplyResult, type PriceImportRevisionHeader,
+  applyPriceRevision, createRevisionIdempotencyKey, downloadOfficialPriceTemplate, listUnknownReferences, previewPriceFile, resolveUnknownReferences,
+  saveTemplateDownload, savePriceFileRevision, type PriceImportPreview, type PriceImportRevisionApplyResult, type PriceImportRevisionHeader,
   type UnknownReferencesView,
 } from '../../services/price-import.service'
 import { applyRequirements, canApply, FLOW_STEPS } from './flow.utils'
@@ -40,6 +40,18 @@ export default function PriceImportFlow() {
     const fileError = validatePreviewFile(next)
     setFile(fileError ? null : next)
     setError(fileError)
+  }
+
+  async function downloadTemplate() {
+    setBusy(true); setError('')
+    try {
+      const { blob, fileName } = await downloadOfficialPriceTemplate()
+      saveTemplateDownload(blob, fileName)
+    } catch (cause) {
+      setError(getApiErrorMessage(cause, 'No pudimos generar la plantilla. Inténtalo de nuevo.'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function review() {
@@ -120,6 +132,7 @@ export default function PriceImportFlow() {
         <div className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-security-800">Sube la plantilla de precios</h2>
           <p className="mt-2 text-sm text-neutral-600">Usa la plantilla oficial de Grupo Security. Cada referencia actualiza el producto que ya existe en su propia lista; no hace falta elegir una lista.</p>
+          <Button variant="secondary" className="mt-3" disabled={busy} onClick={downloadTemplate}>Descargar plantilla para importar</Button>
           <p className="mt-2 text-sm text-neutral-600">Los precios incluyen IVA y se redondean a pesos enteros. Una celda vacía conserva el precio actual.</p>
           <label htmlFor="price-flow-file" className="mt-4 block text-sm font-medium text-neutral-700">Plantilla (.xlsx)</label>
           <input id="price-flow-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={selectFile} className="mt-1 block w-full min-w-0 text-sm" />

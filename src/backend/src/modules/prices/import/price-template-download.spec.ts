@@ -7,7 +7,7 @@
  */
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
-import { buildPriceTemplate } from './price-template';
+import { buildOfficialPriceTemplate, buildPriceTemplate, readPriceTemplate } from './price-template';
 import { PriceImportService } from './price-import.service';
 import { PRICE_IMPORT_TARIFFS } from './price-import.types';
 
@@ -254,5 +254,45 @@ describe('PriceImportService.exportListaPrices — alcance y permisos (IMP-07 §
     expect(event).toMatchObject({ action: 'price-list-export', entity: 'LISTA', entityId: LISTA });
     expect(event.newValues.fileHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(event)).not.toMatch(/SKU-A|100000/);
+  });
+});
+
+describe('buildOfficialPriceTemplate — plantilla oficial sin lista', () => {
+  it('tiene la hoja PLANTILLA, encabezados legibles con IVA y la guía', () => {
+    const wb = XLSX.read(buildOfficialPriceTemplate(), { type: 'buffer' });
+    expect(wb.SheetNames).toEqual(['PLANTILLA', 'INSTRUCCIONES']);
+    expect(XLSX.utils.sheet_to_json<string[]>(wb.Sheets.PLANTILLA, { header: 1 })[0]).toEqual([
+      'REFERENCIA *', 'PRECIO INSTALADOR (CON IVA)', 'PRECIO TIENDA (CON IVA)', 'PRECIO DPP ORO (CON IVA)',
+      'PRECIO DPP PLATINO (CON IVA)', 'PRECIO CLIENTE FINAL (CON IVA)',
+    ]);
+    expect(XLSX.utils.sheet_to_json<string[]>(wb.Sheets.INSTRUCCIONES, { header: 1 }).length).toBeGreaterThan(3);
+  });
+
+  it('ida y vuelta: el lector acepta el archivo descargado con filas ficticias rellenas', () => {
+    const wb = XLSX.read(buildOfficialPriceTemplate(), { type: 'buffer' });
+    XLSX.utils.sheet_add_aoa(wb.Sheets.PLANTILLA, [
+      ['FIXTURE-A(2.8mm)', 1190.4, 1000, 900, 800, 1500],
+      ['FIXTURE-B', 2000, null, null, null, 3000],
+    ], { origin: 'A2' });
+    const filled = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+    const parsed = readPriceTemplate(filled);
+    expect(parsed.tariffs).toEqual([...PRICE_IMPORT_TARIFFS]);
+    expect(parsed.ignoredColumns).toEqual([]);
+    expect(parsed.rows.map((r) => [r.sku, r.status])).toEqual([['FIXTURE-A(2.8mm)', 'valid'], ['FIXTURE-B', 'valid']]);
+  });
+
+  it('el archivo vacío descargado se rechaza con un mensaje claro, no con un error técnico', () => {
+    expect(() => readPriceTemplate(buildOfficialPriceTemplate())).toThrow(BadRequestException);
+  });
+});
+
+describe('PriceImportService.downloadOfficialTemplate', () => {
+  it('exige prices:preview y no necesita lista', async () => {
+    const audit = { log: jest.fn().mockResolvedValue({}) };
+    const service = new PriceImportService({} as any, { isListasAdmin: jest.fn().mockReturnValue(true) } as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
+    const { buffer, fileName } = await service.downloadOfficialTemplate({ userId: 'u-1', roles: ['Super Admin'] });
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(fileName).toMatch(/^plantilla-precios-grupo-security-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entity: 'PRICE_TEMPLATE', result: 'SUCCESS' }));
   });
 });

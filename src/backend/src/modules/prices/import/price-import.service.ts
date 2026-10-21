@@ -12,7 +12,7 @@ import { findProductMatchesBySkus, normalizeSku } from '../../products/helpers/s
 import { diffFields, newBatchId, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeInput } from '../../products/product-change.service';
 import { PriceImportAccess, isSuperAdmin, type ProductRef } from './price-import-authz';
 import { clampChangePercentForStorage, measurePriceChange } from './price-import-change';
-import { buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
+import { buildOfficialPriceTemplate, buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
 import {
   profileMatchesHeaders,
   profileStructureChanged,
@@ -1025,6 +1025,27 @@ export class PriceImportService {
       result: 'SUCCESS',
     });
     return { buffer, fileName };
+  }
+
+  /**
+   * Official empty template (sheet PLANTILLA, "(CON IVA)" headers). Needs no lista and
+   * exposes no data, so it only requires `prices:preview`, like the empty per-lista template.
+   */
+  async downloadOfficialTemplate(ctx: AccessContext): Promise<{ buffer: Buffer; fileName: string }> {
+    if (!(await this.concede('prices:preview', ctx))) {
+      throw new ForbiddenException('Sin permiso prices:preview');
+    }
+    const buffer = buildOfficialPriceTemplate();
+    const stamp = new Date().toISOString().slice(0, 10);
+    await this.audit.log({
+      userId: ctx.userId,
+      action: 'price-template-download',
+      entity: 'PRICE_TEMPLATE',
+      entityId: 'official',
+      newValues: { mode: 'oficial', fileHash: createHash('sha256').update(buffer).digest('hex') },
+      result: 'SUCCESS',
+    });
+    return { buffer, fileName: `plantilla-precios-grupo-security-${stamp}.xlsx` };
   }
 
   /**
