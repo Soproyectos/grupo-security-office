@@ -36,8 +36,8 @@ const base: ProviderProfileInput = {
   thousandsSeparator: '.',
   decimalSeparator: ',',
   currency: 'COP',
-  tariffs: ['ORO_IVA'],
-  expectedColumns: ['REFERENCIA', 'ORO_IVA'],
+  tariffs: ['DPP_ORO_IVA'],
+  expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'],
 }
 
 describe('IMP-07B frontend — permisos', () => {
@@ -92,7 +92,7 @@ describe('IMP-07B frontend — validación en cliente (misma regla que el servid
   })
 
   it('parseHeaders limpia espacios y descarta vacíos', () => {
-    expect(parseHeaders(' REFERENCIA , , ORO_IVA ')).toEqual(['REFERENCIA', 'ORO_IVA'])
+    expect(parseHeaders(' REFERENCIA , , DPP_ORO_IVA ')).toEqual(['REFERENCIA', 'DPP_ORO_IVA'])
   })
 })
 

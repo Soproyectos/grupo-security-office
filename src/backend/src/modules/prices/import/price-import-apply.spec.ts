@@ -19,7 +19,7 @@ const ALL = ['prices:save', 'prices:preview', 'prices:read', 'prices:apply', 'li
 
 function file(rows: unknown[][]): Express.Multer.File {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-precios.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
@@ -31,7 +31,7 @@ const seed = (): PriceImportFakeSeed => ({
     { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
     { id: 'product-free', sku: 'SKU-FREE', listaId: null },
   ],
-  tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+  tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
   prices: [
     { productId: 'product-a', priceListId: 'tariff-oro', value: 90, listaId: LISTA_A },
     { productId: 'product-b', priceListId: 'tariff-oro', value: 500, listaId: LISTA_B },
@@ -80,7 +80,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
     it('aplica filas de dos listas en una transacción Serializable, escribe Price con la lista de cada producto y no toca Product', async () => {
       const id = await save([['SKU-A', 100.5], ['SKU-B', 600]]);
       const result = await service.applyRevision(id, ctx);
-      expect(result).toMatchObject({ revisionId: id, status: 'APLICADA', alreadyApplied: false, appliedRows: 2, appliedPrices: 2, tariffs: ['ORO_IVA'], unchangedPrices: 0, rejectedRows: 0, largeChangesConfirmed: false });
+      expect(result).toMatchObject({ revisionId: id, status: 'APLICADA', alreadyApplied: false, appliedRows: 2, appliedPrices: 2, tariffs: ['DPP_ORO_IVA'], unchangedPrices: 0, rejectedRows: 0, largeChangesConfirmed: false });
       expect(result.perLista).toEqual(expect.arrayContaining([
         { listaId: LISTA_A, code: 'LA', name: 'Lista Alfa', rows: 1, prices: 1 },
         { listaId: LISTA_B, code: 'LB', name: 'Lista Beta', rows: 1, prices: 1 },
@@ -99,7 +99,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       const result = await service.applyRevision(id, ctx);
       expect(fake.state.productChanges).toHaveLength(2);
       expect(fake.state.productChanges[0]).toMatchObject({
-        productId: 'product-a', sku: 'SKU-A', field: 'price:ORO_IVA', oldValue: '90', newValue: '100',
+        productId: 'product-a', sku: 'SKU-A', field: 'price:DPP_ORO_IVA', oldValue: '90', newValue: '100',
         source: 'PRICE_IMPORT', sourceRef: id, actorId: ctx.userId, batchId: result.batchId,
       });
       expect(new Set(fake.state.productChanges.map((c) => c.batchId)).size).toBe(1);
@@ -202,7 +202,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       const id = await save([['SKU-A', 200], ['SKU-B', 600]]);
       const error = await rejects(service.applyRevision(id, ctx));
       expect(body(error)).toMatchObject({ code: 'LARGE_CHANGES_UNCONFIRMED', details: { count: 1, changes: [
-        { sku: 'SKU-A', tariffCode: 'ORO_IVA', previous: '90', new: '200', percent: '122.22' },
+        { sku: 'SKU-A', tariffCode: 'DPP_ORO_IVA', previous: '90', new: '200', percent: '122.22' },
       ] } });
       expect(String(priceOf('product-b')!.value)).toBe('500');
     });
@@ -431,7 +431,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
         idempotencyKey: 'k-legacy', policyVersion: 'p', parserVersion: 'v', trailerVersion: null, tariffs: [], summary: {}, createdAt: new Date(),
       });
       fake.state.revisionRows.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', status: 'valid', issues: [] });
-      fake.state.revisionPrices.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', tariffCode: 'ORO_IVA', priceListId: 'tariff-oro', receivedValue: '100', roundedValue: '100', previousValue: '90', difference: '10', wasRounded: false, change: 'changed' });
+      fake.state.revisionPrices.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', tariffCode: 'DPP_ORO_IVA', priceListId: 'tariff-oro', receivedValue: '100', roundedValue: '100', previousValue: '90', difference: '10', wasRounded: false, change: 'changed' });
     };
 
     it('se aplican resolviendo el SKU en la lista de la revisión', async () => {

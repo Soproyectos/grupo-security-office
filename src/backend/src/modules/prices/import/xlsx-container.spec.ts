@@ -93,7 +93,7 @@ describe('readBoundedXlsxParts', () => {
   it.each([true, false])('accepts a real SheetJS workbook (compression=%s)', (compression) => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
-      ['REFERENCIA', 'ORO_IVA'], ['000123', 123456],
+      ['REFERENCIA', 'DPP_ORO_IVA'], ['000123', 123456],
     ]), 'PRECIOS');
     const file = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression });
     const parts = readBoundedXlsxParts(file);

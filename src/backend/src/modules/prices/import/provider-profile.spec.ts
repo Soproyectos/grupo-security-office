@@ -17,18 +17,18 @@ const base: ProviderProfileInput = {
   thousandsSeparator: '.',
   decimalSeparator: ',',
   currency: 'COP',
-  tariffs: ['ORO_IVA', 'INSTALADOR_IVA'],
-  expectedColumns: ['REFERENCIA', 'ORO_IVA', 'INSTALADOR_IVA'],
+  tariffs: ['DPP_ORO_IVA', 'INSTALADOR_IVA'],
+  expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA', 'INSTALADOR_IVA'],
 };
 
 describe('validateProviderProfile (07B)', () => {
   it('normaliza: tarifas en orden canónico, moneda COP', () => {
-    const result = validateProviderProfile({ ...base, tariffs: ['INSTALADOR_IVA', 'ORO_IVA'] });
+    const result = validateProviderProfile({ ...base, tariffs: ['INSTALADOR_IVA', 'DPP_ORO_IVA'] });
     expect(result.errors).toEqual([]);
     expect(result.value).toMatchObject({
       providerName: 'Hikvision',
       currency: 'COP',
-      tariffs: ['INSTALADOR_IVA', 'ORO_IVA'], // orden PRICE_IMPORT_TARIFFS
+      tariffs: ['INSTALADOR_IVA', 'DPP_ORO_IVA'], // orden PRICE_IMPORT_TARIFFS
       thousandsSeparator: '.',
       decimalSeparator: ',',
     });
@@ -63,13 +63,13 @@ describe('validateProviderProfile (07B)', () => {
 
 describe('profileMatchesHeaders (07B) — detección de cambio de estructura', () => {
   it('coincide ignorando mayúsculas y espacios sobrantes', () => {
-    expect(profileMatchesHeaders({ expectedColumns: ['referencia', 'ORO_IVA'] }, ['  Referencia ', 'oro_iva'])).toBe(true);
+    expect(profileMatchesHeaders({ expectedColumns: ['referencia', 'DPP_ORO_IVA'] }, ['  Referencia ', 'dpp_oro_iva'])).toBe(true);
   });
 
   it('NO coincide si cambia el nombre, el orden o el número de columnas', () => {
-    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'ORO_IVA'] }, ['REFERENCIA', 'ORO_DPP'])).toBe(false);
-    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'ORO_IVA'] }, ['ORO_IVA', 'REFERENCIA'])).toBe(false);
-    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'ORO_IVA'] }, ['REFERENCIA'])).toBe(false);
+    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'] }, ['REFERENCIA', 'ORO_DPP'])).toBe(false);
+    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'] }, ['DPP_ORO_IVA', 'REFERENCIA'])).toBe(false);
+    expect(profileMatchesHeaders({ expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'] }, ['REFERENCIA'])).toBe(false);
   });
 });
 
@@ -77,17 +77,17 @@ describe('profileStructureChanged (07B)', () => {
   const current: NormalizedProviderProfile = {
     providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 1,
     thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-    tariffs: ['INSTALADOR_IVA', 'ORO_IVA'], expectedColumns: ['REFERENCIA', 'ORO_IVA'],
+    tariffs: ['INSTALADOR_IVA', 'DPP_ORO_IVA'], expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'],
   };
 
   it('sin cambios estructurales → false (no sube versión)', () => {
-    expect(profileStructureChanged(current, { ...base, tariffs: ['ORO_IVA', 'INSTALADOR_IVA'], expectedColumns: ['referencia', 'oro_iva'] })).toBe(false);
+    expect(profileStructureChanged(current, { ...base, tariffs: ['DPP_ORO_IVA', 'INSTALADOR_IVA'], expectedColumns: ['referencia', 'dpp_oro_iva'] })).toBe(false);
   });
 
   it('un cambio de encabezado/fila/tarifas → true (exige revisión)', () => {
     expect(profileStructureChanged(current, { ...base, expectedColumns: ['REFERENCIA', 'ORO_DPP'] })).toBe(true);
     expect(profileStructureChanged(current, { ...base, headerRow: 3 })).toBe(true);
-    expect(profileStructureChanged(current, { ...base, tariffs: ['ORO_IVA'] })).toBe(true);
+    expect(profileStructureChanged(current, { ...base, tariffs: ['DPP_ORO_IVA'] })).toBe(true);
   });
 });
 

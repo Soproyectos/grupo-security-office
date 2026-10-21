@@ -53,9 +53,9 @@ describe('downloadPriceTemplate (IMP-02)', () => {
       data: blob,
       headers: { 'content-disposition': 'attachment; filename="plantilla-precios-L1-2026-10-17.xlsx"' },
     })
-    const result = await downloadPriceTemplate('lista-1', 'referencias', ['ORO_IVA'])
+    const result = await downloadPriceTemplate('lista-1', 'referencias', ['DPP_ORO_IVA'])
     expect(api.get).toHaveBeenCalledWith('/prices/import/template', {
-      params: { listaId: 'lista-1', mode: 'referencias', tariffs: 'ORO_IVA' },
+      params: { listaId: 'lista-1', mode: 'referencias', tariffs: 'DPP_ORO_IVA' },
       responseType: 'blob',
     })
     expect(result.blob).toBe(blob)
@@ -173,9 +173,9 @@ describe('IMP-07 (07A) — exportación de la lista', () => {
       data: blob,
       headers: { 'content-disposition': 'attachment; filename="lista-L-1-2026-10-17.xlsx"' },
     })
-    const result = await exportListaPrices('lista-1', ['ORO_IVA', 'INSTALADOR_IVA'])
+    const result = await exportListaPrices('lista-1', ['DPP_ORO_IVA', 'INSTALADOR_IVA'])
     expect(api.get).toHaveBeenCalledWith('/prices/import/export', {
-      params: { listaId: 'lista-1', tariffs: 'ORO_IVA,INSTALADOR_IVA' },
+      params: { listaId: 'lista-1', tariffs: 'DPP_ORO_IVA,INSTALADOR_IVA' },
       responseType: 'blob',
     })
     expect(result.blob).toBe(blob)
@@ -198,7 +198,7 @@ describe('IMP-07B (07B) — perfiles de proveedor', () => {
   const profile = {
     id: 'p1', providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 1,
     thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-    tariffs: ['ORO_IVA'], expectedColumns: ['REFERENCIA'],
+    tariffs: ['DPP_ORO_IVA'], expectedColumns: ['REFERENCIA'],
     version: 1, createdAt: '2026-10-17T10:00:00.000Z', updatedAt: '2026-10-17T10:00:00.000Z', equivalences: [],
   }
 
@@ -207,7 +207,7 @@ describe('IMP-07B (07B) — perfiles de proveedor', () => {
     const input = {
       providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 1,
       thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-      tariffs: ['ORO_IVA'], expectedColumns: ['REFERENCIA'],
+      tariffs: ['DPP_ORO_IVA'], expectedColumns: ['REFERENCIA'],
     }
     const result = await createProviderProfile(input)
     expect(api.post).toHaveBeenCalledWith('/prices/import/profiles', input)
@@ -219,7 +219,7 @@ describe('IMP-07B (07B) — perfiles de proveedor', () => {
     const updated = await updateProviderProfile('p1', {
       providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 2,
       thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-      tariffs: ['ORO_IVA'], expectedColumns: ['REFERENCIA'],
+      tariffs: ['DPP_ORO_IVA'], expectedColumns: ['REFERENCIA'],
     })
     expect(api.put).toHaveBeenCalledWith('/prices/import/profiles/p1', expect.objectContaining({ headerRow: 2 }))
     expect(updated.version).toBe(2)

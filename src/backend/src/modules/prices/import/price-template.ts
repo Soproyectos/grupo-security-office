@@ -8,11 +8,11 @@ import { PRICE_DATA_SHEETS, validatePriceWorkbookStructure } from './price-workb
 const blank = (cell?: XLSX.CellObject) => !cell || cell.v === undefined || cell.v === null || cell.v === '';
 const formula = (cell?: XLSX.CellObject) => cell?.f !== undefined || cell?.F !== undefined;
 
-/** Purchasing template headers (with IVA) and their tariff codes; "DPP ORO" is the ORO_IVA tariff. */
+/** Purchasing template headers (with IVA) and their tariff codes; "DPP ORO" is the existing DPP_ORO_IVA tariff. */
 const TARIFF_HEADERS: Record<string, PriceImportTariff> = {
   'PRECIO INSTALADOR (CON IVA)': 'INSTALADOR_IVA',
   'PRECIO TIENDA (CON IVA)': 'TIENDA_IVA',
-  'PRECIO DPP ORO (CON IVA)': 'ORO_IVA',
+  'PRECIO DPP ORO (CON IVA)': 'DPP_ORO_IVA',
   'PRECIO DPP PLATINO (CON IVA)': 'DPP_PLATINO_IVA',
   'PRECIO CLIENTE FINAL (CON IVA)': 'CLIENTE_FINAL_IVA',
 };
@@ -174,7 +174,7 @@ export interface BuildPriceTemplateInput {
 /**
  * IMP-02 §3 — genera un XLSX NUEVO con las hojas exactas PRECIOS+INSTRUCCIONES.
  * Nunca parte del archivo del usuario (regla 1); las columnas son exactamente
- * las tarifas IVA seleccionadas en orden canónico (regla 2; ORO_IVA exacto).
+ * las tarifas IVA seleccionadas en orden canónico (regla 2; DPP_ORO_IVA exacto).
  */
 export function buildPriceTemplate(input: BuildPriceTemplateInput): Buffer {
   const selected = PRICE_IMPORT_TARIFFS.filter((code) => input.tariffs.includes(code));

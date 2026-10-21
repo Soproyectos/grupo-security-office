@@ -38,7 +38,7 @@ const writesForModel = () => Object.fromEntries(writes.map((method) => [method, 
 
 function workbook(rows: unknown[][] = [['0001-A', 123456.5], ['0002-B', 99000]]): Buffer {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Completa la referencia y el precio con IVA.']]), 'INSTRUCCIONES');
   return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
@@ -92,7 +92,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       return products.filter((p) => wanted.has(p.sku.replace(/\s/g, '').toUpperCase())).map((p) => ({ id: p.id, sku: p.sku }));
     }),
     product: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => products.filter((p) => where.id.in.includes(p.id))) },
-    priceList: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => where.code.in.includes('ORO_IVA') ? [{ id: TARIFF, code: 'ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }] : []) },
+    priceList: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => where.code.in.includes('DPP_ORO_IVA') ? [{ id: TARIFF, code: 'DPP_ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }] : []) },
     price: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => stored.filter((p) => where.productId.in.includes(p.productId) && where.priceListId.in.includes(p.priceListId))) },
     $transaction: jest.fn(),
   };
@@ -145,7 +145,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     const result = response.body.data;
     expect(result).toMatchObject({ listaId: null, readOnly: true, currency: 'COP', taxIncluded: true, rounding: 'HALF_UP',
       summary: { rows: 2, validRows: 2, errorRows: 0, prices: 2, changedPrices: 1, unchangedPrices: 1, roundedPrices: 1 } });
-    expect(result.rows[0].prices[0]).toMatchObject({ code: 'ORO_IVA', raw: '123456.5', rounded: '123457', previous: '100000', difference: '23457', change: 'changed' });
+    expect(result.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', raw: '123456.5', rounded: '123457', previous: '100000', difference: '23457', change: 'changed' });
     // La autorización salió de los grants de BD, no de los claims del token.
     expect(grants.map((g) => g.actionId).sort()).toEqual(['listas:read', 'prices:preview', 'prices:read']);
     expect(result.rows[0]).toMatchObject({ productId: 'fixture-product-a', listaId: LIST, listaState: 'LISTA' });
@@ -265,7 +265,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
 
   it.each([
     { fileName: 'fixture.xlsx', buffer: Buffer.from('not an Excel zip') },
-    { fileName: 'fixture.csv', buffer: Buffer.from('REFERENCIA,ORO_IVA\n0001-A,123456') },
+    { fileName: 'fixture.csv', buffer: Buffer.from('REFERENCIA,DPP_ORO_IVA\n0001-A,123456') },
   ])('rejects invalid uploaded content or extension ($fileName)', async ({ fileName, buffer }) => {
     const response = await upload({ fileName, buffer }).expect(400);
     expect(response.body.path).toBe(endpoint);

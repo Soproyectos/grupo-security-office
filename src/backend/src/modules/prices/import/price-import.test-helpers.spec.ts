@@ -6,7 +6,7 @@ describe('price import test helpers', () => {
       { id: 'p1', sku: 'SKU-A', listaId: 'lista-1' },
       { id: 'p2', sku: 'sku-b', listaId: null },
     ],
-    tariffs: [{ id: 't1', code: 'ORO_IVA' }],
+    tariffs: [{ id: 't1', code: 'DPP_ORO_IVA' }],
     prices: [{ productId: 'p1', priceListId: 't1', value: 100 }],
   };
 
@@ -22,7 +22,7 @@ describe('price import test helpers', () => {
     const { prisma } = createPriceImportFake(seed);
     const rev = await prisma.priceImportRevision.create({ data: { listaId: null, idempotencyKey: 'k' } });
     await prisma.priceImportRevisionRow.createMany({ data: [{ revisionId: rev.id, rowNumber: 2, productId: 'p1' }] });
-    await prisma.priceImportRevisionPrice.createMany({ data: [{ revisionId: rev.id, rowNumber: 2, tariffCode: 'ORO_IVA' }] });
+    await prisma.priceImportRevisionPrice.createMany({ data: [{ revisionId: rev.id, rowNumber: 2, tariffCode: 'DPP_ORO_IVA' }] });
     expect(await prisma.priceImportRevision.findUnique({ where: { idempotencyKey: 'k' } })).toMatchObject({ id: rev.id, listaId: null, status: 'GUARDADA' });
     expect(await prisma.priceImportRevisionRow.count({ where: { revisionId: rev.id } })).toBe(1);
     expect(await prisma.priceImportRevisionPrice.findMany({ where: { revisionId: rev.id } })).toHaveLength(1);

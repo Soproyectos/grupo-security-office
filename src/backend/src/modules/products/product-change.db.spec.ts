@@ -36,7 +36,7 @@ suite('product_changes (database)', () => {
         const rows = diffFields({ name: `n${i}` }, { name: `n${i + 1}` }, ['name'], meta);
         await service.record(tx, rows);
       }
-      await service.record(tx, diffFields({}, { 'price:ORO_IVA': '10' }, ['price:ORO_IVA'], { ...meta, source: 'PRICE_IMPORT', sourceRef: 'rev-1' }));
+      await service.record(tx, diffFields({}, { 'price:DPP_ORO_IVA': '10' }, ['price:DPP_ORO_IVA'], { ...meta, source: 'PRICE_IMPORT', sourceRef: 'rev-1' }));
     });
     const seen: string[] = [];
     let cursor: string | undefined;
@@ -53,7 +53,7 @@ suite('product_changes (database)', () => {
   });
 
   it('filters by field and source and rolls back with the transaction', async () => {
-    const byField = await service.list(productId, ctx, { field: 'price:ORO_IVA' });
+    const byField = await service.list(productId, ctx, { field: 'price:DPP_ORO_IVA' });
     expect(byField.items).toHaveLength(1);
     expect(byField.items[0]).toMatchObject({ source: 'PRICE_IMPORT', sourceRef: 'rev-1', oldValue: null, newValue: '10' });
     const bySource = await service.list(productId, ctx, { source: 'MANUAL', limit: 100 });

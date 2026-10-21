@@ -19,7 +19,7 @@ const ACTIONS = ['prices:save', 'prices:preview', 'prices:read', 'prices:apply',
 
 function file(rows: unknown[][] = [['SKU-A', 100.5]]): Express.Multer.File {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-precios.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
@@ -49,7 +49,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
         { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
         { id: 'product-free', sku: 'SKU-FREE', listaId: null },
       ],
-      tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
       prices: [
         { productId: 'product-a', priceListId: 'tariff-oro', value: 90 },
         { productId: 'product-b', priceListId: 'tariff-oro', value: 500 },
@@ -71,7 +71,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     }));
     expect(fake.state.revisionRows[0]).toMatchObject({ rowNumber: 2, sku: 'SKU-A', status: 'valid', productId: 'product-a', listaId: LISTA_A, resolution: null });
     expect(fake.state.revisionPrices[0]).toMatchObject({
-      tariffCode: 'ORO_IVA', receivedValue: '100.5', roundedValue: '101', previousValue: '90', change: 'changed', productId: 'product-a', largeChange: false,
+      tariffCode: 'DPP_ORO_IVA', receivedValue: '100.5', roundedValue: '101', previousValue: '90', change: 'changed', productId: 'product-a', largeChange: false,
     });
     expect(fake.prisma.price.create).not.toHaveBeenCalled();
     expect(fake.prisma.price.update).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       const detail = await service.getRevision('rev-1', 1, 100, ctx);
       expect(detail).toMatchObject({ id: 'rev-1', totalRows: 3, page: 1, rowsInInaccessibleListas: 0 });
       expect(detail.rows[0]).toMatchObject({ row: 2, sku: 'SKU-A', status: 'valid', listaId: LISTA_A, listaState: 'LISTA' });
-      expect(detail.rows[0].prices[0]).toMatchObject({ code: 'ORO_IVA', raw: '100', rounded: '100', previous: '90', change: 'changed', largeChange: false });
+      expect(detail.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', raw: '100', rounded: '100', previous: '90', change: 'changed', largeChange: false });
       expect(detail.rows[2]).toMatchObject({ sku: 'NO-SUCH', listaState: 'UNKNOWN', resolution: 'PENDING_PRODUCT' });
       expect(detail.byLista).toEqual(expect.arrayContaining([
         { listaId: LISTA_A, code: 'LA', name: 'Lista Alfa', rows: 1, prices: 1 },
@@ -181,14 +181,14 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       fake.state.revisions.push({
         id: 'legacy-1', listaId: LISTA_A, createdById: 'someone', status: 'APLICADA', fileName: 'old.xlsx', fileHash: 'h', fileSize: 1,
         idempotencyKey: 'k-legacy', policyVersion: 'p', parserVersion: 'v', trailerVersion: null, tariffs: [], summary: { rows: 1 },
-        createdAt: new Date(), appliedAt: new Date(), appliedResult: { revisionId: 'legacy-1', status: 'APLICADA', alreadyApplied: false, appliedRows: 1, appliedPrices: 1, tariffs: ['ORO_IVA'], appliedAt: 'x' },
+        createdAt: new Date(), appliedAt: new Date(), appliedResult: { revisionId: 'legacy-1', status: 'APLICADA', alreadyApplied: false, appliedRows: 1, appliedPrices: 1, tariffs: ['DPP_ORO_IVA'], appliedAt: 'x' },
       });
       fake.state.revisionRows.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', status: 'valid', issues: [] });
-      fake.state.revisionPrices.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', tariffCode: 'ORO_IVA', receivedValue: '100', roundedValue: '100', previousValue: '90', difference: '10', wasRounded: false, change: 'changed' });
+      fake.state.revisionPrices.push({ revisionId: 'legacy-1', rowNumber: 2, sku: 'SKU-A', tariffCode: 'DPP_ORO_IVA', receivedValue: '100', roundedValue: '100', previousValue: '90', difference: '10', wasRounded: false, change: 'changed' });
       const detail = await service.getRevision('legacy-1', 1, 100, ctx);
       expect(detail).toMatchObject({ listaId: LISTA_A, totalRows: 1, appliedResult: { appliedPrices: 1 } });
       expect(detail.rows[0]).toMatchObject({ sku: 'SKU-A', listaId: LISTA_A, listaState: 'LISTA' });
-      expect(detail.rows[0].prices[0]).toMatchObject({ code: 'ORO_IVA', previous: '90', changePercent: null, largeChange: false });
+      expect(detail.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', previous: '90', changePercent: null, largeChange: false });
       expect(acl.assertListaAccess).toHaveBeenCalledWith(LISTA_A, ctx, 'view_prices');
     });
 

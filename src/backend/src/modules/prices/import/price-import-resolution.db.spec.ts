@@ -26,7 +26,7 @@ const storageDir = path.join(os.tmpdir(), 'gs-b3-db-storage');
 
 function workbook(rows: unknown[][]): Express.Multer.File {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-b3.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
@@ -70,8 +70,8 @@ suite('R2 unknown SKU resolution (database)', () => {
     await prisma.category.create({ data: { id: ids.category, name: TAG, slug: `${TAG}-cat` } });
     await prisma.brand.create({ data: { id: ids.brand, name: TAG, slug: `${TAG}-brand` } });
     await prisma.lista.create({ data: { id: ids.lista, code: `${TAG}-A`, name: 'Alfa' } });
-    createdTariff = !(await prisma.priceList.findUnique({ where: { code: 'ORO_IVA' } }));
-    if (createdTariff) await prisma.priceList.create({ data: { id: ids.tariff, name: 'Oro', code: 'ORO_IVA' } });
+    createdTariff = !(await prisma.priceList.findUnique({ where: { code: 'DPP_ORO_IVA' } }));
+    if (createdTariff) await prisma.priceList.create({ data: { id: ids.tariff, name: 'Oro', code: 'DPP_ORO_IVA' } });
     const common = { categoryId: ids.category, brandId: ids.brand };
     await prisma.product.create({ data: { id: ids.pA, sku: `${TAG}-KNOWN`, name: `${TAG} known`, listaId: ids.lista, ...common } });
     await prisma.product.create({ data: { id: ids.published, sku: `${TAG}-PUBLISHED`, name: `${TAG} published`, listaId: ids.lista, lifecycleStatus: 'PUBLISHED', publishStatus: 'publicado', isActive: true, isVisible: true, ...common } });
@@ -93,7 +93,7 @@ suite('R2 unknown SKU resolution (database)', () => {
 
     const listed = await resolution.listUnknownReferences(header.id, ctx);
     expect(listed).toMatchObject({ canCreate: true, total: 2 });
-    expect(listed.items[0]).toMatchObject({ sku: `${TAG}-new-1`, prices: [{ tariffCode: 'ORO_IVA', received: '250.4', value: '250' }] });
+    expect(listed.items[0]).toMatchObject({ sku: `${TAG}-new-1`, prices: [{ tariffCode: 'DPP_ORO_IVA', received: '250.4', value: '250' }] });
 
     const { results } = await resolution.resolve(header.id, [
       { rowNumber: 3, action: 'CREATE', name: `  ${TAG} Camara nueva `, brandId: ids.brand, categoryId: ids.category },
@@ -113,8 +113,8 @@ suite('R2 unknown SKU resolution (database)', () => {
     expect(prices[0].value.toString()).toBe('250');
 
     const history = await prisma.productChange.findMany({ where: { productId }, orderBy: { field: 'asc' } });
-    expect(history.map((h) => h.field)).toEqual(['brandId', 'categoryId', 'created', 'name', 'price:ORO_IVA', 'sku']);
-    expect(history.find((h) => h.field === 'price:ORO_IVA')).toMatchObject({ source: 'PRICE_IMPORT', sourceRef: header.id, actorId: ids.actor, oldValue: null, newValue: '250' });
+    expect(history.map((h) => h.field)).toEqual(['brandId', 'categoryId', 'created', 'name', 'price:DPP_ORO_IVA', 'sku']);
+    expect(history.find((h) => h.field === 'price:DPP_ORO_IVA')).toMatchObject({ source: 'PRICE_IMPORT', sourceRef: header.id, actorId: ids.actor, oldValue: null, newValue: '250' });
     expect(await prisma.auditLog.count({ where: { productId, action: 'price-import-create-draft' } })).toBe(1);
 
     const rowsAfter = await prisma.priceImportRevisionRow.findMany({ where: { revisionId: header.id }, orderBy: { rowNumber: 'asc' } });
@@ -137,7 +137,7 @@ suite('R2 unknown SKU resolution (database)', () => {
     expect(a.results[0].status).toBe('CREATED');
     expect(b.results[0]).toMatchObject({ status: 'CREATED', productId: a.results[0].productId });
     expect(await prisma.product.count({ where: { sku: `${TAG}-race-1` } })).toBe(1);
-    expect(await prisma.productChange.count({ where: { productId: a.results[0].productId, field: 'price:ORO_IVA' } })).toBe(1);
+    expect(await prisma.productChange.count({ where: { productId: a.results[0].productId, field: 'price:DPP_ORO_IVA' } })).toBe(1);
   });
 
   it('SKU_EXISTS when the SKU appears meanwhile (even differing in case/spaces): no duplicate, row stays pending', async () => {
@@ -169,7 +169,7 @@ suite('R2 unknown SKU resolution (database)', () => {
   it('TARIFF_UNAVAILABLE creates nothing', async () => {
     const header = await imports.saveRevision(workbook([[`${TAG}-KNOWN`, 150], [`${TAG}-tar-1`, 30]]), 'key-b3db-0005', ctx);
     await imports.applyRevision(header.id, ctx, { acknowledgeRejectedRows: 1 });
-    const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'ORO_IVA' } });
+    const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'DPP_ORO_IVA' } });
     await prisma.priceList.update({ where: { id: tariff.id }, data: { isActive: false } });
     try {
       const { results } = await resolution.resolve(header.id, [{ rowNumber: 3, action: 'CREATE', name: 'x', brandId: ids.brand, categoryId: ids.category }], ctx);

@@ -21,7 +21,7 @@ const LISTA_ACTIONS = ['prices:save', 'prices:preview', 'prices:read', 'prices:a
 
 function file(rows: unknown[][]): Express.Multer.File {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-precios.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
@@ -46,7 +46,7 @@ describe('R2 — resolución de referencias desconocidas', () => {
     fake = createPriceImportFake({
       listas: [{ id: LISTA, code: 'LA', name: 'Lista Alfa' }],
       products: [{ id: 'product-a', sku: 'SKU-A', listaId: LISTA }],
-      tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
       prices: [{ productId: 'product-a', priceListId: 'tariff-oro', value: 90, listaId: LISTA }],
       brands: [{ id: 'brand-1', name: 'Marca' }, { id: 'brand-none', name: 'Sin marca' }],
       categories: [{ id: 'cat-1', name: 'Cat' }, { id: 'cat-none', name: 'Sin categoría' }],
@@ -79,7 +79,7 @@ describe('R2 — resolución de referencias desconocidas', () => {
       const view = await resolution.listUnknownReferences(id, ctx);
       expect(view).toMatchObject({ revisionId: id, status: 'APLICADA', canCreate: true, total: 2, defaults: { brandId: 'brand-none', categoryId: 'cat-none' } });
       expect(view.items.map((i) => i.sku)).toEqual(['New-1', 'NEW-2']);
-      expect(view.items[0]).toMatchObject({ canCreate: true, prices: [{ tariffCode: 'ORO_IVA', received: '250', value: '250' }] });
+      expect(view.items[0]).toMatchObject({ canCreate: true, prices: [{ tariffCode: 'DPP_ORO_IVA', received: '250', value: '250' }] });
     });
 
     it('reports canCreate=false without GLOBAL products:write + prices:apply, and still lists for prices:read', async () => {
@@ -133,8 +133,8 @@ describe('R2 — resolución de referencias desconocidas', () => {
       expect(rowOf(3).resolvedAt).toBeInstanceOf(Date);
 
       const history = fake.state.productChanges.filter((c) => c.productId === product.id);
-      expect(history.map((c) => c.field).sort()).toEqual(['brandId', 'categoryId', 'created', 'name', 'price:ORO_IVA', 'sku']);
-      expect(history.find((c) => c.field === 'price:ORO_IVA')).toMatchObject({ oldValue: Prisma.DbNull, newValue: '250', source: 'PRICE_IMPORT', sourceRef: id, actorId: 'fixture-actor' });
+      expect(history.map((c) => c.field).sort()).toEqual(['brandId', 'categoryId', 'created', 'name', 'price:DPP_ORO_IVA', 'sku']);
+      expect(history.find((c) => c.field === 'price:DPP_ORO_IVA')).toMatchObject({ oldValue: Prisma.DbNull, newValue: '250', source: 'PRICE_IMPORT', sourceRef: id, actorId: 'fixture-actor' });
       expect(history.find((c) => c.field === 'created')).toMatchObject({ source: 'PRICE_IMPORT', sourceRef: id });
       expect(fake.audit.logTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'price-import-create-draft', productId: product.id }));
     });

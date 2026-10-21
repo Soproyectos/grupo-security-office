@@ -20,7 +20,7 @@ function build(product = baseProduct()) {
   const tx = {
     product: { update: jest.fn(), create: jest.fn() },
     productChange: { createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => { written.push(...data); return { count: data.length }; }) },
-    priceList: { findMany: jest.fn(async () => [{ id: 'pl-1', code: 'ORO_IVA' }]) },
+    priceList: { findMany: jest.fn(async () => [{ id: 'pl-1', code: 'DPP_ORO_IVA' }]) },
     price: { findMany: jest.fn(async () => []), upsert: jest.fn(async () => ({})) },
   };
   const prisma: any = {
@@ -58,7 +58,7 @@ describe('product history: create', () => {
     tx.product.create.mockResolvedValue(baseProduct({ id: 'p-new', sku: 'NEW-1' }));
     await service.create({ sku: 'NEW-1', name: 'Nuevo', categoryId: 'c-1', brandId: 'b-1', listaId: 'L-1', prices: [{ priceListId: 'pl-1', value: 1500 }] } as never, ctx);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(written.find((r) => r.field === 'price:ORO_IVA')).toMatchObject({ oldValue: Prisma.DbNull, newValue: '1500', source: 'MANUAL' });
+    expect(written.find((r) => r.field === 'price:DPP_ORO_IVA')).toMatchObject({ oldValue: Prisma.DbNull, newValue: '1500', source: 'MANUAL' });
   });
 
   it('records nothing when the insert fails', async () => {

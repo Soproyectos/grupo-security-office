@@ -13,25 +13,25 @@ import { PRICE_IMPORT_TARIFFS } from './price-import.types';
 
 describe('buildPriceTemplate — generador de plantilla (IMP-02 §3)', () => {
   it('genera PRECIOS+INSTRUCCIONES exactas con las tarifas seleccionadas en orden', () => {
-    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: ['ORO_IVA', 'INSTALADOR_IVA'] });
+    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: ['DPP_ORO_IVA', 'INSTALADOR_IVA'] });
     const wb = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
     expect(wb.SheetNames).toEqual(['PRECIOS', 'INSTRUCCIONES']);
     const full = XLSX.read(buffer, { type: 'buffer' });
     const header = XLSX.utils.sheet_to_json<string[]>(full.Sheets.PRECIOS, { header: 1 })[0];
     // Orden PRICE_IMPORT_TARIFFS, no el orden de la petición.
-    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'ORO_IVA']);
+    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'DPP_ORO_IVA']);
   });
 
-  it('ORO_IVA es exacto y jamás aparece DPP_ORO_IVA (LEEME)', () => {
+  it('la tarifa Oro es exactamente DPP_ORO_IVA y no aparece una ORO_IVA suelta', () => {
     const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: [...PRICE_IMPORT_TARIFFS] });
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const header = XLSX.utils.sheet_to_json<string[]>(wb.Sheets.PRECIOS, { header: 1 })[0];
-    expect(header).toContain('ORO_IVA');
-    expect(JSON.stringify(header)).not.toContain('DPP_ORO_IVA');
+    expect(header).toContain('DPP_ORO_IVA');
+    expect(header).not.toContain('ORO_IVA');
   });
 
   it('mode=vacias deja 0 filas comerciales (solo encabezados)', () => {
-    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: ['ORO_IVA'] });
+    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: ['DPP_ORO_IVA'] });
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.PRECIOS, { header: 1 });
     expect(rows.length).toBe(1); // solo la fila 1
@@ -40,31 +40,31 @@ describe('buildPriceTemplate — generador de plantilla (IMP-02 §3)', () => {
   it('mode=referencias emite una fila por SKU con sus precios de referencia', () => {
     const buffer = buildPriceTemplate({
       mode: 'referencias',
-      tariffs: ['ORO_IVA'],
-      references: [{ sku: 'SKU-A', prices: { ORO_IVA: '100000' } }, { sku: 'SKU-B' }],
+      tariffs: ['DPP_ORO_IVA'],
+      references: [{ sku: 'SKU-A', prices: { DPP_ORO_IVA: '100000' } }, { sku: 'SKU-B' }],
     });
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets.PRECIOS) as Record<string, unknown>[];
     expect(rows.length).toBe(2);
-    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', ORO_IVA: 100000 });
+    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 });
     expect(rows[1].REFERENCIA).toBe('SKU-B');
-    expect(rows[1].ORO_IVA).toBeUndefined();
+    expect(rows[1].DPP_ORO_IVA).toBeUndefined();
   });
 
   it('el XLSX generado lo acepta readPriceTemplate sin modificación de hojas (acceptance backend 1)', () => {
     // readPriceTemplate viene de IMP-01; rellenamos una fila y debe validar.
-    const buffer = buildPriceTemplate({ mode: 'referencias', tariffs: ['ORO_IVA'], references: [{ sku: 'SKU-A' }] });
+    const buffer = buildPriceTemplate({ mode: 'referencias', tariffs: ['DPP_ORO_IVA'], references: [{ sku: 'SKU-A' }] });
     const wb = XLSX.read(buffer, { type: 'buffer' });
-    XLSX.utils.sheet_add_json(wb.Sheets.PRECIOS, [{ REFERENCIA: 'SKU-A', ORO_IVA: 100000 }], { skipHeader: true, origin: 'A2' });
+    XLSX.utils.sheet_add_json(wb.Sheets.PRECIOS, [{ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 }], { skipHeader: true, origin: 'A2' });
     const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
     // Import dinámico para no romper el ciclo de imports del spec.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { readPriceTemplate } = require('./price-template');
     const parsed = readPriceTemplate(out);
-    expect(parsed.tariffs).toEqual(['ORO_IVA']);
+    expect(parsed.tariffs).toEqual(['DPP_ORO_IVA']);
     expect(parsed.rows).toHaveLength(1);
     expect(parsed.rows[0].sku).toBe('SKU-A');
-    expect(parsed.rows[0].prices[0]).toMatchObject({ code: 'ORO_IVA', raw: '100000', rounded: '100000' });
+    expect(parsed.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', raw: '100000', rounded: '100000' });
   });
 });
 
@@ -83,7 +83,7 @@ describe('PriceImportService.downloadTemplate — alcance y validación (IMP-02 
       lista: { findUnique: jest.fn().mockResolvedValue({ id: LISTA, code: 'L-1', isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP' }) },
       product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1', sku: 'SKU-A' }]) },
       price: { findMany: jest.fn().mockResolvedValue([{ productId: 'p1', priceListId: 't1', value: '100000', currency: 'COP' }]) },
-      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
+      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'DPP_ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
     };
     acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
     audit = { log: jest.fn().mockResolvedValue({}) };
@@ -97,7 +97,7 @@ describe('PriceImportService.downloadTemplate — alcance y validación (IMP-02 
   });
 
   it('tariff desconocida → 400 (no se inventan tarifas)', async () => {
-    await expect(service.downloadTemplate(LISTA, 'vacias', ['DPP_ORO_IVA'], ctx)).rejects.toThrow(BadRequestException);
+    await expect(service.downloadTemplate(LISTA, 'vacias', ['ORO_IVA'], ctx)).rejects.toThrow(BadRequestException);
     expect(prisma.product.findMany).not.toHaveBeenCalled();
   });
 
@@ -116,7 +116,7 @@ describe('PriceImportService.downloadTemplate — alcance y validación (IMP-02 
   });
 
   it('mode=referencias consulta SOLO productos de esa lista (acceptance backend 2)', async () => {
-    await service.downloadTemplate(LISTA, 'referencias', ['ORO_IVA'], ctx);
+    await service.downloadTemplate(LISTA, 'referencias', ['DPP_ORO_IVA'], ctx);
     expect(prisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ listaId: LISTA }) }),
     );
@@ -126,17 +126,17 @@ describe('PriceImportService.downloadTemplate — alcance y validación (IMP-02 
     // grants vacío → capa rol transicional; para probar la rama sin precios
     // mockeamos isListasAdmin=true (rol admin) pero sin concesión prices:read.
     acl.isListasAdmin.mockReturnValue(true);
-    const result = await service.downloadTemplate(LISTA, 'referencias', ['ORO_IVA'], ctx);
+    const result = await service.downloadTemplate(LISTA, 'referencias', ['DPP_ORO_IVA'], ctx);
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const XLSX = require('xlsx');
     const wb = XLSX.read(result.buffer, { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets.PRECIOS) as Record<string, unknown>;
     expect((rows[0] as Record<string, unknown>).REFERENCIA).toBe('SKU-A');
-    expect((rows[0] as Record<string, unknown>).ORO_IVA).toBeUndefined(); // sin prices:read no hay precios
+    expect((rows[0] as Record<string, unknown>).DPP_ORO_IVA).toBeUndefined(); // sin prices:read no hay precios
   });
 
   it('auditoría con fileHash y SIN SKUs ni precios (patrón IMP-01)', async () => {
-    await service.downloadTemplate(LISTA, 'referencias', ['ORO_IVA'], ctx);
+    await service.downloadTemplate(LISTA, 'referencias', ['DPP_ORO_IVA'], ctx);
     const event = audit.log.mock.calls[0][0];
     expect(event).toMatchObject({ action: 'price-template-download', entity: 'LISTA', entityId: LISTA });
     expect(event.newValues.fileHash).toMatch(/^[a-f0-9]{64}$/);
@@ -156,7 +156,7 @@ describe('PriceImportService.downloadTemplate — precios de referencia (P1)', (
       lista: { findUnique: jest.fn().mockResolvedValue({ id: LISTA, code: 'L-1', isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP' }) },
       product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1', sku: 'SKU-A' }]) },
       price: { findMany: jest.fn().mockResolvedValue([{ productId: 'p1', priceListId: 't1', value: '100000', currency: 'COP' }]) },
-      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
+      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'DPP_ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
     };
     acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(true) };
     audit = { log: jest.fn().mockResolvedValue({}) };
@@ -170,13 +170,13 @@ describe('PriceImportService.downloadTemplate — precios de referencia (P1)', (
   });
 
   it('con concesión prices:read incluye el precio actual como referencia', async () => {
-    const result = await service.downloadTemplate(LISTA, 'referencias', ['ORO_IVA'], { userId: 'u-1', roles: ['Supervisor'] });
+    const result = await service.downloadTemplate(LISTA, 'referencias', ['DPP_ORO_IVA'], { userId: 'u-1', roles: ['Supervisor'] });
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const XLSX = require('xlsx');
     const wb = XLSX.read(result.buffer, { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets.PRECIOS) as Record<string, unknown>;
     expect((rows[0] as Record<string, unknown>).REFERENCIA).toBe('SKU-A');
-    expect((rows[0] as Record<string, unknown>).ORO_IVA).toBe(100000);
+    expect((rows[0] as Record<string, unknown>).DPP_ORO_IVA).toBe(100000);
   });
 });
 
@@ -193,7 +193,7 @@ describe('PriceImportService.exportListaPrices — alcance y permisos (IMP-07 §
     prisma = {
       lista: { findUnique: jest.fn().mockResolvedValue({ id: LISTA, code: 'L-1', isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP' }) },
       product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1', sku: 'SKU-A' }, { id: 'p2', sku: 'SKU-B' }]) },
-      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'ORO_IVA', isActive: true, currency: 'COP' }]) },
+      priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'DPP_ORO_IVA', isActive: true, currency: 'COP' }]) },
       price: { findMany: jest.fn().mockResolvedValue([{ productId: 'p1', priceListId: 't1', value: '100000' }]) },
     };
     acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
@@ -214,26 +214,26 @@ describe('PriceImportService.exportListaPrices — alcance y permisos (IMP-07 §
 
   it('sin concesión prices:read → 403 sin consultar la lista', async () => {
     build([{ sourceId: 's1', actionId: 'listas:read', scope: 'list' }]);
-    await expect(service.exportListaPrices(LISTA, ['ORO_IVA'], ctx)).rejects.toThrow(ForbiddenException);
+    await expect(service.exportListaPrices(LISTA, ['DPP_ORO_IVA'], ctx)).rejects.toThrow(ForbiddenException);
     expect(prisma.lista.findUnique).not.toHaveBeenCalled();
   });
 
   it('solo SÍ exige prices:read: con esa concesión exporta sin necesitar prices:preview', async () => {
     build(readGrant);
-    const result = await service.exportListaPrices(LISTA, ['ORO_IVA'], ctx);
+    const result = await service.exportListaPrices(LISTA, ['DPP_ORO_IVA'], ctx);
     expect(result.fileName).toMatch(/^lista-L-1-\d{4}-\d{2}-\d{2}\.xlsx$/);
     expect(prisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ listaId: LISTA }) }));
   });
 
   it('incluye solo la tarifa pedida y los precios vigentes de ESA lista (caso 3)', async () => {
     build(readGrant);
-    const result = await service.exportListaPrices(LISTA, ['ORO_IVA'], ctx);
+    const result = await service.exportListaPrices(LISTA, ['DPP_ORO_IVA'], ctx);
     const rows = rowsOf(result.buffer);
-    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', ORO_IVA: 100000 });
+    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 });
     expect(rows[1]).toMatchObject({ REFERENCIA: 'SKU-B' });
-    expect(rows[1].ORO_IVA).toBeUndefined();
+    expect(rows[1].DPP_ORO_IVA).toBeUndefined();
     const header = Object.keys(rows[0]);
-    expect(header).toEqual(['REFERENCIA', 'ORO_IVA']); // sin tarifas no autorizadas
+    expect(header).toEqual(['REFERENCIA', 'DPP_ORO_IVA']); // sin tarifas no autorizadas
   });
 
   it('tarifa desconocida → 400 (no se inventan tarifas)', async () => {
@@ -244,12 +244,12 @@ describe('PriceImportService.exportListaPrices — alcance y permisos (IMP-07 §
   it('lista ajena → 403 (assertListaAccess)', async () => {
     build(readGrant);
     acl.assertListaAccess.mockRejectedValue(new ForbiddenException('ajena'));
-    await expect(service.exportListaPrices(LISTA, ['ORO_IVA'], ctx)).rejects.toThrow(ForbiddenException);
+    await expect(service.exportListaPrices(LISTA, ['DPP_ORO_IVA'], ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('auditoría price-list-export con fileHash y sin SKUs ni precios', async () => {
     build(readGrant);
-    await service.exportListaPrices(LISTA, ['ORO_IVA'], ctx);
+    await service.exportListaPrices(LISTA, ['DPP_ORO_IVA'], ctx);
     const event = audit.log.mock.calls[0][0];
     expect(event).toMatchObject({ action: 'price-list-export', entity: 'LISTA', entityId: LISTA });
     expect(event.newValues.fileHash).toMatch(/^[a-f0-9]{64}$/);

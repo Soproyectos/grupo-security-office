@@ -96,16 +96,16 @@ describe('IMP-06 frontend — historial y conflicto sin éxito falso', () => {
   })
 
   it('extrae sólo strings de `feedback` del 409 y [] en cualquier otro error', () => {
-    const conflict = { response: { data: { statusCode: 409, feedback: ['IMP05-SKU-1 · ORO_IVA: PRICE_CHANGED (esperado 123457, actual 999999)', 42] } } }
-    expect(conflictFeedback(conflict)).toEqual(['IMP05-SKU-1 · ORO_IVA: PRICE_CHANGED (esperado 123457, actual 999999)'])
+    const conflict = { response: { data: { statusCode: 409, feedback: ['IMP05-SKU-1 · DPP_ORO_IVA: PRICE_CHANGED (esperado 123457, actual 999999)', 42] } } }
+    expect(conflictFeedback(conflict)).toEqual(['IMP05-SKU-1 · DPP_ORO_IVA: PRICE_CHANGED (esperado 123457, actual 999999)'])
     expect(conflictFeedback({ response: { data: { message: 'otro' } } })).toEqual([])
     expect(conflictFeedback(new Error('sin respuesta'))).toEqual([])
   })
 
   it('un reintento NO se presenta como cambio nuevo (sin éxito falso)', () => {
-    const first: PriceImportRevisionApplyResult = { revisionId: 'rev-1', status: 'APLICADA', alreadyApplied: false, appliedRows: 1, appliedPrices: 3, tariffs: ['ORO_IVA'], appliedAt: '2026-10-17T10:00:00.000Z' }
+    const first: PriceImportRevisionApplyResult = { revisionId: 'rev-1', status: 'APLICADA', alreadyApplied: false, appliedRows: 1, appliedPrices: 3, tariffs: ['DPP_ORO_IVA'], appliedAt: '2026-10-17T10:00:00.000Z' }
     expect(applyNotice(first)).toContain('3 precio(s)')
-    expect(applyNotice(first)).toContain('ORO_IVA')
+    expect(applyNotice(first)).toContain('DPP_ORO_IVA')
     const retry = { ...first, alreadyApplied: true }
     expect(applyNotice(retry)).toContain('ya estaba aplicada')
     expect(applyNotice(retry)).not.toContain('3 precio(s)')

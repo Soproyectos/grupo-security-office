@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client';
 import { PricesService } from './prices.service';
 
 const ctx = { userId: 'actor-1', roles: ['Super Admin'] };
-const priceList = { id: 'pl-1', code: 'ORO_IVA', name: 'Oro', currency: 'COP', isActive: true, validFrom: null, validUntil: null };
+const priceList = { id: 'pl-1', code: 'DPP_ORO_IVA', name: 'Oro', currency: 'COP', isActive: true, validFrom: null, validUntil: null };
 
 function build() {
   const written: Array<Record<string, any>> = [];
@@ -40,7 +40,7 @@ describe('manual price history', () => {
     tx.price.create.mockResolvedValue({ ...stored(1500), product: { id: 'p-1', sku: 'SKU-1', name: 'N' }, priceList });
     await service.createPrice({ productId: 'p-1', priceListId: 'pl-1', value: 1500 } as never, ctx);
     expect(written).toEqual([expect.objectContaining({
-      productId: 'p-1', sku: 'SKU-1', field: 'price:ORO_IVA', oldValue: Prisma.DbNull, newValue: '1500', source: 'MANUAL', sourceRef: 'price-1', actorId: 'actor-1',
+      productId: 'p-1', sku: 'SKU-1', field: 'price:DPP_ORO_IVA', oldValue: Prisma.DbNull, newValue: '1500', source: 'MANUAL', sourceRef: 'price-1', actorId: 'actor-1',
     })]);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'create', productId: 'p-1' }));
   });
@@ -59,7 +59,7 @@ describe('manual price history', () => {
     prisma.priceList.findUnique.mockResolvedValue(priceList);
     tx.price.update.mockResolvedValue({ ...stored(1200), product: { id: 'p-1', sku: 'SKU-1', name: 'N' }, priceList });
     await service.updatePrice('price-1', { value: 1200 } as never, ctx);
-    expect(written).toEqual([expect.objectContaining({ field: 'price:ORO_IVA', oldValue: '1000', newValue: '1200', source: 'MANUAL', actorId: 'actor-1' })]);
+    expect(written).toEqual([expect.objectContaining({ field: 'price:DPP_ORO_IVA', oldValue: '1000', newValue: '1200', source: 'MANUAL', actorId: 'actor-1' })]);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', productId: 'p-1' }));
   });
 
@@ -77,7 +77,7 @@ describe('manual price history', () => {
     prisma.price.findUnique.mockResolvedValue(stored(900));
     tx.price.delete.mockResolvedValue({});
     await service.removePrice('price-1', ctx);
-    expect(written).toEqual([expect.objectContaining({ field: 'price:ORO_IVA', oldValue: '900', newValue: Prisma.DbNull, source: 'MANUAL' })]);
+    expect(written).toEqual([expect.objectContaining({ field: 'price:DPP_ORO_IVA', oldValue: '900', newValue: Prisma.DbNull, source: 'MANUAL' })]);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'delete', productId: 'p-1' }));
 
     written.length = 0;

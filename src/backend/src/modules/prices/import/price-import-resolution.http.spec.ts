@@ -41,7 +41,7 @@ const storageDir = path.join(os.tmpdir(), 'gs-b3-resolution-http-storage');
 
 function workbook(rows: unknown[][]): Buffer {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Completa la referencia y el precio con IVA.']]), 'INSTRUCCIONES');
   return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
@@ -88,7 +88,7 @@ describe('Unknown-reference resolution through HTTP', () => {
     fake = createPriceImportFake({
       listas: [{ id: LIST, code: 'LA', name: 'Lista Alfa' }],
       products: [{ id: 'product-a', sku: 'SKU-A', listaId: LIST }],
-      tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
       prices: [{ productId: 'product-a', priceListId: 'tariff-oro', value: 100, listaId: LIST }],
       brands: [{ id: BRAND, name: 'Sin marca' }], categories: [{ id: CATEGORY, name: 'Sin categoría' }],
     });

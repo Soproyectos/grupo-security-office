@@ -36,7 +36,7 @@ const storageDir = path.join(os.tmpdir(), 'gs-b2-apply-http-storage');
 
 function workbook(rows: unknown[][]): Buffer {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Completa la referencia y el precio con IVA.']]), 'INSTRUCCIONES');
   return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
@@ -79,7 +79,7 @@ describe('Price import apply through HTTP', () => {
     fake = createPriceImportFake({
       listas: [{ id: LIST, code: 'LA', name: 'Lista Alfa' }],
       products: [{ id: 'product-a', sku: 'SKU-A', listaId: LIST }, { id: 'product-b', sku: 'SKU-B', listaId: LIST }],
-      tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
       prices: [{ productId: 'product-a', priceListId: 'tariff-oro', value: 100, listaId: LIST }, { productId: 'product-b', priceListId: 'tariff-oro', value: 100, listaId: LIST }],
     });
     for (const key of Object.keys(prisma)) delete prisma[key];
@@ -129,7 +129,7 @@ describe('Price import apply through HTTP', () => {
   it('answers 409 LARGE_CHANGES_UNCONFIRMED until the same call confirms', async () => {
     const id = await saveRevision([['SKU-A', 200]]);
     const response = await apply(id).send({ acknowledgeRejectedRows: 0 }).expect(409);
-    expect(response.body).toMatchObject({ code: 'LARGE_CHANGES_UNCONFIRMED', details: { count: 1, changes: [{ sku: 'SKU-A', tariffCode: 'ORO_IVA', previous: '100', new: '200', percent: '100.00' }] } });
+    expect(response.body).toMatchObject({ code: 'LARGE_CHANGES_UNCONFIRMED', details: { count: 1, changes: [{ sku: 'SKU-A', tariffCode: 'DPP_ORO_IVA', previous: '100', new: '200', percent: '100.00' }] } });
     const ok = await apply(id).send({ confirmLargeChanges: true }).expect(201);
     expect(ok.body.data.largeChangesConfirmed).toBe(true);
   });
