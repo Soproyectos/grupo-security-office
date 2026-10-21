@@ -128,4 +128,50 @@ describe('Price template contract using actual XLSX files', () => {
     expect(() => readBoundedXlsxParts(changed)).not.toThrow();
     expect(() => readPriceTemplate(changed)).toThrow(BadRequestException);
   });
+
+  describe('purchasing template (sheet PLANTILLA, readable headers)', () => {
+    const purchasing = (data: unknown[][], sheetName = 'PLANTILLA') => {
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(data), sheetName);
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
+      return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+    };
+    const headers = ['REFERENCIA *', 'PRECIO INSTALADOR (CON IVA)', 'PRECIO TIENDA (CON IVA)', 'PRECIO DPP ORO (CON IVA)',
+      'PRECIO DPP PLATINO (CON IVA)', 'PRECIO CLIENTE FINAL (CON IVA)', 'PRECIO ORO (SIN IVA)', 'PRECIO INSTALLER (SIN IVA)'];
+
+    it('maps readable headers to tariffs, ignores the SIN IVA columns and the example note', () => {
+      const parsed = readPriceTemplate(purchasing([
+        headers,
+        ['FIXTURE-A(2.8mm)', 1190.4, 1000, 900, 800, 1500, 756, 1000],
+        ['FIXTURE-B', 2000, null, null, null, 3000],
+        [],
+        ['Nota: estas filas son ejemplos; borrar antes de usar.'],
+      ]));
+      expect(parsed.tariffs).toEqual(['INSTALADOR_IVA', 'TIENDA_IVA', 'ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA']);
+      expect(parsed.ignoredColumns).toEqual(['PRECIO ORO (SIN IVA)', 'PRECIO INSTALLER (SIN IVA)']);
+      expect(parsed.rows.map((r) => r.sku)).toEqual(['FIXTURE-A(2.8mm)', 'FIXTURE-B']);
+      expect(parsed.rows[0].prices.map((p) => [p.code, p.rounded])).toEqual([
+        ['INSTALADOR_IVA', '1190'], ['TIENDA_IVA', '1000'], ['ORO_IVA', '900'], ['DPP_PLATINO_IVA', '800'], ['CLIENTE_FINAL_IVA', '1500']]);
+      expect(parsed.rows[0].status).toBe('valid');
+    });
+
+    it('still accepts the PRECIOS sheet with readable headers and rejects a file with only SIN IVA columns', () => {
+      expect(readPriceTemplate(purchasing([headers.slice(0, 2), ['FIXTURE-A', 10]], 'PRECIOS')).rows).toHaveLength(1);
+      expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO ORO (SIN IVA)'], ['FIXTURE-A', 10]]))).toThrow(BadRequestException);
+    });
+
+    it('does not let a SIN IVA value become a price and rejects unknown readable headers', () => {
+      const parsed = readPriceTemplate(purchasing([headers, ['FIXTURE-A', null, null, null, null, null, 756, 1000]]));
+      expect(parsed.rows[0].issues).toContainEqual(expect.objectContaining({ code: 'PRICE_REQUIRED' }));
+      expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO PLATA (CON IVA)'], ['FIXTURE-A', 10]]))).toThrow(BadRequestException);
+    });
+
+    it('rejects workbooks that carry both data sheets', () => {
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers.slice(0, 2), ['FIXTURE-A', 10]]), 'PRECIOS');
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers.slice(0, 2), ['FIXTURE-A', 10]]), 'PLANTILLA');
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía']]), 'INSTRUCCIONES');
+      expect(() => readPriceTemplate(XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) as Buffer)).toThrow(BadRequestException);
+    });
+  });
 });

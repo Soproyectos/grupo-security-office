@@ -3,57 +3,84 @@ import * as XLSX from 'xlsx';
 import { CopPriceError, normalizeCopPrice } from '../../../common/money/cop-policy';
 import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_TARIFFS, PriceImportComparison, PriceImportRow, PriceImportTariff } from './price-import.types';
 import { readBoundedXlsxParts } from './xlsx-container';
-import { validatePriceWorkbookStructure } from './price-workbook-structure';
+import { PRICE_DATA_SHEETS, validatePriceWorkbookStructure } from './price-workbook-structure';
 
 const blank = (cell?: XLSX.CellObject) => !cell || cell.v === undefined || cell.v === null || cell.v === '';
 const formula = (cell?: XLSX.CellObject) => cell?.f !== undefined || cell?.F !== undefined;
 
-export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[]; rows: PriceImportRow[] } {
-  validatePriceWorkbookStructure(readBoundedXlsxParts(buffer));
+/** Purchasing template headers (with IVA) and their tariff codes; "DPP ORO" is the ORO_IVA tariff. */
+const TARIFF_HEADERS: Record<string, PriceImportTariff> = {
+  'PRECIO INSTALADOR (CON IVA)': 'INSTALADOR_IVA',
+  'PRECIO TIENDA (CON IVA)': 'TIENDA_IVA',
+  'PRECIO DPP ORO (CON IVA)': 'ORO_IVA',
+  'PRECIO DPP PLATINO (CON IVA)': 'DPP_PLATINO_IVA',
+  'PRECIO CLIENTE FINAL (CON IVA)': 'CLIENTE_FINAL_IVA',
+};
+/** Informative columns of the template (price without IVA): never stored, always ignored. */
+const IGNORED_HEADER = /^PRECIO [A-Z ]+ \(SIN IVA\)$/;
+const MAX_TEMPLATE_COLUMNS = 8;
+const NOTE_ROW = /^nota:/i;
+
+const headerText = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toUpperCase();
+
+export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[]; rows: PriceImportRow[]; ignoredColumns: string[] } {
+  const dataSheet = validatePriceWorkbookStructure(readBoundedXlsxParts(buffer));
   let workbook: XLSX.WorkBook;
   try {
     workbook = XLSX.read(buffer, {
       type: 'buffer', cellFormula: true, cellDates: true, cellText: false,
-      cellHTML: false, sheets: ['PRECIOS'], sheetRows: MAX_PRICE_IMPORT_ROWS + 2,
+      cellHTML: false, sheets: [dataSheet], sheetRows: MAX_PRICE_IMPORT_ROWS + 2,
     });
   } catch {
     throw new BadRequestException('No pudimos abrir el Excel. Guarda una copia de la plantilla e inténtalo de nuevo.');
   }
-  if (workbook.SheetNames.length !== 2 || !workbook.SheetNames.includes('PRECIOS') || !workbook.SheetNames.includes('INSTRUCCIONES')) {
-    throw new BadRequestException('Usa la plantilla con las hojas PRECIOS e INSTRUCCIONES, sin añadir otras hojas.');
+  if (workbook.SheetNames.length !== 2 || !workbook.SheetNames.includes(dataSheet) || !workbook.SheetNames.includes('INSTRUCCIONES')) {
+    throw new BadRequestException(`Usa la plantilla con las hojas ${PRICE_DATA_SHEETS.join(' o ')} e INSTRUCCIONES, sin añadir otras hojas.`);
   }
-  const sheet = workbook.Sheets.PRECIOS;
+  const sheet = workbook.Sheets[dataSheet];
   let range: XLSX.Range;
   try {
     range = XLSX.utils.decode_range(sheet['!fullref'] ?? sheet['!ref'] ?? 'A1');
   } catch {
-    throw new BadRequestException('La hoja PRECIOS tiene un rango inválido. Copia los datos en una plantilla nueva.');
+    throw new BadRequestException('La hoja de precios tiene un rango inválido. Copia los datos en una plantilla nueva.');
   }
   if (![range.s.r, range.s.c, range.e.r, range.e.c].every((n) => Number.isSafeInteger(n) && n >= 0)) {
-    throw new BadRequestException('La hoja PRECIOS tiene un rango inválido. Copia los datos en una plantilla nueva.');
+    throw new BadRequestException('La hoja de precios tiene un rango inválido. Copia los datos en una plantilla nueva.');
   }
-  if (range.e.r > MAX_PRICE_IMPORT_ROWS || range.e.c > PRICE_IMPORT_TARIFFS.length) {
-    throw new BadRequestException(`La plantilla admite hasta ${MAX_PRICE_IMPORT_ROWS} filas de precios y las cinco tarifas acordadas.`);
+  if (range.e.r > MAX_PRICE_IMPORT_ROWS || range.e.c >= MAX_TEMPLATE_COLUMNS) {
+    throw new BadRequestException(`La plantilla admite hasta ${MAX_PRICE_IMPORT_ROWS} filas de precios y ${MAX_TEMPLATE_COLUMNS} columnas.`);
   }
-  if (sheet['!merges']?.length) throw new BadRequestException('La hoja PRECIOS no debe tener celdas combinadas.');
+  if (sheet['!merges']?.length) throw new BadRequestException('La hoja de precios no debe tener celdas combinadas.');
   const header = (index: number) => sheet[XLSX.utils.encode_cell({ r: 0, c: index })] as XLSX.CellObject | undefined;
-  if (header(0)?.v !== 'REFERENCIA' || formula(header(0))) throw new BadRequestException('La primera columna debe llamarse REFERENCIA.');
+  if (!['REFERENCIA', 'REFERENCIA *'].includes(headerText(header(0)?.v)) || formula(header(0))) throw new BadRequestException('La primera columna debe llamarse REFERENCIA.');
+  /** Tariff per physical column after REFERENCIA; null = informative column to ignore. */
+  const columns: (PriceImportTariff | null)[] = [];
   const tariffs: PriceImportTariff[] = [];
+  const ignoredColumns: string[] = [];
   for (let col = 1; col <= range.e.c; col++) {
     const cell = header(col);
-    const code = cell?.v;
-    if (formula(cell) || !PRICE_IMPORT_TARIFFS.includes(code as PriceImportTariff) || tariffs.includes(code as PriceImportTariff)) {
-      throw new BadRequestException('Revisa los títulos de las columnas: solo se admiten tarifas con IVA de esta plantilla, sin repetirlas.');
+    const text = headerText(cell?.v);
+    const code = TARIFF_HEADERS[text] ?? (PRICE_IMPORT_TARIFFS.includes(cell?.v as PriceImportTariff) ? (cell?.v as PriceImportTariff) : undefined);
+    if (!formula(cell) && !code && IGNORED_HEADER.test(text)) {
+      columns.push(null);
+      ignoredColumns.push(String(cell?.v).trim());
+      continue;
     }
-    tariffs.push(code as PriceImportTariff);
+    if (formula(cell) || !code || tariffs.includes(code)) {
+      throw new BadRequestException('Revisa los títulos de las columnas: solo se admiten las tarifas con IVA de la plantilla, sin repetirlas.');
+    }
+    columns.push(code);
+    tariffs.push(code);
   }
   if (!tariffs.length) throw new BadRequestException('Incluye al menos una columna de precios con IVA.');
 
   const rows: PriceImportRow[] = [];
   const seen = new Map<string, PriceImportRow>();
   for (let r = 1; r <= range.e.r; r++) {
-    const cells = Array.from({ length: tariffs.length + 1 }, (_, c) => sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined);
+    const cells = Array.from({ length: columns.length + 1 }, (_, c) => sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined);
     if (cells.every((cell) => blank(cell) && !formula(cell))) continue;
+    // Example-row reminder shipped inside the template: not a product.
+    if (cells[0]?.t === 's' && NOTE_ROW.test(String(cells[0].v).trim()) && cells.slice(1).every((cell) => blank(cell) && !formula(cell))) continue;
     const row: PriceImportRow = { row: r + 1, sku: '', status: 'valid', issues: [], prices: [] };
     const issue = (column: string, code: string, message: string) => row.issues.push({ row: row.row, column, code, message });
     const reference = cells[0];
@@ -73,7 +100,8 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
     }
     for (let c = 1; c < cells.length; c++) {
       const cell = cells[c];
-      const code = tariffs[c - 1];
+      const code = columns[c - 1];
+      if (!code) continue;
       if (blank(cell) && !formula(cell)) continue;
       const numeric = cell?.t === 'n' && typeof cell.v === 'number' && Number.isFinite(cell.v);
       const integerText = cell?.t === 's' && String(cell.v).length <= 15 && /^\d+$/.test(String(cell.v));
@@ -101,8 +129,8 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
     row.status = row.issues.length ? 'error' : 'valid';
     rows.push(row);
   }
-  if (!rows.length) throw new BadRequestException('La hoja PRECIOS está vacía. Añade una referencia y al menos un precio.');
-  return { tariffs, rows };
+  if (!rows.length) throw new BadRequestException('La hoja de precios está vacía. Añade una referencia y al menos un precio.');
+  return { tariffs, rows, ignoredColumns };
 }
 
 /** Guía corta de la plantilla (hoja INSTRUCCIONES; sin EJEMPLO/TARIFAS/CONTRATO). */
