@@ -17,7 +17,7 @@
 |------|------------|
 | Frontend | React 18 + TypeScript + Vite 6 + Tailwind CSS 3.4 (PWA, mobile-first) |
 | Backend | NestJS 11 + TypeScript 5.6 (strict) |
-| Database | PostgreSQL 16 (Neon serverless via `@prisma/adapter-neon`) |
+| Database | PostgreSQL 18 (contenedor `postgres:18-alpine`) |
 | ORM | Prisma 5.20+ (driverAdapters, previewFeatures) |
 | Auth | JWT (HttpOnly cookie) + bcrypt (rounds 12) + RBAC (5 roles) + MFA (TOTP modelo listo) |
 | Data Fetching | TanStack Query v5 + Zustand v5 |

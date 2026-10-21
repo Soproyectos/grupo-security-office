@@ -2,7 +2,7 @@
 
 > **Estado**: Exploración completa (30-sep-2026) → **Hito 1: Seguridad dura**  
 > **Coordinador**: Usuario + Claude Code  
-> **Stack**: React 18 + NestJS 11 + PostgreSQL 16 + Prisma 5.20 + JWT/RBAC  
+> **Stack**: React 18 + NestJS 11 + PostgreSQL 18 + Prisma 5.20 + JWT/RBAC  
 > **Repo**: `github.com/zatairo/grupo-security-office` (rama `agent/claude/ADOPT-GENTLE-AI-001`)
 
 ---

@@ -15,7 +15,7 @@
 |------|-----------|
 | Frontend | React + TypeScript + Tailwind CSS + Vite |
 | Backend | NestJS + TypeScript |
-| Base de datos | PostgreSQL 16 |
+| Base de datos | PostgreSQL 18 |
 | ORM | Prisma 5.x |
 | Auth | JWT + bcrypt + RBAC |
 | ERP | Yéminus (integración pendiente de confirmación de API) |

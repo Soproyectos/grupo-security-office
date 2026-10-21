@@ -8,7 +8,7 @@ Plataforma Comercial Grupo Security: panel administrativo interno + catálogo co
 |------|------------|
 | Frontend | React + TypeScript + Vite + Tailwind CSS (PWA, mobile-first) |
 | Backend | NestJS + TypeScript |
-| Database | PostgreSQL 16 (única fuente de verdad) |
+| Database | PostgreSQL 18 (única fuente de verdad) |
 | ORM | Prisma 5.x (migraciones versionadas) |
 | Auth | JWT + bcrypt + RBAC (Super Admin, Supervisor, Admin Comercial, Operador, Consulta) |
 | Data Fetching / Estado | TanStack Query / Zustand |
@@ -25,6 +25,24 @@ Código e identificadores en inglés; comunicación con el coordinador en españ
 2. **Ambientes LOCAL/PROD** — todo corre local primero (Docker); nada llega a producción sin aprobación humana explícita. No deploy a prod, no cambios de credenciales, sin autorización.
 3. **Cambios mínimos** — resolver la tarea con el menor cambio coherente posible; sin reescrituras, refactors masivos ni cambios de stack no solicitados. Sin commits/push sin autorización explícita del usuario.
 4. **Validación antes de "terminado"** — lint + typecheck + tests pertinentes; compilar no es terminar.
+
+## Preferencias de trabajo
+
+- Responder siempre en español, de forma breve y clara.
+- Al guiar al usuario, dar un paso a la vez y esperar su respuesta.
+- Preferir `bat`, `rg`, `fd`, `sd` y `eza`; si no están disponibles, usar las herramientas estándar (`cat`, `grep`, `find`, `sed`, `ls`).
+- No instalar herramientas sin aprobación del usuario.
+
+## Aprobación explícita requerida
+
+Se requiere aprobación explícita del usuario, en cada ocasión, antes de:
+
+- Hacer commits o push (incluido el commit automático del protocolo ODD).
+- Realizar despliegues.
+- Ejecutar migraciones.
+- Cambiar servicios o contenedores (detener, eliminar, reiniciar, recrear o reconfigurar).
+
+La aprobación de un cambio documental no autoriza ninguna de estas operaciones.
 
 ## Flujo de trabajo
 
