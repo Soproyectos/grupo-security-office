@@ -282,7 +282,7 @@ describe('buildOfficialPriceTemplate — plantilla oficial sin lista', () => {
   });
 
   it('el archivo vacío descargado se rechaza con un mensaje claro, no con un error técnico', () => {
-    expect(() => readPriceTemplate(buildOfficialPriceTemplate())).toThrow(BadRequestException);
+    expect(() => readPriceTemplate(buildOfficialPriceTemplate())).toThrow(/vacía/);
   });
 });
 

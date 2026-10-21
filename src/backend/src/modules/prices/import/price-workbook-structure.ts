@@ -47,9 +47,14 @@ function walkXml(bytes: Buffer | undefined, root: string, namespace: string, ope
   parser.onprocessinginstruction = (instruction: { name: string }) => { if (instruction.name !== 'xml' || roots) invalid(); };
   parser.onerror = invalid;
   parser.onopentag = (tag: XmlTag) => {
-    if (stack.length >= 32 || tag.prefix || tag.uri !== namespace) invalid();
+    if (stack.length >= 32) invalid();
+    // Spreadsheet apps (Excel, LibreOffice) add vendor extensions (extLst, mc:AlternateContent) in
+    // other namespaces. They may appear only below the root and may never reuse a structural name,
+    // so neither reader can mistake them for rows, cells or values.
+    const foreign = Boolean(tag.prefix) || tag.uri !== namespace;
+    if (foreign && (!stack.length || STRUCTURAL_TAGS.has(tag.local))) invalid();
     if (!stack.length && (++roots !== 1 || tag.local !== root)) invalid();
-    open(tag, stack);
+    if (!foreign) open(tag, stack);
     stack.push(tag.local);
   };
   parser.onclosetag = () => { stack.pop(); };

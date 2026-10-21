@@ -174,4 +174,29 @@ describe('Price template contract using actual XLSX files', () => {
       expect(() => readPriceTemplate(XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) as Buffer)).toThrow(BadRequestException);
     });
   });
+
+  describe('files re-saved by a spreadsheet app', () => {
+    const edit = (input: Buffer, part: string, change: (xml: string) => string) => {
+      const container = XLSX.CFB.read(input, { type: 'buffer' });
+      const entry = container.FileIndex[container.FullPaths.findIndex((p) => p.endsWith(part))];
+      const xml = change(Buffer.from(entry.content).toString('utf8'));
+      entry.content = Buffer.from(xml);
+      entry.size = entry.content.length;
+      return XLSX.CFB.write(container, { type: 'buffer', fileType: 'zip', compression: true }) as Buffer;
+    };
+    const base = () => template([['REFERENCIA', 'ORO_IVA'], ['FIXTURE-A', 100]]);
+    const extension = '<extLst><ext xmlns:loext="http://schemas.libreoffice.org/" uri="{1}"><loext:extCalcPr stringRefSyntax="CalcA1ExcelA1"/></ext></extLst>';
+
+    it('accepts vendor extension elements in other namespaces (Excel, LibreOffice)', () => {
+      const withBook = edit(base(), 'xl/workbook.xml', (xml) => xml.replace('</workbook>', `${extension}</workbook>`));
+      const withSheet = edit(withBook, 'xl/worksheets/sheet1.xml', (xml) => xml.replace('</worksheet>', `${extension}</worksheet>`));
+      expect(readPriceTemplate(withSheet).rows.map((r) => r.sku)).toEqual(['FIXTURE-A']);
+    });
+
+    it('still rejects a foreign element that reuses a structural name', () => {
+      const smuggled = edit(base(), 'xl/worksheets/sheet1.xml', (xml) =>
+        xml.replace('</worksheet>', '<extLst><ext xmlns:x="urn:x" uri="{1}"><x:row r="9"/></ext></extLst></worksheet>'));
+      expect(() => readPriceTemplate(smuggled)).toThrow(BadRequestException);
+    });
+  });
 });
