@@ -66,36 +66,51 @@ export function normalizeAction(action?: string): string | undefined {
   return lower;
 }
 
+export interface AuditLogParams {
+  userId?: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  /** Optional link to the product the entry is about (indexed on audit_logs). */
+  productId?: string;
+  oldValues?: any;
+  newValues?: any;
+  ipAddress?: string;
+  userAgent?: string;
+  result?: 'SUCCESS' | 'ERROR' | 'WARNING';
+}
+
 @Injectable()
 export class AuditService {
   constructor(private prisma: PrismaService,
     private hierarchyService: HierarchyService,
   ) {}
 
-  async log(params: {
-    userId?: string;
-    action: string;
-    entity: string;
-    entityId: string;
-    oldValues?: any;
-    newValues?: any;
-    ipAddress?: string;
-    userAgent?: string;
-    result?: 'SUCCESS' | 'ERROR' | 'WARNING';
-  }) {
-    return this.prisma.auditLog.create({
-      data: {
-        userId: params.userId,
-        action: params.action,
-        entity: params.entity,
-        entityId: params.entityId,
-        oldValues: params.oldValues ?? undefined,
-        newValues: params.newValues ?? undefined,
-        ipAddress: params.ipAddress,
-        userAgent: params.userAgent,
-        ...(params.result !== undefined && { result: params.result }),
-      } as Prisma.AuditLogCreateInput,
-    });
+  async log(params: AuditLogParams) {
+    return this.prisma.auditLog.create({ data: this.toCreateData(params) });
+  }
+
+  /**
+   * Same as {@link log} but writes through a transaction client so the audit
+   * entry commits or rolls back together with the change it describes.
+   */
+  async logTx(tx: Pick<Prisma.TransactionClient, 'auditLog'>, params: AuditLogParams) {
+    return tx.auditLog.create({ data: this.toCreateData(params) });
+  }
+
+  private toCreateData(params: AuditLogParams): Prisma.AuditLogCreateInput {
+    return {
+      userId: params.userId,
+      action: params.action,
+      entity: params.entity,
+      entityId: params.entityId,
+      oldValues: params.oldValues ?? undefined,
+      newValues: params.newValues ?? undefined,
+      ipAddress: params.ipAddress,
+      userAgent: params.userAgent,
+      ...(params.productId !== undefined && { productId: params.productId }),
+      ...(params.result !== undefined && { result: params.result }),
+    } as Prisma.AuditLogCreateInput;
   }
 
   /**

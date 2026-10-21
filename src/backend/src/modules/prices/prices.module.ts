@@ -7,9 +7,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AclModule } from '../../common/acl/acl.module';
 import { AuditModule } from '../audit/audit.module';
 import { PriceActionGuard } from './price-action.guard';
+import { ProductsModule } from '../products/products.module';
 
 @Module({
-  imports: [PrismaModule, AclModule, AuditModule],
+  imports: [PrismaModule, AclModule, AuditModule, ProductsModule],
   controllers: [PricesController, PriceImportController],
   providers: [PricesService, PriceImportService, PriceActionGuard],
   exports: [PricesService],

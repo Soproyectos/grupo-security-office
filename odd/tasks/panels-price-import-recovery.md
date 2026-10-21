@@ -14,7 +14,7 @@ The unpushed work was recovered from two incompatible snapshots:
 Rebuild from B, restore the three packages and the `StorefrontBanner` model, remove leftovers of A, make it compile and pass tests.
 
 ## Out of scope
-New features: mixed lists, unknown-SKU draft panel, >30% alert, per-product history, purchasing package.
+New features: mixed lists, unknown-SKU draft panel, >30% alert, per-product history, purchasing package. (Note 2026-10-20: these are now planned in `odd/tasks/price-import-rules.md`.)
 
 ## Constraints
 - Production-candidate VPS: never touch gs-api, gs-frontend, gs-db, host nginx, ports 80/443/3001/8080/5432/19999, /opt/grupo-security, /etc, systemd, Netdata. No sudo.
@@ -58,7 +58,7 @@ Single branch `feat/panels-price-import-base`, no push. Strategy: ask-on-risk. R
 - Public catalog: `PUBLIC_CATALOG_VISIBILITY` (main) is `PUBLISHED` OR library-informational records; it no longer requires `catalogPublished`. Public list and detail apply the revision lens on top. Informational records are exposed without price (`isInformational`).
 - Price import (`/api/prices/import`): `JwtAuthGuard + RolesGuard + PermissionsGuard` with `@Roles('Super Admin','Supervisor','Admin Comercial')`, then per request `prices:*`/`listas:read` grants in the service and `assertListaAccess(view_prices)` per lista. `/api/prices` (lists and prices) uses `PriceActionGuard` with grants.
 - Weaker or inconsistent places (not changed):
-  1. `resolveAccess` is called WITHOUT a resource in price-import `assertActions`, so a lista-scoped grant is not limited to that lista there; `assertListaAccess` is the real limit.
+  1. (Note 2026-10-20: the "search only inside the chosen lista" rule of the original import is amended to global SKU matching with per-lista authorization; see `price-import-rules.md`.) `resolveAccess` is called WITHOUT a resource in price-import `assertActions`, so a lista-scoped grant is not limited to that lista there; `assertListaAccess` is the real limit.
   2. `PriceImportService.concede()` returns true when the user has no grants ("transition D5"), which contradicts the strict model used elsewhere. It is behind the controller role gate.
   3. The price-import controller role gate blocks grant-only users whose role is not Super Admin, Supervisor or Admin Comercial, even if they hold the `gestion-listas-precios` package (stricter than the model, not weaker).
   4. The takeover `d5-action` (strict, no-grants -> deny) is used by products/revisions/sheet; roles alone never grant these actions.

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { Response } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -32,19 +32,34 @@ export class PriceImportExportQueryDto {
 }
 
 export class PriceImportPreviewDto {
-  @ApiProperty({ description: 'Lista existente a la que pertenecen las referencias del archivo.' })
+  @ApiProperty({ required: false, deprecated: true, description: 'Ignorado desde 2026-10-20: el archivo se cruza por SKU y cada producto conserva su lista.' })
+  @IsOptional()
   @IsUUID()
-  listaId: string;
+  listaId?: string;
 }
 
 export class PriceImportRevisionSaveDto {
-  @ApiProperty({ description: 'Lista existente a la que pertenece la revisión.' })
+  @ApiProperty({ required: false, deprecated: true, description: 'Ignorado desde 2026-10-20: la revisión puede mezclar listas; cada fila guarda la suya.' })
+  @IsOptional()
   @IsUUID()
-  listaId: string;
+  listaId?: string;
 
   @ApiProperty({ description: 'Clave de idempotencia del cliente; repetirla no duplica la revisión.' })
   @IsString()
   idempotencyKey: string;
+}
+
+export class ApplyPriceImportRevisionDto {
+  @ApiProperty({ required: false, description: 'Número de filas rechazadas que quedan sin aplicar. Obligatorio, e igual al número actual, si la revisión tiene filas rechazadas.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  acknowledgeRejectedRows?: number;
+
+  @ApiProperty({ required: false, description: 'Confirma los cambios de precio grandes (mayores que el umbral). Obligatorio si la revisión los tiene.' })
+  @IsOptional()
+  @IsBoolean()
+  confirmLargeChanges?: boolean;
 }
 
 export class PriceImportRevisionListQueryDto {
@@ -188,25 +203,25 @@ export class PriceImportController {
   @Post('preview')
   @ApiOperation({ summary: 'Revisar precios con IVA sin crear productos ni modificar precios.' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', required: ['file', 'listaId'], properties: {
-    file: { type: 'string', format: 'binary' }, listaId: { type: 'string', format: 'uuid' },
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: {
+    file: { type: 'string', format: 'binary' }, listaId: { type: 'string', format: 'uuid', deprecated: true },
   } } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 1, parts: 3 } }))
   preview(@UploadedFile() file: Express.Multer.File, @Body() dto: PriceImportPreviewDto,
     @CurrentUser() user: { sub: string; roles: string[]; permissions: string[] }) {
-    return this.service.preview(file, dto.listaId, { userId: user.sub, roles: user.roles });
+    return this.service.preview(file, { userId: user.sub, roles: user.roles });
   }
 
   @Post('revisions')
   @ApiOperation({ summary: 'Guardar una revisión de precios (imprescindible clave de idempotencia; NO aplica).' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', required: ['file', 'listaId', 'idempotencyKey'], properties: {
-    file: { type: 'string', format: 'binary' }, listaId: { type: 'string', format: 'uuid' }, idempotencyKey: { type: 'string' },
+  @ApiBody({ schema: { type: 'object', required: ['file', 'idempotencyKey'], properties: {
+    file: { type: 'string', format: 'binary' }, listaId: { type: 'string', format: 'uuid', deprecated: true }, idempotencyKey: { type: 'string' },
   } } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 2, parts: 4 } }))
   saveRevision(@UploadedFile() file: Express.Multer.File, @Body() dto: PriceImportRevisionSaveDto,
     @CurrentUser() user: { sub: string; roles: string[] }) {
-    return this.service.saveRevision(file, dto.listaId, dto.idempotencyKey, { userId: user.sub, roles: user.roles });
+    return this.service.saveRevision(file, dto.idempotencyKey, { userId: user.sub, roles: user.roles });
   }
 
   @Get('revisions')
@@ -234,9 +249,12 @@ export class PriceImportController {
   }
 
   @Post('revisions/:id/apply')
-  @ApiOperation({ summary: 'Aplicar una revisión de precios (permiso separado; transacción atómica).' })
-  applyRevision(@Param('id') id: string, @CurrentUser() user: { sub: string; roles: string[] }) {
-    return this.service.applyRevision(id, { userId: user.sub, roles: user.roles });
+  @ApiOperation({ summary: 'Aplicar las filas válidas de una revisión (prices:apply por lista; transacción atómica). 409 con code REJECTED_ROWS_UNACKNOWLEDGED, LARGE_CHANGES_UNCONFIRMED, NOTHING_TO_APPLY o REVISION_CONFLICT (LISTA_ACCESS_CHANGED, PRICE_CHANGED...).' })
+  applyRevision(@Param('id') id: string, @Body() dto: ApplyPriceImportRevisionDto,
+    @CurrentUser() user: { sub: string; roles: string[] }) {
+    return this.service.applyRevision(id, { userId: user.sub, roles: user.roles }, {
+      acknowledgeRejectedRows: dto?.acknowledgeRejectedRows, confirmLargeChanges: dto?.confirmLargeChanges,
+    });
   }
 
   @Delete('revisions/:id')

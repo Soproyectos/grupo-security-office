@@ -1,4 +1,4 @@
-import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
 
 function run(exception: unknown) {
@@ -34,5 +34,22 @@ describe('HttpExceptionFilter', () => {
   it('omits feedback when the exception has none or it is not a string list', () => {
     expect(run(new NotFoundException('Producto no encontrado')).body).not.toHaveProperty('feedback');
     expect(run(new BadRequestException({ message: 'x', feedback: [{ a: 1 }] })).body).not.toHaveProperty('feedback');
+  });
+
+  it('forwards a string code and structured details, and nothing else, from the exception body', () => {
+    const { body } = run(new ConflictException({
+      code: 'REJECTED_ROWS_UNACKNOWLEDGED', message: 'Confirma las filas rechazadas.',
+      details: { count: 2, rows: [{ rowNumber: 3, sku: 'A', code: 'UNKNOWN_REFERENCE' }] }, secret: 'x',
+    }));
+    expect(body.code).toBe('REJECTED_ROWS_UNACKNOWLEDGED');
+    expect(body.details).toEqual({ count: 2, rows: [{ rowNumber: 3, sku: 'A', code: 'UNKNOWN_REFERENCE' }] });
+    expect(body).not.toHaveProperty('secret');
+  });
+
+  it('omits code and details when absent or of the wrong type', () => {
+    expect(run(new NotFoundException('x')).body).not.toHaveProperty('code');
+    const { body } = run(new BadRequestException({ message: 'x', code: 5, details: 'text' }));
+    expect(body).not.toHaveProperty('code');
+    expect(body).not.toHaveProperty('details');
   });
 });

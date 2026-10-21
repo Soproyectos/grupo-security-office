@@ -83,10 +83,15 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
           sourceId: grant.sourceId, actionId: grant.actionId,
           scopeKind: grant.scope, resourceId: grant.resourceId ?? '',
         })) : []) },
-    lista: { ...writesForModel(), findUnique: jest.fn(async ({ where }: any) => [LIST, OTHER_LIST].includes(where.id) ? {
-      id: where.id, isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP',
-    } : null) },
-    product: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => products.filter((p) => p.listaId === where.listaId && where.sku.in.some((sku: string) => sku.toUpperCase() === p.sku.toUpperCase()))) },
+    lista: { ...writesForModel(), findUnique: jest.fn(), findMany: jest.fn(async ({ where }: any) => [LIST, OTHER_LIST].filter((id) => where.id.in.includes(id)).map((id) => ({
+      id, code: id === LIST ? 'LA' : 'LB', name: id === LIST ? 'Lista Alfa' : 'Lista Beta Secreta', isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP',
+    }))) },
+    // Normalized SKU lookup (findProductMatchesBySkus) followed by the product read by id.
+    $queryRaw: jest.fn(async (query: { values: unknown[] }) => {
+      const wanted = new Set(query.values[0] as string[]);
+      return products.filter((p) => wanted.has(p.sku.replace(/\s/g, '').toUpperCase())).map((p) => ({ id: p.id, sku: p.sku }));
+    }),
+    product: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => products.filter((p) => where.id.in.includes(p.id))) },
     priceList: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => where.code.in.includes('ORO_IVA') ? [{ id: TARIFF, code: 'ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }] : []) },
     price: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => stored.filter((p) => where.productId.in.includes(p.productId) && where.priceListId.in.includes(p.priceListId))) },
     $transaction: jest.fn(),
@@ -138,18 +143,27 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
   it('allows only preview/read/listas read with view_prices, without Biblioteca or global scope', async () => {
     const response = await upload().expect(201);
     const result = response.body.data;
-    expect(result).toMatchObject({ listaId: LIST, readOnly: true, currency: 'COP', taxIncluded: true, rounding: 'HALF_UP',
+    expect(result).toMatchObject({ listaId: null, readOnly: true, currency: 'COP', taxIncluded: true, rounding: 'HALF_UP',
       summary: { rows: 2, validRows: 2, errorRows: 0, prices: 2, changedPrices: 1, unchangedPrices: 1, roundedPrices: 1 } });
     expect(result.rows[0].prices[0]).toMatchObject({ code: 'ORO_IVA', raw: '123456.5', rounded: '123457', previous: '100000', difference: '23457', change: 'changed' });
     // La autorización salió de los grants de BD, no de los claims del token.
     expect(grants.map((g) => g.actionId).sort()).toEqual(['listas:read', 'prices:preview', 'prices:read']);
-    expect(prisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ listaId: LIST }) }));
+    expect(result.rows[0]).toMatchObject({ productId: 'fixture-product-a', listaId: LIST, listaState: 'LISTA' });
+  });
+
+  it('works without any destination lista in the request (the field is optional and ignored)', async () => {
+    const response = await request(app.getHttpServer()).post(endpoint).auth(token, { type: 'bearer' })
+      .attach('file', workbook(), { filename: 'precios-fixture.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .expect(201);
+    expect(response.body.data.summary).toMatchObject({ rows: 2, validRows: 2, rowsInInaccessibleListas: 0 });
+    expect(response.body.data.summary.byLista).toEqual([{ listaId: LIST, code: 'LA', name: 'Lista Alfa', rows: 2, prices: 2 }]);
   });
 
   it('logs only a domain summary and file hash rather than references, prices or binary content', async () => {
     await upload().expect(201);
     const domain = audit.log.mock.calls.find(([event]) => event.action === 'price-import-preview')?.[0];
-    expect(domain).toMatchObject({ userId: PERSON, action: 'price-import-preview', entity: 'LISTA', entityId: LIST, result: 'SUCCESS' });
+    expect(domain).toMatchObject({ userId: PERSON, action: 'price-import-preview', entity: 'Price', result: 'SUCCESS' });
+    expect(domain.entityId).toMatch(/^[a-f0-9]{64}$/);
     expect(Object.keys(domain.newValues).sort()).toEqual(['fileHash', 'rounding', 'summary', 'tariffs']);
     expect(domain.newValues.fileHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(domain)).not.toMatch(/0001-A|123456|precios-fixture|base64|buffer/i);
@@ -180,10 +194,10 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
-  it('hides another Lista when it has no assignment', async () => {
-    const response = await upload({ listaId: OTHER_LIST }).expect(404);
-    expect(response.body.message).toBe('Lista no encontrada');
-    expect(prisma.product.findMany).not.toHaveBeenCalled();
+  it('does not let an explicit lista in the request widen what the caller can use', async () => {
+    const response = await upload({ listaId: OTHER_LIST, buffer: workbook([['FOREIGN-SECRET', 777]]) }).expect(201);
+    expect(response.body.data.rows[0].issues).toEqual([expect.objectContaining({ code: 'LISTA_FORBIDDEN' })]);
+    expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
   it('does not reveal prices for an explicitly restricted PRODUCT', async () => {
@@ -196,11 +210,16 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'price-import-preview', result: 'WARNING' }));
   });
 
-  it('does not search or reveal foreign product details from the chosen Lista', async () => {
-    const response = await upload({ buffer: workbook([['FOREIGN-SECRET', 777]]) }).expect(201);
-    expect(response.body.data.rows[0]).toMatchObject({ status: 'error', prices: [{ previous: null, difference: null }] });
-    expect(JSON.stringify(response.body)).not.toMatch(/876543210|fixture-product-foreign/);
-    expect(prisma.price.findMany).not.toHaveBeenCalled();
+  it('rejects a SKU of a lista without grant, without leaking its lista, id, name or prices', async () => {
+    const response = await upload({ buffer: workbook([['FOREIGN-SECRET', 777], ['0001-A', 100001]]) }).expect(201);
+    const [foreign, own] = response.body.data.rows;
+    expect(foreign).toMatchObject({ status: 'error', productId: null, listaId: null, prices: [{ previous: null, difference: null }] });
+    expect(foreign.issues).toEqual([expect.objectContaining({ code: 'LISTA_FORBIDDEN' })]);
+    expect(own.status).toBe('valid');
+    expect(response.body.data.summary).toMatchObject({ rowsInInaccessibleListas: 1, validRows: 1 });
+    expect(JSON.stringify(response.body)).not.toMatch(/876543210|fixture-product-foreign|Lista Beta|LB"/);
+    expect(JSON.stringify(response.body)).not.toContain(OTHER_LIST);
+    expect(prisma.price.findMany.mock.calls[0][0].where.productId.in).toEqual(['fixture-product-a']);
   });
 
   it('revokes the preview action immediately while using the same signed token (fresh DB grants)', async () => {
@@ -230,17 +249,12 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
   it('rejects an invalid UUID before invoking the service', async () => {
     const response = await upload({ listaId: 'not-a-uuid' }).expect(400);
     expect(response.body.message).toContain('listaId must be a UUID');
-    expect(prisma.lista.findUnique).not.toHaveBeenCalled();
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
   });
 
   it('rejects unknown DTO properties using the production whitelist', async () => {
     const response = await request(app.getHttpServer()).post(endpoint).auth(token, { type: 'bearer' }).send({ listaId: LIST, bypassAcl: true }).expect(400);
     expect(response.body.message).toContain('property bypassAcl should not exist');
-  });
-
-  it('rejects a missing Lista UUID', async () => {
-    await request(app.getHttpServer()).post(endpoint).auth(token, { type: 'bearer' }).attach('file', workbook(), 'fixture.xlsx').expect(400);
-    expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
   it('rejects a missing file', async () => {

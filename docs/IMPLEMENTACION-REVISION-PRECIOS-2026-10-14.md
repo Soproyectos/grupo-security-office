@@ -4,6 +4,8 @@
 
 Esta entrega desarrolla la primera parte del [diseño de importación](DISENO-IMPORTACION-PRECIOS-2026-10-14.md). Mantiene la decisión de [un producto como máximo en una lista](adr/ADR-20261014-producto-una-sola-lista.md).
 
+> **Enmienda 2026-10-20.** Esta entrega describe la revisión original por lista elegida. Las decisiones posteriores (cruce por referencia sin lista destino, filas rechazadas que no bloquean, referencias desconocidas como borrador, alerta de cambios superiores al 30 % e historial por producto) están en la [enmienda del ADR](adr/ADR-20261014-producto-una-sola-lista.md#enmienda-2026-10-20-carga-de-precios-por-referencia-sin-lista-destino) y en el [diseño](DISENO-IMPORTACION-PRECIOS-2026-10-14.md#10-enmienda-2026-10-20-reglas-de-mezcla-de-listas-desconocidos-cambios-grandes-e-historial). Donde este informe las contradice, rige la enmienda; se aplican en una entrega posterior.
+
 ## Cómo se utiliza
 
 1. El Super Admin asigna **Revisar archivo de precios**, dentro del grupo actual **Catálogo → Tarifas**. Sus dependencias son consultar precios y consultar listas. No concede acceso a Biblioteca ni a todas las listas.
@@ -16,7 +18,7 @@ Los resultados se muestran en páginas de 25 o 50 filas. Los problemas de cada f
 
 ## Reglas que ya comprueba
 
-- **Una lista por producto.** Busca la referencia únicamente dentro de la lista elegida. Una referencia desconocida, de otra lista o restringida para ese usuario queda pendiente con el mismo mensaje. No busca sus precios en otra lista, crea productos ni cambia su pertenencia.
+- **Una lista por producto (enmendado, comportamiento original de esta entrega).** Busca la referencia únicamente dentro de la lista elegida. Una referencia desconocida, de otra lista o restringida para ese usuario queda pendiente con el mismo mensaje. No busca sus precios en otra lista, crea productos ni cambia su pertenencia. Tras la enmienda, la búsqueda es global por referencia, se autoriza por la lista de cada producto y una referencia desconocida se rechaza sin bloquear el resto.
 - **Tarifas exactas con IVA.** Reconoce los cinco encabezados acordados, o una selección sin repetirlos. Exige su tarifa exacta activa, vigente y en COP. `ORO_IVA` no se transforma en `DPP_ORO_IVA`; si falta su configuración, informa el problema. No se crearon ni modificaron tarifas en la base de datos.
 - **Precios finales.** No añade IVA, márgenes o conversiones. Redondea al peso más cercano: desde 50 centavos sube al siguiente peso. Las comparaciones se calculan con decimales exactos y se envían como texto para conservar la precisión. El máximo propuesto por esta revisión es $9.999.999.999, compatible con `Decimal(12,2)`; antes de aplicar debe unificarse con los límites de la edición manual existente.
 - **Vacíos y duplicados.** Una celda vacía deja esa tarifa fuera de la propuesta. Una fila con referencia necesita al menos un precio. Referencias repetidas, incluso con cambios de mayúsculas o espacios exteriores, requieren corrección. Se conservan ceros, guiones, sufijos y espacios internos.
@@ -65,6 +67,6 @@ Se mantuvieron separadas cuatro partes para la revisión: lectura del archivo; c
 
 Falta construir el guardado de una revisión y su aplicación: permiso separado, transacción de precios, historial por fila, control de cambios simultáneos y reintentos que no dupliquen la operación. Al aplicar se deben verificar otra vez usuario, permisos, lista, tarifas y precios anteriores. El resultado mostrado por el navegador no será una autorización para escribir.
 
-También faltan la descarga de una plantilla nueva desde esta pantalla, perfiles de proveedores, recuperación de trabajos y validación con PostgreSQL del ambiente elegido. La vinculación de productos sin lista exige una acción propia; esta revisión los deja pendientes. Los botones del importador general anterior siguen siendo ese flujo y no se presentan como ejecutor nuevo de precios.
+También faltan la descarga de una plantilla nueva desde esta pantalla, perfiles de proveedores, recuperación de trabajos y validación con PostgreSQL del ambiente elegido. La vinculación de productos sin lista exige una acción propia y la carga nunca la hace; tras la enmienda esos productos reciben precio y se marcan «sin lista». Los botones del importador general anterior siguen siendo ese flujo y no se presentan como ejecutor nuevo de precios.
 
 La publicación del catálogo y la apariencia de los productos permanecen fuera de esta entrega. El código está en el worktree local; guardar este documento en el servidor no publica la función.
