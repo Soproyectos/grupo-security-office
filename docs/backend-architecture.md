@@ -2,7 +2,7 @@
 
 > **Versión:** 1.0
 > **Última actualización:** 2026-07-23 (Contrato FSM canónico de products: 2026-08-28)
-> **Stack:** NestJS 10 + TypeScript estricto + Prisma ORM + PostgreSQL 16  
+> **Stack:** NestJS 10 + TypeScript estricto + Prisma ORM + PostgreSQL 18  
 > **Propósito:** Panel administrativo interno para gestión de catálogo, precios, usuarios y publicación.
 
 ---

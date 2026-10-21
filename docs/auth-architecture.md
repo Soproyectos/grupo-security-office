@@ -2,7 +2,7 @@
 
 > **Versión:** 1.0  
 > **Última actualización:** 2026-07-23  
-> **Stack:** NestJS 10 + Passport JWT + bcrypt + Prisma ORM + PostgreSQL 16  
+> **Stack:** NestJS 10 + Passport JWT + bcrypt + Prisma ORM + PostgreSQL 18  
 > **Documentos relacionados:** `backend-architecture.md`, `backend-remediation-plan.md`, `security-checklist-v1.md`
 
 ---
