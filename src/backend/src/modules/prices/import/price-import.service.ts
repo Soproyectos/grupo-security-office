@@ -653,6 +653,24 @@ export class PriceImportService {
     }
   }
 
+  /**
+   * Revision gate for the unknown-SKU resolution endpoints: `prices:read` + `listas:read`, then the
+   * same whole-revision rule as the original file (creator, or `prices:read` on every lista it touches).
+   */
+  async loadRevisionForResolution(id: string, ctx: AccessContext) {
+    await this.assertReviewReadActions(ctx);
+    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
+    await this.assertWholeRevisionAccess(revision, ctx);
+    return revision;
+  }
+
+  /** Whether the caller may create hidden drafts from a price import: `products:write` AND `prices:apply`, both GLOBAL. */
+  async canCreateDrafts(ctx: AccessContext): Promise<boolean> {
+    const access = await this.loadAccess(ctx, ['prices:read'], ['prices:apply', 'products:write']);
+    return access.allowsUnlistedProduct('new-product-draft');
+  }
+
   async getRevisionFile(id: string, ctx: AccessContext): Promise<{ buffer: Buffer; fileName: string }> {
     await this.assertReviewReadActions(ctx);
     const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });

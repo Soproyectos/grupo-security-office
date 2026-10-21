@@ -237,5 +237,6 @@ export const createPrismaMock = () => ({
   $executeRawUnsafe: jest.fn().mockResolvedValue(0),
   $connect: jest.fn(),
   $disconnect: jest.fn(),
+  productChange: { createMany: jest.fn() },
   $transaction: jest.fn(),
 });

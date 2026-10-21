@@ -44,6 +44,13 @@ export interface DiffMeta {
  */
 export const PRODUCT_HISTORY_COVERAGE = {
   complete: false,
+  recorded: [
+    { source: 'PRICE_IMPORT', label: 'Aplicación de importación de precios' },
+    { source: 'PRICE_IMPORT_DRAFT', label: 'Borrador creado desde una importación de precios' },
+    { source: 'MANUAL_PRICE', label: 'Precios manuales (crear, editar, eliminar)' },
+    { source: 'PRODUCT_CREATE_UPDATE', label: 'Creación y edición de productos' },
+    { source: 'LIFECYCLE', label: 'Publicación, archivo, programación y restauración' },
+  ],
   notRecorded: [
     { source: 'IMAGES', label: 'Imágenes del producto' },
     { source: 'VITRINA_SHEET', label: 'Ficha de vitrina' },

@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.service';
 import { ProductRevisionsService } from './product-revisions.service';
 import { AuditService } from '../audit/audit.service';
+import { diffFields, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeSource } from './product-change.service';
 import { FilesService } from '../files/files.service';
 import { detectKind, declaredMatchesDetected, sha256Hex } from '../files/file-signature';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
@@ -103,7 +104,51 @@ export class ProductsService {
      * el; Nest lo inyecta via ProductsModule).
      */
     @Optional() private readonly validation?: ProductValidationService,
-    ) {}
+    /** Per-product history writer (Nest injects the shared one; specs may omit it). */
+    @Optional() changes?: ProductChangeService,
+  ) {
+    this.changes = changes ?? new ProductChangeService(prisma, acl, grants);
+  }
+
+  private readonly changes: ProductChangeService;
+
+  /** Identity/commercial fields of `create` and `update` recorded in the per-product history. */
+  private static readonly EDIT_HISTORY_FIELDS = ['sku', 'name', 'description', 'categoryId', 'brandId', 'listaId'] as const;
+  /** Lifecycle/visibility mirror columns recorded for every state change (FSM, scheduling). */
+  private static readonly STATE_HISTORY_FIELDS = ['lifecycleStatus', 'publishStatus', 'isActive', 'isVisible', 'publishAt'] as const;
+
+  /**
+   * Writes the per-product history rows for a mutation through the SAME transaction
+   * client. A field is recorded only when its value really changed, so a save that
+   * changes nothing writes nothing. `before` is null for a creation.
+   */
+  private async recordProductChanges(
+    tx: Prisma.TransactionClient,
+    before: Record<string, unknown> | null,
+    after: { id: string; sku: string } & Record<string, unknown>,
+    fields: readonly string[],
+    source: ProductChangeSource,
+    ctx?: AccessContext,
+  ): Promise<void> {
+    const rows = diffFields(before, after, fields, {
+      productId: after.id, sku: after.sku, source, sourceRef: after.id, actorId: ctx?.userId ?? null,
+    });
+    await this.changes.record(tx, rows);
+  }
+
+  /** Updates lifecycle/visibility columns and records the state change (source LIFECYCLE) in one transaction. */
+  private updateWithStateHistory(
+    id: string,
+    before: Product,
+    data: Prisma.ProductUncheckedUpdateInput,
+    ctx?: AccessContext,
+  ): Promise<Product> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.product.update({ where: { id }, data });
+      await this.recordProductChanges(tx, before, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+      return row;
+    });
+  }
 
   /**
    * Lock en memoria del tick del scheduler (P6): impide que dos ticks del cron
@@ -601,8 +646,10 @@ export class ProductsService {
     // Deny-by-default con restricción explícita por producto (checklist 17/31):
     // assertProductAccess evalúa assignments PRODUCT (deny prevalece) y cae a la
     // Lista dueña si no hay excepción por producto.
+    // A product WITHOUT lista (for example a hidden draft created from a price import)
+    // is decided by the same check: only a GLOBAL-scope `products:read` grant covers it,
+    // lista-scoped grants still get 404 (see AclService.assertProductAccess).
     if (ctx) {
-      if (!product.listaId) throw new NotFoundException('Producto no encontrado');
       await this.acl.assertProductAccess(id, ctx, 'view');
     }
 
@@ -613,6 +660,78 @@ export class ProductsService {
       stockStatus: stock ? (stock.availableQty > 0 ? 'in_stock' : 'out_of_stock') : 'no_stock_data',
       ...(allowed ? { allowedActions: allowed } : {}),
     };
+  }
+
+  /**
+   * R2 (price import): creates a HIDDEN draft for an unknown SKU, marked "pending ficha",
+   * through the caller's transaction so it commits or rolls back with the price rows and
+   * the resolution of the import row. Deliberately NOT `create()`: no LISTA-GENERAL
+   * fallback (`listaId` stays null), no lista ACL (the caller authorizes with GLOBAL
+   * grants), and it writes history and audit inside `tx`.
+   *
+   * The draft carries `importStatus: 'pending_enrichment'` and NO `biblioteca` key, so
+   * PUBLIC_CATALOG_VISIBILITY (PUBLISHED or library-informational) never exposes it.
+   * Throws `SKU_EXISTS` (409) when the normalized SKU already exists; a concurrent insert
+   * surfaces as the unique-index violation, which the caller maps to the same code.
+   */
+  async createPendingSheetDraft(
+    tx: Prisma.TransactionClient,
+    input: { sku: string; name: string; brandId: string; categoryId: string; sourceRevisionId: string },
+    ctx: { userId?: string | null },
+  ): Promise<Product> {
+    const sku = input.sku?.trim();
+    const name = input.name?.trim();
+    if (!sku) throw new BadRequestException({ code: 'INVALID_SKU', message: 'La referencia está vacía.' });
+    if (!name || name.length > 255) {
+      throw new BadRequestException({ code: 'INVALID_NAME', message: 'El nombre debe tener entre 1 y 255 caracteres.' });
+    }
+    if (await findProductBySku(tx, sku, { id: true })) {
+      throw new ConflictException({ code: 'SKU_EXISTS', message: 'Ya existe un producto con ese SKU.' });
+    }
+    if (!(await tx.brand.findUnique({ where: { id: input.brandId }, select: { id: true } }))) {
+      throw new NotFoundException({ code: 'BRAND_NOT_FOUND', message: 'Marca no encontrada.' });
+    }
+    if (!(await tx.category.findUnique({ where: { id: input.categoryId }, select: { id: true } }))) {
+      throw new NotFoundException({ code: 'CATEGORY_NOT_FOUND', message: 'Categoría no encontrada.' });
+    }
+
+    const product = await tx.product.create({
+      data: {
+        sku,
+        name,
+        brandId: input.brandId,
+        categoryId: input.categoryId,
+        listaId: null,
+        lifecycleStatus: 'DRAFT',
+        publishStatus: 'borrador',
+        isActive: false,
+        isVisible: false,
+        extraAttributes: {
+          importStatus: 'pending_enrichment',
+          pendingReason: 'created_from_price_import',
+          sourceRevisionId: input.sourceRevisionId,
+        },
+      },
+    });
+
+    const meta = {
+      productId: product.id, sku: product.sku, source: 'PRICE_IMPORT' as const,
+      sourceRef: input.sourceRevisionId, actorId: ctx.userId ?? null,
+    };
+    await this.changes.record(tx, [
+      { ...meta, field: 'created', oldValue: null, newValue: 'pending_enrichment' },
+      ...diffFields(null, product, ['sku', 'name', 'brandId', 'categoryId'], meta),
+    ]);
+    await this.audit.logTx(tx, {
+      userId: ctx.userId ?? undefined,
+      action: 'price-import-create-draft',
+      entity: 'Product',
+      entityId: product.id,
+      productId: product.id,
+      newValues: { sku: product.sku, name: product.name, brandId: product.brandId, categoryId: product.categoryId, revisionId: input.sourceRevisionId, listaId: null },
+      result: 'SUCCESS',
+    });
+    return product;
   }
 
   async create(dto: CreateProductDto, ctx?: AccessContext) {
@@ -654,35 +773,38 @@ export class ProductsService {
       });
     }
 
-    const product = await this.prisma.product.create({
-      data: {
-        sku: dto.sku,
-        name: dto.name,
-        description: dto.description,
-        categoryId: dto.categoryId,
-        brandId: dto.brandId,
-        listaId: lista.id,
-        technicalSpecs: this.prepareSpecsForStorage(specs),
-        extraAttributes: this.prepareSpecsForStorage(extraSpecs),
-        ...(dto.documents !== undefined && { documents: dto.documents }),
-        lifecycleStatus: 'DRAFT',
-        // Un producto nuevo SIEMPRE nace en DRAFT (isActive=false, isVisible=false).
-        // Los campos legacy isActive/isVisible/publishStatus/publishAt/unpublishAt se
-        // ignoran/normalizan para conservar el estado inicial canónico (no generan legacy).
-        isActive: false,
-        isVisible: false,
-      },
-      include: {
-        category: { select: { id: true, name: true } },
-        brand: { select: { id: true, name: true } },
-      },
+    // Product, prices and their history commit or roll back together.
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          sku: dto.sku,
+          name: dto.name,
+          description: dto.description,
+          categoryId: dto.categoryId,
+          brandId: dto.brandId,
+          listaId: lista.id,
+          technicalSpecs: this.prepareSpecsForStorage(specs),
+          extraAttributes: this.prepareSpecsForStorage(extraSpecs),
+          ...(dto.documents !== undefined && { documents: dto.documents }),
+          lifecycleStatus: 'DRAFT',
+          // Un producto nuevo SIEMPRE nace en DRAFT (isActive=false, isVisible=false).
+          // Los campos legacy isActive/isVisible/publishStatus/publishAt/unpublishAt se
+          // ignoran/normalizan para conservar el estado inicial canónico (no generan legacy).
+          isActive: false,
+          isVisible: false,
+        },
+        include: {
+          category: { select: { id: true, name: true } },
+          brand: { select: { id: true, name: true } },
+        },
+      });
+      await this.recordProductChanges(tx, null, product as never, [...ProductsService.EDIT_HISTORY_FIELDS, 'lifecycleStatus'], 'MANUAL', ctx);
+
+      if (dto.prices && dto.prices.length > 0) {
+        await this.upsertPrices(tx, product, lista.id, dto.prices, ctx);
+      }
+      return product;
     });
-
-    if (dto.prices && dto.prices.length > 0) {
-      await this.upsertPrices(product.id, lista.id, dto.prices);
-    }
-
-    return product;
   }
 
   async update(id: string, dto: UpdateProductDto, ctx?: AccessContext) {
@@ -758,7 +880,8 @@ export class ProductsService {
       this.validateSpecs(extraSpecs, 'extraSpecs');
     }
 
-    const updated = await this.prisma.product.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.product.update({
       where: { id },
       data: {
         ...(dto.sku && { sku: dto.sku }),
@@ -779,11 +902,14 @@ export class ProductsService {
         category: { select: { id: true, name: true } },
         brand: { select: { id: true, name: true } },
       },
-    });
+      });
+      await this.recordProductChanges(tx, product, row as never, ProductsService.EDIT_HISTORY_FIELDS, 'MANUAL', ctx);
 
-    if (dto.prices && dto.prices.length > 0) {
-      await this.upsertPrices(id, listaId, dto.prices);
-    }
+      if (dto.prices && dto.prices.length > 0) {
+        await this.upsertPrices(tx, row, listaId, dto.prices, ctx);
+      }
+      return row;
+    });
 
     // CAT-02 alternativas: la edición legacy deja revisión pendiente; la
     // presentación pública no cambia (lente de revisión activo).
@@ -937,23 +1063,20 @@ export class ProductsService {
         throw new ConflictException('El producto no tiene una publicación programada activa.');
       }
 
-      const updated = await this.prisma.product.update({
-        where: { id },
-        data: {
-          lifecycleStatus: 'DRAFT',
-          isActive: false,
-          isVisible: false,
-          publishStatus: 'borrador',
-          publishAt: null,
-          unpublishAt: null,
-          publishedAt: null,
-          publishedById: null,
-          unpublishReason: null,
-          // CAT-06: cancelar la programación libera la revisión congelada SOLO
-          // si existía pin (no altera la forma del update para filas legacy).
-          ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}),
-        },
-      });
+      const updated = await this.updateWithStateHistory(id, product, {
+        lifecycleStatus: 'DRAFT',
+        isActive: false,
+        isVisible: false,
+        publishStatus: 'borrador',
+        publishAt: null,
+        unpublishAt: null,
+        publishedAt: null,
+        publishedById: null,
+        unpublishReason: null,
+        // CAT-06: cancelar la programación libera la revisión congelada SOLO
+        // si existía pin (no altera la forma del update para filas legacy).
+        ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}),
+      }, ctx);
       await this.audit.log({
         userId: ctx?.userId,
         action: 'cancel_schedule_publish',
@@ -1004,20 +1127,17 @@ export class ProductsService {
       // Reprogramar vuelve a congelar el estado DE HOY (no el pin anterior).
       scheduledRevisionId = await this.resolvePinnedRevision(product, false);
     }
-    const updated = await this.prisma.product.update({
-      where: { id },
-      data: {
-        lifecycleStatus: 'DRAFT',
-        isActive: false,
-        isVisible: false,
-        publishStatus: 'borrador',
-        publishAt,
-        unpublishAt: null,
-        publishedAt: null,
-        unpublishReason: null,
-        ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
-      },
-    });
+    const updated = await this.updateWithStateHistory(id, product, {
+      lifecycleStatus: 'DRAFT',
+      isActive: false,
+      isVisible: false,
+      publishStatus: 'borrador',
+      publishAt,
+      unpublishAt: null,
+      publishedAt: null,
+      unpublishReason: null,
+      ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
+    }, ctx);
     await this.audit.log({
       userId: ctx?.userId,
       action: 'schedule_publish',
@@ -1410,7 +1530,7 @@ export class ProductsService {
       return this.applyTransitionWithPin(id, product, event, data, oldValues, ctx, skipHumanAccessChecks);
     }
 
-    const updated = await this.prisma.product.update({ where: { id }, data });
+    const updated = await this.updateWithStateHistory(id, product, data, ctx);
 
     await this.audit.log({
       userId: ctx?.userId,
@@ -1502,15 +1622,19 @@ export class ProductsService {
             data: { status: 'PUBLICADA', publishedAt: new Date() },
           });
         }
-        return tx.product.update({
+        const row = await tx.product.update({
           where: { id },
           data: { ...data, publicRevisionId: pinnedId, scheduledRevisionId: null },
         });
+        await this.recordProductChanges(tx, product, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+        return row;
       }
-      return tx.product.update({
+      const row = await tx.product.update({
         where: { id },
         data: { ...data, publicRevisionId: null, scheduledRevisionId: null },
       });
+      await this.recordProductChanges(tx, product, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+      return row;
     });
 
     await this.audit.log({
@@ -1613,7 +1737,7 @@ export class ProductsService {
     }
     // La FSM es la fuente de verdad de isActive/isVisible/lifecycleStatus/publishStatus.
     // Este helper solo persiste publishAt, sin escribir directamente isActive/isVisible.
-    const updated = await this.persistScheduledPublishAt(id, publishAt, ctx, scheduledRevisionId);
+    const updated = await this.persistScheduledPublishAt(id, product, publishAt, ctx, scheduledRevisionId);
     await this.audit.log({
       userId: ctx.userId,
       action: 'schedule_publish',
@@ -1656,12 +1780,11 @@ export class ProductsService {
     if (!current || current <= new Date()) {
       throw new ConflictException('El producto no tiene una publicacion programada activa.');
     }
-    const updated = await this.prisma.product.update({
-      where: { id },
-      // CAT-06: cancelar la programación libera la revisión congelada SOLO si
-      // existía pin (la forma del update legacy se conserva).
-      data: { publishAt: null, ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}) },
-    });
+    // CAT-06: cancelar la programación libera la revisión congelada SOLO si
+    // existía pin (la forma del update legacy se conserva).
+    const updated = await this.updateWithStateHistory(
+      id, product, { publishAt: null, ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}) }, ctx,
+    );
     await this.audit.log({
       userId: ctx.userId,
       action: 'cancel_schedule_publish',
@@ -1681,18 +1804,16 @@ export class ProductsService {
    */
   private async persistScheduledPublishAt(
     id: string,
+    before: Product,
     publishAt: Date,
     ctx: AccessContext,
     scheduledRevisionId?: string | null,
   ): Promise<Product> {
-    return this.prisma.product.update({
-      where: { id },
-      data: {
-        publishAt,
-        publishedAt: null,
-        ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
-      },
-    });
+    return this.updateWithStateHistory(id, before, {
+      publishAt,
+      publishedAt: null,
+      ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
+    }, ctx);
   }
   /**
    * Bulk de transiciones: procesa producto a producto (sin transacción global).
@@ -2112,36 +2233,54 @@ export class ProductsService {
    * Asocia el precio a la misma Lista del producto (invariante Price.listaId == Product.listaId).
    */
   private async upsertPrices(
-    productId: string,
+    tx: Prisma.TransactionClient,
+    product: { id: string; sku: string },
     listaId: string | null | undefined,
     prices: PriceInputDto[],
+    ctx?: AccessContext,
   ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      for (const price of prices) {
-        const validFrom = price.validFrom ? new Date(price.validFrom) : undefined;
-        const validUntil = price.validUntil ? new Date(price.validUntil) : undefined;
+    const productId = product.id;
+    const priceListIds = [...new Set(prices.map((p) => p.priceListId))];
+    const tariffs = (await tx.priceList.findMany({ where: { id: { in: priceListIds } }, select: { id: true, code: true } })) ?? [];
+    const existing = (await tx.price.findMany({
+      where: { productId, priceListId: { in: priceListIds } }, select: { priceListId: true, value: true },
+    })) ?? [];
+    const codeById = new Map(tariffs.map((t) => [t.id, t.code]));
+    const before = new Map(existing.map((e) => [e.priceListId, e.value]));
+    const history: ReturnType<typeof diffFields> = [];
 
-        await tx.price.upsert({
-          where: { productId_priceListId: { productId, priceListId: price.priceListId } },
-          update: {
-            value: price.value,
-            ...(price.currency && { currency: price.currency }),
-            ...(validFrom && { validFrom }),
-            ...(validUntil && { validUntil }),
-            ...(listaId ? { listaId } : {}),
-          },
-          create: {
-            productId,
-            priceListId: price.priceListId,
-            ...(listaId ? { listaId } : {}),
-            value: price.value,
-            currency: price.currency ?? 'COP',
-            ...(validFrom && { validFrom }),
-            ...(validUntil && { validUntil }),
-          },
-        });
-      }
-    });
+    for (const price of prices) {
+      const validFrom = price.validFrom ? new Date(price.validFrom) : undefined;
+      const validUntil = price.validUntil ? new Date(price.validUntil) : undefined;
+
+      await tx.price.upsert({
+        where: { productId_priceListId: { productId, priceListId: price.priceListId } },
+        update: {
+          value: price.value,
+          ...(price.currency && { currency: price.currency }),
+          ...(validFrom && { validFrom }),
+          ...(validUntil && { validUntil }),
+          ...(listaId ? { listaId } : {}),
+        },
+        create: {
+          productId,
+          priceListId: price.priceListId,
+          ...(listaId ? { listaId } : {}),
+          value: price.value,
+          currency: price.currency ?? 'COP',
+          ...(validFrom && { validFrom }),
+          ...(validUntil && { validUntil }),
+        },
+      });
+
+      const field = `${PRICE_FIELD_PREFIX}${codeById.get(price.priceListId) ?? price.priceListId}`;
+      const previous = before.get(price.priceListId);
+      history.push(...diffFields(previous === undefined ? {} : { [field]: previous }, { [field]: new Prisma.Decimal(price.value) }, [field], {
+        productId, sku: product.sku, source: 'MANUAL', sourceRef: productId, actorId: ctx?.userId ?? null,
+      }));
+      before.set(price.priceListId, price.value as never);
+    }
+    await this.changes.record(tx, history);
   }
 
   /**

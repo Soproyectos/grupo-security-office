@@ -79,6 +79,8 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+    mockPrisma.productChange.createMany.mockResolvedValue({ count: 0 });
 
     mockAcl.isListasAdmin.mockReturnValue(false);
     mockAcl.assertProductAccess.mockResolvedValue({ listaId: 'lista-1' });

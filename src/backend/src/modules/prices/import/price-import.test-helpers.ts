@@ -23,6 +23,8 @@ export interface PriceImportFakeSeed {
   products?: FakeProduct[];
   tariffs?: FakeTariff[];
   prices?: FakePrice[];
+  brands?: Array<{ id: string; name: string }>;
+  categories?: Array<{ id: string; name: string }>;
 }
 
 type Where = Record<string, any>;
@@ -103,6 +105,8 @@ export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
   const prices = (seed.prices ?? []).map((p) => ({ currency: 'COP', listaId: null, ...p } as Record<string, any>));
   const listas = (seed.listas ?? []).map((l) => ({ isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP', ...l }));
   const restrictions = [...(seed.restrictions ?? [])];
+  const brands = (seed.brands ?? []).map((b) => ({ ...b }));
+  const categories = (seed.categories ?? []).map((c) => ({ ...c }));
   const revisions: Record<string, any>[] = [];
   const revisionRows: Record<string, any>[] = [];
   const revisionPrices: Record<string, any>[] = [];
@@ -122,7 +126,14 @@ export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
         Object.assign(hit, data);
         return { ...hit };
       }),
+      create: jest.fn(async ({ data }: { data: Where }) => {
+        const row = { id: `product-new-${++sequence}`, createdAt: new Date(), ...data } as Record<string, any>;
+        products.push(row as any);
+        return { ...row };
+      }),
     },
+    brand: table(brands),
+    category: table(categories),
     priceList: table(tariffs),
     lista: table(listas),
     assignment: table(restrictions),
@@ -177,6 +188,11 @@ export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
     priceImportRevisionRow: {
       ...table(revisionRows),
       createMany: jest.fn(async ({ data }: { data: any[] }) => { revisionRows.push(...data.map((d) => ({ id: `row-${++sequence}`, ...d }))); return { count: data.length }; }),
+      updateMany: jest.fn(async ({ where, data }: { where: Where; data: any }) => {
+        const hits = revisionRows.filter((r) => matches(r, where));
+        for (const hit of hits) Object.assign(hit, data);
+        return { count: hits.length };
+      }),
     },
     priceImportRevisionPrice: {
       ...table(revisionPrices),
@@ -185,7 +201,7 @@ export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
     // Interactive transactions roll the fake state back when the callback throws, like the database does.
     $transaction: jest.fn(async (arg: any) => {
       if (typeof arg !== 'function') return Promise.all(arg);
-      const tables = [prices, revisions, revisionRows, revisionPrices, productChanges, products];
+      const tables = [prices, revisions, revisionRows, revisionPrices, productChanges, products as Record<string, any>[]];
       const snapshot = tables.map((t) => t.map((r) => ({ ...r })));
       try {
         return await arg(prisma);

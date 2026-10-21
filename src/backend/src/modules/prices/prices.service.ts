@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { CopPriceError, isCopCurrency, normalizeCopPrice, resolvePriceCurrency } from '../../common/money/cop-policy';
 import { AuditService } from '../audit/audit.service';
+import { diffFields, PRICE_FIELD_PREFIX, ProductChangeService } from '../products/product-change.service';
 import { CreatePriceDto } from './dto/create-price.dto';
 import { UpdatePriceDto } from './dto/update-price.dto';
 import { CreatePriceListDto } from './dto/create-price-list.dto';
@@ -12,11 +13,17 @@ const ALLOWED_CURRENCIES = ['COP', 'USD', 'EUR'] as const;
 
 @Injectable()
 export class PricesService {
+  private readonly changes: ProductChangeService;
+
   constructor(
     private prisma: PrismaService,
     private acl: AclService,
     private audit: AuditService,
-  ) {}
+    /** Per-product history writer (Nest injects the shared one; specs may omit it). */
+    @Optional() changes?: ProductChangeService,
+  ) {
+    this.changes = changes ?? new ProductChangeService(prisma, acl);
+  }
 
   /** Valida que la moneda (si se envía) esté en la whitelist. */
   private validateCurrency(currency?: string): void {
@@ -388,7 +395,7 @@ export class PricesService {
   async createPrice(dto: CreatePriceDto, ctx?: AccessContext) {
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
-      select: { id: true, listaId: true },
+      select: { id: true, sku: true, listaId: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -443,20 +450,25 @@ this.validateCurrency(dto.currency);
       validUntil,
     });
 
-    const created = await this.prisma.price.create({
-      data: {
-        productId: dto.productId,
-        priceListId: dto.priceListId,
-        ...(productListaId ? { listaId: dto.listaId ?? productListaId } : {}),
-        value: persistedValue,
-        currency: dto.currency ?? priceList.currency ?? 'COP',
-        validFrom,
-        validUntil,
-      },
-      include: {
-        product: { select: { id: true, sku: true, name: true } },
-        priceList: true,
-      },
+    // The price and its per-product history commit or roll back together.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.price.create({
+        data: {
+          productId: dto.productId,
+          priceListId: dto.priceListId,
+          ...(productListaId ? { listaId: dto.listaId ?? productListaId } : {}),
+          value: persistedValue,
+          currency: dto.currency ?? priceList.currency ?? 'COP',
+          validFrom,
+          validUntil,
+        },
+        include: {
+          product: { select: { id: true, sku: true, name: true } },
+          priceList: true,
+        },
+      });
+      await this.recordPriceChange(tx, product, priceList.code, null, row.value, row.id, ctx);
+      return row;
     });
 
     await this.audit.log({
@@ -464,6 +476,7 @@ this.validateCurrency(dto.currency);
       action: 'create',
       entity: 'Price',
       entityId: created.id,
+      productId: created.productId,
       newValues: {
         productId: created.productId,
         productSku: created.product?.sku,
@@ -549,13 +562,20 @@ this.validateCurrency(dto.currency);
       ...(dto.validUntil !== undefined && { validUntil: newUntil }),
     };
 
-    const updated = await this.prisma.price.update({
-      where: { id },
-      data,
-      include: {
-        product: { select: { id: true, sku: true, name: true } },
-        priceList: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.price.update({
+        where: { id },
+        data,
+        include: {
+          product: { select: { id: true, sku: true, name: true } },
+          priceList: true,
+        },
+      });
+      await this.recordPriceChange(
+        tx, { id: row.productId, sku: row.product?.sku ?? '' }, row.priceList?.code ?? price.priceListId,
+        price.value, row.value, id, ctx,
+      );
+      return row;
     });
 
     // Historial inmutable (checklist 22): el log de update incluye oldValues completos
@@ -566,6 +586,7 @@ this.validateCurrency(dto.currency);
       action: 'update',
       entity: 'Price',
       entityId: id,
+      productId: price.productId,
       oldValues: {
         value: price.value,
         currency: price.currency,
@@ -600,6 +621,7 @@ this.validateCurrency(dto.currency);
       action: 'delete',
       entity: 'Price',
       entityId: price.id,
+      productId: price.productId,
       newValues: {
         productId: price.productId,
         priceListId: price.priceListId,
@@ -608,7 +630,35 @@ this.validateCurrency(dto.currency);
       },
     });
 
-    await this.prisma.price.delete({ where: { id } });
+    const owner = await this.prisma.product.findUnique({ where: { id: price.productId }, select: { id: true, sku: true } });
+    const tariff = await this.prisma.priceList.findUnique({ where: { id: price.priceListId }, select: { code: true } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.price.delete({ where: { id } });
+      if (owner) {
+        await this.recordPriceChange(tx, owner, tariff?.code ?? price.priceListId, price.value, null, id, ctx);
+      }
+    });
     return { message: 'Precio eliminado exitosamente' };
+  }
+
+  /**
+   * Writes the per-product history row (`price:<TARIFF>`, source MANUAL) for a manual price
+   * create/update/delete through the SAME transaction client. Nothing is written when the
+   * value did not change.
+   */
+  private async recordPriceChange(
+    tx: Parameters<ProductChangeService['record']>[0],
+    product: { id: string; sku: string },
+    tariffCode: string,
+    before: unknown,
+    after: unknown,
+    sourceRef: string,
+    ctx?: AccessContext,
+  ): Promise<void> {
+    const field = `${PRICE_FIELD_PREFIX}${tariffCode}`;
+    const rows = diffFields(before === null ? {} : { [field]: before }, { [field]: after }, [field], {
+      productId: product.id, sku: product.sku, source: 'MANUAL', sourceRef, actorId: ctx?.userId ?? null,
+    });
+    await this.changes.record(tx, rows);
   }
 }
