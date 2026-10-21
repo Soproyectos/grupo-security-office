@@ -29,7 +29,7 @@ import { Button } from '../components/ui'
 import { ProductPagination } from '../components/ProductPagination'
 import { SearchFilterBar, type SearchFilterChip } from '../components/filters/SearchFilterBar'
 import { fetchUsers, type UserListItem } from '../services/users.service'
-import { useImportModalStore } from '../features/products/import/store/importModal.store'
+import PriceImportModal from '../features/price-import/PriceImportModal'
 
 const CURRENCIES = ['COP', 'USD', 'EUR'] as const
 const LISTA_TYPES = ['mayorista', 'detalle', 'oro', 'platino', 'instalador', 'tienda'] as const
@@ -192,7 +192,7 @@ export default function ListasPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState<ListaStateFilter>('all')
-  const openImportModal = useImportModalStore((s) => s.open)
+  const [showPriceImport, setShowPriceImport] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [expiryFilter, setExpiryFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -543,9 +543,9 @@ export default function ListasPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               }
-              onClick={() => openImportModal()}
+              onClick={() => setShowPriceImport(true)}
             >
-              Importar desde Excel
+              Importar precios
             </Button>
           )}
           {canCreateLista() && (
@@ -1020,6 +1020,7 @@ export default function ListasPage() {
         }
       />
 
+      <PriceImportModal open={showPriceImport} onClose={() => setShowPriceImport(false)} />
       {(showCreateModal || editingLista) && (
         <ListasFormModal
           lista={editingLista}

@@ -14,7 +14,7 @@ import { Button, Modal } from '../components/ui'
 import ProductFormModal from '../features/products/components/ProductFormModal'
 import { MoveCategoryModal, type MoveCategoryTarget } from '../features/products/components/MoveCategoryModal'
 import { useImportStore } from '../features/products/import/store/import.store'
-import { useImportModalStore } from '../features/products/import/store/importModal.store'
+import PriceImportModal from '../features/price-import/PriceImportModal'
 import type { Category, Brand, Product } from '../features/products/types/product.types'
 import { ProductIndicators } from '../features/products/components/ProductIndicators'
 import PriceImportPreviewPanel from '../features/price-import/PriceImportPreviewPanel'
@@ -48,7 +48,7 @@ export default function ListaDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('products')
-  const openImportModal = useImportModalStore((s) => s.open)
+  const [showPriceImport, setShowPriceImport] = useState(false)
 
   const {
     data: lista,
@@ -129,6 +129,7 @@ export default function ListaDetailPage() {
 
   return (
     <div className="space-y-6">
+      <PriceImportModal open={showPriceImport} onClose={() => setShowPriceImport(false)} />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-condensed font-bold text-security-800">{lista.name}</h1>
@@ -147,9 +148,9 @@ export default function ListaDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 }
-                onClick={() => openImportModal(id ?? undefined)}
+                onClick={() => setShowPriceImport(true)}
               >
-                Importar desde Excel
+                Importar precios
               </Button>
             </>
           )}

@@ -9,6 +9,8 @@ const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const CONTENT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const WORKBOOK_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml';
+/** Data sheet names accepted next to INSTRUCCIONES; PLANTILLA is the name used by the purchasing template. */
+export const PRICE_DATA_SHEETS = ['PRECIOS', 'PLANTILLA'] as const;
 const STRUCTURAL_TAGS = new Set(['Types', 'Override', 'Default', 'workbook', 'sheets', 'sheet',
   'Relationships', 'Relationship', 'worksheet', 'dimension', 'sheetData', 'row', 'c', 'v', 'is', 'f']);
 
@@ -92,12 +94,12 @@ function worksheetTargets(parts: Map<string, Buffer>): Map<string, string> {
     if (tag.local !== 'sheet') return;
     const name = attribute(tag, 'name');
     const id = attribute(tag, 'id', OFFICE_REL_NS);
-    if (parents.join('/') !== 'workbook/sheets' || !['PRECIOS', 'INSTRUCCIONES'].includes(name ?? '') ||
+    if (parents.join('/') !== 'workbook/sheets' || !(['INSTRUCCIONES', ...PRICE_DATA_SHEETS] as string[]).includes(name ?? '') ||
       !id || sheets.has(name!) || sheetIds.has(id)) invalid();
     sheets.set(name!, id!);
     sheetIds.add(id!);
   });
-  if (groups !== 1 || sheets.size !== 2) invalid();
+  if (groups !== 1 || sheets.size !== 2 || !sheets.has('INSTRUCCIONES')) invalid();
 
   const relationships = new Map<string, string>();
   const ids = new Set<string>();
@@ -124,7 +126,7 @@ function worksheetTargets(parts: Map<string, Buffer>): Map<string, string> {
 }
 
 function address(value: string | undefined): { row: number; col: number } {
-  const match = /^([A-F])([1-9]\d*)$/.exec(value ?? '');
+  const match = /^([A-H])([1-9]\d*)$/.exec(value ?? '');
   if (!match) invalid();
   if (match![2].length > 4 || Number(match![2]) > MAX_PRICE_IMPORT_ROWS + 1) {
     throw new BadRequestException(`Divide el archivo en listas de hasta ${MAX_PRICE_IMPORT_ROWS} filas de precios, más la fila de títulos.`);
@@ -133,9 +135,10 @@ function address(value: string | undefined): { row: number; col: number } {
 }
 
 /** Check physical rows and cells before SheetJS can truncate or overwrite them. */
-export function validatePriceWorkbookStructure(parts: Map<string, Buffer>): void {
+export function validatePriceWorkbookStructure(parts: Map<string, Buffer>): 'PRECIOS' | 'PLANTILLA' {
   validateContentTypes(parts);
   const targets = worksheetTargets(parts);
+  const dataSheet = PRICE_DATA_SHEETS.find((name) => targets.has(name))!;
   walkXml(parts.get(targets.get('INSTRUCCIONES')!), 'worksheet', MAIN_NS, () => undefined);
   let dimension: { row: number; col: number } | undefined;
   let largestRow = 0;
@@ -146,7 +149,7 @@ export function validatePriceWorkbookStructure(parts: Map<string, Buffer>): void
   let valueCount = 0;
   const rows = new Set<number>();
   const cells = new Set<string>();
-  walkXml(parts.get(targets.get('PRECIOS')!), 'worksheet', MAIN_NS, (tag, parents) => {
+  walkXml(parts.get(targets.get(dataSheet)!), 'worksheet', MAIN_NS, (tag, parents) => {
     const parent = parents[parents.length - 1];
     if (tag.local === 'dimension') {
       if (parent !== 'worksheet' || dimension) invalid();
@@ -183,4 +186,5 @@ export function validatePriceWorkbookStructure(parts: Map<string, Buffer>): void
     if (['v', 'is'].includes(tag.local) && (parent !== 'c' || ++valueCount > 1)) invalid();
   });
   if (dataGroups !== 1 || (dimension && (largestRow > dimension.row || largestCol > dimension.col))) invalid();
+  return dataSheet;
 }

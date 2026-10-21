@@ -197,14 +197,17 @@ export class PriceImportService {
   ): Promise<{ result: PriceImportPreview; tariffs: PriceImportTariff[]; configured: Map<string, ConfiguredTariff>; snapshots: Map<number, RowSnapshot> }> {
     if (!file?.buffer || !/\.xlsx$/i.test(file.originalname)) throw new BadRequestException('Selecciona la plantilla de Excel guardada como .xlsx.');
 
-    const { tariffs, rows } = readPriceTemplate(file.buffer);
+    const { tariffs, rows, ignoredColumns } = readPriceTemplate(file.buffer);
     const now = new Date();
     const priceLists = await this.prisma.priceList.findMany({
       where: { code: { in: tariffs } },
       select: { id: true, code: true, isActive: true, currency: true, validFrom: true, validUntil: true },
     });
     const configured = new Map<string, ConfiguredTariff>(priceLists.map((p) => [p.code, p]));
-    const issues: PriceImportIssue[] = [];
+    const issues: PriceImportIssue[] = ignoredColumns.map((column) => ({
+      row: null, column, code: 'IGNORED_COLUMN',
+      message: 'Esta columna es informativa (precio sin IVA) y no se importa; solo se guardan las tarifas con IVA.',
+    }));
     const unavailable = new Set<string>();
     for (const code of tariffs) {
       const tariff = configured.get(code);
