@@ -6,14 +6,12 @@ import { fetchListaById, fetchListaProducts, fetchListaPrices, fetchListaAssignm
 import { fetchPriceLists, createPrice, updatePrice, deletePrice } from '../services/prices.service'
 import type { Price, PricePayload, UpdatePricePayload } from '../services/prices.service'
 import { fetchCategories, createCategory, type Category as SettingsCategory, type CategoryPayload } from '../services/settings.service'
-import { fetchImportPresets, createImportPreset, deleteImportPreset, type ImportPreset } from '../services/import-presets.service'
 import { canDeletePrices, canManageListas, hasPermission } from '../lib/rbac'
 import { getApiErrorMessage } from '../lib/apiError'
 import { formatDate } from '../lib/format'
 import { Button, Modal } from '../components/ui'
 import ProductFormModal from '../features/products/components/ProductFormModal'
 import { MoveCategoryModal, type MoveCategoryTarget } from '../features/products/components/MoveCategoryModal'
-import { useImportStore } from '../features/products/import/store/import.store'
 import PriceImportModal from '../features/price-import/PriceImportModal'
 import type { Category, Brand, Product } from '../features/products/types/product.types'
 import { ProductIndicators } from '../features/products/components/ProductIndicators'
@@ -1100,47 +1098,10 @@ export function ConfiguracionTab({
   const [formError, setFormError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
-  const [presetName, setPresetName] = useState('')
-  const [presetFeedback, setPresetFeedback] = useState<{ ok: boolean; message: string } | null>(null)
-
-  // Mapeo actual del wizard de importación (si existe) para guardar presets no vacíos.
-  const importColumnMappings = useImportStore((s) => s.columnMappings)
 
   const archived = Boolean(lista?.archivedAt)
 
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories })
-  const { data: presets = [], isLoading: presetsLoading } = useQuery({
-    queryKey: ['import-mappings'],
-    queryFn: fetchImportPresets,
-  })
-
-  const savePresetMutation = useMutation({
-    mutationFn: (name: string) =>
-      createImportPreset({
-        name,
-        mapping: importColumnMappings.map((m) => ({
-          sourceColumn: m.sourceColumn,
-          targetField: m.targetField,
-        })),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['import-mappings'] })
-      setPresetName('')
-      setPresetFeedback({ ok: true, message: 'Plantilla de mapeo guardada correctamente.' })
-    },
-    onError: (err) =>
-      setPresetFeedback({ ok: false, message: getApiErrorMessage(err, 'No se pudo guardar la plantilla de mapeo') }),
-  })
-
-  const deletePresetMutation = useMutation({
-    mutationFn: (id: string) => deleteImportPreset(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['import-mappings'] })
-      setPresetFeedback({ ok: true, message: 'Plantilla de mapeo eliminada.' })
-    },
-    onError: (err) =>
-      setPresetFeedback({ ok: false, message: getApiErrorMessage(err, 'No se pudo eliminar la plantilla de mapeo') }),
-  })
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -1409,81 +1370,6 @@ export function ConfiguracionTab({
           </div>
         )}
       </div>
-
-      {canEdit && (
-        <div className="bg-white rounded-xl border border-neutral-200 p-5 space-y-4">
-          <div>
-            <h3 className="text-sm font-condensed font-semibold text-neutral-700 uppercase tracking-wide">
-              Plantillas de mapeo
-            </h3>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              Presets de mapeo de columnas para reutilizar al importar archivos de este proveedor.
-            </p>
-          </div>
-
-          {presetFeedback && (
-            <div
-              className={`p-3 rounded-lg border text-sm ${
-                presetFeedback.ok
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-red-50 border-red-200 text-red-800'
-              }`}
-              role={presetFeedback.ok ? 'status' : 'alert'}
-            >
-              {presetFeedback.message}
-            </div>
-          )}
-
-          {presetsLoading ? (
-            <p className="text-sm text-neutral-500">Cargando plantillas...</p>
-          ) : presets.length === 0 ? (
-            <p className="text-sm text-neutral-500">No hay plantillas de mapeo creadas.</p>
-          ) : (
-            <div className="space-y-2">
-              {presets.map((p: ImportPreset) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-neutral-200 bg-neutral-50 text-sm"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-medium text-neutral-800 truncate">{p.name}</span>
-                    {p.isDefault && <span className="text-[10px] text-neutral-500">(predeterminado)</span>}
-                    <span className="text-xs text-neutral-400 whitespace-nowrap">{formatDate(p.createdAt)}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => deletePresetMutation.mutate(p.id)}
-                    disabled={deletePresetMutation.isPending}
-                    className="px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              placeholder="Nombre de plantilla"
-              disabled={archived}
-              className={FIELD_CLASS}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              loading={savePresetMutation.isPending}
-              disabled={!presetName.trim() || archived}
-              onClick={() => savePresetMutation.mutate(presetName.trim())}
-            >
-              Guardar plantilla
-            </Button>
-          </div>
-        </div>
-      )}
 
       {showCategoryModal && <CategoryCreateModal onClose={() => setShowCategoryModal(false)} />}
     </div>
