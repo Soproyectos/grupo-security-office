@@ -163,7 +163,7 @@ export class LibraryPackagesService {
     if (!flag || flag.cancelRequested || flag.state === 'CANCELLED') throw new ConflictException('export-cancelled');
     const bundle = await this.prisma.exportBundle.upsert({
       where: { jobId }, update: {},
-      create: { jobId, actorId: ctx.userId, bundleBytes: bytes, sizeBytes: bytes.length, sha256: sha256(bytes), manifestJson: manifest as unknown as Prisma.InputJsonValue, expiresAt: null },
+      create: { jobId, actorId: ctx.userId, bundleBytes: new Uint8Array(bytes), sizeBytes: bytes.length, sha256: sha256(bytes), manifestJson: manifest as unknown as Prisma.InputJsonValue, expiresAt: null },
     });
     await this.audit.log({ userId: ctx.userId, action: 'library-export-built', entity: 'ExportBundle', entityId: bundle.id,
       newValues: { jobId, exported: manifest.productos.length, entries: entries.length, sizeBytes: bytes.length, sha256: bundle.sha256, missing: manifest.faltantes.length } });

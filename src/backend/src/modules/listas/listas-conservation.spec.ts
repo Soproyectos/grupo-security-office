@@ -215,7 +215,7 @@ describe('CAT-01 unidad A — conservación de Biblioteca (PostgreSQL desechable
       expect(snapshot.product!.listaId).toBe(b.listaId);
       expect(snapshot.product!.sku).toBe(b.sku);
       expect(snapshot.image).not.toBeNull();
-      expect(snapshot.file!.data.equals(BYTES)).toBe(true);
+      expect(Buffer.from(snapshot.file!.data).equals(BYTES)).toBe(true);
       expect(snapshot.priceA).not.toBeNull();
       expect(snapshot.priceB).not.toBeNull();
       expect(snapshot.priceA!.value.toNumber()).toBe(1000);
@@ -257,7 +257,7 @@ describe('CAT-01 unidad A — conservación de Biblioteca (PostgreSQL desechable
       expect(snapshot.image).not.toBeNull();
       expect(snapshot.image!.productId).toBe(b.productId);
       expect(snapshot.file).not.toBeNull();
-      expect(snapshot.file!.data.equals(BYTES)).toBe(true);
+      expect(Buffer.from(snapshot.file!.data).equals(BYTES)).toBe(true);
       // Históricos: ambos precios siguen con sus IDs y valores.
       expect(snapshot.priceA).not.toBeNull();
       expect(snapshot.priceB).not.toBeNull();
@@ -297,7 +297,7 @@ describe('CAT-01 unidad A — conservación de Biblioteca (PostgreSQL desechable
       expect(snapshot.lista).not.toBeNull();
       expect(snapshot.product!.listaId).toBe(b.listaId);
       expect(snapshot.image).not.toBeNull();
-      expect(snapshot.file!.data.equals(BYTES)).toBe(true);
+      expect(Buffer.from(snapshot.file!.data).equals(BYTES)).toBe(true);
       expect(snapshot.priceA).not.toBeNull();
       expect(files.deleteByUrl).not.toHaveBeenCalled();
       expect(
@@ -319,7 +319,7 @@ describe('CAT-01 unidad A — conservación de Biblioteca (PostgreSQL desechable
       expect(snapshot.product!.sku).toBe(b.sku);
       expect(snapshot.product!.listaId).toBeNull();
       expect(snapshot.image).not.toBeNull();
-      expect(snapshot.file!.data.equals(BYTES)).toBe(true);
+      expect(Buffer.from(snapshot.file!.data).equals(BYTES)).toBe(true);
       expect(snapshot.priceA).not.toBeNull();
       expect(snapshot.priceB).not.toBeNull();
       // La Lista sigue existiendo (unlink no la borra).
@@ -404,7 +404,7 @@ describe('CAT-01 unidad A — conservación de Biblioteca (PostgreSQL desechable
       // Y los medios y precios quedan intactos.
       const snapshot = await readBundle(b);
       expect(snapshot.image).not.toBeNull();
-      expect(snapshot.file!.data.equals(BYTES)).toBe(true);
+      expect(Buffer.from(snapshot.file!.data).equals(BYTES)).toBe(true);
       expect(snapshot.priceA).not.toBeNull();
       expect(snapshot.priceB).not.toBeNull();
     });
