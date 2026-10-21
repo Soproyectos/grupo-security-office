@@ -57,7 +57,19 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
   const columns: (PriceImportTariff | null)[] = [];
   const tariffs: PriceImportTariff[] = [];
   const ignoredColumns: string[] = [];
-  for (let col = 1; col <= range.e.c; col++) {
+  // Excel keeps formatted-but-empty trailing columns in the sheet range: only the titled ones count,
+  // and a value under an untitled trailing column is an error rather than silently dropped.
+  let lastTitled = 0;
+  for (let col = 1; col <= range.e.c; col++) if (!blank(header(col)) || formula(header(col))) lastTitled = col;
+  for (let col = lastTitled + 1; col <= range.e.c; col++) {
+    for (let r = 1; r <= range.e.r; r++) {
+      const stray = sheet[XLSX.utils.encode_cell({ r, c: col })] as XLSX.CellObject | undefined;
+      if (!blank(stray) || formula(stray)) {
+        throw new BadRequestException(`La columna ${XLSX.utils.encode_col(col)} tiene datos pero no tiene título. Bórrala o ponle el título de una tarifa de la plantilla.`);
+      }
+    }
+  }
+  for (let col = 1; col <= lastTitled; col++) {
     const cell = header(col);
     const text = headerText(cell?.v);
     const code = TARIFF_HEADERS[text] ?? (PRICE_IMPORT_TARIFFS.includes(cell?.v as PriceImportTariff) ? (cell?.v as PriceImportTariff) : undefined);

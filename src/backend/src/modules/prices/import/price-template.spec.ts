@@ -174,6 +174,16 @@ describe('Price template contract using actual XLSX files', () => {
       expect(readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA) *'], ['FIXTURE-A', 1]])).tariffs).toEqual(['TIENDA_IVA']);
     });
 
+    it('ignores empty trailing columns kept in the sheet range but rejects data under them', () => {
+      const withEmptyTail = purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA)'], ['FIXTURE-A', 1]]);
+      const book = XLSX.read(withEmptyTail, { type: 'buffer' });
+      book.Sheets.PLANTILLA['!ref'] = 'A1:H5';
+      const padded = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+      expect(readPriceTemplate(padded).tariffs).toEqual(['TIENDA_IVA']);
+      expect(() => readPriceTemplate(purchasing([['REFERENCIA', 'PRECIO TIENDA (CON IVA)', null], ['FIXTURE-A', 1, 5]])))
+        .toThrow(/columna C tiene datos pero no tiene título/);
+    });
+
     it('rejects workbooks that carry both data sheets', () => {
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers.slice(0, 2), ['FIXTURE-A', 10]]), 'PRECIOS');
