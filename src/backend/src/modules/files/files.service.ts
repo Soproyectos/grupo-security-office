@@ -45,7 +45,7 @@ export class FilesService {
     const file = await client.uploadedFile.create({
       data: {
         mimeType,
-        data,
+        data: new Uint8Array(data),
         sizeBytes: data.length,
         sha256: sha256Hex(data),
         detectedKind: detectKind(data),
@@ -71,7 +71,7 @@ export class FilesService {
       select: { id: true, mimeType: true, data: true, visibility: true, ownerProductId: true },
     });
     if (!file) return null;
-    return file;
+    return { ...file, data: Buffer.from(file.data) };
   }
 
   /**
