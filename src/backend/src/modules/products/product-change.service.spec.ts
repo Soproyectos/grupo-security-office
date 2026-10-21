@@ -28,9 +28,9 @@ describe('diffFields', () => {
 
   it('treats Decimals, numeric strings and numbers with the same value as equal', () => {
     const d = (v: string) => new Prisma.Decimal(v);
-    expect(diffFields({ 'price:ORO_IVA': d('100.00') }, { 'price:ORO_IVA': '100' }, ['price:ORO_IVA'], meta)).toEqual([]);
-    expect(diffFields({ 'price:ORO_IVA': d('100.00') }, { 'price:ORO_IVA': 100 }, ['price:ORO_IVA'], meta)).toEqual([]);
-    const changed = diffFields({ 'price:ORO_IVA': d('100.00') }, { 'price:ORO_IVA': d('120.50') }, ['price:ORO_IVA'], meta);
+    expect(diffFields({ 'price:DPP_ORO_IVA': d('100.00') }, { 'price:DPP_ORO_IVA': '100' }, ['price:DPP_ORO_IVA'], meta)).toEqual([]);
+    expect(diffFields({ 'price:DPP_ORO_IVA': d('100.00') }, { 'price:DPP_ORO_IVA': 100 }, ['price:DPP_ORO_IVA'], meta)).toEqual([]);
+    const changed = diffFields({ 'price:DPP_ORO_IVA': d('100.00') }, { 'price:DPP_ORO_IVA': d('120.50') }, ['price:DPP_ORO_IVA'], meta);
     expect(changed).toHaveLength(1);
     expect(changed[0]).toMatchObject({ oldValue: '100', newValue: '120.5' });
   });
@@ -150,7 +150,7 @@ describe('ProductChangeService.list authorization and price filtering', () => {
 
   it('returns nothing (without querying) when a caller without prices:read asks for a price field', async () => {
     grantRows = grantRows.filter((g) => g.actionId !== 'prices:read');
-    const out = await service.list('p1', ctx, { field: 'price:ORO_IVA' });
+    const out = await service.list('p1', ctx, { field: 'price:DPP_ORO_IVA' });
     expect(out.items).toEqual([]);
     expect(prisma.productChange.findMany).not.toHaveBeenCalled();
   });

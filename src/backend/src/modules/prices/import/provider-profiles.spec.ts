@@ -12,7 +12,7 @@ const grantsFor = (actions: string[]) => ({
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'prof-1', providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 1,
   thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-  tariffs: ['ORO_IVA'], expectedColumns: ['REFERENCIA', 'ORO_IVA'], version: 1,
+  tariffs: ['DPP_ORO_IVA'], expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'], version: 1,
   createdAt: new Date('2026-10-17T10:00:00Z'), updatedAt: new Date('2026-10-17T10:00:00Z'),
   equivalences: [], ...over,
 });
@@ -20,7 +20,7 @@ const row = (over: Record<string, unknown> = {}) => ({
 const input = {
   providerName: 'Hikvision', sheet: 'PRECIOS', headerRow: 1,
   thousandsSeparator: '.', decimalSeparator: ',', currency: 'COP',
-  tariffs: ['ORO_IVA'], expectedColumns: ['REFERENCIA', 'ORO_IVA'],
+  tariffs: ['DPP_ORO_IVA'], expectedColumns: ['REFERENCIA', 'DPP_ORO_IVA'],
 };
 
 const READ = ['providers:read'];
@@ -94,7 +94,7 @@ describe('IMP-07B — CRUD de perfiles', () => {
     expect(changedData.version).toBe(2);
 
     const same = build(WRITE);
-    same.prisma.providerProfile.findUnique.mockResolvedValue(row({ tariffs: ['ORO_IVA'] }));
+    same.prisma.providerProfile.findUnique.mockResolvedValue(row({ tariffs: ['DPP_ORO_IVA'] }));
     await same.service.updateProviderProfile('prof-1', input, ctx);
     const sameData = same.prisma.providerProfile.update.mock.calls[0][0].data;
     expect(sameData.version).toBe(1);
@@ -156,7 +156,7 @@ describe('IMP-07B — reconocimiento y resolución (casos 1 y 2)', () => {
 
   it('mismo proveedor repetido NO pide mapear de nuevo (caso 1)', async () => {
     const { service } = build(READ);
-    const view = await service.recognizeProviderProfile({ providerName: 'Hikvision', headers: ['REFERENCIA', 'ORO_IVA'] }, ctx);
+    const view = await service.recognizeProviderProfile({ providerName: 'Hikvision', headers: ['REFERENCIA', 'DPP_ORO_IVA'] }, ctx);
     expect(view).toMatchObject({ found: true, profileId: 'prof-1', matches: true, requiresReview: false, version: 1 });
   });
 

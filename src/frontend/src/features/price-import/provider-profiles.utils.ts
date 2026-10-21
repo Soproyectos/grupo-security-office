@@ -10,7 +10,7 @@ import type { ProviderProfileInput, ProviderRecognition, ResolvedReference } fro
 export const PROVIDER_TARIFFS = [
   'INSTALADOR_IVA',
   'TIENDA_IVA',
-  'ORO_IVA',
+  'DPP_ORO_IVA',
   'DPP_PLATINO_IVA',
   'CLIENTE_FINAL_IVA',
 ] as const

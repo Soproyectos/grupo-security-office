@@ -12,9 +12,9 @@ function fixture(): PriceImportPreview {
   return {
     listaId: 'fixture-list', fileName: 'precios.xlsx', currency: 'COP', taxIncluded: true, rounding: 'HALF_UP', readOnly: true,
     summary: { rows: 2, validRows: 1, errorRows: 1, prices: 1, newPrices: 0, changedPrices: 1, unchangedPrices: 0, roundedPrices: 1 },
-    issues: [{ row: null, code: 'TARIFF_MISSING', column: 'ORO_IVA', message: 'Configura la tarifa Oro.' }],
+    issues: [{ row: null, code: 'TARIFF_MISSING', column: 'DPP_ORO_IVA', message: 'Configura la tarifa Oro.' }],
     rows: [
-      { row: 2, sku: '0001-A', status: 'valid', issues: [], prices: [{ code: 'ORO_IVA', raw: '123456.50', rounded: '123457', previous: '100000', difference: '23457', wasRounded: true, change: 'changed' }] },
+      { row: 2, sku: '0001-A', status: 'valid', issues: [], prices: [{ code: 'DPP_ORO_IVA', raw: '123456.50', rounded: '123457', previous: '100000', difference: '23457', wasRounded: true, change: 'changed' }] },
       { row: 3, sku: 'UNKNOWN', status: 'error', issues: [{ row: 3, code: 'UNKNOWN_SKU', message: 'No encontramos la referencia.' }], prices: [] },
     ],
   }
@@ -125,9 +125,9 @@ describe('price template download (IMP-02)', () => {
     expect(html).toContain('Vacía')
     expect(html).toContain('Con referencias de esta lista')
     expect(html).toContain('INSTALADOR_IVA')
-    expect(html).toContain('ORO_IVA')
+    expect(html).toContain('DPP_ORO_IVA')
     expect(html).toContain('DPP_PLATINO_IVA')
-    expect(html).not.toContain('DPP_ORO_IVA')
+    expect(html).not.toMatch(/(^|[^_A-Z])ORO_IVA/)
   })
 
   it('la descarga genera un archivo NUEJO (aviso visible al usuario)', async () => {

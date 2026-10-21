@@ -34,7 +34,7 @@ const EMPTY_FORM: ProviderProfileInput = {
   thousandsSeparator: '.',
   decimalSeparator: ',',
   currency: 'COP',
-  tariffs: ['ORO_IVA'],
+  tariffs: ['DPP_ORO_IVA'],
   expectedColumns: [],
 }
 

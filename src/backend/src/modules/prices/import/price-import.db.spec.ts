@@ -22,7 +22,7 @@ const storageDir = path.join(os.tmpdir(), 'gs-b2-db-storage');
 
 function workbook(rows: unknown[][]): Express.Multer.File {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'ORO_IVA'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-db.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
@@ -68,8 +68,8 @@ suite('price import mixed listas (database)', () => {
     await prisma.lista.createMany({ data: [
       { id: ids.listaA, code: `${TAG}-A`, name: 'Alfa' }, { id: ids.listaB, code: `${TAG}-B`, name: 'Beta' },
     ] });
-    createdTariff = !(await prisma.priceList.findUnique({ where: { code: 'ORO_IVA' } }));
-    if (createdTariff) await prisma.priceList.create({ data: { id: ids.tariff, name: 'Oro', code: 'ORO_IVA' } });
+    createdTariff = !(await prisma.priceList.findUnique({ where: { code: 'DPP_ORO_IVA' } }));
+    if (createdTariff) await prisma.priceList.create({ data: { id: ids.tariff, name: 'Oro', code: 'DPP_ORO_IVA' } });
     const common = { categoryId: ids.category, brandId: ids.brand, name: TAG };
     await prisma.product.create({ data: { id: ids.pA, sku: `${TAG}-IDS-E04HQHI-D`, listaId: ids.listaA, ...common } });
     await prisma.product.create({ data: { id: ids.pB, sku: `${TAG}-x-1`, listaId: ids.listaB, ...common } });
@@ -126,7 +126,7 @@ suite('price import mixed listas (database)', () => {
     });
 
     it('persists the large-change percent and flag, clamping an extreme ratio to DECIMAL(9,2)', async () => {
-      const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'ORO_IVA' } });
+      const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'DPP_ORO_IVA' } });
       await prisma.price.create({ data: { productId: ids.pA, priceListId: tariff.id, value: 1, listaId: ids.listaA } });
       const header = await service.saveRevision(workbook([[`${TAG}-IDS-E04HQHI-D`, 99999999]]), 'key-b2db-0002', ctx);
       const [price] = await prisma.priceImportRevisionPrice.findMany({ where: { revisionId: header.id } });
@@ -145,7 +145,7 @@ suite('price import mixed listas (database)', () => {
     const skuA = `${TAG}-IDS-E04HQHI-D`;
 
     async function reset(prices: Record<string, number | null>) {
-      const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'ORO_IVA' } });
+      const tariff = await prisma.priceList.findUniqueOrThrow({ where: { code: 'DPP_ORO_IVA' } });
       await prisma.price.deleteMany({ where: { productId: { in: [ids.pA, ids.pB, ids.pFree] } } });
       await prisma.productChange.deleteMany({ where: { sku: { startsWith: TAG } } });
       await prisma.product.update({ where: { id: ids.pA }, data: { listaId: ids.listaA } });
@@ -169,9 +169,9 @@ suite('price import mixed listas (database)', () => {
       expect(free.value.toFixed(0)).toBe('300');
       const changes = await prisma.productChange.findMany({ where: { sourceRef: header.id }, orderBy: { productId: 'asc' } });
       expect(changes.map((c) => [c.productId, c.field, c.oldValue, c.newValue, c.source, c.actorId])).toEqual(expect.arrayContaining([
-        [ids.pA, 'price:ORO_IVA', '90', '100', 'PRICE_IMPORT', ids.actor],
-        [ids.pB, 'price:ORO_IVA', '500', '600', 'PRICE_IMPORT', ids.actor],
-        [ids.pFree, 'price:ORO_IVA', null, '300', 'PRICE_IMPORT', ids.actor],
+        [ids.pA, 'price:DPP_ORO_IVA', '90', '100', 'PRICE_IMPORT', ids.actor],
+        [ids.pB, 'price:DPP_ORO_IVA', '500', '600', 'PRICE_IMPORT', ids.actor],
+        [ids.pFree, 'price:DPP_ORO_IVA', null, '300', 'PRICE_IMPORT', ids.actor],
       ]));
       expect(new Set(changes.map((c) => c.batchId)).size).toBe(1);
       const stored = await prisma.priceImportRevision.findUniqueOrThrow({ where: { id: header.id } });

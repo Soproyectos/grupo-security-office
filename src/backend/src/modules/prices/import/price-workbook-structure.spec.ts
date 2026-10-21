@@ -11,7 +11,7 @@ const PRICES = 'xl/worksheets/sheet1.xml';
 const INSTRUCTIONS = 'xl/worksheets/sheet2.xml';
 
 function worksheet(dimension = 'A1:B2', rows = [
-  '<row r="1"><c r="A1" t="inlineStr"><is><t>REFERENCIA</t></is></c><c r="B1" t="inlineStr"><is><t>ORO_IVA</t></is></c></row>',
+  '<row r="1"><c r="A1" t="inlineStr"><is><t>REFERENCIA</t></is></c><c r="B1" t="inlineStr"><is><t>DPP_ORO_IVA</t></is></c></row>',
   '<row r="2"><c r="A2" t="inlineStr"><is><t>000123-CAM</t></is></c><c r="B2"><v>123456.5</v></c></row>',
 ].join('')): string {
   return `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="${MAIN_NS}"><dimension ref="${dimension}"/><sheetData>${rows}</sheetData></worksheet>`;

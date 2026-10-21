@@ -128,7 +128,7 @@ function PreviewForm({ listaId, onRevisionSaved }: { listaId: string; onRevision
 function DownloadTemplateSection({ listaId }: { listaId: string }) {
   const [mode, setMode] = useState<PriceTemplateMode>('vacias')
   const [tariffs, setTariffs] = useState<string[]>([
-    'INSTALADOR_IVA', 'TIENDA_IVA', 'ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA',
+    'INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA',
   ])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -169,7 +169,7 @@ function DownloadTemplateSection({ listaId }: { listaId: string }) {
       </fieldset>
       <fieldset className="mt-4 space-y-2">
         <legend className="text-sm font-medium text-neutral-700">Tarifas (columnas IVA)</legend>
-        {(['INSTALADOR_IVA', 'TIENDA_IVA', 'ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA'] as const).map((code) => (
+        {(['INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA'] as const).map((code) => (
           <label key={code} className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={tariffs.includes(code)} onChange={() => toggleTariff(code)} />
             {code}

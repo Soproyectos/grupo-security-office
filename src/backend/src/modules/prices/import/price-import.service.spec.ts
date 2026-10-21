@@ -14,7 +14,7 @@ const LISTA_B = '00000000-0000-4000-8000-0000000000b2';
 const ctx: AccessContext = { userId: 'fixture-actor', roles: ['Consulta'] };
 const PREVIEW_ACTIONS = ['prices:preview', 'prices:read', 'listas:read'];
 
-function file(rows: unknown[][] = [['SKU-A', 100.5]], headers = ['REFERENCIA', 'ORO_IVA']): Express.Multer.File {
+function file(rows: unknown[][] = [['SKU-A', 100.5]], headers = ['REFERENCIA', 'DPP_ORO_IVA']): Express.Multer.File {
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
@@ -28,7 +28,7 @@ const baseSeed = (): PriceImportFakeSeed => ({
     { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
     { id: 'product-free', sku: 'SKU-FREE', listaId: null },
   ],
-  tariffs: [{ id: 'tariff-oro', code: 'ORO_IVA' }],
+  tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
   prices: [
     { productId: 'product-a', priceListId: 'tariff-oro', value: 90 },
     { productId: 'product-b', priceListId: 'tariff-oro', value: 876543 },
@@ -167,16 +167,16 @@ describe('Read-only price preview over mixed listas (R1)', () => {
 
   it.each([
     [[]],
-    [[{ id: 'wrong-tariff', code: 'DPP_ORO_IVA' }]],
-    [[{ id: 'tariff-oro', code: 'ORO_IVA', isActive: false }]],
-    [[{ id: 'tariff-oro', code: 'ORO_IVA', currency: 'USD' }]],
-    [[{ id: 'tariff-oro', code: 'ORO_IVA', validUntil: new Date('2000-01-01') }]],
+    [[{ id: 'wrong-tariff', code: 'ORO_IVA' }]],
+    [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', isActive: false }]],
+    [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', currency: 'USD' }]],
+    [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', validUntil: new Date('2000-01-01') }]],
   ])('requires an exact active COP tariff without silently creating or aliasing it: %#', async (tariffs) => {
     const seed = baseSeed();
     seed.tariffs = tariffs as any;
     const { service, prisma } = build(seed);
     const result = await service.preview(file(), ctx);
-    expect(result.issues).toContainEqual(expect.objectContaining({ code: 'TARIFF_UNAVAILABLE', column: 'ORO_IVA' }));
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: 'TARIFF_UNAVAILABLE', column: 'DPP_ORO_IVA' }));
     expect(result.rows[0].prices[0].previous).toBeNull();
     expect(result.summary.validRows).toBe(0);
     expect(prisma.priceList.create).toBeUndefined();
@@ -319,8 +319,8 @@ describe('Existing price rules keep holding through the preview (regression)', (
 
   it('keeps the current price when a tariff cell is blank (no price entry for that tariff)', async () => {
     const { service } = build();
-    const result = await service.preview(file([['SKU-A', 100, null]], ['REFERENCIA', 'ORO_IVA', 'TIENDA_IVA']), ctx);
-    expect(result.rows[0].prices.map((p) => p.code)).toEqual(['ORO_IVA']);
+    const result = await service.preview(file([['SKU-A', 100, null]], ['REFERENCIA', 'DPP_ORO_IVA', 'TIENDA_IVA']), ctx);
+    expect(result.rows[0].prices.map((p) => p.code)).toEqual(['DPP_ORO_IVA']);
   });
 
   it('rounds final COP prices half up to whole pesos', async () => {
@@ -335,6 +335,6 @@ describe('Existing price rules keep holding through the preview (regression)', (
     const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: [...PRICE_IMPORT_TARIFFS].reverse() });
     const book = XLSX.read(buffer, { type: 'buffer' });
     const header = XLSX.utils.sheet_to_json<string[]>(book.Sheets.PRECIOS, { header: 1 })[0];
-    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'TIENDA_IVA', 'ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA']);
+    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA']);
   });
 });
