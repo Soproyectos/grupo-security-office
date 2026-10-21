@@ -102,6 +102,16 @@ export async function downloadPriceTemplate(
   }
 }
 
+/** Official empty template (sheet PLANTILLA, "(CON IVA)" headers); needs no lista. */
+export async function downloadOfficialPriceTemplate(): Promise<{ blob: Blob; fileName: string }> {
+  const response = await api.get('/prices/import/template/official', { responseType: 'blob' })
+  const headers = (response as { headers?: Record<string, string | undefined> }).headers
+  return {
+    blob: response.data as Blob,
+    fileName: parseTemplateFileName(headers?.['content-disposition'] ?? headers?.['Content-Disposition']),
+  }
+}
+
 /** Guarda el blob como descarga del navegador (sin jsdom: usa document/URL reales en runtime). */
 export function saveTemplateDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)

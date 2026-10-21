@@ -11,6 +11,7 @@ import {
   deleteProviderProfile,
   discardPriceRevision,
   downloadPriceRevisionFile,
+  downloadOfficialPriceTemplate,
   downloadPriceTemplate,
   exportListaPrices,
   getPriceRevision,
@@ -26,6 +27,22 @@ import {
 } from './price-import.service'
 
 vi.mock('./api', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
+
+describe('downloadOfficialPriceTemplate', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('pide la plantilla oficial sin lista y toma el nombre del servidor', async () => {
+    const blob = new Blob([new Uint8Array([0x50, 0x4b])])
+    vi.mocked(api.get).mockResolvedValue({
+      data: blob,
+      headers: { 'content-disposition': 'attachment; filename="plantilla-precios-grupo-security-2026-10-21.xlsx"' },
+    })
+    const result = await downloadOfficialPriceTemplate()
+    expect(api.get).toHaveBeenCalledWith('/prices/import/template/official', { responseType: 'blob' })
+    expect(result.blob).toBe(blob)
+    expect(result.fileName).toBe('plantilla-precios-grupo-security-2026-10-21.xlsx')
+  })
+})
 
 describe('downloadPriceTemplate (IMP-02)', () => {
   beforeEach(() => vi.clearAllMocks())

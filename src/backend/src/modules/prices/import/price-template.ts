@@ -180,3 +180,28 @@ export function buildPriceTemplate(input: BuildPriceTemplateInput): Buffer {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(TEMPLATE_GUIDE), 'INSTRUCCIONES');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
+
+const OFFICIAL_HEADERS: [string, PriceImportTariff][] = Object.entries(TARIFF_HEADERS).map(([header, code]) => [header, code]);
+
+/** Guide of the official template (sheet INSTRUCCIONES); it must describe exactly what the reader accepts. */
+const OFFICIAL_GUIDE: string[][] = [
+  ['Plantilla de precios — Grupo Security'],
+  ['Trabaja en la hoja PLANTILLA. Una fila por referencia (SKU).'],
+  ['REFERENCIA: el código del producto, escrito como texto y sin repetirlo en el archivo. Debe existir ya en el catálogo; si no, la fila se rechaza y puedes omitirla o pedir que se cree en Biblioteca.'],
+  ['Precios: todos con IVA incluido, como número de Excel, sin símbolo de moneda, fórmulas ni texto. Se redondean al peso entero.'],
+  ['Celda vacía: conserva el precio actual de esa tarifa. Deja al menos un precio por fila.'],
+  ['No cambies los títulos de las columnas ni el nombre de la hoja. Borra las filas de ejemplo antes de subir el archivo.'],
+  ['Cada producto conserva su lista; el archivo no mueve productos entre listas. Los cambios de más del 30 % se avisan y hay que confirmarlos.'],
+  ['Sube el archivo en Listas → Importar precios.'],
+];
+
+/**
+ * Official purchasing template: sheet PLANTILLA with readable "(CON IVA)" headers and the guide.
+ * It needs no lista and carries no data; the reader accepts it as is.
+ */
+export function buildOfficialPriceTemplate(): Buffer {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['REFERENCIA *', ...OFFICIAL_HEADERS.map(([header]) => header)]]), 'PLANTILLA');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(OFFICIAL_GUIDE), 'INSTRUCCIONES');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+}
