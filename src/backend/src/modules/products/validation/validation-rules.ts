@@ -191,7 +191,7 @@ export function runValidation(input: ProductValidationInput): ValidationResult {
   const listaOk = !!input.lista && input.lista.isActive && !input.lista.archived && !input.lista.pendingDeletion && !input.lista.expired
   const priceOk = input.prices.some((p) => p.valueOk && !p.expired)
   if (input.expectsPublication) {
-    if (!input.lista || !listaOk) {
+    if (input.lista && !listaOk) {
       issues.push({
         code: 'offer.lista_valid',
         severity: 'error',

@@ -981,13 +981,13 @@ export class ProductsService {
     const failures: string[] = [];
     const now = new Date();
 
-    // (a) Lista destino activa y no archivada.
-    let lista = null;
+    // (a) La biblioteca no depende de Listas: un producto sin Lista puede publicarse.
+    // Si tiene Lista asociada, esa Lista debe estar activa y no archivada.
     if (product.listaId) {
-      lista = await this.prisma.lista.findUnique({ where: { id: product.listaId } });
-    }
-    if (!lista || !lista.isActive || lista.archivedAt) {
-      failures.push('La lista destino no está activa o está archivada');
+      const lista = await this.prisma.lista.findUnique({ where: { id: product.listaId } });
+      if (!lista || !lista.isActive || lista.archivedAt) {
+        failures.push('La lista destino no está activa o está archivada');
+      }
     }
 
     // (c) Al menos 1 precio vigente en la Lista.
