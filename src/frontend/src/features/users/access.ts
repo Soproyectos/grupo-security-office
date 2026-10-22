@@ -43,7 +43,7 @@ export const COMMERCIAL_TABS: readonly CommercialTab[] = Object.freeze([
 ])
 
 export const CATALOG_TABS: readonly CommercialTab[] = Object.freeze([
-  { to: '/commercial/lists', label: 'Listas', end: false, actionId: 'listas:read' },
+  { to: '/commercial/lists', label: 'Listas de precios', end: false, actionId: 'listas:read' },
   { to: '/commercial/products', label: 'Biblioteca de productos', end: false, actionId: 'products:read' },
   { to: '/catalog-management/publication', label: 'Publicación del catálogo', end: false, actionId: 'products:publish' },
 ])

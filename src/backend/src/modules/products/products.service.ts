@@ -455,7 +455,7 @@ export class ProductsService {
     // ctx opcional: los llamadores legacy/tests sin ctx conservan el comportamiento abierto.
     let allowedListaIds: string[] | null = null;
     if (ctx) {
-      allowedListaIds = await this.acl.getAllowedListaIds(ctx.userId, ctx.roles, 'view');
+      allowedListaIds = await this.acl.getAllowedListaIdsForProducts(ctx.userId, ctx.roles);
     }
 
     let products: any[];

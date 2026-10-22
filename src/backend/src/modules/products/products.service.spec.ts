@@ -35,6 +35,7 @@ const mockAcl = {
   isListasAdmin: jest.fn().mockReturnValue(false),
   levelsAtLeast: jest.fn().mockReturnValue(['manage']),
   getAllowedListaIds: jest.fn().mockResolvedValue([]),
+  getAllowedListaIdsForProducts: jest.fn().mockResolvedValue([]),
   getUserLevel: jest.fn().mockResolvedValue(null),
   assertListaAccess: jest.fn().mockResolvedValue(undefined),
   assertProductAccess: jest.fn().mockResolvedValue(undefined),
