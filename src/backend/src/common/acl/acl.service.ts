@@ -130,6 +130,26 @@ export class AclService {
   }
 
   /**
+   * Alcance de Listas para LISTAR productos de la biblioteca. La biblioteca no depende de
+   * Listas: un grant global `products:read` (p. ej. panel «Biblioteca de productos» o
+   * plantilla Vendedor) ve todos los productos, incluidos los que no tienen Lista.
+   * Sin ese grant, rige el alcance por Listas de `getAllowedListaIds('view')`.
+   */
+  async getAllowedListaIdsForProducts(
+    userId: string | undefined,
+    roles: string[],
+  ): Promise<string[] | null> {
+    const scoped = await this.getAllowedListaIds(userId, roles, 'view');
+    if (scoped === null || !userId?.trim()) return scoped;
+    const grants = await this.currentGrants(userId);
+    const context = { userId, roles };
+    const globalRead = grants.some((g) => g.actionId === 'products:read' && g.scope === 'global'
+      && decideCatalogResourceAccessFromGrants(grants, 'products:read', context,
+        { id: '__global_scope_probe__', kind: 'lista', listId: '__global_scope_probe__' }).allowed);
+    return globalRead ? null : scoped;
+  }
+
+  /**
    * Nivel máximo efectivo del usuario sobre una Lista concreta (null si no tiene
    * assignment activo). Considera assignments por usuario y grants por rol.
    */

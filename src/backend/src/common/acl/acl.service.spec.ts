@@ -76,6 +76,17 @@ describe('AclService action and scope authorization', () => {
     await expect(acl.assertListaAction(OTHER_LISTA_ID, USER, 'listas:archive')).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('lists the whole library with a global products:read grant, with no Lista grant', async () => {
+    setGrants([grant('products:read', 'global', null)]);
+    expect(await acl.getAllowedListaIds(USER.userId, USER.roles)).toEqual([]);
+    expect(await acl.getAllowedListaIdsForProducts(USER.userId, USER.roles)).toBeNull();
+  });
+
+  it('keeps the Lista scope for products when products:read is not global', async () => {
+    setGrants([grant('products:read')]);
+    expect(await acl.getAllowedListaIdsForProducts(USER.userId, USER.roles)).toEqual([]);
+  });
+
   it('lets a list grant cover its products, while a product grant stays on one product', async () => {
     setGrants([grant('products:read')]);
     await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
