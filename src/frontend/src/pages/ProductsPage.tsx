@@ -42,7 +42,6 @@ export default function ProductsPage() {
     categoryIds: filterChips.categoryIds,
     brandIds: filterChips.brandIds,
     lifecycleStatuses: filterChips.lifecycleStatuses,
-    activeListaOnly: true,
   }
 
   const { products, categories, brands, total, isLoading } = useProducts({
@@ -53,8 +52,7 @@ export default function ProductsPage() {
 
   const isCatalogManager = hasRole(ROLES.SUPER_ADMIN) || hasRole(ROLES.ADMIN_COMERCIAL)
 
-  // El backend ya filtra por productos de Listas activas (activeListaOnly),
-  // asi total/totalPages quedan consistentes con lo mostrado.
+  // La biblioteca es el catalogo interno completo: no depende de Listas.
   const currentProducts = products ?? []
 
   useEffect(() => {
@@ -289,7 +287,7 @@ export default function ProductsPage() {
                     </p>
                     <p className="text-gray-400 text-sm mt-1">
                       {isCatalogManager
-                        ? 'Crea productos desde una Lista para comenzar.'
+                        ? 'La biblioteca aun no tiene productos.'
                         : 'No tienes listas asignadas. Solicita acceso a tu administrador.'}
                     </p>
                   </div>
