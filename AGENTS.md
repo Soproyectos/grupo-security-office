@@ -32,6 +32,7 @@ Código e identificadores en inglés; comunicación con el coordinador en españ
 - Al guiar al usuario, dar un paso a la vez y esperar su respuesta.
 - Preferir `bat`, `rg`, `fd`, `sd` y `eza`; si no están disponibles, usar las herramientas estándar (`cat`, `grep`, `find`, `sed`, `ls`).
 - No instalar herramientas sin aprobación del usuario.
+- Búsquedas amplias de solo lectura (explorar 4 o más archivos, localizar símbolos o rutas): delegar al agente `Explore` (`.claude/agents/explore.md`, modelo haiku, solo lectura). No usarlo para escribir ni editar código: los cambios los hace el agente normal (sonnet) con los controles de este archivo.
 
 ## Aprobación explícita requerida
 
