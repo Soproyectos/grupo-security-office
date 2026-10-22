@@ -516,9 +516,9 @@ export default function ListasPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-condensed font-bold text-security-800">Listas</h1>
+          <h1 className="text-2xl font-condensed font-bold text-security-800">Listas de precios</h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Gestión de listas comerciales. Lista es la raíz de productos, precios y permisos.
+            Cargas y listas de precios. Los productos viven en la Biblioteca; aquí se actualizan sus precios por SKU.
           </p>
         </div>
         <div className="flex gap-2">
