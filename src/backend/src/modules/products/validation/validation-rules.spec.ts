@@ -98,14 +98,19 @@ describe('runValidation — reglas v1 (cat05-r1)', () => {
     }
   })
 
-  it('oferta publicada: sin lista vigente o sin precio válido → errores CON_PROBLEMAS', () => {
+  it('oferta publicada: sin Lista no es error; sin precio válido sí → CON_PROBLEMAS', () => {
     const r = runValidation(input({ expectsPublication: true, lista: null, prices: [] }))
-    expect(codesOf(r.issues)).toContain('offer.lista_valid')
+    expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
     expect(codesOf(r.issues)).toContain('offer.price_valid')
     expect(r.status).toBe('CON_PROBLEMAS')
     const bad = runValidation(input({ expectsPublication: true, lista: { isActive: false, archived: false, pendingDeletion: false, expired: false }, prices: [{ valueOk: true, expired: true }] }))
     expect(codesOf(bad.issues)).toContain('offer.lista_valid')
     expect(codesOf(bad.issues)).toContain('offer.price_valid')
+  })
+
+  it('oferta OK sin Lista: un precio válido basta para publicar', () => {
+    const r = runValidation(input({ expectsPublication: true, lista: null, prices: [{ valueOk: true, expired: false }] }))
+    expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
   })
 
   it('oferta OK: lista activa y precio vigente → sin errores de oferta', () => {

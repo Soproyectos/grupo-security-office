@@ -249,26 +249,30 @@ export class ProductValidationService {
     }
 
     let lista: ProductValidationInput['lista'] = null
-    let prices: ProductValidationInput['prices'] = []
-    if (product.listaId) {
-      const [l, ps] = await Promise.all([
-        this.prisma.lista.findUnique({ where: { id: product.listaId }, select: { isActive: true, archivedAt: true, deletionStatus: true, validUntil: true } }),
-        this.prisma.price.findMany({ where: { productId, listaId: product.listaId }, select: { value: true, validUntil: true } }),
-      ])
-      if (l) {
-        lista = {
-          isActive: l.isActive,
-          archived: l.archivedAt !== null,
-          pendingDeletion: l.deletionStatus === 'PENDING_DELETION',
-          expired: !!l.validUntil && l.validUntil < new Date(),
-        }
+    // La biblioteca no depende de Listas: los precios se leen por producto (importados
+    // sin Lista llevan listaId null) y la Lista solo se evalua si el producto tiene una.
+    const [l, ps] = await Promise.all([
+      product.listaId
+        ? this.prisma.lista.findUnique({ where: { id: product.listaId }, select: { isActive: true, archivedAt: true, deletionStatus: true, validUntil: true } })
+        : Promise.resolve(null),
+      this.prisma.price.findMany({
+        where: { productId, ...(product.listaId ? { listaId: product.listaId } : {}) },
+        select: { value: true, validUntil: true },
+      }),
+    ])
+    if (l) {
+      lista = {
+        isActive: l.isActive,
+        archived: l.archivedAt !== null,
+        pendingDeletion: l.deletionStatus === 'PENDING_DELETION',
+        expired: !!l.validUntil && l.validUntil < new Date(),
       }
-      const now = new Date()
-      prices = ps.map((p) => {
-        const num = Number(p.value)
-        return { valueOk: Number.isFinite(num) && num > 0, expired: !!p.validUntil && p.validUntil < now }
-      })
     }
+    const now = new Date()
+    const prices: ProductValidationInput['prices'] = ps.map((p) => {
+      const num = Number(p.value)
+      return { valueOk: Number.isFinite(num) && num > 0, expired: !!p.validUntil && p.validUntil < now }
+    })
 
     return {
       productId: product.id,
