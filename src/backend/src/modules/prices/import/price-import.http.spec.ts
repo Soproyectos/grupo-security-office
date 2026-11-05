@@ -104,7 +104,15 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       return products.filter((p) => wanted.has(p.sku.replace(/\s/g, '').toUpperCase())).map((p) => ({ id: p.id, sku: p.sku }));
     }),
     product: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => products.filter((p) => where.id.in.includes(p.id))) },
-    priceList: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => where.code.in.includes('DPP_ORO_IVA') ? [{ id: TARIFF, code: 'DPP_ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }] : []) },
+    priceList: { ...writesForModel(), findMany: jest.fn(async ({ where }: any = {}) => {
+      const tariffs = [
+        { id: TARIFF, code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null },
+        { id: 'fixture-tariff-shop', code: 'TIENDA_IVA', name: 'Tienda (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null },
+      ];
+      if (where?.code?.in) return tariffs.filter((tariff) => where.code.in.includes(tariff.code));
+      if (where?.id?.in) return tariffs.filter((tariff) => where.id.in.includes(tariff.id));
+      return tariffs;
+    }) },
     price: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => stored.filter((p) => where.productId.in.includes(p.productId) && where.priceListId.in.includes(p.priceListId))) },
     $transaction: jest.fn(),
   };
@@ -214,7 +222,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     expect(audit.log).not.toHaveBeenCalled();
   });
 
-  it.each(['prices:preview', 'prices:read', 'listas:read'])('denies missing action/dependency %s in the DB grants despite stale privileged JWT claims', async (missing) => {
+  it.each(['prices:preview', 'prices:read'])('denies missing required action %s in the DB grants despite stale privileged JWT claims', async (missing) => {
     grants = grants.filter((g) => g.actionId !== missing);
     const response = await upload();
     expect(response.status).toBe(403);
@@ -222,6 +230,12 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     const message = String(response.body.message);
     expect(message).toMatch(new RegExp(`Sin permiso (${missing}|prices:preview)`));
     expect(prisma.price.findMany).not.toHaveBeenCalled();
+  });
+
+  it('does not require listas:read for the library preview', async () => {
+    grants = grants.filter((g) => g.actionId !== 'listas:read');
+    const response = await upload().expect(201);
+    expect(response.body.data.summary.validRows).toBe(2);
   });
 
   it('a Lista assignment does not replace the missing prices:read grant: stored prices are never disclosed', async () => {
@@ -325,14 +339,12 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       expect(result.rows[0].prices).toEqual([expect.objectContaining({ code: 'DPP_ORO_IVA', raw: '123456.5', rounded: '123457', previous: '100000', change: 'changed' })]);
     });
 
-    it('expands to the five tariffs when the field is absent; the unconfigured ones come back as TARIFF_UNAVAILABLE', async () => {
+    it('expands to every currently available tariff when the field is absent', async () => {
       const response = await upload({ buffer: singleWorkbook() }).expect(201);
       const result = response.body.data;
-      expect(result.singlePrice.tariffs).toHaveLength(5);
-      const unavailable = result.issues.filter((i: { code: string; row: number | null }) => i.code === 'TARIFF_UNAVAILABLE' && i.row === null)
-        .map((i: { column: string }) => i.column).sort();
-      expect(unavailable).toEqual(['CLIENTE_FINAL_IVA', 'DPP_PLATINO_IVA', 'INSTALADOR_IVA', 'TIENDA_IVA']);
-      expect(result.summary.validRows).toBe(0);
+      expect(result.singlePrice.tariffs).toEqual(['TIENDA_IVA', 'DPP_ORO_IVA']);
+      expect(result.rows[0].prices.map((price: { code: string }) => price.code)).toEqual(['TIENDA_IVA', 'DPP_ORO_IVA']);
+      expect(result.summary).toMatchObject({ validRows: 2, errorRows: 0, prices: 4 });
     });
 
     it('rejects a blank or unknown selection with a Spanish 400 before reading any price', async () => {
@@ -388,7 +400,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       for (const query of ['', '?singlePrice=false']) {
         const response = await download(query).expect(200);
         expect(response.headers['content-disposition']).toMatch(/plantilla-precios-grupo-security-/);
-        expect(header(response.body)).toHaveLength(6);
+        expect(header(response.body)).toHaveLength(3);
       }
     });
 

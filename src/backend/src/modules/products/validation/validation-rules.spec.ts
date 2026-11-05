@@ -110,8 +110,26 @@ describe('runValidation — reglas de publicación', () => {
     expect(r.issues.find((i) => i.code === 'docs.datasheet_missing')?.severity).toBe('warning')
   })
 
+  it('oferta publicada: sin Lista no es error; sin precio válido sí → CON_PROBLEMAS', () => {
+    const r = runValidation(input({ lista: null, prices: [] }))
+    expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
+    expect(codesOf(r.issues)).toContain('offer.price_valid')
+    expect(r.status).toBe('CON_PROBLEMAS')
+  })
+
   it('un precio vigente del producto basta aunque no tenga Lista o su Lista esté inactiva', () => {
     const r = runValidation(input({ lista: { isActive: false, archived: true, pendingDeletion: true, expired: true }, prices: [{ valueOk: true, expired: false }] }))
+    expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
+    expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
+  })
+
+  it('oferta OK sin Lista: un precio válido basta para publicar', () => {
+    const r = runValidation(input({ lista: null, prices: [{ valueOk: true, expired: false }] }))
+    expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
+  })
+
+  it('oferta OK: lista activa y precio vigente → sin errores de oferta', () => {
+    const r = runValidation(input({ lista: { isActive: true, archived: false, pendingDeletion: false, expired: false }, prices: [{ valueOk: true, expired: false }] }))
     expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
     expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
   })

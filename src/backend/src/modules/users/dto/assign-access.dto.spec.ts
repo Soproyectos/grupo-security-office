@@ -30,7 +30,7 @@ const validPayload = () => ({
   grants: [
     { actionId: 'customers:read', scope: 'team' },
     { actionId: 'customers:edit', scope: 'own' },
-    { actionId: 'products:read', scope: 'list', resourceId: 'lista-1' },
+    { actionId: 'listas:read', scope: 'list', resourceId: 'lista-1' },
   ],
 });
 
@@ -80,12 +80,12 @@ describe('AssignAccessDto (BASE-04 §7.3, §8)', () => {
       const payload = validPayload();
       payload.grants[2] = {
         actionId: 'products:read',
-        scope: 'own' as never,
+        scope: 'list' as never,
         resourceId: 'lista-1',
       };
       const messages = await messagesOf(payload);
-      expect(messages.join('\n')).toMatch(/no admite el alcance "own"/);
-      expect(messages.join('\n')).toMatch(/list, product, global/);
+      expect(messages.join('\n')).toMatch(/no admite el alcance "list"/);
+      expect(messages.join('\n')).toMatch(/global/);
     });
 
     it('rechaza un alcance que no existe', async () => {

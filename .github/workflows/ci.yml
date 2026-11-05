@@ -31,7 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Prisma generate
-        run: npx prisma generate
+        run: |
+          npx prisma generate
+          npm run db:generate:library
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_CI }}
       - name: Lint

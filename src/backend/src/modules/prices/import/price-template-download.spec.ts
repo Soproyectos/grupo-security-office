@@ -14,6 +14,9 @@ import { LEGACY_TARIFFS, LEGACY_TARIFF_CODES } from './price-import.test-helpers
 /** Legacy tariffs (code + name) for the given codes, always in canonical order. */
 const pick = (...codes: string[]) => LEGACY_TARIFFS.filter((t) => codes.includes(t.code));
 const readLegacy = (buffer: Buffer) => readPriceTemplate(buffer, LEGACY_TARIFFS);
+const officialTariffRows = () => LEGACY_TARIFFS.map((tariff, index) => ({
+  id: `t${index}`, ...tariff, isActive: true, currency: 'COP', validFrom: null, validUntil: null,
+}));
 
 describe('buildPriceTemplate — generador de plantilla (IMP-02 §3)', () => {
   it('genera PRECIOS+INSTRUCCIONES exactas con las tarifas seleccionadas en orden', () => {
@@ -50,9 +53,9 @@ describe('buildPriceTemplate — generador de plantilla (IMP-02 §3)', () => {
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets.PRECIOS) as Record<string, unknown>[];
     expect(rows.length).toBe(2);
-    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 });
+    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', 'DPP Oro (con IVA)': 100000 });
     expect(rows[1].REFERENCIA).toBe('SKU-B');
-    expect(rows[1].DPP_ORO_IVA).toBeUndefined();
+    expect(rows[1]['DPP Oro (con IVA)']).toBeUndefined();
   });
 
   it('el XLSX generado lo acepta readPriceTemplate sin modificación de hojas (acceptance backend 1)', () => {
@@ -84,7 +87,7 @@ function buildService(grantsRows: Array<{ sourceId: string; actionId: string; sc
     lista: { findUnique: jest.fn(), findMany: jest.fn() },
     product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1', sku: 'SKU-A' }, { id: 'p2', sku: 'SKU-B' }]) },
     price: { findMany: jest.fn().mockResolvedValue([{ productId: 'p1', priceListId: 't1', value: '100000', currency: 'COP' }]) },
-    priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'DPP_ORO_IVA', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
+    priceList: { findMany: jest.fn().mockResolvedValue([{ id: 't1', code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
   };
   const acl: any = { assertListaAccess: jest.fn(), isListasAdmin: jest.fn().mockReturnValue(true) };
   const audit: any = { log: jest.fn().mockResolvedValue({}) };
@@ -124,7 +127,7 @@ describe('PriceImportService.downloadTemplate — permisos globales y validació
     const where = prisma.product.findMany.mock.calls[0][0].where;
     expect(where ?? {}).not.toHaveProperty('listaId');
     const rows = xlsxRows(result.buffer);
-    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 });
+    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', 'DPP Oro (con IVA)': 100000 });
     expect(rows[1].REFERENCIA).toBe('SKU-B');
     expect(prisma.lista.findUnique).not.toHaveBeenCalled();
     expect(acl.assertListaAccess).not.toHaveBeenCalled();
@@ -193,10 +196,10 @@ describe('PriceImportService.exportPrices — permisos globales (IMP-07 §3)', (
   it('incluye solo la tarifa pedida y los precios vigentes (caso 3)', async () => {
     const { service } = buildService(readGrant);
     const rows = xlsxRows((await service.exportPrices(['DPP_ORO_IVA'], ctx)).buffer);
-    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', DPP_ORO_IVA: 100000 });
+    expect(rows[0]).toMatchObject({ REFERENCIA: 'SKU-A', 'DPP Oro (con IVA)': 100000 });
     expect(rows[1]).toMatchObject({ REFERENCIA: 'SKU-B' });
-    expect(rows[1].DPP_ORO_IVA).toBeUndefined();
-    expect(Object.keys(rows[0])).toEqual(['REFERENCIA', 'DPP_ORO_IVA']);
+    expect(rows[1]['DPP Oro (con IVA)']).toBeUndefined();
+    expect(Object.keys(rows[0])).toEqual(['REFERENCIA', 'DPP Oro (con IVA)']);
   });
 
   it('tarifa desconocida → 400 (no se inventan tarifas)', async () => {
@@ -219,8 +222,8 @@ describe('buildOfficialPriceTemplate — plantilla oficial sin lista', () => {
     const wb = XLSX.read(buildOfficialPriceTemplate(LEGACY_TARIFFS), { type: 'buffer' });
     expect(wb.SheetNames).toEqual(['PLANTILLA', 'INSTRUCCIONES']);
     expect(XLSX.utils.sheet_to_json<string[]>(wb.Sheets.PLANTILLA, { header: 1 })[0]).toEqual([
-      'REFERENCIA *', 'PRECIO INSTALADOR (CON IVA)', 'PRECIO TIENDA (CON IVA)', 'PRECIO DPP ORO (CON IVA)',
-      'PRECIO DPP PLATINO (CON IVA)', 'PRECIO CLIENTE FINAL (CON IVA)',
+      'REFERENCIA *', 'Instalador (con IVA)', 'Tienda (con IVA)', 'DPP Oro (con IVA)',
+      'DPP Platino (con IVA)', 'Cliente Final (con IVA)',
     ]);
     expect(XLSX.utils.sheet_to_json<string[]>(wb.Sheets.INSTRUCCIONES, { header: 1 }).length).toBeGreaterThan(3);
   });
@@ -278,7 +281,7 @@ describe('buildSinglePriceTemplate — plantilla de precio único sin lista', ()
 describe('PriceImportService.downloadOfficialTemplate', () => {
   it('exige prices:preview y no necesita lista', async () => {
     const audit = { log: jest.fn().mockResolvedValue({}) };
-    const service = new PriceImportService({} as any, { isListasAdmin: jest.fn().mockReturnValue(true) } as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
+    const service = new PriceImportService({ priceList: { findMany: jest.fn().mockResolvedValue(officialTariffRows()) } } as any, { isListasAdmin: jest.fn().mockReturnValue(true) } as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
     const { buffer, fileName } = await service.downloadOfficialTemplate({ userId: 'u-1', roles: ['Super Admin'] });
     expect(buffer.length).toBeGreaterThan(0);
     expect(fileName).toMatch(/^plantilla-precios-grupo-security-\d{4}-\d{2}-\d{2}\.xlsx$/);
@@ -287,7 +290,7 @@ describe('PriceImportService.downloadOfficialTemplate', () => {
 
   it('la variante de precio único usa su propio nombre y modo en la auditoría, con el mismo permiso', async () => {
     const audit = { log: jest.fn().mockResolvedValue({}) };
-    const service = new PriceImportService({} as any, { isListasAdmin: jest.fn().mockReturnValue(true) } as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
+    const service = new PriceImportService({ priceList: { findMany: jest.fn().mockResolvedValue(officialTariffRows()) } } as any, { isListasAdmin: jest.fn().mockReturnValue(true) } as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
     const { buffer, fileName } = await service.downloadOfficialTemplate({ userId: 'u-1', roles: ['Super Admin'] }, { singlePrice: true });
     expect(fileName).toMatch(/^plantilla-precio-unico-grupo-security-\d{4}-\d{2}-\d{2}\.xlsx$/);
     expect(XLSX.utils.sheet_to_json<string[]>(XLSX.read(buffer, { type: 'buffer' }).Sheets.PLANTILLA, { header: 1 })[0]).toEqual(['REFERENCIA *', 'PRECIO UNICO (CON IVA)']);
@@ -301,7 +304,7 @@ describe('PriceImportService.downloadOfficialTemplate', () => {
 
   it('con prices:preview global lo descarga un cargo que antes estaba rechazado (Vendedor); con cero concesiones, ninguno', async () => {
     const audit = { log: jest.fn().mockResolvedValue({}) };
-    const withGrant = new PriceImportService({} as any, {} as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([{ sourceId: 's-1', actionId: 'prices:preview', scope: 'global' }, { sourceId: 's-2', actionId: 'prices:read', scope: 'global' }, { sourceId: 's-3', actionId: 'listas:read', scope: 'global' }]) } as any);
+    const withGrant = new PriceImportService({ priceList: { findMany: jest.fn().mockResolvedValue(officialTariffRows()) } } as any, {} as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([{ sourceId: 's-1', actionId: 'prices:preview', scope: 'global' }, { sourceId: 's-2', actionId: 'prices:read', scope: 'global' }, { sourceId: 's-3', actionId: 'listas:read', scope: 'global' }]) } as any);
     await expect(withGrant.downloadOfficialTemplate({ userId: 'u-9', roles: ['Vendedor'] })).resolves.toMatchObject({ fileName: expect.stringMatching(/^plantilla-precios-grupo-security-/) });
     const none = new PriceImportService({} as any, {} as any, audit as any, { grantsForUser: jest.fn().mockResolvedValue([]) } as any);
     for (const role of ['Admin Comercial', 'Supervisor', 'Vendedor']) {

@@ -8,6 +8,7 @@ Registra decisiones de arquitectura adoptadas en este proyecto. Sigue el formato
 |---|---|
 | `ADR-001-import-hybrid-architecture.md` | ADR-001: Arquitectura híbrida de importación de productos. |
 | `ADR-002-biblioteca-vitrina.md` | ADR-002: Separar la identidad del producto del precio en la biblioteca de vitrina. |
+| `ADR-20261022-biblioteca-postgresql-dedicado.md` | Biblioteca en un PostgreSQL dedicado, separado del dominio operativo (propuesta; índice en `docs/biblioteca-dominio/README.md`). |
 
 ## Convenio
 

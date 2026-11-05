@@ -30,7 +30,7 @@ const baseSeed = (): PriceImportFakeSeed => ({
     { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
     { id: 'product-free', sku: 'SKU-FREE', listaId: null },
   ],
-  tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
+  tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)' }],
   prices: [
     { productId: 'product-a', priceListId: 'tariff-oro', value: 90 },
     { productId: 'product-b', priceListId: 'tariff-oro', value: 876543 },
@@ -175,12 +175,10 @@ describe('Read-only price preview over mixed listas (R1)', () => {
   });
 
   it.each([
-    [[]],
-    [[{ id: 'wrong-tariff', code: 'ORO_IVA' }]],
     [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', isActive: false }]],
     [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', currency: 'USD' }]],
     [[{ id: 'tariff-oro', code: 'DPP_ORO_IVA', validUntil: new Date('2000-01-01') }]],
-  ])('requires an exact active COP tariff without silently creating or aliasing it: %#', async (tariffs) => {
+  ])('rejects an inactive, non-COP, or expired tariff without silently creating or aliasing it: %#', async (tariffs) => {
     const seed = baseSeed();
     seed.tariffs = tariffs as any;
     const { service, prisma } = build(seed);
@@ -189,6 +187,14 @@ describe('Read-only price preview over mixed listas (R1)', () => {
     expect(result.rows[0].prices[0].previous).toBeNull();
     expect(result.summary.validRows).toBe(0);
     expect(prisma.priceList.create).toBeUndefined();
+  });
+
+  it.each([[[]], [[{ id: 'wrong-tariff', code: 'ORO_IVA' }]]])('does not recognize an absent or aliased tariff: %#', async (tariffs) => {
+    const seed = baseSeed();
+    seed.tariffs = tariffs as any;
+    const { service, prisma } = build(seed);
+    await expect(service.preview(file(), ctx)).rejects.toThrow(/no es una tarifa de la plantilla/);
+    expect(prisma.price.create).not.toHaveBeenCalled();
   });
 
   it.each([{ listaId: LISTA_B, currency: 'COP' }, { listaId: LISTA_A, currency: 'USD' }])('does not reveal a saved price with inconsistent list/currency: %p', async (stored) => {
@@ -329,8 +335,10 @@ describe('Existing price rules keep holding through the preview (regression)', (
     expect(result.summary.prices).toBe(0);
   });
 
-  it('keeps the current price when a tariff cell is blank (no price entry for that tariff)', async () => {
-    const { service } = build();
+  it('keeps the current price when a configured tariff cell is blank (no price entry for that tariff)', async () => {
+    const seed = baseSeed();
+    seed.tariffs!.push({ id: 'tariff-tienda', code: 'TIENDA_IVA', name: 'Tienda (con IVA)' });
+    const { service } = build(seed);
     const result = await service.preview(file([['SKU-A', 100, null]], ['REFERENCIA', 'DPP_ORO_IVA', 'TIENDA_IVA']), ctx);
     expect(result.rows[0].prices.map((p) => p.code)).toEqual(['DPP_ORO_IVA']);
   });
@@ -357,17 +365,15 @@ describe('Single-price files (supplier without tariff tiers)', () => {
   const rawHash = (f: Express.Multer.File) => createHash('sha256').update(f.buffer).digest('hex');
   const previewHash = (audit: { log: jest.Mock }) => audit.log.mock.calls[0][0].entityId as string;
 
-  it('expands the price to the five tariffs by default; the unconfigured ones reach TARIFF_UNAVAILABLE', async () => {
-    const { service } = build();
+  it('expands the price to every currently available tariff by default', async () => {
+    const seed = baseSeed();
+    seed.tariffs!.push({ id: 'tariff-tienda', code: 'TIENDA_IVA', name: 'Tienda (con IVA)' });
+    const { service } = build(seed);
     const result = await service.preview(singleFile(), ctx);
-    expect(result.singlePrice).toEqual({ tariffs: LEGACY_TARIFF_CODES });
-    expect(result.rows[0].prices.map((p) => p.code)).toEqual(LEGACY_TARIFF_CODES);
-    const unavailable = result.issues.filter((i) => i.code === 'TARIFF_UNAVAILABLE');
-    const missing = ['CLIENTE_FINAL_IVA', 'DPP_PLATINO_IVA', 'INSTALADOR_IVA', 'TIENDA_IVA'];
-    expect(unavailable.filter((i) => i.row === null).map((i) => i.column).sort()).toEqual(missing);
-    expect(unavailable.filter((i) => i.row === 2).map((i) => i.column).sort()).toEqual(missing);
-    expect(result.rows[0].status).toBe('error');
-    expect(result.summary).toMatchObject({ rows: 1, validRows: 0, errorRows: 1 });
+    expect(result.singlePrice).toEqual({ tariffs: ['TIENDA_IVA', 'DPP_ORO_IVA'] });
+    expect(result.rows[0].prices.map((p) => p.code)).toEqual(['TIENDA_IVA', 'DPP_ORO_IVA']);
+    expect(result.rows[0].status).toBe('valid');
+    expect(result.summary).toMatchObject({ rows: 1, validRows: 1, errorRows: 0 });
   });
 
   it('compares the expanded row with the stored price of the selected tariff', async () => {
@@ -411,11 +417,14 @@ describe('Single-price files (supplier without tariff tiers)', () => {
     await expect(service.preview(singleFile(), ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('keeps the preview permissions and refuses an empty selection before reading any tariff or price', async () => {
+  it('rejects an empty selection without reading prices and checks authorization before tariff reads', async () => {
     const { service, grants, prisma } = build();
     await expect(service.preview(singleFile(), ctx, { singlePriceTariffs: [] })).rejects.toThrow(/Elige al menos un escalafón/);
-    expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+    expect(prisma.priceList.findMany).toHaveBeenCalled();
+    expect(prisma.price.create).not.toHaveBeenCalled();
+    expect(prisma.price.update).not.toHaveBeenCalled();
     grants.revoke('prices:preview');
+    prisma.priceList.findMany.mockClear();
     await expect(service.preview(singleFile(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.priceList.findMany).not.toHaveBeenCalled();
   });
@@ -436,14 +445,16 @@ describe('Single-price files (supplier without tariff tiers)', () => {
 
   it('gives the same single-price bytes a different file hash for each selection (order does not matter)', async () => {
     const f = singleFile();
+    const seed = baseSeed();
+    seed.tariffs!.push({ id: 'tariff-tienda', code: 'TIENDA_IVA', name: 'Tienda (con IVA)' });
     const hashes = new Set<string>();
     for (const selection of [undefined, ['DPP_ORO_IVA'], ['TIENDA_IVA', 'DPP_ORO_IVA'], ['DPP_ORO_IVA', 'TIENDA_IVA']] as const) {
-      const { service, audit } = build();
+      const { service, audit } = build(seed);
       await service.preview(f, ctx, selection ? { singlePriceTariffs: selection } : {});
       hashes.add(previewHash(audit));
     }
-    // default (all five), DPP_ORO_IVA alone, and the DPP_ORO_IVA + TIENDA_IVA pair written in either order
-    expect(hashes.size).toBe(3);
+    // The default selects both configured tariffs; the one-tariff selection has a distinct hash.
+    expect(hashes.size).toBe(2);
     expect(hashes.has(rawHash(f))).toBe(false);
   });
 

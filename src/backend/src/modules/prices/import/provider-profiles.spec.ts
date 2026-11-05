@@ -41,6 +41,7 @@ function build(grantsRows: string[]) {
       create: jest.fn().mockResolvedValue({}),
     },
     product: { findMany: jest.fn().mockResolvedValue([{ id: '11111111-1111-4111-8111-111111111111' }]) },
+    priceList: { findMany: jest.fn().mockResolvedValue([{ id: 'tariff-oro', code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null }]) },
     // El servicio usa transacciones interactivas (callback); la forma de arreglo se conserva por compatibilidad.
     $transaction: jest.fn(async (arg: ((tx: unknown) => Promise<unknown>) | Promise<unknown>[]) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
   };

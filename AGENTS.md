@@ -9,7 +9,7 @@ Plataforma Comercial Grupo Security: panel administrativo interno + catálogo co
 | Frontend | React + TypeScript + Vite + Tailwind CSS (PWA, mobile-first) |
 | Backend | NestJS + TypeScript |
 | Database | PostgreSQL 18 (única fuente de verdad) |
-| ORM | Prisma 5.x (migraciones versionadas) |
+| ORM | Prisma 6.x (migraciones versionadas; 6.19.3 según `package-lock.json`) |
 | Auth | JWT + bcrypt + RBAC (Super Admin, Supervisor, Admin Comercial, Operador, Consulta) |
 | Data Fetching / Estado | TanStack Query / Zustand |
 | API docs / Testing | Swagger (OpenAPI) / Jest-Vitest + Playwright |
@@ -48,6 +48,14 @@ La aprobación de un cambio documental no autoriza ninguna de estas operaciones.
 ## Flujo de trabajo
 
 **Gentle-AI es la capa de flujo/memoria/review** (ODD/SDD/RDD, Engram, skills, CodeGraph, personas) para Claude Code, Kilo Code y OpenCode. **No hay orquestación automática**: las sesiones son dirigidas por el humano, una tarea a la vez. Contexto de la migración: `docs/MIGRACION-GENTLE-AI.md`.
+
+## Diseño y funcionalidad web (obligatorio)
+
+Antes de editar `src/frontend/`, leer y seguir `.claude/skills/gs-disenador-web/SKILL.md`. Antes de editar `src/backend/` o `prisma/`, leer y seguir `.claude/skills/gs-funcionalidad-web/SKILL.md`. Si un diseño necesita backend, se coordinan con un reporte de traspaso en `docs/handoffs/`.
+
+## Biblioteca dedicada (arquitectura objetivo, solo diseño)
+
+Hoy hay una sola base PostgreSQL. La arquitectura objetivo, **todavía no implementada ni aprobada para implementar**, es un PostgreSQL dedicado a biblioteca (productos, fichas, proveedores, listas, tarifas, precios, importaciones, revisiones e historial) separado del dominio operativo, conservando la web y NestJS. Antes de tocar catálogo, precios, importación, archivos o respaldos, leer [`docs/biblioteca-dominio/README.md`](docs/biblioteca-dominio/README.md) (índice y estado) y seguir [`docs/biblioteca-dominio/INSTRUCCIONES-AGENTES.md`](docs/biblioteca-dominio/INSTRUCCIONES-AGENTES.md). Una autoridad por dato, sin doble escritura, sin convertir decisiones pendientes en hechos. Las migraciones históricas no se editan ni se borran. El parche SQL de `GET /api/products` es un pendiente de seguridad independiente.
 
 ## Importación masiva de productos
 

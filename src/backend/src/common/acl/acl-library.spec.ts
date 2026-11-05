@@ -8,9 +8,9 @@ describe('AclService separated catalog reads', () => {
   let operational: any;
   let catalog: any;
   let acl: AclService;
-  const grant = (actionId: string) => ({ sourceId: actionId, actionId, scopeKind: 'list', resourceId: 'library-list' });
+  const grant = (actionId: string, scopeKind: 'list' | 'product' | 'global' = 'global', resourceId: string | null = null) => ({ sourceId: actionId, actionId, scopeKind, resourceId });
   beforeEach(() => {
-    operational = { accessGrant: { findMany: jest.fn().mockResolvedValue([grant('products:read'), grant('products:write'), grant('listas:read')]) }, assignment: { findMany: jest.fn().mockResolvedValue([]) },
+    operational = { accessGrant: { findMany: jest.fn().mockResolvedValue([grant('products:read'), grant('products:write'), grant('prices:read'), grant('listas:read', 'list', 'library-list')]) }, assignment: { findMany: jest.fn().mockResolvedValue([]) },
       product: { findUnique: jest.fn(() => { throw new Error('operational catalog must not be used'); }) }, lista: { findUnique: jest.fn(() => { throw new Error('operational catalog must not be used'); }) }, price: { findUnique: jest.fn(() => { throw new Error('operational catalog must not be used'); }) } };
     catalog = { product: { findUnique: jest.fn().mockResolvedValue({ listaId: 'library-list' }) }, lista: { findUnique: jest.fn().mockResolvedValue({ isActive: true, archivedAt: null }) }, price: { findUnique: jest.fn().mockResolvedValue({ product: { listaId: 'library-list' } }) } };
     acl = new AclService(operational as PrismaService, { client: catalog } as BibliotecaPrismaService);
@@ -31,6 +31,12 @@ describe('AclService separated catalog reads', () => {
   it('explicit operational restriction prevails over valid library product and grants', async () => {
     operational.assignment.findMany.mockResolvedValue([{ isActive: false, level: 'view' }]);
     await expect(acl.assertProductAccess('p', ctx)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+  it('rejects list- and product-scoped grants for Biblioteca resources', async () => {
+    operational.accessGrant.findMany.mockResolvedValue([grant('products:read', 'list', 'library-list')]);
+    await expect(acl.assertProductAccess('p', ctx)).rejects.toBeInstanceOf(NotFoundException);
+    operational.accessGrant.findMany.mockResolvedValue([grant('products:read', 'product', 'p')]);
+    await expect(acl.assertProductAccess('p', ctx)).rejects.toBeInstanceOf(NotFoundException);
   });
   it('rechecks revocation for each request', async () => {
     await expect(acl.assertProductAccess('p', ctx)).resolves.toBeDefined();

@@ -76,11 +76,13 @@ describe('AclService action and scope authorization', () => {
     await expect(acl.assertListaAction(OTHER_LISTA_ID, USER, 'listas:archive')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('lets a list grant cover its products, while a product grant stays on one product', async () => {
+  it('requires global scope for Biblioteca products and rejects list/product grants', async () => {
+    setGrants([grant('products:read', 'global', null)]);
+    await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
     setGrants([grant('products:read')]);
-    await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
+    await expect(acl.assertProductAccess('product-1', USER)).rejects.toBeInstanceOf(NotFoundException);
     setGrants([grant('products:read', 'product', 'product-1')]);
-    await expect(acl.assertProductAccess('product-1', USER)).resolves.toEqual({ listaId: LISTA_ID });
+    await expect(acl.assertProductAccess('product-1', USER)).rejects.toBeInstanceOf(NotFoundException);
     await expect(acl.assertProductAccess('product-2', USER)).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -92,10 +94,10 @@ describe('AclService action and scope authorization', () => {
   });
 
   it('requires dependencies at the same resource scope', async () => {
-    setGrants([grant('products:write'), grant('products:read', 'list', OTHER_LISTA_ID)]);
+    setGrants([grant('products:write', 'global', null), grant('products:read', 'list', OTHER_LISTA_ID)]);
     await expect(acl.assertListaAction(LISTA_ID, USER, 'products:write')).rejects.toBeInstanceOf(NotFoundException);
 
-    setGrants([grant('products:write'), grant('products:read')]);
+    setGrants([grant('products:write', 'global', null), grant('products:read', 'global', null)]);
     await expect(acl.assertListaAction(LISTA_ID, USER, 'products:write')).resolves.toBeUndefined();
   });
 

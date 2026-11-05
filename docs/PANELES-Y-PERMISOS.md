@@ -1,5 +1,20 @@
 # Cómo se asignará el trabajo en la administración
 
+<!-- biblioteca-vigente-20261103 -->
+**Biblioteca ya tiene una pantalla de asignación en `/users/access`.** El Super Admin usa **Guardar Biblioteca** para las pestañas y **Guardar acciones individuales** para las estadísticas en Mi resumen. Consulta la [guía vigente de Biblioteca](biblioteca-dominio/mapa-de-permisos-biblioteca.md#guía-vigente-del-panel-biblioteca). El acuerdo original de producto se conserva a continuación.
+
+<!-- marketing-vigente-20261104 -->
+**Marketing y mercadeo también es un panel asignable (4 de noviembre de 2026).** Se delega en `/users/access` (**Asignar paneles**), en el bloque «Marketing y mercadeo», con tres paquetes que se pueden combinar:
+
+| Paquete | Qué permite |
+|---|---|
+| Ver banners y pop-ups | Entrar al panel y ver los banners y pop-ups con su estado. |
+| Preparar banners y pop-ups | Ver, crear, editar y eliminar borradores. No publica. |
+| Publicar y retirar banners | Ver, publicar y retirar de la tienda. No crea ni edita. |
+
+El panel aparece en el menú, y su ruta `/marketing/banners` se abre, solo si la persona tiene al menos uno de esos paquetes asignados; una acción suelta no basta (igual que las pestañas de Biblioteca). El servidor comprueba cada acción por separado. Ningún paquete se asigna automáticamente. Guía de uso: [Marketing y banners](MARKETING-BANNERS.md). Para quien programa: acciones `marketing:read|create|edit|publish|delete` (alcance global), paquetes `marketing-consulta`, `marketing-edicion` y `marketing-publicacion`, versión del catálogo `panels-20261104-1`.
+
+
 Cada integrante tendrá las herramientas y acciones que el Super Admin le asigne en **Usuarios → Paneles**. Dos personas con el mismo rol podrán hacer trabajos diferentes. Esta regla se aplica a toda la administración interna.
 
 **Estado:** acuerdo de producto del 8 de octubre de 2026. Describe el comportamiento que queremos; todavía no certifica que esté implementado. El inventario, las decisiones técnicas y la migración deben prepararse antes de cambiar el software.

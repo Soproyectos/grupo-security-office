@@ -59,7 +59,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
         { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
         { id: 'product-free', sku: 'SKU-FREE', listaId: null },
       ],
-      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)' }],
       prices: [
         { productId: 'product-a', priceListId: 'tariff-oro', value: 90 },
         { productId: 'product-b', priceListId: 'tariff-oro', value: 500 },
@@ -155,8 +155,6 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
   });
 
   describe('precio único', () => {
-    const FIVE = ['INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA'];
-
     it('guarda el archivo expandido a la selección y la anota en el resumen, sin tocar Price', async () => {
       const header = await service.saveRevision(singleFile([['SKU-A', 100.5]]), 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
       expect(header.summary.singlePrice).toEqual({ tariffs: ['DPP_ORO_IVA'] });
@@ -177,6 +175,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     });
 
     it('el mismo archivo con otra selección nunca devuelve la revisión anterior', async () => {
+      fake.state.tariffs.push({ id: 'tariff-tienda', code: 'TIENDA_IVA', name: 'Tienda (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null });
       const single = singleFile();
       const first = await service.saveRevision(single, 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
       // Misma clave y misma selección: idempotente.
@@ -192,13 +191,21 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       expect(fake.state.revisionPrices.filter((p) => p.revisionId === second.id).map((p) => p.tariffCode)).toEqual(['TIENDA_IVA', 'DPP_ORO_IVA']);
     });
 
-    it('guarda las filas expandidas con los mismos controles: tarifas sin configurar quedan como error TARIFF_UNAVAILABLE', async () => {
+    it('guarda las filas de precio único con todas las tarifas configuradas', async () => {
       const header = await service.saveRevision(singleFile(), 'key-single-05', ctx);
-      expect(header.tariffs.map((t) => t.code)).toEqual(FIVE);
-      expect(header.summary).toMatchObject({ validRows: 0, errorRows: 1, singlePrice: { tariffs: FIVE } });
-      expect(fake.state.revisionRows[0]).toMatchObject({ sku: 'SKU-A', status: 'error' });
-      expect(fake.state.revisionRows[0].issues.filter((i: { code: string }) => i.code === 'TARIFF_UNAVAILABLE')).toHaveLength(4);
-      expect(fake.state.revisionPrices).toHaveLength(5);
+      expect(header.tariffs.map((t) => t.code)).toEqual(['DPP_ORO_IVA']);
+      expect(header.summary).toMatchObject({ validRows: 1, errorRows: 0, singlePrice: { tariffs: ['DPP_ORO_IVA'] } });
+      expect(fake.state.revisionRows[0]).toMatchObject({ sku: 'SKU-A', status: 'valid' });
+      expect(fake.state.revisionPrices).toHaveLength(1);
+    });
+
+    it('guarda el error de una tarifa inactiva sin aplicar precios', async () => {
+      fake.state.tariffs[0].isActive = false;
+      const header = await service.saveRevision(file(), 'key-inactive-01', ctx);
+      expect(header.summary).toMatchObject({ validRows: 0, errorRows: 1 });
+      expect(fake.state.revisionRows[0].issues).toContainEqual(expect.objectContaining({ code: 'TARIFF_UNAVAILABLE', column: 'DPP_ORO_IVA' }));
+      expect(fake.prisma.price.create).not.toHaveBeenCalled();
+      expect(fake.prisma.price.update).not.toHaveBeenCalled();
     });
 
     it('rechaza una selección vacía o desconocida sin crear revisión', async () => {

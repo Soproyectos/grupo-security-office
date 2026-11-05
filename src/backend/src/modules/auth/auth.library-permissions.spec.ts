@@ -37,12 +37,17 @@ describe('Perfil de sesión: Biblioteca solo por concesiones globales vigentes',
     expect((await service.getProfile(user.id)).permissions).not.toContain('products:write');
   });
 
-  it('Publicación no concede edición ni notas', async () => {
+  it('Publicación sin edición no es efectiva; al conceder read + write + publish no da notas', async () => {
     prisma.accessGrant.findMany.mockResolvedValue(['products:read', 'products:publish'].map(grant));
     const profile = await service.getProfile(user.id);
-    expect(profile.permissions).toContain('products:publish');
+    expect(profile.permissions).not.toContain('products:publish');
     expect(profile.permissions).not.toContain('products:write');
     expect(profile.permissions).not.toContain('products:notes');
+
+    prisma.accessGrant.findMany.mockResolvedValue(['products:read', 'products:write', 'products:publish'].map(grant));
+    const withEdit = await service.getProfile(user.id);
+    expect(withEdit.permissions).toEqual(expect.arrayContaining(['products:read', 'products:write', 'products:publish']));
+    expect(withEdit.permissions).not.toContain('products:notes');
   });
 
   it('una acción sin su dependencia de consulta no habilita botones de Biblioteca', async () => {
