@@ -198,6 +198,7 @@ SET LOCAL statement_timeout = '60s';
 SET LOCAL lock_timeout = '10s';
 ALTER DATABASE "grupo_security" WITH ALLOW_CONNECTIONS false;
 ALTER DATABASE "gs_empty_20261105_release" WITH ALLOW_CONNECTIONS false;
+SELECT pg_stat_clear_snapshot();
 DO $cutover_guard$
 BEGIN
   IF EXISTS (

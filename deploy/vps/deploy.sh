@@ -156,7 +156,7 @@ cd "$DEPLOY_DIR" || die "cannot enter deploy directory $DEPLOY_DIR"
 # identity backups. The import job runs with the host deploy uid/gid, so files
 # remain manageable without making this directory world-writable.
 mkdir -p "$DEPLOY_DIR/data/imports"
-chmod 2770 "$DEPLOY_DIR/data/imports"
+[[ $(stat -c %a "$DEPLOY_DIR/data/imports") == 2770 ]] || chmod 2770 "$DEPLOY_DIR/data/imports"
 
 # Single run at a time. The lock is held on the directory itself, so it needs
 # only read access (no lock file that another user could own).

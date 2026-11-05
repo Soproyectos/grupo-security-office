@@ -1,6 +1,16 @@
 # Catálogo vacío en VPS: propuesta de cambio reversible
 
-Estado: preparación local; ejecución productiva pendiente de aprobación explícita. Fecha: 2026-11-05. Rama: `release/web-20261105`. Continúa el [diagnóstico del despliegue](2026-11-05-despliegue-bloqueado-categorias.md); no reinicia la release.
+Estado: autorizado por el usuario y ejecutado; versión `96670843` saludable en VPS, cierre de GitHub pendiente al registrar este punto. Fecha: 2026-11-05. Rama: `release/web-20261105`. Continúa el [diagnóstico del despliegue](2026-11-05-despliegue-bloqueado-categorias.md); no reinicia la release.
+
+## Resultado productivo
+
+El usuario confirmó guardar/publicar y ejecutar el plan. El 05/11 a las 15:23 de Bogotá quedaron API/frontend saludables con `96670843`: SQL confirmó nueve categorías, 66 subcategorías, un usuario Super Admin activo, seis roles, cero productos y precios. La comparación de autenticación antes del corte fue exacta, con ambos clientes en READ ONLY. Salud y tienda HTTP 200; API pública devolvió `data.products=[]`, `data.total=0`; menú público `data.data` contiene nueve raíces (no representa la tabla separada de subcategorías).
+
+La base anterior `gs_archive_20261105_preempty` conserva 43.529.919 bytes y `datallowconn=false`; la activa mantiene el nombre `grupo_security`. Respaldos finales fuera de rotación: `20261105T202155Z-source-final.dump` (12.676.888 bytes, SHA-256 `e15a59eb1eeab86304b8583cb9f307c9ccc4e17b51b3ddf2da7739d85e634c22`) y `20261105T202159Z-candidate-before-rename.dump` (210.348 bytes, SHA-256 `3249401b0f9158749af332d478bab90665bb4cb6da95adb46d6cc849c10736d0`), directorio `/var/backups/grupo-security/empty-catalog-20261105`.
+
+Dos intentos de renombrado abortaron y restauraron la API anterior. Se identificó y cerró exclusivamente una sesión psql inactiva desde el 21/10 sin transacción; luego se refrescó la instantánea de estadísticas antes de la guarda. La candidata ya cargada no se vació ni volvió a escribir: un proceso auxiliar reutilizó las funciones de comparación y verificó la autenticación exacta en transacciones READ ONLY. El tercer intento confirmó ambos renombres en una transacción. Durante el primer arranque se omitió un chmod redundante sobre el directorio ya 2770, propiedad del usuario de CD. El primer despliegue usó una copia auditada de deploy.sh con rollback solo de imágenes desactivado, reservando la recuperación completa. No se restauró ni borró ninguna base y no se cambiaron credenciales.
+
+El procedimiento `cutover` es de una sola ejecución: no volver a lanzarlo contra una candidata ya cargada ni contra la disposición archivada. Los pasos siguientes conservan el plan y sus condiciones de autorización como registro; la autorización ya fue recibida y ejecutada.
 
 ## Objetivo confirmado
 
