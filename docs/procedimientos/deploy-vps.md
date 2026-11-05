@@ -10,7 +10,7 @@ push a main ──► CI ──(verde)──► CD (GitHub Actions)
                                   └─ SSH (usuario deploy) ──► VPS /opt/grupo-security
                                         1. copia docker-compose.prod.yml y deploy/vps
                                         2. deploy/vps/deploy.sh <sha8>
-                                              pull ► dump previo ► prisma migrate deploy ► up ► espera de salud ► rollback si falla
+                                              pull ► dump previo ► prisma migrate deploy ► up ► espera de salud ► rollback con comprobación si falla
                                   └─ smoke test contra vars.DEPLOY_URL
 ```
 
@@ -80,8 +80,9 @@ push a main ──► CI ──(verde)──► CD (GitHub Actions)
    3. aplica `prisma migrate deploy` con la imagen nueva;
    4. recrea `api` y `frontend` y espera hasta 180 s a que ambos estén `healthy`;
    5. si todo va bien, guarda el tag en `/opt/grupo-security/.deployed-tag`.
-4. Si falla la salud, el script repone el tag anterior, avisa de que **las migraciones no se revierten**, muestra la ruta del dump previo y termina con error (el job queda en rojo).
-5. CD ejecuta `scripts/smoke-test.sh` contra `DEPLOY_URL`.
+4. Si falla la salud y hay un tag anterior, el script primero detiene el API candidato y consulta la base con `psql` de solo lectura para detectar productos con `brandId` o `categoryId` nulos. Solo el resultado exacto `f` permite iniciar las imágenes anteriores; después espera su salud. Si falla la orden de parada, el estado del API queda incierto; si la consulta falla, devuelve `t` o cualquier salida inesperada, el API candidato permanece detenido. En ambos casos no inicia la imagen anterior y requiere intervención manual o una corrección hacia adelante. Sin tag anterior, no intenta ese rollback.
+5. En cualquiera de esos fallos, el script conserva el dump previo y termina con error (el job queda en rojo). **No restaura la base ni revierte las migraciones automáticamente.** El chequeo es conservador y no prueba compatibilidad general entre versiones: un bloqueo requiere decidir manualmente cómo recuperar el servicio; no se deben inventar datos ni borrar filas para habilitar el rollback.
+6. CD ejecuta `scripts/smoke-test.sh` contra `DEPLOY_URL`.
 
 Las migraciones se aplican antes de recrear los contenedores, así que el código anterior corre unos segundos contra el esquema nuevo: las migraciones deben ser compatibles hacia atrás (agregar primero, eliminar en un despliegue posterior).
 
@@ -100,6 +101,8 @@ La carga de los 5.038 SKU es un proceso manual separado del CD para que desplega
 Los detalles del contrato, el lote y la aceptación están en [importacion-masiva-biblioteca-vitrina.md](importacion-masiva-biblioteca-vitrina.md).
 
 ## Rollback
+
+El rollback automático de imágenes está condicionado por el chequeo anterior porque versiones previas del API pueden requerir marca y categoría. La comprobación solo descarta las filas conocidas con esos campos nulos; no demuestra que cualquier esquema futuro sea compatible. Si falla o no es concluyente, mantener la base intacta y elegir una recuperación revisada (por ejemplo, una corrección hacia adelante). No iniciar manualmente una imagen anterior hasta confirmar que puede leer el estado actual. La restauración de un dump y el retroceso de esquema son operaciones manuales separadas, con interrupción y alcance de base completa; no son parte del rollback de imágenes.
 
 - **Desde GitHub (recomendado):** Actions ► CD ► Run workflow, con `tag` = el `<sha8>` anterior (`git rev-parse --short=8 <commit>`). No se construye nada; solo se despliega esa etiqueta ya publicada.
 - **Desde el VPS:** `/opt/grupo-security/deploy/vps/deploy.sh <tag-anterior>`. El tag desplegado ahora figura en `cat /opt/grupo-security/.deployed-tag`.

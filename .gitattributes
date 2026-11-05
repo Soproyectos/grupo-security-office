@@ -1,0 +1,6 @@
+# Keep the deploy executable and its local regression harness runnable in Bash on Windows.
+deploy/vps/deploy.sh text eol=lf
+deploy/vps/prepare-empty-release.sh text eol=lf
+deploy/vps/tests/*.sh text eol=lf
+# The preparation runner verifies this manifest by its exact SHA-256 bytes.
+src/backend/prisma/seed-data/library-taxonomy-9-66.json text eol=lf

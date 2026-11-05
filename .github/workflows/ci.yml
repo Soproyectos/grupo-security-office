@@ -42,6 +42,8 @@ jobs:
         run: npx tsc --noEmit
       - name: Build
         run: npm run build
+      - name: Test empty catalog preparation without database connections
+        run: node --test prisma/prepare-empty-catalog.test.cjs ../../scripts/extract-library-taxonomy.test.cjs
 
   frontend:
     name: Frontend (lint + typecheck + build)
@@ -63,3 +65,16 @@ jobs:
         run: npm run lint
       - name: Typecheck + Build
         run: npm run build
+
+  deploy-rollback:
+    name: VPS deploy rollback guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deploy scripts syntax
+        run: |
+          bash -n deploy/vps/deploy.sh
+          bash -n deploy/vps/prepare-empty-release.sh
+          bash -n deploy/vps/tests/deploy-rollback.test.sh
+      - name: Test deploy rollback guard with command doubles
+        run: bash deploy/vps/tests/deploy-rollback.test.sh
