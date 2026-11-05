@@ -1,8 +1,10 @@
 # Catálogo vacío en VPS: propuesta de cambio reversible
 
-Estado: autorizado por el usuario y ejecutado; versión `96670843` saludable en VPS, cierre de GitHub pendiente al registrar este punto. Fecha: 2026-11-05. Rama: `release/web-20261105`. Continúa el [diagnóstico del despliegue](2026-11-05-despliegue-bloqueado-categorias.md); no reinicia la release.
+Estado: completado con autorización del usuario; versión definitiva `586bf19d` saludable en VPS. PR #91 fusionado, CI `42103777933` y CD `42104034786` correctos. Fecha: 2026-11-05. Rama: `release/web-20261105`. Continúa el [diagnóstico del despliegue](2026-11-05-despliegue-bloqueado-categorias.md); no reinicia la release.
 
 ## Resultado productivo
+
+Cierre definitivo: ambos contenedores y `.deployed-tag` confirmados en `586bf19d` después del CD oficial. Conteos revalidados: 9 categorías, 66 subcategorías, 1 usuario, 6 roles, 88 permisos de rol, 0 productos, 0 precios, 1 MFA habilitado, 10 códigos de respaldo, 0 migraciones fallidas. Archivo anterior bloqueado, activa accesible. Salud y tienda 200, catálogo público total cero y menú con nueve raíces. La contraseña y el MFA no se modificaron; las sesiones anteriores no se transfirieron. No se probó una sesión visual autenticada del usuario.
 
 El usuario confirmó guardar/publicar y ejecutar el plan. El 05/11 a las 15:23 de Bogotá quedaron API/frontend saludables con `96670843`: SQL confirmó nueve categorías, 66 subcategorías, un usuario Super Admin activo, seis roles, cero productos y precios. La comparación de autenticación antes del corte fue exacta, con ambos clientes en READ ONLY. Salud y tienda HTTP 200; API pública devolvió `data.products=[]`, `data.total=0`; menú público `data.data` contiene nueve raíces (no representa la tabla separada de subcategorías).
 
