@@ -74,6 +74,7 @@ jobs:
       - name: Check deploy scripts syntax
         run: |
           bash -n deploy/vps/deploy.sh
+          bash -n deploy/vps/prepare-empty-release.sh
           bash -n deploy/vps/tests/deploy-rollback.test.sh
       - name: Test deploy rollback guard with command doubles
         run: bash deploy/vps/tests/deploy-rollback.test.sh
