@@ -18,6 +18,13 @@ import { createPrismaMock } from '../../__test__/mocks/prisma.mock';
 const VENDEDOR = { userId: 'v-1', roles: ['Operador'] };
 const SUPER = { userId: 'admin-1', roles: ['Super Admin'] };
 
+// The personal dashboard endpoints now require explicit grants (strict model).
+const DEFAULT_GRANTS = [
+  { sourceId: 'd1', actionId: 'quotes:read', scope: 'global' },
+  { sourceId: 'd2', actionId: 'targets:read', scope: 'global' },
+  { sourceId: 'd3', actionId: 'teamInsights:read', scope: 'global' },
+];
+
 const INVOICE_SOURCE = 'invoice-reference-manual';
 const INVOICE_SOURCE_STATUS = 'erp-not-connected';
 
@@ -47,7 +54,7 @@ describe('COM-05 backend — fuente visible y alcance de equipo', () => {
       getSubordinateIds: jest.fn().mockResolvedValue([]),
       assertCanViewUser: jest.fn().mockResolvedValue(undefined),
     };
-    grants = { grantsForUser: jest.fn().mockResolvedValue([]) };
+    grants = { grantsForUser: jest.fn().mockResolvedValue(DEFAULT_GRANTS) };
     service = new DashboardService(prisma as any, acl, hierarchy as any, grants as any);
 
     jest.spyOn(acl, 'getAllowedListaIds').mockResolvedValue(['lista-1']);
@@ -149,6 +156,7 @@ describe('COM-05 backend — fuente visible y alcance de equipo', () => {
       hierarchy.getSubordinateIds.mockResolvedValue(['com-1', 'com-2']);
       grants.grantsForUser.mockResolvedValue([
         { sourceId: 's1', actionId: 'customers:read', scope: 'own' },
+        { sourceId: 's2', actionId: 'quotes:read', scope: 'own' },
       ]);
       const res = await service.getMyWorkspace(VENDEDOR);
       expect(res.team).toBeUndefined();
@@ -165,15 +173,16 @@ describe('COM-05 backend — fuente visible y alcance de equipo', () => {
       prisma.user.findMany.mockResolvedValue([{ id: 'com-1', name: 'Com 1' }]);
       const res = await service.getMyWorkspace(VENDEDOR);
       expect(res.team).toBeDefined();
+      // Only teamInsights:read: no quotes:read, so no commercial block.
+      expect(res.commercial).toBeUndefined();
       expect(res.team!.members.map((m) => m.userId)).toEqual(['com-1']);
     });
 
-    it('legado SIN grants: conserva el bloque por capa rol+jerarquía (transición D5)', async () => {
+    it('SIN grants: /dashboard/me responde 403 (el modelo estricto ya no reactiva el rol)', async () => {
       hierarchy.getSubordinateIds.mockResolvedValue(['com-1']);
       grants.grantsForUser.mockResolvedValue([]);
-      prisma.user.findMany.mockResolvedValue([{ id: 'com-1', name: 'Com 1' }]);
-      const res = await service.getMyWorkspace(VENDEDOR);
-      expect(res.team).toBeDefined();
+      await expect(service.getMyWorkspace(VENDEDOR)).rejects.toThrow(ForbiddenException);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
 
     it('members SOLO contiene subordinateIds: un usuario ajeno jamás entra', async () => {

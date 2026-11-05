@@ -21,14 +21,21 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AclService } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
+import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
+import { ProductRevisionsService } from './product-revisions.service';
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
 
 const mockFiles = {
   store: jest.fn().mockResolvedValue({ id: 'file-1', url: '/api/files/file-1' }),
+  release: jest.fn().mockResolvedValue({ deleted: false }),
   get: jest.fn(),
   deleteByUrl: jest.fn().mockResolvedValue(undefined),
 };
+
+const mockGrants = { grantsForUser: jest.fn() };
+const mockRevisions = { markPendingFromLive: jest.fn().mockResolvedValue(undefined) };
+const grantRows = (...ids: string[]) => ids.map((actionId) => ({ sourceId: `s-${actionId}`, actionId, scope: 'global' }));
 
 const mockAcl = {
   isSuperAdmin: jest.fn().mockReturnValue(false),
@@ -74,6 +81,7 @@ describe('ProductsService', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockGrants.grantsForUser.mockResolvedValue([]);
     mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
     mockPrisma.productChange.createMany.mockResolvedValue({ count: 0 });
 
@@ -90,6 +98,8 @@ describe('ProductsService', () => {
         { provide: AclService, useValue: mockAcl },
         { provide: AuditService, useValue: mockAudit },
         { provide: FilesService, useValue: mockFiles },
+        { provide: AccessAssignmentsService, useValue: mockGrants },
+        { provide: ProductRevisionsService, useValue: mockRevisions },
       ]}).compile();
 
     service = module.get<ProductsService>(ProductsService);
@@ -117,6 +127,57 @@ describe('ProductsService', () => {
         expect.objectContaining({
           where: expect.objectContaining({ categoryId: 'cat-1', brandId: 'brand-1' })}),
       );
+    });
+
+    it('categoryIds incluye productos asignados a la subcategoría al seleccionar la raíz', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([{ id: 'cat-1' }]);
+      mockPrisma.product.findMany.mockResolvedValue([mockProductWithRelations]);
+      mockPrisma.product.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ categoryIds: ['root-a'] });
+
+      expect(result.data.map((product) => product.categoryId)).toEqual(['cat-1']);
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-a', 'cat-1'] } }),
+      }));
+      expect(mockPrisma.product.count).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-a', 'cat-1'] } }),
+      }));
+    });
+
+    it('una raíz distinta no incluye productos de una hoja ajena', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([]);
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      const result = await service.findAll({ categoryIds: ['root-b'] });
+
+      expect(result.data).toHaveLength(0);
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-b'] } }),
+      }));
+      expect(mockPrisma.product.count).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-b'] } }),
+      }));
+    });
+
+    it('une categorías seleccionadas en OR y deduplica una hoja repetida por su padre', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([{ id: 'cat-1' }, { id: 'cat-1' }]);
+      mockPrisma.product.findMany.mockResolvedValue([mockProductWithRelations]);
+      mockPrisma.product.count.mockResolvedValue(1);
+
+      await service.findAll({ categoryIds: ['root-a', 'cat-1', 'root-a'] });
+
+      expect(mockPrisma.category.findMany).toHaveBeenCalledWith({
+        where: { parentId: { in: ['root-a', 'cat-1'] } },
+        select: { id: true },
+      });
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-a', 'cat-1'] } }),
+      }));
+      expect(mockPrisma.product.count).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ categoryId: { in: ['root-a', 'cat-1'] } }),
+      }));
     });
   });
 
@@ -198,11 +259,10 @@ describe('ProductsService', () => {
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
     });
 
-    it('debe persistir extraAttributes y precios inline', async () => {
+    it('debe persistir extraAttributes y nunca escribe precios (prices[] se rechaza aparte)', async () => {
       mockPrisma.product.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
       mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
-      mockPrisma.priceList.findMany.mockResolvedValue([{ id: 'pl-1' }]);
       mockPrisma.product.create.mockResolvedValue(mockProductWithRelations);
       mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
 
@@ -211,29 +271,21 @@ describe('ProductsService', () => {
         name: 'Cámara IP',
         categoryId: 'cat-1',
         brandId: 'brand-1',
-        extraAttributes: { garantia: '1 año', ip: '127.0.0.1' },
-        prices: [{ priceListId: 'pl-1', value: 1500000, currency: 'COP' }]};
+        extraAttributes: { garantia: '1 año', ip: '127.0.0.1' }};
 
       await service.create(dto as any);
 
       // extraAttributes legacy se migra a array de SpecFieldDto
       expect(mockPrisma.product.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ 
+          data: expect.objectContaining({
             extraAttributes: expect.arrayContaining([
               expect.objectContaining({ key: 'garantia', type: 'TEXT', value: '1 año' }),
               expect.objectContaining({ key: 'ip', type: 'TEXT', value: '127.0.0.1' }),
-            ]) 
+            ])
           })}),
       );
-      expect(mockPrisma.priceList.findMany).toHaveBeenCalledWith({
-        where: { id: { in: ['pl-1'] } },
-        select: { id: true }});
-      expect(mockPrisma.price.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { productId_priceListId: { productId: 'prod-1', priceListId: 'pl-1' } },
-          create: expect.objectContaining({ priceListId: 'pl-1', value: 1500000, currency: 'COP' })}),
-      );
+      expect(mockPrisma.price.upsert).not.toHaveBeenCalled();
     });
 
     it('debe persistir documents al crear un producto', async () => {
@@ -259,20 +311,18 @@ describe('ProductsService', () => {
       );
     });
 
-    it('debe rechazar precios con lista de precios inexistente', async () => {
-      mockPrisma.product.findUnique.mockResolvedValueOnce(null);
-      mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
-      mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
-      mockPrisma.priceList.findMany.mockResolvedValue([]);
-
+    it('rechaza prices[] al crear (400) sin escribir nada', async () => {
       const dto = {
         sku: 'CAM-004',
         name: 'Cámara',
         categoryId: 'cat-1',
         brandId: 'brand-1',
-        prices: [{ priceListId: 'pl-inexistente', value: 1000 }]};
+        prices: [{ priceListId: 'pl-1', value: 1000 }]};
 
-      await expect(service.create(dto as any)).rejects.toThrow(NotFoundException);
+      await expect(service.create(dto as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create(dto as any)).rejects.toThrow('Los precios solo se cambian por carga masiva o desde la ficha del producto.');
+      expect(mockPrisma.product.create).not.toHaveBeenCalled();
+      expect(mockPrisma.price.upsert).not.toHaveBeenCalled();
     });
 
     it('debe asociar el listaId enviado al crear un producto', async () => {
@@ -451,19 +501,17 @@ describe('ProductsService', () => {
       expect(mockPrisma.product.update).toHaveBeenCalled();
     });
 
-    it('debe actualizar extraAttributes y hacer upsert de precios', async () => {
+    it('debe actualizar extraAttributes y nunca escribe precios', async () => {
       mockPrisma.product.findUnique.mockResolvedValueOnce(mockProduct);
       mockPrisma.product.findUnique.mockResolvedValueOnce(null);
       mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
       mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
-      mockPrisma.priceList.findMany.mockResolvedValue([{ id: 'pl-1' }]);
       mockPrisma.product.update.mockResolvedValue({ ...mockProductWithRelations, name: 'Cámara IP Pro' });
       mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
 
       const dto = {
         name: 'Cámara IP Pro',
-        extraAttributes: { garantia: '2 años' },
-        prices: [{ priceListId: 'pl-1', value: 2000000 }]};
+        extraAttributes: { garantia: '2 años' }};
 
       const result = await service.update('prod-1', dto as any);
 
@@ -471,16 +519,21 @@ describe('ProductsService', () => {
       // extraAttributes legacy se migra a array de SpecFieldDto
       expect(mockPrisma.product.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ 
+          data: expect.objectContaining({
             extraAttributes: expect.arrayContaining([
               expect.objectContaining({ key: 'garantia', type: 'TEXT', value: '2 años' }),
-            ]) 
+            ])
           })}),
       );
-      expect(mockPrisma.price.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { productId_priceListId: { productId: 'prod-1', priceListId: 'pl-1' } }}),
-      );
+      expect(mockPrisma.price.upsert).not.toHaveBeenCalled();
+    });
+
+    it('rechaza prices[] al actualizar (400) sin escribir nada', async () => {
+      await expect(
+        service.update('prod-1', { name: 'X', prices: [{ priceListId: 'pl-1', value: 2000000 }] } as any),
+      ).rejects.toThrow('Los precios solo se cambian por carga masiva o desde la ficha del producto.');
+      expect(mockPrisma.product.update).not.toHaveBeenCalled();
+      expect(mockPrisma.price.upsert).not.toHaveBeenCalled();
     });
 
     it('debe persistir documents al actualizar un producto', async () => {
@@ -625,7 +678,7 @@ describe('ProductsService', () => {
       expect(mockPrisma.product.delete).not.toHaveBeenCalled();
     });
 
-    it('403 si el rol no tiene products:write', async () => {
+    it('403 sin la concesion products:delete (el cargo no concede)', async () => {
       noData();
       mockPrisma.product.findUnique.mockResolvedValue(mockProduct);
       const ctx = { userId: 'u1', roles: ['Operador'] };
@@ -634,15 +687,15 @@ describe('ProductsService', () => {
       expect(mockPrisma.product.delete).not.toHaveBeenCalled();
     });
 
-    it('403 si el ACL no permite nivel manage sobre el producto', async () => {
+    it('no consulta el ACL de la Lista: Super Admin borra aunque el ACL de Lista denegara', async () => {
       noData();
       mockPrisma.product.findUnique.mockResolvedValue({ ...mockProduct, listaId: 'lista-1' });
       mockAcl.assertProductAccess.mockRejectedValue(new ForbiddenException('ACL denegado'));
       const ctx = { userId: 'u1', roles: ['Super Admin'] };
 
-      await expect(service.remove('prod-1', { confirm: true }, ctx)).rejects.toThrow(ForbiddenException);
-      expect(mockAcl.assertProductAccess).toHaveBeenCalledWith('prod-1', ctx, 'manage');
-      expect(mockPrisma.product.delete).not.toHaveBeenCalled();
+      await expect(service.remove('prod-1', { confirm: true }, ctx)).resolves.toBeDefined();
+      expect(mockAcl.assertProductAccess).not.toHaveBeenCalled();
+      expect(mockPrisma.product.delete).toHaveBeenCalled();
     });
 
     it('409 si hay datos asociados y falta masterKey â†’ borrado exitoso (master key no implementado)', async () => {
@@ -688,7 +741,8 @@ describe('ProductsService', () => {
       mockPrisma.productImage.deleteMany.mockResolvedValue({ count: 0 });
       mockPrisma.product.delete.mockResolvedValue(mockProduct);
 
-      const ctx = { userId: 'u1', roles: ['Admin Comercial'] };
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read', 'products:delete'));
+      const ctx = { userId: 'u1', roles: ['Vendedor'] };
       const result = await service.remove('prod-1', { confirm: true}, ctx);
 
       expect(result.message).toBe('Producto eliminado exitosamente');
@@ -773,18 +827,30 @@ describe('ProductsService', () => {
 
     it('rechaza publicación con 400 listando TODOS los requisitos incumplidos', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(readyProduct({ isActive: false }));
-      // Lista archivada y sin precios ni imágenes: fallan (a),(c),(d). El estado no
-      // se bloquea por isActive: la FSM ya validó que el producto es DRAFT publicable.
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: new Date() });
+      // Sin precios ni imágenes: fallan (c),(d). El estado no se bloquea por isActive: la FSM ya
+      // validó que el producto es DRAFT publicable. Ninguna regla consulta Listas.
       mockPrisma.price.count.mockResolvedValue(0);
       mockPrisma.productImage.count.mockResolvedValue(0);
       mockPrisma.stock.findUnique.mockResolvedValue(null);
 
       await expect(service.publish('p1', {})).rejects.toThrow(BadRequestException);
-      await expect(service.publish('p1', {})).rejects.toThrow(
-        /lista destino|precio vigente|imagen/,
-      );
+      await expect(service.publish('p1', {})).rejects.toThrow(/precio vigente.*imagen/);
+      expect(mockPrisma.lista.findUnique).not.toHaveBeenCalled();
       expect(mockPrisma.product.update).not.toHaveBeenCalled();
+    });
+
+    it('no bloquea la publicación por una Lista archivada o inactiva (las Listas ya no existen)', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue(readyProduct());
+      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: false, archivedAt: new Date() });
+      mockPrisma.price.count.mockResolvedValue(1);
+      mockPrisma.productImage.count.mockResolvedValue(1);
+      mockPrisma.stock.findUnique.mockResolvedValue(null);
+      mockPrisma.product.update.mockResolvedValue(readyProduct({ publishStatus: 'publicado' }));
+
+      const result = await service.publish('p1', {});
+
+      expect(result.publishStatus).toBe('publicado');
+      expect(mockPrisma.lista.findUnique).not.toHaveBeenCalled();
     });
 
     it('rechaza publicar un producto ya publicado con 409', async () => {
@@ -845,24 +911,8 @@ describe('ProductsService', () => {
       );
     });
 
-    it('publica con precio importado (listaId null) usando el fallback global de precio vigente', async () => {
+    it('publica con un precio vigente del producto (importado con listaId null) en una sola consulta, sin filtrar por Lista', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(readyProduct());
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: null });
-      // Sin precio con el listaId de la lista â†’ fallback sin filtro â†’ 1 vigente.
-      mockPrisma.price.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
-      mockPrisma.productImage.count.mockResolvedValue(1);
-      mockPrisma.stock.findUnique.mockResolvedValue(null);
-      mockPrisma.product.update.mockResolvedValue(readyProduct({ publishStatus: 'publicado' }));
-
-      const result = await service.publish('p1', {});
-
-      expect(result.publishStatus).toBe('publicado');
-      expect(mockPrisma.price.count).toHaveBeenCalledTimes(2);
-    });
-
-    it('publica con precio explícito en la lista (listaId) sin fallback', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue(readyProduct());
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: null });
       mockPrisma.price.count.mockResolvedValueOnce(1);
       mockPrisma.productImage.count.mockResolvedValue(1);
       mockPrisma.stock.findUnique.mockResolvedValue(null);
@@ -872,11 +922,15 @@ describe('ProductsService', () => {
 
       expect(result.publishStatus).toBe('publicado');
       expect(mockPrisma.price.count).toHaveBeenCalledTimes(1);
+      const priceWhere = mockPrisma.price.count.mock.calls[0][0].where;
+      expect(priceWhere).toMatchObject({ productId: 'p1' });
+      expect(priceWhere).not.toHaveProperty('listaId');
+      expect(priceWhere.AND[0].OR[1].validFrom.lte).toBeInstanceOf(Date);
+      expect(priceWhere.AND[1].OR[1].validUntil.gt).toEqual(priceWhere.AND[0].OR[1].validFrom.lte);
     });
 
-    it('sigue bloqueando (400) cuando no hay precio vigente ni con listaId ni global', async () => {
+    it('sigue bloqueando (400) cuando el producto no tiene ningún precio vigente', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(readyProduct());
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: null });
       mockPrisma.price.count.mockResolvedValue(0);
       mockPrisma.productImage.count.mockResolvedValue(1);
       mockPrisma.stock.findUnique.mockResolvedValue(null);
@@ -1068,7 +1122,7 @@ describe('ProductsService', () => {
       expect(call.include.images).not.toHaveProperty('where');
     });
 
-    it('findAll (fuzzy search): attaches the product image by product id, primary first, with fallback', async () => {
+    it('findAll search: attaches image and prices by product id', async () => {
       mockPrisma.$queryRawUnsafe
         .mockResolvedValueOnce([{ count: BigInt(2) }])
         .mockResolvedValueOnce([
@@ -1085,7 +1139,9 @@ describe('ProductsService', () => {
         { productId: 'p-b', url: '/api/files/b2', isPrimary: false, sortOrder: 0 },
         { productId: 'p-b', url: '/api/files/b1', isPrimary: true, sortOrder: 5 },
       ]);
-      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.price.findMany.mockResolvedValue([
+        { id: 'price-a', productId: 'p-a', value: 123, priceList: { id: 'pl-a', name: 'Lista A', code: 'A' } },
+      ]);
       mockPrisma.stock.findMany.mockResolvedValue([]);
       mockPrisma.assignment.findMany.mockResolvedValue([]);
 
@@ -1097,6 +1153,8 @@ describe('ProductsService', () => {
       // Category and brand are looked up by their own ids, not by product ids.
       expect(byId['p-a'].category).toEqual({ id: 'cat-1', name: 'CCTV', slug: 'cctv' });
       expect(byId['p-a'].brand?.name).toBe('Hikvision');
+      expect(byId['p-a'].prices.map((price: any) => price.id)).toEqual(['price-a']);
+      expect(byId['p-b'].prices).toEqual([]);
       expect(mockPrisma.category.findMany.mock.calls[0][0].where).toEqual({ id: { in: ['cat-1'] } });
       expect(mockPrisma.productImage.findMany.mock.calls[0][0].where).toEqual({
         productId: { in: ['p-a', 'p-b'] },
@@ -1169,6 +1227,223 @@ describe('ProductsService', () => {
 
       const [countSql] = mockPrisma.$queryRawUnsafe.mock.calls[0];
       expect(countSql).not.toContain('FROM "listas" l');
+    });
+
+    describe('fuzzy search con filtros (parámetros enlazados, sin inyección SQL)', () => {
+      const injected = "x' OR '1'='1";
+      const validCategory = '3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b';
+      const validBrand = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+      beforeEach(() => {
+        mockPrisma.$queryRawUnsafe
+          .mockResolvedValueOnce([{ count: BigInt(0) }])
+          .mockResolvedValueOnce([]);
+        mockPrisma.category.findMany.mockResolvedValue([]);
+        mockPrisma.brand.findMany.mockResolvedValue([]);
+        mockPrisma.productImage.findMany.mockResolvedValue([]);
+        mockPrisma.price.findMany.mockResolvedValue([]);
+      });
+
+      const calls = () => {
+        const [countSql, ...countArgs] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+        const [selectSql, ...selectArgs] = mockPrisma.$queryRawUnsafe.mock.calls[1];
+        return { countSql, countArgs, selectSql, selectArgs };
+      };
+
+      it('búsqueda de más de dos caracteres sin filtros: solo término, LIMIT y OFFSET enlazados', async () => {
+        await service.findAll({ search: 'camara', take: 10, skip: 20 });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countArgs).toEqual(['camara']);
+        expect(selectArgs).toEqual(['camara', 10, 20]);
+        expect(countSql).not.toContain('"categoryId"');
+        expect(selectSql).toContain('LIMIT $2 OFFSET $3');
+      });
+
+      it.each(['%', '_'])('búsqueda literal de símbolo %s, incluso con un carácter', async (term) => {
+        await service.findAll({ search: term, take: 10, skip: 0 });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countArgs).toEqual([term]);
+        expect(selectArgs).toEqual([term, 10, 0]);
+        expect(countSql).toContain('POSITION(LOWER($1) IN LOWER(COALESCE(p."name", \'\'))) > 0');
+        expect(selectSql).toContain('POSITION(LOWER($1) IN LOWER(COALESCE(p."catalogName", \'\'))) > 0');
+        expect(countSql).toContain('POSITION(NULLIF(regexp_replace(upper($1)');
+        expect(selectSql).toContain('POSITION(NULLIF(regexp_replace(upper($1)');
+        expect(countSql).not.toContain('LIKE');
+        expect(countSql).toContain('OR POSITION(LOWER($1) IN LOWER(COALESCE(p."description", \'\'))) > 0');
+        expect(selectSql).toContain('OR POSITION(LOWER($1) IN LOWER(COALESCE(p."description", \'\'))) > 0');
+        const getSearchClause = (sql: string) => sql.match(/AND \(\n        POSITION\(LOWER\(\$1\)[\s\S]+?\n      \)/)?.[0];
+        expect(getSearchClause(selectSql)).toBe(getSearchClause(countSql));
+        expect(selectSql).not.toContain('similarity(');
+      });
+
+      it('normaliza SKU ignorando separadores y conserva el término como parámetro', async () => {
+        const term = 'IDS-E04HQHI-D';
+        await service.findAll({ search: term, take: 5, skip: 0 });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countArgs).toEqual([term]);
+        expect(selectArgs).toEqual([term, 5, 0]);
+        expect(countSql).toContain("regexp_replace(upper(COALESCE(p.\"sku\", '')), '[^A-Z0-9]', '', 'g')");
+        expect(selectSql).toContain("regexp_replace(upper(COALESCE(p.\"sku\", '')), '[^A-Z0-9]', '', 'g')");
+        expect(countSql).not.toContain(term);
+        expect(selectSql).not.toContain(term);
+      });
+
+      it('reintenta sin pg_trgm solo ante similarity ausente y memoriza el fallback', async () => {
+        const term = 'IDSE04HQHID';
+        const pgTrgmError = {
+          code: 'P2010',
+          meta: { code: '42883', message: 'function similarity(text,text) does not exist' },
+        };
+        const warn = jest.spyOn((service as any).logger, 'warn');
+        mockPrisma.$queryRawUnsafe.mockReset()
+          .mockRejectedValueOnce(pgTrgmError)
+          .mockResolvedValueOnce([{ count: BigInt(1) }])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ count: BigInt(1) }])
+          .mockResolvedValueOnce([]);
+
+        await service.findAll({
+          search: term, categoryId: validCategory, brandId: validBrand,
+          isVisible: true, isActive: false, take: 5, skip: 10,
+        });
+        await service.findAll({ search: 'ANOTHER-LONG-QUERY', take: 3, skip: 2 });
+
+        const calls = mockPrisma.$queryRawUnsafe.mock.calls;
+        expect(calls).toHaveLength(5);
+        expect(calls[0][0]).toContain('similarity(');
+        for (const [sql] of calls.slice(1)) {
+          expect(sql).not.toContain('similarity(');
+          expect(sql).toContain("regexp_replace(upper(COALESCE(p.\"sku\", '')), '[^A-Z0-9]', '', 'g')");
+        }
+        expect(calls[1][0]).toContain('p."categoryId" = $2');
+        expect(calls[1][0]).toContain('p."brandId" = $3');
+        expect(calls[1][0]).toContain('p."isVisible" = $4::boolean');
+        expect(calls[1][0]).toContain('p."isActive" = $5::boolean');
+        expect(calls[1].slice(1)).toEqual([term, validCategory, validBrand, true, false]);
+        expect(calls[2][0]).toContain('LIMIT $6 OFFSET $7');
+        expect(calls[2].slice(1)).toEqual([term, validCategory, validBrand, true, false, 5, 10]);
+        expect(calls[3].slice(1)).toEqual(['ANOTHER-LONG-QUERY']);
+        expect(calls[4][0]).toContain('LIMIT $2 OFFSET $3');
+        expect(calls[4].slice(1)).toEqual(['ANOTHER-LONG-QUERY', 3, 2]);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(term));
+        warn.mockRestore();
+      });
+
+      it.each([
+        ['another missing PostgreSQL function', { code: 'P2010', meta: { code: '42883', message: 'function other(text,text) does not exist' } }],
+        ['another database error', { code: 'P2024', meta: { code: '42883', message: 'function similarity(text,text) does not exist' } }],
+      ])('propaga %s without retrying', async (_label, error) => {
+        mockPrisma.$queryRawUnsafe.mockReset().mockRejectedValueOnce(error);
+
+        await expect(service.findAll({ search: 'long query' })).rejects.toBe(error);
+
+        expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.$queryRawUnsafe.mock.calls[0][0]).toContain('similarity(');
+      });
+
+      it('categoryId válido solo: se enlaza como $2 (COUNT) y LIMIT/OFFSET pasan a $3/$4 (SELECT)', async () => {
+        await service.findAll({ search: 'camara', take: 10, skip: 0, categoryId: validCategory });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countSql).toContain('"categoryId" = $2');
+        expect(countSql).not.toContain(validCategory);
+        expect(countArgs).toEqual(['camara', validCategory]);
+        expect(selectSql).toContain('"categoryId" = $2');
+        expect(selectSql).toContain('LIMIT $3 OFFSET $4');
+        expect(selectArgs).toEqual(['camara', validCategory, 10, 0]);
+      });
+
+      it('categoryIds agrega los hijos con parámetros seguros en COUNT y SELECT antes de paginar', async () => {
+        mockPrisma.category.findMany.mockResolvedValue([{ id: 'leaf-a' }]);
+        mockPrisma.$queryRawUnsafe
+          .mockResolvedValueOnce([{ count: BigInt(1) }])
+          .mockResolvedValueOnce([mockProductWithRelations]);
+        mockPrisma.brand.findMany.mockResolvedValue([]);
+        mockPrisma.productImage.findMany.mockResolvedValue([]);
+        mockPrisma.price.findMany.mockResolvedValue([]);
+
+        await service.findAll({ search: 'camara', categoryIds: ['root-a'], take: 10, skip: 20 });
+
+        const [[countSql, ...countArgs], [selectSql, ...selectArgs]] = mockPrisma.$queryRawUnsafe.mock.calls;
+        expect(countSql).toContain('p."categoryId" IN ($2, $3)');
+        expect(selectSql).toContain('p."categoryId" IN ($2, $3)');
+        expect(countArgs).toEqual(['camara', 'root-a', 'leaf-a']);
+        expect(selectArgs).toEqual(['camara', 'root-a', 'leaf-a', 10, 20]);
+        expect(countSql.match(/p\."categoryId" IN \(\$2, \$3\)/)?.[0]).toBe(
+          selectSql.match(/p\."categoryId" IN \(\$2, \$3\)/)?.[0],
+        );
+      });
+
+      it('brandId válido solo: se enlaza como parámetro', async () => {
+        await service.findAll({ search: 'camara', take: 10, skip: 0, brandId: validBrand });
+        const { countSql, countArgs, selectArgs } = calls();
+
+        expect(countSql).toContain('"brandId" = $2');
+        expect(countSql).not.toContain(validBrand);
+        expect(countArgs).toEqual(['camara', validBrand]);
+        expect(selectArgs).toEqual(['camara', validBrand, 10, 0]);
+      });
+
+      it('categoryId y brandId combinados con isActive/isVisible: orden de parámetros estable', async () => {
+        await service.findAll({
+          search: 'camara', take: 5, skip: 5,
+          categoryId: validCategory, brandId: validBrand, isVisible: true, isActive: false,
+        });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countSql).toContain('"categoryId" = $2');
+        expect(countSql).toContain('"brandId" = $3');
+        expect(countSql).toContain('"isVisible" = $4::boolean');
+        expect(countSql).toContain('"isActive" = $5::boolean');
+        expect(countArgs).toEqual(['camara', validCategory, validBrand, true, false]);
+        expect(selectSql).toContain('LIMIT $6 OFFSET $7');
+        expect(selectArgs).toEqual(['camara', validCategory, validBrand, true, false, 5, 5]);
+      });
+
+      it.each([
+        ['comilla y OR', "x' OR '1'='1"],
+        ['punto y coma', "x'; DROP TABLE products; --"],
+        ['comentario SQL', "x'--"],
+        ['comillas dobles', 'x" OR "1"="1'],
+        ['UNION', "x' UNION SELECT * FROM users --"],
+      ])('entrada malformada en categoryId/brandId (%s) no entra en el texto SQL', async (_name, payload) => {
+        await service.findAll({ search: 'camara', categoryId: payload, brandId: payload });
+        const { countSql, countArgs, selectSql, selectArgs } = calls();
+
+        expect(countSql).not.toContain(payload);
+        expect(selectSql).not.toContain(payload);
+        expect(countSql).not.toMatch(/DROP|UNION/);
+        expect(selectSql).not.toMatch(/DROP|UNION/);
+        expect(countArgs).toEqual(['camara', payload, payload]);
+        expect(selectArgs.slice(0, 3)).toEqual(['camara', payload, payload]);
+      });
+
+      it('con ctx y products:read global: no agrega ningun filtro por Lista (ni getAllowedListaIds)', async () => {
+        mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read'));
+
+        await service.findAll(
+          { search: 'camara', take: 10, skip: 0, categoryId: validCategory },
+          { userId: 'u1', roles: ['Vendedor'] } as any,
+        );
+        const { countSql, countArgs, selectArgs } = calls();
+
+        expect(countSql).not.toContain('listaId" = ANY');
+        expect(countSql).not.toContain('1=0');
+        expect(countArgs).toEqual(['camara', validCategory]);
+        expect(selectArgs).toEqual(['camara', validCategory, 10, 0]);
+        expect(mockAcl.getAllowedListaIds).not.toHaveBeenCalled();
+      });
+
+      it('con ctx sin products:read: 403 (no una lista vacia) y sin consultar la base', async () => {
+        await expect(
+          service.findAll({ search: 'camara' }, { userId: 'u1', roles: ['Admin Comercial'] } as any),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      });
     });
 
     it('findOne no incluye la relación catalog en el include', async () => {
@@ -1396,9 +1671,9 @@ describe('ProductsService', () => {
       expect(result.errors[0].error).toBe('SKU ya existe');
     });
 
-    it('crea categoría y marca inexistentes durante la importación', async () => {
-      mockPrisma.category.create.mockResolvedValue({ id: 'cat-new', name: 'CCTV', slug: 'cctv' });
-      mockPrisma.brand.create.mockResolvedValue({ id: 'brand-new', name: 'Hikvision', slug: 'hikvision' });
+    it('NO crea categoría ni marca inexistentes: el producto entra por clasificar y la fila lo informa', async () => {
+      (mockPrisma.category as any).findFirst = jest.fn().mockResolvedValue(null);
+      (mockPrisma.brand as any).findFirst = jest.fn().mockResolvedValue(null);
       mockPrisma.product.create.mockResolvedValue({ id: 'prod-1', sku: 'SKU-1' });
 
       const buffer = buildXlsxBuffer([
@@ -1409,8 +1684,15 @@ describe('ProductsService', () => {
       const result = await service.importFromExcel(buffer);
 
       expect(result.created).toBe(1);
-      expect(mockPrisma.category.create).toHaveBeenCalled();
-      expect(mockPrisma.brand.create).toHaveBeenCalled();
+      expect(mockPrisma.category.create).not.toHaveBeenCalled();
+      expect(mockPrisma.brand.create).not.toHaveBeenCalled();
+      const data = mockPrisma.product.create.mock.calls[0][0].data;
+      expect(data.brandId).toBeNull();
+      expect(data.categoryId).toBeNull();
+      expect(result.needsConfirmation).toEqual([
+        { row: 2, sku: 'SKU-1', code: 'CATEGORY_NEEDS_CONFIRMATION', label: 'CCTV' },
+        { row: 2, sku: 'SKU-1', code: 'BRAND_NEEDS_CONFIRMATION', label: 'Hikvision' },
+      ]);
     });
 
     it('deriva el nombre desde una descripción extensa de DVR sin columna Nombre', async () => {
@@ -1544,100 +1826,60 @@ describe('ProductsService', () => {
     });
   });
 
-  // --- ACL deny-by-default (AclService real, sin stub) ---
-  describe('ACL deny-by-default', () => {
-    const LISTA_ID = 'list-1';
+  // --- Autorizacion por concesiones de panel (deny-by-default, sin Listas) ---
+  describe('autorizacion por concesiones (deny-by-default)', () => {
     const ADMIN = { userId: 'admin-1', roles: ['Super Admin'] };
-    const VIEWER = { userId: 'pepito-1', roles: ['Operador'] }; // view sobre LISTA-ID
-    const NOAUTH = { userId: 'none-1', roles: ['Operador'] }; // sin assignments
-
-    const listaAssignments: Record<string, { resourceId: string; level: string; isActive: boolean }[]> = {
-      [VIEWER.userId]: [{ resourceId: LISTA_ID, level: 'view', isActive: true }],
-      [ADMIN.userId]: [],
-      [NOAUTH.userId]: []};
-    let acl: AclService;
-    let svc: ProductsService;
+    const READER = { userId: 'reader-1', roles: ['Operador'] };
+    const NOAUTH = { userId: 'none-1', roles: ['Admin Comercial'] };
 
     beforeEach(() => {
-      (mockPrisma as any).accessGrant = { findMany: jest.fn(async (args: any) =>
-        args?.where?.source?.userId === VIEWER.userId
-          ? ['listas:read', 'products:read'].map((actionId) => ({
-              sourceId: 'viewer-grant', actionId, scopeKind: 'list', resourceId: LISTA_ID,
-            }))
-          : [],
-      ) };
-      acl = new AclService(mockPrisma as any);
-      svc = new ProductsService(mockPrisma as any, acl, mockAudit as any, mockFiles as any);
-      mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
-        const u = args?.where?.userId;
-        const rt = args?.where?.resourceType;
-        const rid = args?.where?.resourceId;
-        const active = args?.where?.isActive;
-        const levels = args?.where?.level?.in;
-        let out = (listaAssignments[u] ?? []).filter((_a) => rt === undefined || rt === 'LISTA') as any[];
-        if (rid) out = out.filter((a) => a.resourceId === rid);
-        if (active === true) out = out.filter((a) => a.isActive);
-        if (levels) out = out.filter((a) => levels.includes(a.level));
-        return out;
-      });
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
+      mockGrants.grantsForUser.mockImplementation(async (userId: string) =>
+        userId === READER.userId ? grantRows('products:read') : []);
     });
 
-    it('findAll scopia a LISTA-GENERAL para view y deniega (lista vacía) a usuario sin assignment', async () => {
+    it('findAll: con products:read global ve todo (sin filtro de Lista); sin concesion 403', async () => {
       mockPrisma.product.findMany.mockResolvedValue([mockProduct]);
       mockPrisma.product.count.mockResolvedValue(1);
 
-      const authed = await svc.findAll({ skip: 0, take: 50 }, VIEWER);
+      const authed = await service.findAll({ skip: 0, take: 50 }, READER);
       expect(authed.data).toHaveLength(1);
-      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ listaId: { in: [LISTA_ID] } }) }),
-      );
+      expect(mockPrisma.product.findMany.mock.calls[0][0].where).not.toHaveProperty('listaId');
 
-      mockPrisma.product.findMany.mockResolvedValue([]);
-      mockPrisma.product.count.mockResolvedValue(0);
-      const denied = await svc.findAll({ skip: 0, take: 50 }, NOAUTH);
-      expect(denied.data).toHaveLength(0);
+      await expect(service.findAll({ skip: 0, take: 50 }, NOAUTH)).rejects.toThrow(ForbiddenException);
     });
 
     it('findAll: Super Admin ve todo (sin filtro de listaId)', async () => {
       mockPrisma.product.findMany.mockResolvedValue([mockProduct]);
       mockPrisma.product.count.mockResolvedValue(1);
 
-      const res = await svc.findAll({ skip: 0, take: 50 }, ADMIN);
+      const res = await service.findAll({ skip: 0, take: 50 }, ADMIN);
       expect(res.data).toHaveLength(1);
       const call = mockPrisma.product.findMany.mock.calls[0][0];
       expect(call.where).not.toHaveProperty('listaId');
     });
 
-    it('findOne: usuario sin assignment recibe 404 (no revela existencia)', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ ...mockProduct, listaId: LISTA_ID });
-      await expect(svc.findOne('prod-1', NOAUTH)).rejects.toThrow(NotFoundException);
-    });
-
-    it('findOne: view ve producto de su Lista', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ ...mockProductWithRelations, listaId: LISTA_ID });
-      const res = await svc.findOne('prod-1', VIEWER);
+    it('findOne: sin concesion 403 (no 404); con products:read ve el producto aunque tenga Lista', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ ...mockProductWithRelations, listaId: 'list-1' });
+      await expect(service.findOne('prod-1', NOAUTH)).rejects.toThrow(ForbiddenException);
+      const res = await service.findOne('prod-1', READER);
       expect(res.id).toBe('prod-1');
+      expect(mockAcl.assertProductAccess).not.toHaveBeenCalled();
     });
 
-    it('view no edita (toggleVisibility exige permiso de publicación y oculta la Lista)', async () => {
+    it('lector sin publish: toggleVisibility 403', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({
         ...mockProduct,
-        listaId: LISTA_ID,
+        listaId: 'list-1',
         publishStatus: 'publicado',
         isVisible: true,
         lifecycleStatus: 'PUBLISHED'});
-      await expect(svc.toggleVisibility('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
+      await expect(service.toggleVisibility('prod-1', READER)).rejects.toThrow(ForbiddenException);
     });
 
-    it('create: usuario view sobre la Lista no puede crear producto sin escritura', async () => {
-      mockPrisma.product.findUnique.mockResolvedValueOnce(null);
-      mockPrisma.category.findUnique.mockResolvedValue({ id: 'cat-1', name: 'CCTV' });
-      mockPrisma.brand.findUnique.mockResolvedValue({ id: 'brand-1', name: 'Hikvision' });
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
-
-      const dto = { sku: 'NEW-1', name: 'X', categoryId: 'cat-1', brandId: 'brand-1', listaId: LISTA_ID };
-      await expect(svc.create(dto as any, VIEWER)).rejects.toThrow(NotFoundException);
+    it('create: lector sin products:write no puede crear producto', async () => {
+      const dto = { sku: 'NEW-1', name: 'X', categoryId: 'cat-1', brandId: 'brand-1', listaId: 'list-1' };
+      await expect(service.create(dto as any, READER)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.product.create).not.toHaveBeenCalled();
     });
   });
 
@@ -1686,6 +1928,7 @@ describe('ProductsService', () => {
       url: '/uploads/img-1.png',
       alt: 'Cámara IP',
       isPrimary: false,
+      type: 'PRINCIPAL',
       sortOrder: 0};
 
     it('actualiza el alt de la imagen y audita', async () => {
@@ -1730,10 +1973,81 @@ describe('ProductsService', () => {
       );
     });
 
+    it.each(['COMPLEMENTARIA', 'PORTADA'] as const)('persiste type=%s sin alterar isPrimary', async (type) => {
+      mockPrisma.productImage.findUnique.mockResolvedValue(image);
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+      mockPrisma.productImage.update.mockResolvedValue({ ...image, type });
+
+      const result = await service.updateImage('img-1', { type });
+
+      expect(result).toEqual(expect.objectContaining({ type, isPrimary: false }));
+      expect(mockPrisma.productImage.update).toHaveBeenCalledWith({
+        where: { id: 'img-1' },
+        data: { type },
+      });
+      expect(mockPrisma.productImage.updateMany).not.toHaveBeenCalled();
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
+      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({
+        oldValues: expect.objectContaining({ type: 'PRINCIPAL' }),
+        newValues: expect.objectContaining({ type }),
+      }));
+    });
+
+    it('dedicated: incluye la revisión pendiente en la transacción de biblioteca', async () => {
+      mockPrisma.productImage.findUnique.mockResolvedValue(image);
+      mockPrisma.productImage.update.mockResolvedValue({ ...image, type: 'COMPLEMENTARIA' });
+      const dedicatedLibrary = {
+        config: { mode: 'dedicated' },
+        assertWritesAllowed: jest.fn(),
+        client: mockPrisma,
+        ownsTransaction: jest.fn().mockReturnValue(true),
+        writeTransaction: jest.fn(async (work: any) => work(mockPrisma)),
+      };
+      (service as any).library = dedicatedLibrary;
+      (service as any).appendLibraryEvent = jest.fn();
+
+      await service.updateImage('img-1', { type: 'COMPLEMENTARIA' });
+
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith(
+        'prod-1', mockPrisma, { id: undefined },
+      );
+      expect(dedicatedLibrary.writeTransaction).toHaveBeenCalledTimes(1);
+    });
+
     it('lanza 404 si la imagen no existe', async () => {
       mockPrisma.productImage.findUnique.mockResolvedValue(null);
 
       await expect(service.updateImage('no-existe', { alt: 'x' })).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('revisión pendiente tras cambios de imágenes', () => {
+    it('uploadImage marca pendiente después de crear la imagen', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1' });
+      mockFiles.store.mockResolvedValue({ id: 'file-new', url: '/api/files/file-new' });
+      mockPrisma.productImage.create.mockResolvedValue({ id: 'img-new', productId: 'prod-1', type: 'PRINCIPAL' });
+      const file = {
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        mimetype: 'image/png',
+        size: 4,
+        originalname: 'frente.png',
+      };
+
+      await service.uploadImage('prod-1', file as any);
+
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
+    });
+
+    it('deleteImage marca pendiente después de quitar la referencia viva', async () => {
+      mockFiles.release.mockResolvedValue({ deleted: false });
+      mockPrisma.productImage.findUnique.mockResolvedValue({
+        id: 'img-1', productId: 'prod-1', url: '/uploads/img-1.png',
+      });
+
+      await service.deleteImage('img-1');
+
+      expect(mockPrisma.productImage.delete).toHaveBeenCalledWith({ where: { id: 'img-1' } });
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
     });
   });
   describe('Fase 3B — Lista completa (publicar/programar/cancelar)', () => {

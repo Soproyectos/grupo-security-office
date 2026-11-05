@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AclService } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
+import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { LifecycleStatus } from './lifecycle.types';
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
@@ -21,6 +22,9 @@ const mockFiles = {
   get: jest.fn(),
   deleteByUrl: jest.fn().mockResolvedValue(undefined),
 };
+
+const mockGrants = { grantsForUser: jest.fn() };
+const grantRows = (...ids: string[]) => ids.map((actionId) => ({ sourceId: `s-${actionId}`, actionId, scope: 'global' }));
 
 const mockAcl = {
   isSuperAdmin: jest.fn().mockReturnValue(false),
@@ -79,6 +83,7 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockGrants.grantsForUser.mockResolvedValue([]);
     mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
     mockPrisma.productChange.createMany.mockResolvedValue({ count: 0 });
 
@@ -92,6 +97,7 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
         { provide: AclService, useValue: mockAcl },
         { provide: AuditService, useValue: mockAudit },
         { provide: FilesService, useValue: mockFiles },
+        { provide: AccessAssignmentsService, useValue: mockGrants },
       ],
     }).compile();
 
@@ -241,34 +247,51 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
     });
   });
 
-  describe('RBAC → 403', () => {
+  describe('concesiones de panel → 403 (el cargo no concede)', () => {
     const OPERADOR = { userId: 'u1', roles: ['Operador'] };
 
-    it('PUBLISH con Operador (sin publish:manage) → 403', async () => {
+    it('PUBLISH sin products:publish → 403', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(mkProduct('DRAFT'));
       await expect(service.transition('prod-1', { event: 'PUBLISH' }, OPERADOR)).rejects.toThrow(ForbiddenException);
     });
 
-    it('PUBLISH con Operador → 403 incluso sin exigir isActive (checklist no se alcanza)', async () => {
+    it('PUBLISH con Admin Comercial sin concesiones → 403 (el cargo ya no basta)', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(mkProduct('DRAFT'));
-      await expect(service.transition('prod-1', { event: 'PUBLISH' }, OPERADOR)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.transition('prod-1', { event: 'PUBLISH' }, { userId: 'u3', roles: ['Admin Comercial'] }),
+      ).rejects.toThrow(ForbiddenException);
     });
 
-    it('ARCHIVE con Supervisor (no Super Admin/Admin Comercial) → 403', async () => {
+    it('ARCHIVE sin products:write (aunque tenga products:publish) → 403', async () => {
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read', 'products:publish'));
       mockPrisma.product.findUnique.mockResolvedValue(mkProduct('PUBLISHED'));
       await expect(
         service.transition('prod-1', { event: 'ARCHIVE', reason: 'x', confirm: true }, { userId: 'u2', roles: ['Supervisor'] }),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('ARCHIVE con products:write lo permite a un Vendedor y no consulta el ACL de Lista', async () => {
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read', 'products:write'));
+      mockPrisma.product.findUnique.mockResolvedValue(mkProduct('PUBLISHED'));
+      mockPrisma.product.update.mockResolvedValue(mkProduct('ARCHIVED'));
+      await expect(
+        service.transition('prod-1', { event: 'ARCHIVE', reason: 'x', confirm: true }, { userId: 'u4', roles: ['Vendedor'] }),
+      ).resolves.toBeDefined();
+      expect(mockAcl.assertProductAccess).not.toHaveBeenCalled();
+      expect(mockAcl.assertListaAccess).not.toHaveBeenCalled();
+    });
   });
 
-  describe('ACL → 403', () => {
-    it('PUBLISH con rol válido pero sin nivel ACL manage → 403', async () => {
+  describe('Listas no intervienen en el ciclo de vida', () => {
+    it('un ACL de Lista que denegaria no bloquea PUBLISH de un Super Admin', async () => {
       mockAcl.assertProductAccess.mockRejectedValue(new ForbiddenException('No tienes permisos suficientes sobre esta Lista'));
+      mockPublishChecklistOk();
       mockPrisma.product.findUnique.mockResolvedValue(mkProduct('DRAFT'));
+      mockPrisma.product.update.mockResolvedValue(mkProduct('PUBLISHED'));
       await expect(
         service.transition('prod-1', { event: 'PUBLISH' }, { userId: 'u1', roles: ['Super Admin'] }),
-      ).rejects.toThrow(ForbiddenException);
+      ).resolves.toBeDefined();
+      expect(mockAcl.assertProductAccess).not.toHaveBeenCalled();
     });
   });
 
@@ -287,9 +310,12 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
       expect(allowed).toEqual(['UNPUBLISH', 'ARCHIVE']);
     });
 
-    it('PUBLISHED + Supervisor → solo UNPUBLISH (publish:manage, sin products:write)', async () => {
+    it('PUBLISHED + products:publish without its write dependency grants no action', async () => {
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read', 'products:publish'));
       const allowed = await service.allowedActions(mkProduct('PUBLISHED'), SUPERVISOR);
-      expect(allowed).toEqual(['UNPUBLISH']);
+      expect(allowed).toEqual([]);
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read', 'products:write', 'products:publish'));
+      expect(await service.allowedActions(mkProduct('PUBLISHED'), SUPERVISOR)).toEqual(['UNPUBLISH', 'ARCHIVE']);
     });
 
     it('ARCHIVED + Super Admin → RESTORE', async () => {
@@ -307,10 +333,10 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
       expect(allowed).toEqual([]);
     });
 
-    it('DRAFT + Super Admin sin ACL suficiente → []', async () => {
+    it('el ACL de Lista no recorta las acciones: Super Admin las conserva', async () => {
       mockAcl.assertProductAccess.mockRejectedValue(new ForbiddenException('Acceso restringido'));
       const allowed = await service.allowedActions(mkProduct('DRAFT'), SA);
-      expect(allowed).toEqual([]);
+      expect(allowed).toEqual(['PUBLISH', 'ARCHIVE']);
     });
   });
 
@@ -592,9 +618,8 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
         { id: 'p1', sku: 'CAM-SCH', name: 'Programada' },
       ]);
       mockPrisma.product.findUnique.mockResolvedValue(mkProduct('DRAFT'));
-      // Simular lista archivada → checklist fallido (a)
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: new Date() });
-      mockPrisma.price.count.mockResolvedValue(1);
+      // Las Listas ya no cuentan: se simula una regla comercial vigente que falla (sin precio vigente).
+      mockPrisma.price.count.mockResolvedValue(0);
       mockPrisma.productImage.count.mockResolvedValue(1);
       mockPrisma.stock.findUnique.mockResolvedValue(null);
 

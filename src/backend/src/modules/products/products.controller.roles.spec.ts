@@ -1,19 +1,25 @@
 import 'reflect-metadata';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { ALL_ROLES } from '../../common/rbac/roles.constants';
+import { REQUIRED_GRANTS_KEY } from '../../common/security/require-grant';
 import { ProductsController } from './products.controller';
 
-describe('ProductsController — matriz de roles (contrato)', () => {
-  const rolesOf = (method: Function): string[] =>
-    Reflect.getMetadata(ROLES_KEY, method) ?? [];
+/**
+ * Contrato de ProductsController: la Biblioteca autoriza SOLO por concesiones de panel
+ * (nunca por cargo). Antes este archivo fijaba la matriz de roles.
+ */
+describe('ProductsController — matriz de concesiones (contrato)', () => {
+  const grantsOf = (method: Function): string[] =>
+    Reflect.getMetadata(REQUIRED_GRANTS_KEY, method) ?? [];
+  const rolesOf = (method: Function): string[] | undefined =>
+    Reflect.getMetadata(ROLES_KEY, method);
 
-  it('GET trending no es público y exige rol de staff (expone precios y extraAttributes)', () => {
+  it('GET trending no es público y exige products:read (expone precios y extraAttributes)', () => {
     const handler = ProductsController.prototype.findTrending;
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler)).toBeUndefined();
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, ProductsController)).toBeUndefined();
-    expect(rolesOf(handler)).toEqual(expect.arrayContaining(ALL_ROLES));
-    expect(rolesOf(handler).length).toBeGreaterThan(0);
+    expect(grantsOf(handler)).toEqual(['products:read']);
+    expect(rolesOf(handler)).toBeUndefined();
   });
 
   it('ningún handler de ProductsController es público', () => {
@@ -26,21 +32,15 @@ describe('ProductsController — matriz de roles (contrato)', () => {
     expect(publicHandlers).toEqual([]);
   });
 
-  it('PATCH :id/publish incluye Supervisor (publish:manage) y roles de escritura', () => {
-    const roles = rolesOf(ProductsController.prototype.publish);
-    expect(roles).toContain('Supervisor');
-    expect(roles).toEqual(expect.arrayContaining(['Super Admin', 'Supervisor', 'Admin Comercial']));
+  it('PATCH :id/publish y :id/unpublish exigen products:publish y no declaran cargos', () => {
+    for (const handler of [ProductsController.prototype.publish, ProductsController.prototype.unpublish]) {
+      expect(grantsOf(handler)).toEqual(['products:publish']);
+      expect(rolesOf(handler)).toBeUndefined();
+    }
   });
 
-  it('PATCH :id/unpublish incluye Supervisor (publish:manage)', () => {
-    const roles = rolesOf(ProductsController.prototype.unpublish);
-    expect(roles).toContain('Supervisor');
-    expect(roles).toEqual(expect.arrayContaining(['Super Admin', 'Supervisor', 'Admin Comercial']));
-  });
-
-  it('DELETE :id incluye Admin Comercial (products:delete) y Super Admin', () => {
-    const roles = rolesOf(ProductsController.prototype.remove);
-    expect(roles).toContain('Admin Comercial');
-    expect(roles).toContain('Super Admin');
+  it('DELETE :id exige products:delete y no declara cargos', () => {
+    expect(grantsOf(ProductsController.prototype.remove)).toEqual(['products:delete']);
+    expect(rolesOf(ProductsController.prototype.remove)).toBeUndefined();
   });
 });

@@ -24,6 +24,16 @@ export interface FirmwareFileDto {
   requiresLicense: boolean;
 }
 
+/** Key spec ("dato principal") read from the PUBLISHED editorial stage. */
+export interface KeySpecDto {
+  key: string;
+  label: string;
+  /** Display text, unit included (a real 0 shows as "0 W", false as "No"). */
+  value: string;
+  unit?: string;
+  order: number;
+}
+
 export interface ProductDetailDto {
   /** Product id; the sheet is also reachable at `/api/public/products/:id/detail`. */
   id: string;
@@ -46,6 +56,10 @@ export interface ProductDetailDto {
   highlights: string[];
   features: { id: string; label: string; icon: FeatureIconDto }[];
   availableModels: string[];
+  /** Published key specs, the same values the store filters use; empty when none. */
+  keySpecs: KeySpecDto[];
+  /** Only on the admin draft preview (`GET /api/products/:id/preview-detail`). */
+  preview?: { mode: 'draft'; unpublishedChanges: boolean };
   specGroups: { id: string; title: string; items: { label: string; value: string }[] }[];
   specsDisclaimer?: string;
   documents: ProductDocumentDto[];

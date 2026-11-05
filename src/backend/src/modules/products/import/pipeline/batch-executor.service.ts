@@ -1,16 +1,22 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../product-library';
 import { AuditService } from '../../../audit/audit.service';
 import {
   NormalizedRow,
   PriceEntry,
   BatchExecutionResult,
   BatchError,
+  ImportNeedsConfirmation,
   ImportContext,
 } from '../interfaces/import-context';
 import { generateSlug } from '../helpers/text-normalizer';
 import { findProductsBySkus, normalizeSku } from '../../helpers/sku-identity';
+import { ClassificationService } from '../../classification/classification.service';
+import type { ClassificationDb } from '../../classification/classification.types';
 
 /**
  * CAT-01 unidad B (contrato §3 fila «Carga masiva», §5.2/§5.3): códigos de
@@ -95,7 +101,15 @@ export class BatchExecutorService {
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
+    /** Categorías, marcas, tarifas, Listas, productos y precios viven en la biblioteca. */
+    @Optional() @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Optional() @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
+    @Optional() private readonly classification: ClassificationService = new ClassificationService(),
   ) {}
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
 
   /**
    * Ejecuta la importación completa de filas normalizadas.
@@ -117,15 +131,16 @@ export class BatchExecutorService {
       productIds: [],
       durationMs: 0,
       defaultsByMissingInference: { category: 0, brand: 0 },
+      needsConfirmation: [],
       identityChangesDetected: 0,
       pendingEnrichment: 0,
     };
 
     // Pre-cargar categorías y marcas existentes + Lista destino
     const [existingCategories, existingBrands, existingPriceLists, targetLista] = await Promise.all([
-      this.prisma.category.findMany({ select: { id: true, name: true, slug: true } }),
-      this.prisma.brand.findMany({ select: { id: true, name: true, slug: true } }),
-      this.prisma.priceList.findMany({ select: { id: true, code: true, name: true } }),
+      this.db.category.findMany({ select: { id: true, name: true, slug: true } }),
+      this.db.brand.findMany({ select: { id: true, name: true, slug: true } }),
+      this.db.priceList.findMany({ select: { id: true, code: true, name: true } }),
       this.resolveLista(ctx),
     ]);
 
@@ -164,6 +179,7 @@ export class BatchExecutorService {
         result.skipped += batchResult.skipped;
         result.productIds.push(...batchResult.productIds);
         result.errors.push(...batchResult.errors);
+        result.needsConfirmation!.push(...batchResult.needsConfirmation);
         result.identityChangesDetected += batchResult.identityChangesDetected;
         result.pendingEnrichment += batchResult.pendingEnrichment;
         result.defaultsByMissingInference.category += batchResult.defaults.category;
@@ -221,11 +237,12 @@ export class BatchExecutorService {
     productIds: string[];
     errors: BatchError[];
     defaults: { category: number; brand: number };
+    needsConfirmation: ImportNeedsConfirmation[];
     identityChangesDetected: number;
     pendingEnrichment: number;
   }> {
-    return this.prisma.$transaction(
-      async (tx) => {
+    return this.library.writeTransaction(
+      async (tx: any) => {
         const batchResult = {
           created: 0,
           updated: 0,
@@ -233,6 +250,7 @@ export class BatchExecutorService {
           productIds: [] as string[],
           errors: [] as BatchError[],
           defaults: { category: 0, brand: 0 },
+          needsConfirmation: [] as ImportNeedsConfirmation[],
           identityChangesDetected: 0,
           pendingEnrichment: 0,
         };
@@ -257,6 +275,9 @@ export class BatchExecutorService {
             nameLockedAt: true,
           },
         );
+
+        // Lookup cache of the importer gate (only EXISTING entities are ever looked up).
+        const labelCache = new Map<string, any>();
 
         for (const row of batch) {
           // Aislamiento por fila con SAVEPOINT: sin esto, un error real de Postgres
@@ -308,7 +329,9 @@ export class BatchExecutorService {
           await tx.$executeRawUnsafe('SAVEPOINT row_sp');
 
           try {
-            // Resolver categoría (siempre retorna un ID — default "Sin categoría" si vacío)
+            // Resolver categoría: solo EXISTENTES (o la decisión explícita del wizard). Sin coincidencia -> null
+            // (borrador por clasificar) + incidencia CATEGORY_NEEDS_CONFIRMATION; nunca se crea una por defecto.
+            const rowIssues: ImportNeedsConfirmation[] = [];
             const categoryResult = await this.resolveCategory(
               tx,
               row.categoryName,
@@ -316,15 +339,19 @@ export class BatchExecutorService {
               categoryMap,
               batchResult.defaults,
               ctx.sectionDecisions,
+              (issue) => rowIssues.push({ rowIndex: row.rowIndex, sku: row.sku, ...issue }),
+              labelCache,
             );
 
-            // Resolver marca (siempre retorna un ID — default "Sin marca" si vacío)
+            // Resolver marca: igual, solo existentes; sin coincidencia -> null + BRAND_NEEDS_CONFIRMATION.
             const brandResult = await this.resolveBrand(
               tx,
               row.brandName,
               row.brandInferredSlug,
               brandMap,
               batchResult.defaults,
+              (issue) => rowIssues.push({ rowIndex: row.rowIndex, sku: row.sku, ...issue }),
+              labelCache,
             );
 
             // existingProduct ya resuelto arriba (gate de propiedad CAT-01).
@@ -349,8 +376,8 @@ export class BatchExecutorService {
                   (!row.nameIsFallback && row.name !== existingProduct.name) ||
                   (row.description !== undefined &&
                     row.description !== existingProduct.description) ||
-                  categoryResult.id !== existingProduct.categoryId ||
-                  brandResult.id !== existingProduct.brandId;
+                  (categoryResult !== null && categoryResult.id !== existingProduct.categoryId) ||
+                  (brandResult !== null && brandResult.id !== existingProduct.brandId);
                 if (identityDiff) {
                   batchResult.identityChangesDetected++;
                 }
@@ -374,13 +401,21 @@ export class BatchExecutorService {
                     data: { lastSeenAt: new Date() },
                   });
                 } else {
+                  // categoryId/subcategoryId move together. An incoherent combination throws and the
+                  // row rolls back to its savepoint and is reported as failed (never resolved by guessing).
+                  const classified = await this.classification.assertWritable(
+                    tx as unknown as ClassificationDb,
+                    // undefined = unchanged: an unresolved label never clears an existing classification.
+                    { categoryId: categoryResult?.id, brandId: brandResult?.id },
+                    (await this.classification.loadCurrent(tx as unknown as ClassificationDb, existingProduct.id)) ?? undefined,
+                  );
                   await tx.product.update({
                     where: { id: existingProduct.id },
                     data: {
                       ...(row.nameIsFallback ? {} : { name: row.name }),
                       description: row.description ?? undefined,
-                      categoryId: categoryResult.id,
-                      brandId: brandResult.id,
+                      ...this.classification.toData(classified),
+                      ...(brandResult ? { brandId: brandResult.id } : {}),
                       technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
                       extraAttributes: (row.extraAttributes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
                       lastSeenAt: new Date(),
@@ -396,16 +431,19 @@ export class BatchExecutorService {
 
               await tx.$executeRawUnsafe('RELEASE SAVEPOINT row_sp');
               batchResult.updated++;
+              batchResult.needsConfirmation.push(...rowIssues);
               batchResult.productIds.push(existingProduct.id);
             } else {
-              // CREATE: producto nuevo
+              // CREATE: producto nuevo. The subcategory is derived from the category when it exists;
+              // otherwise the product stays "por clasificar".
+              const classified = await this.classification.assertWritable(tx as unknown as ClassificationDb, { categoryId: categoryResult?.id, brandId: brandResult?.id ?? null });
               const newProduct = await tx.product.create({
                 data: {
                   sku: row.sku,
                   name: row.name,
                   description: row.description ?? undefined,
-                  categoryId: categoryResult.id,
-                  brandId: brandResult.id,
+                  ...this.classification.toData(classified),
+                  brandId: brandResult?.id ?? null,
                   listaId,
                   technicalSpecs: (row.technicalSpecs as Prisma.InputJsonValue) ?? Prisma.JsonNull,
                   extraAttributes: pendingEnrichment
@@ -429,6 +467,7 @@ export class BatchExecutorService {
 
               await tx.$executeRawUnsafe('RELEASE SAVEPOINT row_sp');
               batchResult.created++;
+              batchResult.needsConfirmation.push(...rowIssues);
               if (pendingEnrichment) batchResult.pendingEnrichment++;
               batchResult.productIds.push(newProduct.id);
               // Defensa adicional: si una fila posterior del mismo lote resuelve al
@@ -531,7 +570,7 @@ export class BatchExecutorService {
     ctx: ImportContext,
   ): Promise<{ id: string; defaultVisibility: boolean }> {
     if (ctx.listaId) {
-      const lista = await this.prisma.lista.findUnique({
+      const lista = await this.db.lista.findUnique({
         where: { id: ctx.listaId },
         select: { id: true, defaultVisibility: true, isActive: true, archivedAt: true },
       });
@@ -541,7 +580,7 @@ export class BatchExecutorService {
       return { id: lista.id, defaultVisibility: lista.defaultVisibility };
     }
 
-    const defaultLista = await this.prisma.lista.findUnique({
+    const defaultLista = await this.db.lista.findUnique({
       where: { code: 'LISTA-GENERAL' },
       select: { id: true, defaultVisibility: true },
     });
@@ -552,16 +591,17 @@ export class BatchExecutorService {
   }
 
   /**
-   * Resuelve una categoría por nombre: busca existente o crea nueva.
-   * Si el nombre está vacío, retorna la categoría default "Sin categoría".
+   * Resuelve una categoría por nombre: SOLO una existente (nombre o slug); nunca crea ni usa un default.
+   * Sin nombre o sin coincidencia -> null (borrador por clasificar); con nombre desconocido además
+   * emite CATEGORY_NEEDS_CONFIRMATION.
    *
    * Si viene un slug inferido, solo se usa la categoría EXISTENTE por slug;
-   * si no existe, se cae al default y se cuenta como "default por falta de inferencia".
+   * si no existe, queda sin categoría y se cuenta en defaultsByMissingInference.
    *
    * Si el contexto trae decisiones de secciones del wizard (sectionDecisions) y el
    * valor fuente de la fila está mapeado:
-   * - skip → default "Sin categoría"
-   * - create/reuse → find-or-create por targetName (nunca duplica)
+   * - skip → sin categoría (null)
+   * - create/reuse → decisión explícita de la persona: find-or-create por targetName (nunca duplica)
    * El valor fuente NO mapeado conserva el comportamiento original.
    */
   private async resolveCategory(
@@ -570,8 +610,10 @@ export class BatchExecutorService {
     inferredSlug: string | undefined,
     categoryMap: Map<string, { id: string; name: string; slug: string }>,
     defaults: { category: number; brand: number },
-    sectionDecisions?: SectionDecisionMap,
-  ): Promise<{ id: string }> {
+    sectionDecisions: SectionDecisionMap | undefined,
+    onIssue: (issue: { code: 'CATEGORY_NEEDS_CONFIRMATION'; label: string }) => void,
+    labelCache: Map<string, any>,
+  ): Promise<{ id: string } | null> {
     const normalizedName = name?.toLowerCase().trim() ?? '';
 
     // WIZARD: aplicar decisión de sección si el valor fuente está mapeado.
@@ -584,10 +626,10 @@ export class BatchExecutorService {
       if (decision) {
         if (decision.action === 'skip') {
           defaults.category++;
-          return this.resolveDefaultCategory(tx, categoryMap);
+          return null;
         }
-        // create/reuse: find-or-create por targetName (nunca duplicar en BD)
-        return this.findOrCreateCategory(tx, decision.targetName ?? name, categoryMap);
+        // create/reuse: decisión EXPLÍCITA de una persona en el wizard; find-or-create por targetName (nunca duplica)
+        return this.findOrCreateCategory(tx, decision.targetName ?? name, categoryMap, defaults);
       }
     }
 
@@ -596,49 +638,47 @@ export class BatchExecutorService {
       const found = await tx.category.findFirst({ where: { slug: inferredSlug } });
       if (found) return found;
       defaults.category++;
-      return this.resolveDefaultCategory(tx, categoryMap);
+      onIssue({ code: 'CATEGORY_NEEDS_CONFIRMATION', label: name?.trim() || inferredSlug });
+      return null;
     }
 
-    // Si no hay nombre, usar default "Sin categoría"
+    // Sin nombre: queda sin categoría (nada que confirmar)
     if (!normalizedName) {
       defaults.category++;
-      return this.resolveDefaultCategory(tx, categoryMap);
+      return null;
     }
 
     const existing = categoryMap.get(normalizedName);
     if (existing) return existing;
 
-    // Crear nueva categoría
-    const slug = normalizedName
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-
-    const newCategory = await tx.category.create({
-      data: {
-        name: name.trim(),
-        slug,
-        isActive: true,
-      },
-    });
-
-    categoryMap.set(normalizedName, newCategory);
-    return newCategory;
+    // Puerta compartida de importadores: solo busca existentes (nombre/slug), nunca crea.
+    const match = await this.classification.resolveExistingCategory(tx as ClassificationDb, name, {}, labelCache);
+    if (match.entity) {
+      categoryMap.set(normalizedName, match.entity);
+      return match.entity;
+    }
+    defaults.category++;
+    if (match.issue) onIssue({ code: 'CATEGORY_NEEDS_CONFIRMATION', label: match.issue.label });
+    return null;
   }
 
   /**
-   * Find-or-create de categoría por targetName (decisión del wizard).
+   * Find-or-create de categoría por targetName (decisión explícita del wizard).
    * Busca por nombre (case-insensitive) en el mapa precargado; si no está,
    * cae a búsqueda por slug en BD (cubre variantes de acentos/caso) y solo
    * crea si no existe. La diferencia create/reuse es semántica para el frontend.
+   * Sin targetName no se inventa nada: la fila queda sin categoría.
    */
   private async findOrCreateCategory(
     tx: any,
     targetName: string,
     categoryMap: Map<string, { id: string; name: string; slug: string }>,
-  ): Promise<{ id: string }> {
+    defaults: { category: number; brand: number },
+  ): Promise<{ id: string } | null> {
     const trimmed = targetName?.trim();
     if (!trimmed) {
-      return this.resolveDefaultCategory(tx, categoryMap);
+      defaults.category++;
+      return null;
     }
 
     const key = trimmed.toLowerCase();
@@ -660,35 +700,9 @@ export class BatchExecutorService {
   }
 
   /**
-   * Retorna (creando si hace falta) la categoría default "Sin categoría".
-   */
-  private async resolveDefaultCategory(
-    tx: any,
-    categoryMap: Map<string, { id: string; name: string; slug: string }>,
-  ): Promise<{ id: string }> {
-    const defaultSlug = 'sin-categoria';
-    const existing = categoryMap.get('sin categoría');
-    if (existing) return existing;
-
-    const found = await tx.category.findFirst({ where: { slug: defaultSlug } });
-    if (found) {
-      categoryMap.set('sin categoría', found);
-      return found;
-    }
-
-    const created = await tx.category.create({
-      data: { name: 'Sin categoría', slug: defaultSlug, isActive: true },
-    });
-    categoryMap.set('sin categoría', created);
-    return created;
-  }
-
-  /**
-   * Resuelve una marca por nombre: busca existente o crea nueva.
-   * Si el nombre está vacío, retorna la marca default "Sin marca".
-   *
-   * Si viene un slug inferido, solo se usa la marca EXISTENTE por slug;
-   * si no existe, se cae al default y se cuenta como "default por falta de inferencia".
+   * Resuelve una marca por nombre: SOLO una existente (nombre o slug); nunca crea.
+   * Sin nombre -> sin marca (null). Nombre desconocido -> null + BRAND_NEEDS_CONFIRMATION.
+   * Si viene un slug inferido, solo se usa la marca EXISTENTE por slug.
    */
   private async resolveBrand(
     tx: any,
@@ -696,7 +710,9 @@ export class BatchExecutorService {
     inferredSlug: string | undefined,
     brandMap: Map<string, { id: string; name: string; slug: string }>,
     defaults: { category: number; brand: number },
-  ): Promise<{ id: string }> {
+    onIssue: (issue: { code: 'BRAND_NEEDS_CONFIRMATION'; label: string }) => void,
+    labelCache: Map<string, any>,
+  ): Promise<{ id: string } | null> {
     const normalizedName = name?.toLowerCase().trim() ?? '';
 
     // Inferencia: solo usar marca existente por slug
@@ -704,56 +720,26 @@ export class BatchExecutorService {
       const found = await tx.brand.findFirst({ where: { slug: inferredSlug } });
       if (found) return found;
       defaults.brand++;
-      return this.resolveDefaultBrand(tx, brandMap);
+      onIssue({ code: 'BRAND_NEEDS_CONFIRMATION', label: name?.trim() || inferredSlug });
+      return null;
     }
 
-    // Si no hay nombre, usar default "Sin marca"
     if (!normalizedName) {
       defaults.brand++;
-      return this.resolveDefaultBrand(tx, brandMap);
+      return null;
     }
 
     const existing = brandMap.get(normalizedName);
     if (existing) return existing;
 
-    const slug = normalizedName
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-
-    const newBrand = await tx.brand.create({
-      data: {
-        name: name.trim(),
-        slug,
-        isActive: true,
-      },
-    });
-
-    brandMap.set(normalizedName, newBrand);
-    return newBrand;
-  }
-
-  /**
-   * Retorna (creando si hace falta) la marca default "Sin marca".
-   */
-  private async resolveDefaultBrand(
-    tx: any,
-    brandMap: Map<string, { id: string; name: string; slug: string }>,
-  ): Promise<{ id: string }> {
-    const defaultSlug = 'sin-marca';
-    const existing = brandMap.get('sin marca');
-    if (existing) return existing;
-
-    const found = await tx.brand.findFirst({ where: { slug: defaultSlug } });
-    if (found) {
-      brandMap.set('sin marca', found);
-      return found;
+    const match = await this.classification.resolveExistingBrand(tx as ClassificationDb, name, labelCache);
+    if (match.entity) {
+      brandMap.set(normalizedName, match.entity);
+      return match.entity;
     }
-
-    const created = await tx.brand.create({
-      data: { name: 'Sin marca', slug: defaultSlug, isActive: true },
-    });
-    brandMap.set('sin marca', created);
-    return created;
+    defaults.brand++;
+    if (match.issue) onIssue({ code: 'BRAND_NEEDS_CONFIRMATION', label: match.issue.label });
+    return null;
   }
 
   /**
@@ -842,7 +828,7 @@ export class BatchExecutorService {
       const countConflict = (prefix: string) =>
         result.errors.filter((e) => e.error.startsWith(prefix)).length;
 
-      await this.auditService.log({
+      await this.writeImportAudit({
         userId: ctx.userId,
         action: 'IMPORT_PRODUCTS',
         entity: 'Product',
@@ -869,6 +855,21 @@ export class BatchExecutorService {
     } catch (error) {
       this.logger.warn(`Error al registrar auditoría: ${error.message}`);
     }
+  }
+
+  /** Auditoría de la carga: AuditLog en legacy; evento de biblioteca en dedicado (sin AuditLog operativo). */
+  private async writeImportAudit(entry: Parameters<AuditService['log']>[0]): Promise<void> {
+    if (!this.dedicated) {
+      await this.auditService.log(entry);
+      return;
+    }
+    await this.library.writeTransaction((tx) => this.libraryAudit.append(tx as never, {
+      actor: { id: entry.userId ?? null },
+      action: String(entry.action),
+      entityType: String(entry.entity ?? 'Product'),
+      entityId: String(entry.entityId ?? 'import'),
+      summary: (entry.newValues ?? {}) as never,
+    }));
   }
 
   /**

@@ -94,10 +94,13 @@ describe('ProductChangeService.list authorization and price filtering', () => {
     prisma = {
       product: { findUnique: jest.fn().mockResolvedValue({ id: 'p1', listaId: 'L1' }) },
       productChange: { findMany: jest.fn().mockResolvedValue([]) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
     };
     acl = { assertProductAccess: jest.fn().mockResolvedValue({ listaId: 'L1' }) };
     grantRows = [
       { sourceId: 's', actionId: 'products:read', scope: 'global' },
+      { sourceId: 's', actionId: 'products:write', scope: 'global' },
+      { sourceId: 's', actionId: 'products:notes', scope: 'global' },
       { sourceId: 's', actionId: 'listas:read', scope: 'global' },
       { sourceId: 's', actionId: 'prices:read', scope: 'global' },
     ];
@@ -106,10 +109,35 @@ describe('ProductChangeService.list authorization and price filtering', () => {
 
   const whereOf = () => prisma.productChange.findMany.mock.calls[0][0].where;
 
-  it('denies without products:read before touching the product', async () => {
-    grantRows = [{ sourceId: 's', actionId: 'prices:read', scope: 'global' }];
+  it.each(['products:read', 'products:write', 'products:notes'])('denies without global %s before touching the product', async (missing) => {
+    grantRows = grantRows.filter((grant) => grant.actionId !== missing);
     await expect(service.list('p1', ctx)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('denies publication-only grants even when products:read is global', async () => {
+    grantRows = [
+      { sourceId: 's', actionId: 'products:read', scope: 'global' },
+      { sourceId: 's', actionId: 'products:publish', scope: 'global' },
+      { sourceId: 's', actionId: 'products:validate', scope: 'global' },
+    ];
+    await expect(service.list('p1', ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.product.findUnique).not.toHaveBeenCalled();
+    expect(prisma.productChange.findMany).not.toHaveBeenCalled();
+  });
+
+  it('allows the update profile with all three required global grants', async () => {
+    grantRows = ['products:read', 'products:write', 'products:notes'].map((actionId) => ({
+      sourceId: 's', actionId, scope: 'global',
+    }));
+    await expect(service.list('p1', ctx)).resolves.toMatchObject({ items: [], priceFieldsIncluded: false });
+    expect(prisma.productChange.findMany).toHaveBeenCalled();
+  });
+
+  it('keeps the explicit Super Admin bypass for the required grants', async () => {
+    grantRows = [];
+    await expect(service.list('p1', { userId: 'sa', roles: ['Super Admin'] })).resolves.toBeDefined();
+    expect(prisma.productChange.findMany).toHaveBeenCalled();
   });
 
   it('denies when the grant is scoped to another lista', async () => {
@@ -123,10 +151,11 @@ describe('ProductChangeService.list authorization and price filtering', () => {
     await expect(service.list('nope', ctx)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('propagates the product ACL denial', async () => {
+  it('does not consult the product/lista ACL: only the global products:read grant decides', async () => {
     acl.assertProductAccess.mockRejectedValue(new NotFoundException('Producto no encontrado'));
-    await expect(service.list('p1', ctx)).rejects.toBeInstanceOf(NotFoundException);
-    expect(prisma.productChange.findMany).not.toHaveBeenCalled();
+    await expect(service.list('p1', ctx)).resolves.toBeDefined();
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
+    expect(prisma.productChange.findMany).toHaveBeenCalled();
   });
 
   it('opens a product without lista for a caller with the global grant', async () => {
@@ -134,6 +163,34 @@ describe('ProductChangeService.list authorization and price filtering', () => {
     const out = await service.list('p1', ctx);
     expect(out.items).toEqual([]);
     expect(prisma.productChange.findMany).toHaveBeenCalled();
+  });
+
+  it('adds visible actor names from operational Prisma by unique IDs and preserves actorId', async () => {
+    const actorOne = row('c', 'name', 3000);
+    actorOne.actorId = 'u1';
+    const deletedActor = row('b', 'description', 2000);
+    deletedActor.actorId = 'deleted-user';
+    const systemActor = row('a', 'brandId', 1000);
+    systemActor.actorId = null;
+    prisma.productChange.findMany.mockResolvedValue([actorOne, deletedActor, systemActor]);
+    prisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Nombre Visible' }]);
+
+    const operational = { user: prisma.user };
+    const libraryClient = {
+      product: prisma.product,
+      productChange: prisma.productChange,
+    };
+    const library = { client: libraryClient, config: { mode: 'dedicated' } };
+    service = new ProductChangeService(operational as any, acl, { grantsForUser: async () => grantRows } as any, library as any);
+    const out = await service.list('p1', ctx);
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['u1', 'deleted-user'] } },
+      select: { id: true, name: true },
+    });
+    expect(out.items.map((item: any) => [item.actorId, item.actorName])).toEqual([
+      ['u1', 'Nombre Visible'], ['deleted-user', null], [null, null],
+    ]);
   });
 
   it('includes price fields with prices:read and excludes them without it', async () => {

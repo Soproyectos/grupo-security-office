@@ -1,11 +1,14 @@
 import { randomUUID } from 'crypto';
-import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Prisma as LibraryPrisma } from '../../../prisma/biblioteca/generated/client';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from './product-library';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { decideCatalogResourceAccess } from '../../common/security/catalog-resource-access';
-import { concessionCanAction } from '../../common/security/d5-action';
+import { hasGlobalGrant } from '../../common/security/require-grant';
 
 export const PRODUCT_CHANGE_SOURCES = [
   'PRICE_IMPORT', 'MANUAL', 'PRODUCT_IMPORT', 'BIBLIOTECA_IMPORT', 'LIFECYCLE', 'SYSTEM',
@@ -156,14 +159,21 @@ export function decodeCursor(cursor: string): { createdAt: Date; id: string } | 
 @Injectable()
 export class ProductChangeService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly operational: PrismaService,
     private readonly acl: AclService,
     @Optional() private readonly grants?: AccessAssignmentsService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(operational),
   ) {}
+
+  private get prisma() { return this.library.client; }
 
   /** Writes the changes through the caller's transaction client. */
   async record(tx: Pick<Prisma.TransactionClient, 'productChange'>, changes: readonly ProductChangeInput[]): Promise<number> {
     if (changes.length === 0) return 0;
+    this.library.assertWritesAllowed();
+    if (this.library.config.mode === 'dedicated' && !this.library.ownsTransaction(tx)) {
+      throw new ServiceUnavailableException({ code: 'LIBRARY_FOREIGN_TRANSACTION', message: 'El historial requiere una transacción activa de biblioteca.' });
+    }
     const result = await tx.productChange.createMany({
       data: changes.map((c) => ({
         productId: c.productId,
@@ -193,7 +203,7 @@ export class ProductChangeService {
     })).allowed;
 
     const limit = this.parseLimit(query.limit);
-    const and: Prisma.ProductChangeWhereInput[] = [];
+    const and: LibraryPrisma.ProductChangeWhereInput[] = [];
     if (!canSeePrices) and.push({ NOT: { field: { startsWith: PRICE_FIELD_PREFIX } } });
     if (query.field) {
       if (!canSeePrices && query.field.startsWith(PRICE_FIELD_PREFIX)) {
@@ -218,9 +228,21 @@ export class ProductChangeService {
     });
     const hasMore = rows.length > limit;
     const items = hasMore ? rows.slice(0, limit) : rows;
+    const actorIds = [...new Set(items.map((item) => item.actorId).filter((id): id is string => Boolean(id)))];
+    const actors = actorIds.length
+      ? await this.operational.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, name: true },
+      })
+      : [];
+    const actorNames = new Map(actors.map((actor) => [actor.id, actor.name]));
+    const itemsWithActorNames = items.map((item) => ({
+      ...item,
+      actorName: item.actorId ? actorNames.get(item.actorId) ?? null : null,
+    }));
     const last = items[items.length - 1];
     return {
-      items,
+      items: itemsWithActorNames,
       nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
       limit,
       coverage: PRODUCT_HISTORY_COVERAGE,
@@ -238,18 +260,17 @@ export class ProductChangeService {
     return Math.min(Math.floor(n), PRODUCT_CHANGES_MAX_LIMIT);
   }
 
-  /** Same decision order as the product sheet read: action, product, scoped action, product ACL. */
+  /** Required global product grants, then product existence. */
   private async authorize(productId: string, ctx: AccessContext): Promise<{ id: string; listaId: string | null }> {
-    const denied = () => new ForbiddenException('Sin permiso products:read');
-    // Reject users without the action before loading the product (no existence leak).
-    if (!(await concessionCanAction(this.grants, 'products:read', ctx)).allowed) throw denied();
+    // El historial interno exige lectura, edición y notas internas globales.
+    // Se verifica antes de cargar el producto para no filtrar su existencia.
+    for (const actionId of ['products:read', 'products:write', 'products:notes']) {
+      if (!(await hasGlobalGrant(this.grants, actionId, ctx))) {
+        throw new ForbiddenException(`Sin permiso ${actionId}`);
+      }
+    }
     const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true, listaId: true } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    const scoped = await decideCatalogResourceAccess(this.grants, 'products:read', ctx, {
-      id: product.id, kind: 'product', productId: product.id, listId: product.listaId ?? undefined,
-    });
-    if (!scoped.allowed) throw denied();
-    await this.acl.assertProductAccess(productId, ctx, 'view');
     return product;
   }
 }

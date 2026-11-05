@@ -1,22 +1,21 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequireGrant } from '../../../common/security/require-grant';
 import { AccessContext } from '../../../common/acl/acl.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../../common/guards/roles.guard';
 import { PublicationBoardService } from './publication-board.service';
 
 /**
  * CAT-06 (P4) — bandeja de publicación: pendientes / con problemas / publicados /
- * historial, por alcance de Lista (diseño §6/§7). Solo LECTURA: publicar,
+ * historial. Exige la concesión global `products:read` (sin cargo ni Lista): quien la tiene
+ * ve todos los productos (diseño §6/§7). Solo LECTURA: publicar,
  * retirar y programar siguen por sus endpoints canónicos (mismo servicio).
  */
 @ApiTags('Catalog')
 @ApiBearerAuth()
 @Controller('api/catalog')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
+@UseGuards(JwtAuthGuard)
 export class PublicationBoardController {
   constructor(private readonly publication: PublicationBoardService) {}
 
@@ -25,6 +24,7 @@ export class PublicationBoardController {
   }
 
   @Get('publication-board')
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Bandeja de publicación por vista (pendientes|problemas|publicados|historial)' })
   @ApiQuery({ name: 'view', required: false, description: 'Vista (por defecto: pendientes)' })
   @ApiQuery({ name: 'search', required: false, description: 'Búsqueda por SKU/nombre (opcional)' })

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,9 +11,13 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { CustomerAccount, Prisma } from "@prisma/client";
 import { applyRevisionLens, loadActiveRevisionContents } from '../products/public-revision-lens';
+import { blockedWebBrandIds, webBrandVisibility } from '../products/web-brand-policy';
 import * as bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { isEmail } from "class-validator";
+import { BibliotecaPrismaService } from "../../prisma/biblioteca-prisma.service";
+import type { Prisma as LibraryPrisma } from "../../../prisma/biblioteca/generated/client";
+import { directLegacyProductLibrary } from "../products/product-library";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PasswordPolicyService } from "../../common/security/password-policy.service";
 import { StorefrontMailService } from "./storefront-mail.service";
@@ -75,6 +80,7 @@ export class StorefrontService {
     private readonly config: ConfigService,
     private readonly passwords: PasswordPolicyService,
     private readonly mail: StorefrontMailService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
 
   async settings() {
@@ -104,7 +110,7 @@ export class StorefrontService {
         throw new BadRequestException("El teléfono configurado no es válido.");
     if (
       dto.publicPriceListId &&
-      !(await this.prisma.priceList.findFirst({
+      !(await this.library.client.priceList.findFirst({
         where: {
           id: dto.publicPriceListId,
           isActive: true,
@@ -380,20 +386,21 @@ export class StorefrontService {
     });
   }
 
-  /** Keep the current catalogue payload and presentation; resolve only its price. */
+  /** Catalog presentation stays public; prices require a verified customer session. */
   async applyCustomerPrices<T extends { id: string; price: { value: number; currency: string } | null }>(
     products: T[],
     sessionToken?: string,
   ): Promise<T[]> {
     if (!products.length) return products;
-    const settings = await this.settings();
     const account = await this.sessionAccount(sessionToken);
+    if (!account) return products.map((product) => ({ ...product, price: null }));
+    const settings = await this.settings();
     const privateList = account?.status === "APPROVED" ? account.priceListId : null;
     const lists = [settings.publicPriceListId, privateList].filter((id): id is string => Boolean(id));
     const legacyPublic = !settings.publicPriceListId && !(await this.prisma.storefrontSettings.findUnique({ where: { id: "default" }, select: { id: true } }));
     if (!lists.length) return legacyPublic ? products : products.map((product) => ({ ...product, price: null }));
     const now = new Date();
-    const rows = await this.prisma.price.findMany({
+    const rows = await this.library.client.price.findMany({
       where: {
         productId: { in: products.map((product) => product.id) },
         priceListId: { in: lists },
@@ -413,7 +420,7 @@ export class StorefrontService {
     });
   }
 
-  private publishedWhere(query: StorefrontQueryDto): Prisma.ProductWhereInput {
+  private async publishedWhere(query: StorefrontQueryDto): Promise<LibraryPrisma.ProductWhereInput> {
     return {
       lifecycleStatus: "PUBLISHED",
       // CAT-02: la tienda solo sirve productos del catálogo (visibilidad unificada).
@@ -421,6 +428,7 @@ export class StorefrontService {
       isActive: true,
       isVisible: true,
       AND: [
+        webBrandVisibility(await blockedWebBrandIds(this.library.client)),
         {
           OR: [
             { listaId: null },
@@ -471,16 +479,16 @@ export class StorefrontService {
     const account = await this.sessionAccount(sessionToken);
     const privateList =
       account?.status === "APPROVED" ? account.priceListId : null;
-    const listIds = [settings.publicPriceListId, privateList].filter(
+    const listIds = account ? [settings.publicPriceListId, privateList].filter(
       (id): id is string => Boolean(id),
-    );
+    ) : [];
     const now = new Date();
     const where = {
-      ...this.publishedWhere(query),
+      ...await this.publishedWhere(query),
       ...(productId ? { id: productId } : {}),
     };
-    const [products, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
+    const [products, total] = await this.library.client.$transaction([
+      this.library.client.product.findMany({
         where,
         skip: query.skip ?? 0,
         take: productId ? 1 : (query.limit ?? 24),
@@ -520,11 +528,13 @@ export class StorefrontService {
           },
         },
       }),
-      this.prisma.product.count({ where }),
+      this.library.client.product.count({ where }),
     ]);
     if (productId && !products.length)
       throw new NotFoundException("Producto no disponible en el catálogo.");
-    const result = products.map((product) => {
+    const contents = await loadActiveRevisionContents(this.library.client, products.map((product) => product.publicRevisionId));
+    const result = products.map((raw) => {
+      const product = applyRevisionLens(raw, contents);
       const { prices, ...details } = product;
       const publicPrice = prices.find(
         (price) => price.priceListId === settings.publicPriceListId,
@@ -542,8 +552,8 @@ export class StorefrontService {
           : null;
       return {
         ...details,
-        publicPrice: price(publicPrice),
-        professionalPrice: price(professionalPrice ?? undefined),
+        publicPrice: account ? price(publicPrice) : null,
+        professionalPrice: account ? price(professionalPrice ?? undefined) : null,
       };
     });
     return productId
@@ -558,8 +568,8 @@ export class StorefrontService {
   async inquire(dto: InquiryDto) {
     if (
       dto.productId &&
-      !(await this.prisma.product.findFirst({
-        where: { id: dto.productId, ...this.publishedWhere({}) },
+      !(await this.library.client.product.findFirst({
+        where: { id: dto.productId, ...await this.publishedWhere({}) },
         select: { id: true },
       }))
     )
@@ -600,7 +610,7 @@ export class StorefrontService {
         skip: query.inquirySkip ?? 0,
         take: 50,
       }),
-      this.prisma.priceList.findMany({
+      this.library.client.priceList.findMany({
         where: { isActive: true, ...validity(new Date()) },
         select: { id: true, name: true, code: true, currency: true },
       }),
@@ -629,7 +639,7 @@ export class StorefrontService {
     if (
       dto.status === "APPROVED" &&
       (!dto.priceListId ||
-        !(await this.prisma.priceList.findFirst({
+        !(await this.library.client.priceList.findFirst({
           where: {
             id: dto.priceListId,
             isActive: true,

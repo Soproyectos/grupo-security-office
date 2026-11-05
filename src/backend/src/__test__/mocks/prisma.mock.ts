@@ -238,5 +238,6 @@ export const createPrismaMock = () => ({
   $connect: jest.fn(),
   $disconnect: jest.fn(),
   productChange: { createMany: jest.fn() },
+  accessGrant: { findMany: jest.fn().mockResolvedValue([]) },
   $transaction: jest.fn(),
 });

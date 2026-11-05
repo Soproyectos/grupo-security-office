@@ -4,6 +4,11 @@ import { createPrismaMock } from '../../__test__/mocks/prisma.mock';
 
 const ADMIN = { userId: 'admin-1', roles: ['Super Admin'] };
 const COMERCIAL = { userId: 'user-1', roles: ['Operador'] };
+const SUPERVISOR_GRANTS = [
+  { sourceId: 'g1', actionId: 'quotes:read', scope: 'global' },
+  { sourceId: 'g2', actionId: 'targets:read', scope: 'global' },
+  { sourceId: 'g3', actionId: 'teamInsights:read', scope: 'global' },
+];
 
 describe('DashboardService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
@@ -30,7 +35,9 @@ describe('DashboardService', () => {
       getSubordinateIds: jest.fn().mockResolvedValue([]),
       assertCanViewUser: jest.fn().mockResolvedValue(undefined),
     };
-    service = new DashboardService(prisma as any, acl, hierarchy as any);
+    service = new DashboardService(prisma as any, acl, hierarchy as any, {
+      grantsForUser: jest.fn().mockResolvedValue(SUPERVISOR_GRANTS),
+    } as any);
 
     prisma.lista.count.mockResolvedValue(1);
     prisma.lista.findMany.mockResolvedValue([listaRow]);

@@ -493,6 +493,30 @@ describe('AccessAssignmentsService (BASE-04 §7.2, §8)', () => {
       expect(await versionOf(recipientId)).toBe(0);
     });
 
+    it('conceder products:publish sin products:write → 400 (Publicar en tienda es complemento de Fichas)', async () => {
+      await expect(
+        service.replaceSource(actor, recipientId, {
+          expectedVersion: 0,
+          catalogVersion: ACCESS_CATALOG_VERSION,
+          source: { kind: 'manual', reason: 'manual' },
+          grants: [{ actionId: 'products:read', scope: 'global' }, { actionId: 'products:publish', scope: 'global' }],
+        }),
+      ).rejects.toThrow(/products:write/);
+      await expect(
+        service.applyPackage(actor, recipientId, 'biblioteca-publicacion', { expectedVersion: 0, catalogVersion: ACCESS_CATALOG_VERSION }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(await versionOf(recipientId)).toBe(0);
+    });
+
+    it('Publicar en tienda se puede asignar cuando Fichas ya concede products:write', async () => {
+      const update = await service.applyPackage(actor, recipientId, 'biblioteca-fichas', { expectedVersion: 0, catalogVersion: ACCESS_CATALOG_VERSION });
+      const publish = await service.applyPackage(actor, recipientId, 'biblioteca-publicacion', { expectedVersion: update.accessVersion, catalogVersion: ACCESS_CATALOG_VERSION });
+      expect(publish.accessVersion).toBe(update.accessVersion + 1);
+      const grants = await service.grantsForUser(recipientId);
+      expect(grants.some((grant) => grant.sourceId === publish.sourceId && grant.actionId === 'products:publish')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === update.sourceId && grant.actionId === 'products:write')).toBe(true);
+    });
+
     it('la dependencia satisfecha por OTRA fuente vigente sí permite el alta', async () => {
       const read = await service.replaceSource(actor, recipientId, {
         expectedVersion: 0,
@@ -708,6 +732,179 @@ describe('AccessAssignmentsService (BASE-04 §7.2, §8)', () => {
       expect(replay.accessVersion).toBe(primera.accessVersion);
       expect(await sourceCount(recipientId)).toBe(1);
       expect(await prisma.accessOperation.count({ where: { targetId: recipientId } })).toBe(1);
+    });
+
+    it('al aplicar Biblioteca limpia solo grants históricos de Biblioteca y conserva otros dominios', async () => {
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: 0,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'permisos previos' },
+        grants: [
+          { actionId: 'products:read', scope: 'global' },
+          { actionId: 'products:write', scope: 'global' },
+          { actionId: 'products:notes', scope: 'global' },
+          { actionId: 'products:validate', scope: 'global' },
+          { actionId: 'products:publish', scope: 'global' },
+          { actionId: 'prices:read', scope: 'global' },
+          { actionId: 'prices:apply', scope: 'global' },
+          { actionId: 'providers:write', scope: 'global' },
+          { actionId: 'listas:read', scope: 'global' },
+          { actionId: 'customers:read', scope: 'own' },
+        ],
+      });
+
+      const receipt = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', {
+        expectedVersion: manual.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+
+      expect(receipt.accessVersion).toBe(manual.accessVersion + 1);
+      const grants = await service.grantsForUser(recipientId);
+      expect(grants.filter((grant) => grant.sourceId === manual.sourceId).map((grant) => grant.actionId)).toEqual(['customers:read']);
+      expect(grants.filter((grant) => grant.sourceId === receipt.sourceId).map((grant) => grant.actionId).sort()).toEqual(['prices:read', 'products:read']);
+      expect(grants.some((grant) => /^(products|prices|providers|listas):/.test(grant.actionId) && grant.sourceId === manual.sourceId)).toBe(false);
+      expect(await prisma.auditLog.count({ where: { entity: 'UserAccess', entityId: recipientId, action: 'replaceSource' } })).toBe(2);
+    });
+
+    it('aplicar otro paquete conserva grants de los demás paquetes vigentes de Biblioteca', async () => {
+      const update = await service.applyPackage(actor, recipientId, 'biblioteca-fichas', {
+        expectedVersion: 0,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: update.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'accesos anteriores' },
+        grants: [
+          { actionId: 'products:read', scope: 'global' },
+          { actionId: 'products:validate', scope: 'global' },
+          { actionId: 'products:publish', scope: 'global' },
+          { actionId: 'customers:read', scope: 'own' },
+        ],
+      });
+      const query = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', {
+        expectedVersion: manual.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+
+      const grants = await service.grantsForUser(recipientId);
+      expect(query.accessVersion).toBe(manual.accessVersion + 1);
+      expect(grants.some((grant) => grant.sourceId === update.sourceId && grant.actionId === 'products:write')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === query.sourceId && grant.actionId === 'products:read')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === manual.sourceId && grant.actionId === 'customers:read')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === manual.sourceId && grant.actionId === 'products:publish')).toBe(false);
+    });
+
+    it('el replay de aplicar Biblioteca devuelve recibo sin ejecutar otra limpieza ni bump', async () => {
+      const input = { expectedVersion: 0, catalogVersion: ACCESS_CATALOG_VERSION, idempotencyKey: 'com01-library-apply-replay' };
+      const first = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', input);
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: first.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'acceso posterior' },
+        grants: [{ actionId: 'products:read', scope: 'global' }, { actionId: 'products:validate', scope: 'global' }, { actionId: 'products:publish', scope: 'global' }, { actionId: 'customers:read', scope: 'own' }],
+      });
+
+      const replay = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', input);
+
+      expect(replay.replayed).toBe(true);
+      expect(await versionOf(recipientId)).toBe(manual.accessVersion);
+      expect((await service.grantsForUser(recipientId)).some((grant) => grant.sourceId === manual.sourceId && grant.actionId === 'products:publish')).toBe(true);
+      expect(await prisma.accessOperation.count({ where: { targetId: recipientId } })).toBe(2);
+    });
+
+    it('aplicar otro paquete conserva grants de los demás paquetes vigentes de Biblioteca', async () => {
+      const update = await service.applyPackage(actor, recipientId, 'biblioteca-fichas', {
+        expectedVersion: 0,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: update.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'accesos anteriores' },
+        grants: [
+          { actionId: 'products:read', scope: 'global' },
+          { actionId: 'products:validate', scope: 'global' },
+          { actionId: 'products:publish', scope: 'global' },
+          { actionId: 'customers:read', scope: 'own' },
+        ],
+      });
+      const query = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', {
+        expectedVersion: manual.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+
+      const grants = await service.grantsForUser(recipientId);
+      expect(query.accessVersion).toBe(manual.accessVersion + 1);
+      expect(grants.some((grant) => grant.sourceId === update.sourceId && grant.actionId === 'products:write')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === query.sourceId && grant.actionId === 'products:read')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === manual.sourceId && grant.actionId === 'customers:read')).toBe(true);
+      expect(grants.some((grant) => grant.sourceId === manual.sourceId && grant.actionId === 'products:publish')).toBe(false);
+    });
+
+    it('retirar el último paquete Biblioteca no deja ni revive grants históricos; conserva grants comerciales', async () => {
+      const packageReceipt = await service.applyPackage(actor, recipientId, 'biblioteca-consulta', {
+        expectedVersion: 0,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: packageReceipt.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'residuo previo' },
+        grants: [
+          { actionId: 'products:publish', scope: 'global' },
+          { actionId: 'listas:read', scope: 'global' },
+          { actionId: 'customers:read', scope: 'own' },
+        ],
+      });
+      const historicalSource = await prisma.accessSource.create({
+        data: {
+          userId: recipientId,
+          kind: 'template',
+          templateId: 'biblioteca-productos',
+          catalogVersion: ACCESS_CATALOG_VERSION,
+          grantedById: actor.userId,
+          reason: 'historical-fixture',
+          grants: { create: [
+            { actionId: 'products:read', scopeKind: 'global' },
+            { actionId: 'prices:apply', scopeKind: 'global' },
+          ] },
+        },
+        select: { id: true },
+      });
+
+      const receipt = await service.removePackage(actor, recipientId, 'biblioteca-consulta', {
+        expectedVersion: manual.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+
+      expect(receipt.accessVersion).toBe(manual.accessVersion + 1);
+      const grants = await service.grantsForUser(recipientId);
+      expect(grants).toEqual([{ sourceId: manual.sourceId, actionId: 'customers:read', scope: 'own' }]);
+      expect(await prisma.accessGrant.count({ where: { sourceId: historicalSource.id } })).toBe(0);
+    });
+
+    it('retirar un paquete Biblioteca ausente limpia residuos legacy con un solo bump OCC', async () => {
+      const manual = await service.replaceSource(actor, recipientId, {
+        expectedVersion: 0,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+        source: { kind: 'manual', reason: 'residuo previo' },
+        grants: [
+          { actionId: 'products:publish', scope: 'global' },
+          { actionId: 'customers:read', scope: 'own' },
+        ],
+      });
+
+      const receipt = await service.removePackage(actor, recipientId, 'biblioteca-publicacion', {
+        expectedVersion: manual.accessVersion,
+        catalogVersion: ACCESS_CATALOG_VERSION,
+      });
+
+      expect(receipt.sourceId).toBe('');
+      expect(receipt.accessVersion).toBe(manual.accessVersion + 1);
+      expect(await service.grantsForUser(recipientId)).toEqual([
+        { sourceId: manual.sourceId, actionId: 'customers:read', scope: 'own' },
+      ]);
     });
 
     it('aceptación 3 — removePackage retira SOLO la fuente template y conserva la manual', async () => {

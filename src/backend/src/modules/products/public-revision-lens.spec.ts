@@ -6,7 +6,7 @@
  * RED observado: el helper/lente aún no existen.
  */
 import { NotFoundException } from '@nestjs/common';
-import { applyRevisionLens, loadActiveRevisionContents } from './public-revision-lens';
+import { applyRevisionLens, applySheetSnapshot, effectiveIdentity, loadActiveRevisionContents, sheetDiffersFromSnapshot } from './public-revision-lens';
 import { PublicCatalogService } from './public-catalog.service';
 import { PUBLIC_CATALOG_VISIBILITY } from './public-catalog-visibility';
 
@@ -70,6 +70,7 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
   describe('PublicCatalogService.getDetail usa el lente', () => {
     it('sirve el snapshot aunque las columnas vivas hayan cambiado (ruta legacy)', async () => {
       const prisma = {
+        brand: { findMany: jest.fn().mockResolvedValue([]) },
         product: {
           findFirst: jest.fn().mockResolvedValue({
             id: 'p1', lifecycleStatus: 'PUBLISHED', catalogPublished: true,
@@ -93,12 +94,14 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
 
     it('search exige la visibilidad pública común (PUBLIC_CATALOG_VISIBILITY): publicado o ficha informativa de la biblioteca', async () => {
       const prisma = {
+        brand: { findMany: jest.fn().mockResolvedValue([]) },
         category: { findMany: jest.fn().mockResolvedValue([]) },
         product: {
           findMany: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
         },
         productRevision: { findMany: jest.fn().mockResolvedValue([]) },
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'p1' }]),
       } as any;
       const pricing = { getPublicPrices: jest.fn().mockResolvedValue(new Map()) } as any;
       const service = new PublicCatalogService(prisma, pricing);
@@ -111,6 +114,7 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
   describe('getDetail por ID exige visibilidad completa (hueco §2.1 cerrado)', () => {
     it('el where exige la visibilidad pública común además del id', async () => {
       const prisma = {
+        brand: { findMany: jest.fn().mockResolvedValue([]) },
         product: {
           findFirst: jest.fn().mockResolvedValue({
             id: 'p1', lifecycleStatus: 'PUBLISHED', catalogPublished: true,
@@ -129,6 +133,86 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
           where: { id: 'p1', AND: [PUBLIC_CATALOG_VISIBILITY] },
         }),
       );
+    });
+  });
+});
+
+describe('published isolation — detailed sheet snapshot', () => {
+  const live = { id: 'p1', publicRevisionId: 'rev-1', catalogHighlights: ['live'], catalogBadges: ['live'], catalogImageUrl: '/live.png', catalogSpecGroups: [{ key: 'v', title: 'Live', items: [] }] };
+
+  it('applySheetSnapshot takes the snapshot values, including an authoritative null', () => {
+    const contents = new Map([['rev-1', { catalogHighlights: ['pub'], catalogImageUrl: null, catalogSpecGroups: [] } as Record<string, unknown>]]);
+    const out = applySheetSnapshot(live, contents) as any;
+    expect(out.catalogHighlights).toEqual(['pub']);
+    expect(out.catalogImageUrl).toBeNull();
+    expect(out.catalogSpecGroups).toEqual([]);
+    expect(out.catalogBadges).toEqual(['live']); // key absent in the snapshot -> live fallback
+  });
+
+  it('applySheetSnapshot is a no-op for a legacy revision and without an active revision', () => {
+    expect(applySheetSnapshot(live, new Map([['rev-1', { name: 'x' } as Record<string, unknown>]]))).toEqual(live);
+    expect(applySheetSnapshot(live, new Map())).toEqual(live);
+  });
+
+  it('sheetDiffersFromSnapshot detects draft changes and ignores keys a legacy snapshot lacks', () => {
+    const snap = { catalogHighlights: ['live'], catalogBadges: ['live'], catalogSpecGroups: [{ key: 'v', title: 'Live', items: [] }], images: [{ url: '/a', alt: null, isPrimary: true }] };
+    const row = { ...live, images: [{ url: '/a', alt: null, isPrimary: true }] };
+    expect(sheetDiffersFromSnapshot(row, snap)).toBe(false);
+    expect(sheetDiffersFromSnapshot({ ...row, catalogHighlights: ['edited'] }, snap)).toBe(true);
+    expect(sheetDiffersFromSnapshot({ ...row, images: [{ url: '/b', alt: null, isPrimary: true }] }, snap)).toBe(true);
+    expect(sheetDiffersFromSnapshot({ ...row, catalogSpecGroups: [{ key: 'v', title: 'Live', items: [{ label: 'a', value: 'b' }] }] }, snap)).toBe(true);
+    expect(sheetDiffersFromSnapshot({ ...row, catalogHighlights: ['edited'] }, { name: 'legacy' })).toBe(false);
+    expect(sheetDiffersFromSnapshot(row, undefined)).toBe(false);
+  });
+});
+
+describe('published isolation — identity snapshot', () => {
+  const row = { publicRevisionId: 'rev-1' };
+  const contents = new Map([['rev-1', { categoryId: 'c-old', brandId: null, name: 'legacy-like' }]]);
+
+  it('a present key is authoritative, even null', () => {
+    expect(effectiveIdentity(row, contents, 'categoryId', 'c-live')).toBe('c-old');
+    expect(effectiveIdentity(row, contents, 'brandId', 'b-live')).toBeNull();
+  });
+
+  it('a missing key (legacy revision) or no pinned revision falls back to the live value', () => {
+    expect(effectiveIdentity(row, contents, 'subcategoryId', 's-live')).toBe('s-live');
+    expect(effectiveIdentity({ publicRevisionId: null }, contents, 'categoryId', 'c-live')).toBe('c-live');
+    expect(effectiveIdentity(row, new Map(), 'categoryId', null)).toBeNull();
+  });
+  describe('sheet snapshot version 2', () => {
+    const live = { publicRevisionId: 'r', name: 'Live', sku: 'L', description: 'live desc', catalogBrand: 'Live brand', catalogStatus: 'DISCONTINUED', catalogSpecsDisclaimer: 'live disc', catalogAvailableModels: ['A'], catalogFirmwareNote: 'live fw' };
+    const withContent = (content: Record<string, unknown>) => new Map([['r', content]]);
+
+    it('with the marker, a present null/empty value is authoritative (no live fallback)', () => {
+      const contents = withContent({ sheetSnapshotVersion: 2, description: null, catalogBrand: null, name: null, catalogStatus: 'ACTIVE', catalogSpecsDisclaimer: null, catalogAvailableModels: [], catalogFirmwareNote: null });
+      const out = applySheetSnapshot(applyRevisionLens(live, contents), contents);
+      expect(out).toMatchObject({ description: null, catalogBrand: null, catalogStatus: 'ACTIVE', catalogSpecsDisclaimer: null, catalogAvailableModels: [], catalogFirmwareNote: null });
+      expect(out.name).toBe('Live'); // non-nullable identity column keeps live
+    });
+
+    it('with the marker, absent keys still fall back to live', () => {
+      const contents = withContent({ sheetSnapshotVersion: 2 });
+      expect(applySheetSnapshot(applyRevisionLens(live, contents), contents)).toEqual(live);
+    });
+
+    it('without the marker (legacy), null is ignored and new keys are not applied', () => {
+      const contents = withContent({ description: null, catalogBrand: null, catalogStatus: 'ACTIVE', catalogSpecsDisclaimer: null, catalogAvailableModels: [] });
+      expect(applySheetSnapshot(applyRevisionLens(live, contents), contents)).toEqual(live);
+    });
+
+    it('preview keeps the live description and brand even with the marker', () => {
+      const contents = withContent({ sheetSnapshotVersion: 2, description: 'frozen', catalogBrand: 'frozen' });
+      expect(applyRevisionLens(live, contents, { preview: true })).toMatchObject({ description: 'live desc', catalogBrand: 'Live brand' });
+      expect(applyRevisionLens(live, contents)).toMatchObject({ description: 'frozen', catalogBrand: 'frozen' });
+    });
+
+    it('sheetDiffersFromSnapshot compares the new fields only with the marker', () => {
+      const snapshot = { description: null, catalogBrand: null, catalogStatus: 'ACTIVE', catalogSpecsDisclaimer: null, catalogAvailableModels: [], catalogFirmwareNote: null };
+      const row = { images: [], ...live };
+      expect(sheetDiffersFromSnapshot(row, snapshot)).toBe(false);
+      expect(sheetDiffersFromSnapshot(row, { ...snapshot, sheetSnapshotVersion: 2 })).toBe(true);
+      expect(sheetDiffersFromSnapshot({ images: [], description: '', catalogBrand: null, catalogStatus: null, catalogSpecsDisclaimer: null, catalogAvailableModels: [], catalogFirmwareNote: null }, { ...snapshot, sheetSnapshotVersion: 2 })).toBe(false);
     });
   });
 });

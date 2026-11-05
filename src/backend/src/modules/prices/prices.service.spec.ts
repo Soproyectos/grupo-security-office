@@ -13,8 +13,13 @@ import { PricesService } from './prices.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../products/product-library';
+import { ProductRevisionsService } from '../products/product-revisions.service';
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
+const mockRevisions = { markPendingFromLive: jest.fn().mockResolvedValue(undefined) };
 
 const mockAcl = {
   isSuperAdmin: jest.fn().mockReturnValue(false),
@@ -85,6 +90,7 @@ describe('PricesService', () => {
     jest.resetAllMocks();
     mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
     mockPrisma.productChange.createMany.mockResolvedValue({ count: 0 });
+    mockPrisma.priceList.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,6 +98,10 @@ describe('PricesService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AclService, useValue: mockAcl },
         { provide: AuditService, useValue: mockAudit },
+        // Modo legacy: la fachada de biblioteca comparte el cliente de prueba.
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(mockPrisma as never) },
+        LibraryAuditService,
+        { provide: ProductRevisionsService, useValue: mockRevisions },
       ],
     }).compile();
 
@@ -173,6 +183,53 @@ describe('PricesService', () => {
         const result = await service.createPriceList({ name: 'Lista', code: `L-${currency}`, currency });
         expect(result.currency).toBe(currency);
       }
+    });
+  });
+
+  describe('colisión de nombres de tarifa (el encabezado del Excel sería ambiguo)', () => {
+    const others = [
+      { id: 'pl-9', code: 'TIENDA_IVA', name: 'Tienda (con IVA)' },
+      { id: 'pl-8', code: 'DPP_ORO_IVA', name: 'DPP Oro' },
+    ];
+
+    it('crear: rechaza con 409 un nombre igual a otro nombre (sin acentos, mayúsculas ni espacios)', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(null);
+      mockPrisma.priceList.findMany.mockResolvedValue(others);
+      await expect(service.createPriceList({ name: '  dpp   ÓRO ', code: 'NUEVA' })).rejects.toThrow(ConflictException);
+      await expect(service.createPriceList({ name: 'dpp oro', code: 'NUEVA' })).rejects.toThrow(/se confunde con la tarifa/);
+      expect(mockPrisma.priceList.create).not.toHaveBeenCalled();
+    });
+
+    it('crear: rechaza un nombre igual al CÓDIGO de otra tarifa y el sufijo (con IVA) opcional', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(null);
+      mockPrisma.priceList.findMany.mockResolvedValue(others);
+      await expect(service.createPriceList({ name: 'tienda_iva', code: 'NUEVA' })).rejects.toThrow(ConflictException);
+      await expect(service.createPriceList({ name: 'Tienda', code: 'NUEVA' })).rejects.toThrow(ConflictException);
+      await expect(service.createPriceList({ name: 'DPP Oro (con IVA)', code: 'NUEVA' })).rejects.toThrow(ConflictException);
+    });
+
+    it('crear: un nombre distinto pasa', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(null);
+      mockPrisma.priceList.findMany.mockResolvedValue(others);
+      mockPrisma.priceList.create.mockResolvedValue(mockPriceList);
+      await expect(service.createPriceList({ name: 'DPP Platino', code: 'DPP_PLATINO_IVA' })).resolves.toBeDefined();
+    });
+
+    it('actualizar: rechaza renombrar a un nombre/código de OTRA tarifa, pero permite conservar el propio', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(mockPriceList);
+      mockPrisma.priceList.findMany.mockResolvedValue([{ id: 'pl-1', code: 'MAYORISTA', name: 'Lista Mayorista' }, ...others]);
+      mockPrisma.priceList.update.mockResolvedValue(mockPriceList);
+      await expect(service.updatePriceList('pl-1', { name: 'Tienda (con IVA)' })).rejects.toThrow(ConflictException);
+      await expect(service.updatePriceList('pl-1', { name: 'tienda iva' })).resolves.toBeDefined();
+      await expect(service.updatePriceList('pl-1', { name: 'lista MAYORISTA' })).resolves.toBeDefined();
+      expect(mockPrisma.priceList.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('actualizar: un código nuevo que se confunde con el nombre de otra tarifa también es 409', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValueOnce(mockPriceList).mockResolvedValueOnce(null);
+      mockPrisma.priceList.findMany.mockResolvedValue(others);
+      await expect(service.updatePriceList('pl-1', { code: 'DPP ORO' })).rejects.toThrow(ConflictException);
+      expect(mockPrisma.priceList.update).not.toHaveBeenCalled();
     });
   });
 
@@ -271,6 +328,7 @@ describe('PricesService', () => {
 
     it('debe lanzar ConflictException si la lista tiene precios', async () => {
       mockPrisma.priceList.findUnique.mockResolvedValue(mockPriceListWithCount);
+      mockPrisma.price.count.mockResolvedValue(3);
 
       await expect(service.removePriceList('pl-1')).rejects.toThrow(ConflictException);
       await expect(service.removePriceList('pl-1')).rejects.toThrow('No se puede eliminar una lista con precios asociados');
@@ -294,6 +352,7 @@ describe('PricesService', () => {
       const result = await service.createPrice(dto);
 
       expect(result.value).toBe(1500000);
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
     });
 
     it('debe rechazar duplicado producto+lista con ConflictException', async () => {
@@ -401,6 +460,7 @@ describe('PricesService', () => {
       const result = await service.updatePrice('price-1', dto);
 
       expect(result.value).toBe(1600000);
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
     });
 
     it('debe lanzar NotFoundException si el precio no existe', async () => {
@@ -442,6 +502,7 @@ describe('PricesService', () => {
       const result = await service.removePrice('price-1');
 
       expect(result.message).toBe('Precio eliminado exitosamente');
+      expect(mockRevisions.markPendingFromLive).toHaveBeenCalledWith('prod-1');
     });
 
     it('debe lanzar NotFoundException si el precio no existe', async () => {
@@ -469,11 +530,11 @@ describe('PricesService', () => {
       };
     }
 
-    it('createPrice rechaza con 409 si la vigencia se solapa con otro precio de la misma Lista', async () => {
+    it('createPrice rechaza con 409 si la vigencia se solapa con otro precio de la misma tarifa', async () => {
       mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
       mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
       mockPrisma.price.findUnique.mockResolvedValue(null);
-      mockPrisma.price.findMany.mockResolvedValue([existingOverlapping()]);
+      mockPrisma.price.findMany.mockResolvedValue([existingOverlapping({ priceListId: 'pl-1' })]);
 
       const dto = {
         productId: 'prod-1',
@@ -486,6 +547,24 @@ describe('PricesService', () => {
       await expect(service.createPrice(dto)).rejects.toThrow(ConflictException);
       await expect(service.createPrice(dto)).rejects.toThrow('se solapa con la vigencia del precio price-x');
       expect(mockPrisma.price.create).not.toHaveBeenCalled();
+    });
+
+    it('createPrice permite vigencias solapadas en tarifas distintas asociadas a la misma Lista', async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: 'lista-prod' });
+      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
+      mockPrisma.price.findUnique.mockResolvedValue(null);
+      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.price.create.mockResolvedValue(mockPriceWithRelations);
+
+      await service.createPrice({
+        productId: 'prod-1', priceListId: 'pl-1', value: 1500000,
+        validFrom: '2026-06-01', validUntil: '2026-07-01',
+      } as any);
+
+      expect(mockPrisma.price.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { productId: 'prod-1', priceListId: 'pl-1' },
+      }));
+      expect(mockPrisma.price.create).toHaveBeenCalled();
     });
 
     it('createPrice acepta cuando la vigencia no se solapa', async () => {
@@ -548,6 +627,19 @@ describe('PricesService', () => {
 
       const result = await service.updatePrice('price-1', { value: 1600000 });
       expect(result.value).toBe(1600000);
+    });
+
+    it('updatePrice permite solaparse con otra tarifa asociada a la misma Lista', async () => {
+      mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
+      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.price.update.mockResolvedValue({ ...mockPriceWithRelations, value: 1600000 });
+
+      const result = await service.updatePrice('price-1', { value: 1600000 });
+
+      expect(result.value).toBe(1600000);
+      expect(mockPrisma.price.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { productId: 'prod-1', priceListId: 'pl-1', id: { not: 'price-1' } },
+      }));
     });
   });
 
@@ -661,135 +753,77 @@ describe('PricesService', () => {
     });
   });
 
-  // --- ACL deny-by-default (AclService real) ---
-  describe('ACL deny-by-default', () => {
+  // --- Sin Listas: el servicio no autoriza por Lista (el permiso global lo exige PriceActionGuard) ---
+  describe('sin dependencia de Listas', () => {
     const LISTA_ID = 'list-1';
+    const OPERADOR = { userId: 'operator-1', roles: ['Operador'] };
     const ADMIN = { userId: 'admin-1', roles: ['Super Admin'] };
-    const VIEWER = { userId: 'pepito-1', roles: ['Operador'] }; // view sobre LISTA
-    const EDIT_PRICES = { userId: 'price-editor', roles: ['Admin Comercial'] }; // edit_prices sobre LISTA
-    const VIEW_PRICES = { userId: 'price-viewer', roles: ['Operador'] }; // view_prices sobre LISTA
-    const NOAUTH = { userId: 'none-1', roles: ['Operador'] }; // sin assignments
-
-    const grants: Record<string, { sourceId: string; actionId: string; scopeKind: 'list'; resourceId: string }[]> = {
-      [VIEWER.userId]: [],
-      [VIEW_PRICES.userId]: [],
-      [EDIT_PRICES.userId]: [],
-      [ADMIN.userId]: [],
-      [NOAUTH.userId]: [],
-    };
-    const assignGrant = (userId: string, actionId: string) => {
-      grants[userId].push({ sourceId: `${userId}-${actionId}`, actionId, scopeKind: 'list', resourceId: LISTA_ID });
-    };
-    let acl: AclService;
-    let svc: PricesService;
 
     beforeEach(() => {
-      acl = new AclService(mockPrisma as any);
-      svc = new PricesService(mockPrisma as any, acl, mockAudit as any);
-      for (const userId of Object.keys(grants)) grants[userId] = [];
-      assignGrant(VIEWER.userId, 'listas:read');
-      for (const actionId of ['listas:read', 'prices:read']) assignGrant(VIEW_PRICES.userId, actionId);
-      for (const actionId of ['listas:read', 'prices:read', 'prices:apply']) assignGrant(EDIT_PRICES.userId, actionId);
-      (mockPrisma as any).accessGrant.findMany.mockImplementation(async (args: any) =>
-        grants[args?.where?.source?.userId] ?? [],
-      );
-      mockPrisma.assignment.findMany.mockImplementation(async (args: any) => {
-        return [];
-      });
-      mockPrisma.lista.findUnique.mockResolvedValue({ id: LISTA_ID, code: 'LISTA-GENERAL', isActive: true, archivedAt: null });
+      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', sku: 'CAM-001', listaId: LISTA_ID });
     });
 
-    it('findPricesByProduct: view sin concesión de prices:read no revela precios', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.findPricesByProduct('prod-1', VIEWER)).rejects.toThrow(NotFoundException);
-    });
+    const expectNoListaCalls = () => {
+      for (const method of ['getAllowedListaIds', 'assertListaAccess', 'assertProductAccess', 'assertPriceAccess'] as const) {
+        expect(mockAcl[method]).not.toHaveBeenCalled();
+      }
+      expect(mockPrisma.lista.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.lista.findMany).not.toHaveBeenCalled();
+    };
 
-    it('findPricesByProduct: edit_prices ve precios de su Lista', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
+    it('findPricesByProduct: devuelve los precios del producto sin consultar el ACL de Lista', async () => {
       mockPrisma.price.findMany.mockResolvedValue([mockPriceWithRelations]);
-      const res = await svc.findPricesByProduct('prod-1', EDIT_PRICES);
+      const res = await service.findPricesByProduct('prod-1', OPERADOR);
       expect(res.data).toHaveLength(1);
+      expect(mockPrisma.price.findMany.mock.calls[0][0].where).toEqual({ productId: 'prod-1' });
+      expectNoListaCalls();
     });
 
-    it('findPricesByProduct: view_prices ve precios de su Lista', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
+    it('findPricesByPriceList: sin filtro por Lista del producto', async () => {
       mockPrisma.price.findMany.mockResolvedValue([mockPriceWithRelations]);
-      const res = await svc.findPricesByProduct('prod-1', VIEW_PRICES);
+      const res = await service.findPricesByPriceList('pl-1', OPERADOR);
       expect(res.data).toHaveLength(1);
+      expect(mockPrisma.price.findMany.mock.calls[0][0].where).toEqual({ priceListId: 'pl-1' });
+      expectNoListaCalls();
     });
 
-    it('createPrice: view_prices sin prices:apply no permite crear precio', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
+    it('findOnePriceList: incluye todos los precios de la tarifa (sin where por Lista)', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(mockPriceListWithPrices);
+      const res = await service.findOnePriceList('pl-1', OPERADOR);
+      expect(res.prices).toHaveLength(1);
+      expect(mockPrisma.priceList.findUnique.mock.calls[0][0].include.prices).not.toHaveProperty('where');
+      expectNoListaCalls();
+    });
+
+    it('createPrice: crea sin pedir edit_prices sobre la Lista del producto y deja el historial', async () => {
+      mockPrisma.priceList.findUnique.mockResolvedValue(mockPriceList);
       mockPrisma.price.findUnique.mockResolvedValue(null);
-      const dto = { productId: 'prod-1', priceListId: 'pl-1', value: 1500000 };
-      await expect(svc.createPrice(dto, VIEW_PRICES)).rejects.toThrow(NotFoundException);
-      expect(mockPrisma.price.create).not.toHaveBeenCalled();
+      mockPrisma.price.findMany.mockResolvedValue([]);
+      mockPrisma.price.create.mockResolvedValue(mockPriceWithRelations);
+      await service.createPrice({ productId: 'prod-1', priceListId: 'pl-1', value: 1500000 }, OPERADOR);
+      expect(mockPrisma.price.create).toHaveBeenCalled();
+      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'create', entity: 'Price', userId: OPERADOR.userId }));
+      expectNoListaCalls();
     });
 
-    it('updatePrice: view_prices sin prices:apply no permite editar precio', async () => {
+    it('updatePrice: edita sin pedir edit_prices sobre la Lista y deja el historial', async () => {
       mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.updatePrice('price-1', { value: 1600000 }, VIEW_PRICES)).rejects.toThrow(NotFoundException);
-      expect(mockPrisma.price.update).not.toHaveBeenCalled();
-    });
-
-    it('removePrice: view_prices sin prices:apply no permite eliminar precio', async () => {
-      mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.removePrice('price-1', VIEW_PRICES)).rejects.toThrow(NotFoundException);
-      expect(mockPrisma.price.delete).not.toHaveBeenCalled();
-    });
-
-    it('updatePrice: edit_prices sigue pudiendo editar precios (sin regresión)', async () => {
-      mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
+      mockPrisma.price.findMany.mockResolvedValue([]);
       mockPrisma.price.update.mockResolvedValue({ ...mockPriceWithRelations, value: 1600000 });
-      const res = await svc.updatePrice('price-1', { value: 1600000 }, EDIT_PRICES);
-      expect(mockPrisma.price.update).toHaveBeenCalled();
+      const res = await service.updatePrice('price-1', { value: 1600000 }, OPERADOR);
       expect(res.value).toBe(1600000);
+      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', entity: 'Price', userId: OPERADOR.userId }));
+      expectNoListaCalls();
     });
 
-    it('removePrice: edit_prices sigue pudiendo eliminar precios (sin regresión)', async () => {
+    it('removePrice: elimina sin pedir edit_prices sobre la Lista y deja el historial', async () => {
       mockPrisma.price.findUnique.mockResolvedValue(mockPrice);
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
       mockPrisma.price.delete.mockResolvedValue(mockPrice);
-      const res = await svc.removePrice('price-1', EDIT_PRICES);
+      const res = await service.removePrice('price-1', ADMIN);
       expect(mockPrisma.price.delete).toHaveBeenCalledWith({ where: { id: 'price-1' } });
       expect(res.message).toContain('eliminado');
-    });
-
-    it('findPricesByProduct: usuario sin assignment recibe 404 (no revela existencia)', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.findPricesByProduct('prod-1', NOAUTH)).rejects.toThrow(NotFoundException);
-    });
-
-    it('Admin Comercial sin grants no obtiene precios por su rol', async () => {
-      const comercial = { userId: 'commercial-empty', roles: ['Admin Comercial'] };
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      await expect(svc.findPricesByProduct('prod-1', comercial)).rejects.toThrow(NotFoundException);
-    });
-
-    it('findPricesByPriceList: usuario sin assignment ve lista vacía (deny)', async () => {
-      mockPrisma.price.findMany.mockResolvedValue([]);
-      const res = await svc.findPricesByPriceList('pl-1', NOAUTH);
-      expect(res.data).toHaveLength(0);
-    });
-
-    it('createPrice: view sin prices:apply no permite crear precio', async () => {
-      mockPrisma.product.findUnique.mockResolvedValue({ id: 'prod-1', listaId: LISTA_ID });
-      mockPrisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1' });
-      mockPrisma.price.findUnique.mockResolvedValue(null);
-      const dto = { productId: 'prod-1', priceListId: 'pl-1', value: 1500000 };
-      await expect(svc.createPrice(dto, VIEWER)).rejects.toThrow(NotFoundException);
-    });
-
-    it('Super Admin evita filtrado (ve precios de la priceList sin scope)', async () => {
-      mockPrisma.price.findMany.mockResolvedValue([mockPriceWithRelations]);
-      const res = await svc.findPricesByPriceList('pl-1', ADMIN);
-      expect(res.data).toHaveLength(1);
-      const call = mockPrisma.price.findMany.mock.calls[0][0];
-      expect(call.where).not.toHaveProperty('product');
+      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'delete', entity: 'Price', userId: ADMIN.userId }));
+      expectNoListaCalls();
     });
   });
 });

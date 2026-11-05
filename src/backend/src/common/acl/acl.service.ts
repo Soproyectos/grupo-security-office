@@ -1,6 +1,7 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { decideCatalogResourceAccessFromGrants } from '../security/catalog-resource-access';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import {
   ACCESS_CATALOG_VERSION,
   getActionDefinition,
@@ -52,11 +53,22 @@ export function normalizeLevel(level?: string | null): string | null {
 
 export interface AccessContext {
   userId?: string;
+  /** Nombre visible para el historial de biblioteca (copia del momento; opcional). */
+  userName?: string;
   roles: string[];
 }
 
 /** Prefijo para assignments por rol: resourceId = 'ROLE:{nombreDelRol}'. */
 export const ROLE_ASSIGNMENT_PREFIX = 'ROLE:';
+
+// Compatibility for existing direct unit-test constructors. Nest must inject the
+// required BibliotecaPrismaService provider; dedicated mode never falls back.
+function directLegacyLibrary(prisma: PrismaService): BibliotecaPrismaService {
+  if (process.env.LIBRARY_DATABASE_MODE && process.env.LIBRARY_DATABASE_MODE !== 'legacy') {
+    throw new Error('AclService requires the library provider in dedicated mode');
+  }
+  return { client: prisma } as unknown as BibliotecaPrismaService;
+}
 
 /**
  * Servicio centralizado de autorización por Lista (ACL).
@@ -77,7 +89,10 @@ export const ROLE_ASSIGNMENT_PREFIX = 'ROLE:';
  */
 @Injectable()
 export class AclService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(BibliotecaPrismaService) private library: BibliotecaPrismaService = directLegacyLibrary(prisma),
+  ) {}
 
   isSuperAdmin(roles: string[] | undefined): boolean {
     return !!roles && roles.includes('Super Admin');
@@ -206,7 +221,7 @@ export class AclService {
     const decision = decideCatalogResourceAccessFromGrants(grants, actionId, ctx, resource);
     if (!decision.allowed) throw new NotFoundException('Lista no encontrada');
 
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.library.client.lista.findUnique({
       where: { id: listaId },
       select: { isActive: true, archivedAt: true },
     });
@@ -256,7 +271,7 @@ export class AclService {
     level: string = 'view',
   ): Promise<{ listaId: string | null }> {
     if (!ctx.userId?.trim()) throw new NotFoundException('Producto no encontrado');
-    const product = await this.prisma.product.findUnique({
+    const product = await this.library.client.product.findUnique({
       where: { id: productId },
       select: { listaId: true },
     });
@@ -297,7 +312,7 @@ export class AclService {
     ctx: AccessContext,
     level: string = 'view',
   ): Promise<{ listaId: string }> {
-    const price = await this.prisma.price.findUnique({
+    const price = await this.library.client.price.findUnique({
       where: { id: priceId },
       select: { product: { select: { listaId: true } } },
     });
@@ -346,7 +361,7 @@ export class AclService {
   ): Promise<boolean> {
     if (!ctx.userId?.trim()) return false;
     if (this.isListasAdmin(ctx.roles)) return true;
-    const product = await this.prisma.product.findUnique({
+    const product = await this.library.client.product.findUnique({
       where: { id: productId },
       select: { listaId: true },
     });

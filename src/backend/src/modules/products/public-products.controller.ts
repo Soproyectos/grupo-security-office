@@ -9,9 +9,9 @@ import { PublicProductSearchDto } from './dto/public-product-search.dto';
 import { PublicProductParamsDto } from './dto/public-product-params.dto';
 
 /**
- * Catálogo público del storefront (sin JWT). Solo expone productos PUBLISHED y
- * el único precio público (lista `PUBLIC_PRICE_LIST_CODE`, por defecto
- * `CLIENTE_FINAL_IVA`); nunca otras listas, costos ni `extraAttributes`.
+ * Catálogo público del storefront. La presentación puede consultarse sin JWT;
+ * los precios requieren sesión de cliente verificada y se filtran en StorefrontService.
+ * Nunca se exponen costos ni `extraAttributes`.
  */
 @ApiTags('Public Products')
 @Controller('api/public/products')

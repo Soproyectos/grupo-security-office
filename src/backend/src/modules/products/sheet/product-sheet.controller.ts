@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequireGrant } from '../../../common/security/require-grant';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../../common/acl/acl.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
@@ -9,9 +9,9 @@ import { UpdateProductSheetDto } from './dto/product-sheet.dto';
 import { ProductSheetService } from './product-sheet.service';
 
 /**
- * Admin editor of the public product sheet. Same authorization as editing a
- * product (`PUT /api/products/:id`): Super Admin / Admin Comercial plus the
- * `edit_products` ACL level on the product's Lista.
+ * Admin editor of the public product sheet. Authorized only by panel grants:
+ * `products:read` to read it, `products:write` to replace it (internal notes
+ * additionally need `products:notes`, handled in the service). No job role grants anything.
  */
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -25,7 +25,7 @@ export class ProductSheetController {
   }
 
   @Get()
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Leer la ficha pública editable de un producto' })
   @ApiResponse({ status: 404, description: 'Producto no encontrado' })
   get(@Param('id') id: string, @CurrentUser() user: any) {
@@ -33,7 +33,7 @@ export class ProductSheetController {
   }
 
   @Put()
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({
     summary: 'Reemplazar la ficha pública de un producto',
     description:

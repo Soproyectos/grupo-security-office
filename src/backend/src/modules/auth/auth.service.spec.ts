@@ -124,6 +124,7 @@ describe('AuthService', () => {
     mockMfa.isRequiredForRoles.mockReturnValue(false);
     mockSessions.create.mockResolvedValue('jti-mock');
     mockUserPermissions.effectivePermissionsFor.mockResolvedValue([]);
+    mockPrisma.accessGrant.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -315,7 +316,7 @@ describe('AuthService', () => {
      * Fase 5: el permiso concedido a un usuario concreto se suma a los de sus
      * roles. El rol sigue siendo el piso; la concesión sólo añade.
      */
-    it('suma las concesiones individuales a los permisos del rol', async () => {
+    it('conserva concesiones operativas sin heredar Biblioteca del rol', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(activeUserWithRoles(['products:read']));
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockUserPermissions.effectivePermissionsFor.mockResolvedValue([
@@ -326,7 +327,7 @@ describe('AuthService', () => {
 
       if (result.status !== 'COMPLETE') throw new Error('esperaba COMPLETE');
 
-      expect(result.user.permissions).toContain('products:read');
+      expect(result.user.permissions).not.toContain('products:read');
       expect(result.user.permissions).toContain('dashboard:pack:ventas');
     });
 

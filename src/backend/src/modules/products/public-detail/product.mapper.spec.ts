@@ -168,6 +168,8 @@ describe('PublicProductDetailService.findByIdOrSlug', () => {
         findFirst: jest.fn().mockResolvedValue(opts.slugHit ? { id: uuid } : null),
         findUnique: jest.fn().mockResolvedValue(opts.enriched === undefined ? bare : opts.enriched),
       },
+      // Slug resolution reads the published snapshot through a parameterized raw query.
+      $queryRaw: jest.fn().mockResolvedValue(opts.slugHit ? [{ id: uuid }] : []),
     };
     const catalog = { getDetail: opts.getDetail ?? jest.fn().mockResolvedValue(base) };
     return { service: new PublicProductDetailService(prisma as any, catalog as any), prisma, catalog };
@@ -209,5 +211,44 @@ describe('PublicProductDetailService.findByIdOrSlug', () => {
     const { service } = makeService();
 
     await expect(service.findByIdOrSlug('not a slug!')).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('key specs on the sheet', () => {
+  const uuid = '37e5a4a6-935c-4760-89ed-83f938a9cd9b';
+  const items = [{ key: 'poe_budget', label: 'Potencia PoE', value: '0 W', unit: 'W', order: 1 }];
+  const make = (keySpecs: any) => {
+    const prisma = { product: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(bare) } };
+    const catalog = { getDetail: jest.fn().mockResolvedValue(base) };
+    return { service: new PublicProductDetailService(prisma as any, catalog as any, undefined, keySpecs), catalog };
+  };
+
+  it('defaults to an empty list and adds nothing else to the sheet', () => {
+    expect(toProductDetailDto(bare, base).keySpecs).toEqual([]);
+    expect(toProductDetailDto(bare, base, items).keySpecs).toEqual(items);
+  });
+
+  it('public sheet reads the published items only and carries no preview marker', async () => {
+    const keySpecs = { publishedItems: jest.fn().mockResolvedValue(items), draftPreview: jest.fn() };
+    const { service, catalog } = make(keySpecs);
+
+    const dto = await service.findByIdOrSlug(uuid);
+
+    expect(dto.keySpecs).toEqual(items);
+    expect(dto.preview).toBeUndefined();
+    expect(keySpecs.draftPreview).not.toHaveBeenCalled();
+    expect(catalog.getDetail).toHaveBeenCalledWith(uuid);
+  });
+
+  it('preview reads the draft, skips the visibility rule and says so', async () => {
+    const keySpecs = { publishedItems: jest.fn(), draftPreview: jest.fn().mockResolvedValue({ items, unpublishedChanges: true }) };
+    const { service, catalog } = make(keySpecs);
+
+    const dto = await service.previewById(uuid);
+
+    expect(dto.keySpecs).toEqual(items);
+    expect(dto.preview).toEqual({ mode: 'draft', unpublishedChanges: true });
+    expect(catalog.getDetail).toHaveBeenCalledWith(uuid, { skipVisibility: true });
+    expect(keySpecs.publishedItems).not.toHaveBeenCalled();
   });
 });

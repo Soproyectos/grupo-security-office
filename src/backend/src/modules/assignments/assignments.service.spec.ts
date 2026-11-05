@@ -12,6 +12,8 @@ import { AssignmentsService } from './assignments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AclService } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
 
@@ -58,6 +60,7 @@ describe('AssignmentsService', () => {
       providers: [
         AssignmentsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(mockPrisma as never) },
         { provide: AclService, useValue: mockAcl },
         { provide: AuditService, useValue: mockAudit },
       ],

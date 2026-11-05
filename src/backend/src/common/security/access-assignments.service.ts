@@ -14,8 +14,10 @@ import {
   getActionDefinition,
   getPackageTemplate,
   isActionIdFormat,
+  isAssignableAction,
 } from './access-catalog';
 import type { AccessScope } from './access-catalog';
+import { LIBRARY_SELECTION_TEMPLATE_ID, closeLibrarySelection } from './library-selection';
 import type { AccessIdentity, ScopedGrant } from './data-scope';
 
 export interface AssignmentSourceInput {
@@ -65,6 +67,10 @@ export interface AccessSourceView {
   readonly reason: string | null;
 }
 
+// Las asignaciones agrupan varias consultas por túnel remoto; el límite de
+// 5 s puede expirar antes de registrar la auditoría. Se mantiene un límite finito.
+const ACCESS_ASSIGNMENT_TRANSACTION_OPTIONS = { timeout: 30_000 };
+
 function versionConflict(currentVersion: number): ConflictException {
   return new ConflictException({
     code: 'access-version-conflict',
@@ -79,6 +85,62 @@ function isUniqueViolation(error: unknown): boolean {
     error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
   );
 }
+
+/**
+ * Paquetes de Biblioteca que conviven entre sí. `biblioteca-actualizacion` es
+ * el paquete anterior (fichas + precios juntos): ya no se asigna, pero se deja
+ * en este conjunto a propósito para que aplicar Productos, Fichas, Precios o
+ * Publicar NO le vacíe en silencio los permisos a quien aún lo tiene; solo se
+ * retira cuando alguien lo retira. Los demás paquetes anteriores (Listas y
+ * precios, Biblioteca de productos, Publicación del catálogo) sí se purgan.
+ */
+const CURRENT_LIBRARY_PACKAGE_IDS = new Set([
+  'biblioteca-consulta',
+  'biblioteca-fichas',
+  'biblioteca-precios',
+  'biblioteca-publicacion',
+  'biblioteca-importaciones',
+  'biblioteca-maestros',
+  'biblioteca-actualizacion',
+  LIBRARY_SELECTION_TEMPLATE_ID,
+]);
+
+/** Fuentes de Biblioteca que la selección por casillas reemplaza por completo. */
+const SELECTION_REPLACED_PACKAGE_IDS = new Set([
+  'biblioteca-consulta',
+  'biblioteca-fichas',
+  'biblioteca-precios',
+  'biblioteca-importaciones',
+  'biblioteca-maestros',
+  'biblioteca-actualizacion',
+]);
+
+const LIBRARY_ACTION_PREFIXES = ['products:', 'prices:', 'providers:', 'listas:', 'imports:', 'masters:'] as const;
+
+function isLibraryActionId(actionId: string): boolean {
+  return LIBRARY_ACTION_PREFIXES.some((prefix) => actionId.startsWith(prefix));
+}
+
+/** Fuente manual o plantilla anterior: la que se purga al aplicar un paquete vigente. */
+function isHistoricalLibrarySource(
+  source: { kind: string; templateId: string | null } | null | undefined,
+): boolean {
+  if (!source) return false;
+  return source.kind === 'manual' || (
+    source.kind === 'template' && !CURRENT_LIBRARY_PACKAGE_IDS.has(source.templateId ?? '')
+  );
+}
+
+const LIBRARY_GRANT_WHERE = {
+  OR: [
+    { actionId: { startsWith: 'products:' } },
+    { actionId: { startsWith: 'prices:' } },
+    { actionId: { startsWith: 'providers:' } },
+    { actionId: { startsWith: 'listas:' } },
+    { actionId: { startsWith: 'imports:' } },
+    { actionId: { startsWith: 'masters:' } },
+  ],
+} satisfies Prisma.AccessGrantWhereInput;
 
 /**
  * Asignación de concesiones por acción+alcance con procedencia (BASE-04 §7.2).
@@ -138,6 +200,9 @@ export class AccessAssignmentsService {
   ): Promise<AssignmentReceipt> {
     this.assertWritableIdentity(actor);
     this.assertCatalogVersion(input.catalogVersion);
+    if (input.source?.templateId && getPackageTemplate(input.source.templateId)?.assignable === false) {
+      throw new BadRequestException('Este paquete anterior solo puede retirarse; asigna un acceso de Biblioteca vigente.');
+    }
     await this.assertRecipient(recipientId);
     this.validateGrants(input.grants);
     this.assertExpectedVersion(input.expectedVersion);
@@ -149,7 +214,9 @@ export class AccessAssignmentsService {
     }
 
     const targetSourceId = input.source?.sourceId;
-    await this.assertDependencies(recipientId, targetSourceId, input.grants);
+    await this.assertDependencies(
+      recipientId, targetSourceId, input.grants, this.isCurrentLibrarySource(input.source),
+    );
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -159,6 +226,9 @@ export class AccessAssignmentsService {
           select: { actionId: true, scopeKind: true, resourceId: true },
         }) : [];
         const sourceId = await this.persistSource(tx, actor.userId, recipientId, input);
+        const cleanedLibraryGrants = this.isCurrentLibrarySource(input.source)
+          ? await this.removeHistoricalLibraryGrants(tx, recipientId)
+          : [];
         const grants = input.grants.map((grant) => ({
           sourceId,
           actionId: grant.actionId,
@@ -174,18 +244,19 @@ export class AccessAssignmentsService {
           requestHash,
           catalogVersion: input.catalogVersion,
           receipt: { userId: recipientId, sourceId, accessVersion, changed: true, grants },
+          removedGrants: cleanedLibraryGrants,
         });
         await tx.auditLog.create({ data: {
           userId: actor.userId,
           action: 'replaceSource', entity: 'UserAccess', entityId: recipientId,
-          oldValues: { sourceId, grants: previousGrants },
+          oldValues: { sourceId, grants: previousGrants, cleanedLibraryGrants },
           newValues: { sourceId, grants: input.grants.map((grant) => ({
             actionId: grant.actionId, scopeKind: grant.scope, resourceId: grant.resourceId ?? '',
-          })) },
+          })), cleanedHistoricalLibraryGrantCount: cleanedLibraryGrants.length },
         } });
 
         return { userId: recipientId, sourceId, accessVersion, changed: true, grants };
-      });
+      }, ACCESS_ASSIGNMENT_TRANSACTION_OPTIONS);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException({
@@ -251,7 +322,7 @@ export class AccessAssignmentsService {
         } });
 
         return { userId: recipientId, sourceId, accessVersion, changed: true, grants: [] };
-      });
+      }, ACCESS_ASSIGNMENT_TRANSACTION_OPTIONS);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException({
@@ -317,6 +388,9 @@ export class AccessAssignmentsService {
         `El paquete "${packageId}" no existe en el catálogo de paquetes.`,
       );
     }
+    if (template.assignable === false) {
+      throw new BadRequestException('Este paquete anterior solo puede retirarse; asigna un acceso de Biblioteca vigente.');
+    }
 
     // Reaplicar el mismo paquete reemplaza SU fuente (no acumula procedencias).
     const existing = await this.prisma.accessSource.findFirst({
@@ -343,10 +417,9 @@ export class AccessAssignmentsService {
   }
 
   /**
-   * Retira la fuente template del paquete indicado (COM-01 §3). Conserva las
-   * demás fuentes (manual u otro paquete): si otra concede la misma acción,
-   * el acceso se mantiene con su alcance. El retiro nunca depende de que el
-   * paquete siga en el catálogo: la fila de procedencia es la autoridad.
+   * Retira la fuente template del paquete indicado. Al quitar un paquete
+   * vigente de Biblioteca, purga también grants históricos de Biblioteca en
+   * fuentes manuales/anteriores; los grants comerciales se conservan.
    */
   async removePackage(
     actor: AccessIdentity,
@@ -356,6 +429,9 @@ export class AccessAssignmentsService {
   ): Promise<AssignmentReceipt> {
     // Autorización primero: el 403 precede al 404 del paquete no aplicado.
     this.assertWritableIdentity(actor);
+    if (CURRENT_LIBRARY_PACKAGE_IDS.has(packageId)) {
+      return this.removeCurrentLibraryPackage(actor, recipientId, packageId, options);
+    }
     const source = await this.prisma.accessSource.findFirst({
       where: { userId: recipientId, kind: 'template', templateId: packageId },
       select: { id: true },
@@ -366,6 +442,254 @@ export class AccessAssignmentsService {
       );
     }
     return this.removeSource(actor, recipientId, source.id, options);
+  }
+
+  /**
+   * Aplicar un paquete vigente de Biblioteca retira permisos de Biblioteca
+   * heredados de fuentes manuales o plantillas anteriores. Las concesiones de
+   * otros dominios y las de otros paquetes vigentes se conservan.
+   */
+  private isCurrentLibrarySource(source: AssignmentSourceInput | undefined): boolean {
+    return source?.kind === 'template' && CURRENT_LIBRARY_PACKAGE_IDS.has(source.templateId ?? '');
+  }
+
+  private async removeHistoricalLibraryGrants(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<{ sourceId: string; actionId: string; scopeKind: AccessScopeKind; resourceId: string }[]> {
+    const sources = await tx.accessSource.findMany({
+      where: { userId },
+      select: { id: true, kind: true, templateId: true },
+    });
+    const historicalSourceIds = sources
+      .filter((source) => source.kind === 'manual' || (
+        source.kind === 'template' && !CURRENT_LIBRARY_PACKAGE_IDS.has(source.templateId ?? '')
+      ))
+      .map((source) => source.id);
+    if (!historicalSourceIds.length) return [];
+
+    const removed = await tx.accessGrant.findMany({
+      where: { sourceId: { in: historicalSourceIds }, ...LIBRARY_GRANT_WHERE },
+      select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
+    });
+    if (removed.length) {
+      await tx.accessGrant.deleteMany({
+        where: { sourceId: { in: historicalSourceIds }, ...LIBRARY_GRANT_WHERE },
+      });
+    }
+    return removed;
+  }
+
+  /**
+   * Retira un paquete vigente de Biblioteca y purga concesiones heredadas en
+   * la misma transacción/version OCC. También puede limpiar residuos aunque ya
+   * no exista la fuente del paquete solicitado.
+   */
+  private async removeCurrentLibraryPackage(
+    actor: AccessIdentity,
+    recipientId: string,
+    packageId: string,
+    options: RemoveSourceOptions,
+  ): Promise<AssignmentReceipt> {
+    this.assertCatalogVersion(options.catalogVersion ?? ACCESS_CATALOG_VERSION);
+    await this.assertRecipient(recipientId);
+    this.assertExpectedVersion(options.expectedVersion);
+    const requestHash = this.hashRequest(recipientId, { kind: 'template', templateId: packageId }, []);
+    if (options.idempotencyKey) {
+      const replay = await this.replayOperation(actor.userId, options.idempotencyKey, requestHash);
+      if (replay) return replay;
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const source = await tx.accessSource.findFirst({
+          where: { userId: recipientId, kind: 'template', templateId: packageId },
+          select: { id: true },
+        });
+        const historicalSources = await tx.accessSource.findMany({
+          where: { userId: recipientId },
+          select: { id: true, kind: true, templateId: true },
+        });
+        const historicalSourceIds = historicalSources
+          .filter((item) => item.kind === 'manual' || (
+            item.kind === 'template' && !CURRENT_LIBRARY_PACKAGE_IDS.has(item.templateId ?? '')
+          ))
+          .map((item) => item.id);
+        const cleanedLibraryGrants = historicalSourceIds.length
+          ? await tx.accessGrant.findMany({
+            where: { sourceId: { in: historicalSourceIds }, ...LIBRARY_GRANT_WHERE },
+            select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
+          })
+          : [];
+        if (!source && !cleanedLibraryGrants.length) {
+          throw new NotFoundException(`El usuario ${recipientId} no tiene aplicado el paquete "${packageId}" ni concesiones anteriores de Biblioteca que retirar.`);
+        }
+
+        const removedPackageGrants = source ? await tx.accessGrant.findMany({
+          where: { sourceId: source.id },
+          select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
+        }) : [];
+        const accessVersion = await this.bumpVersion(tx, recipientId, options.expectedVersion);
+        if (source) await tx.accessSource.delete({ where: { id: source.id } });
+        if (cleanedLibraryGrants.length) {
+          await tx.accessGrant.deleteMany({
+            where: { sourceId: { in: historicalSourceIds }, ...LIBRARY_GRANT_WHERE },
+          });
+        }
+        const removedGrants = [...removedPackageGrants, ...cleanedLibraryGrants];
+        const receipt: AssignmentReceipt = {
+          userId: recipientId,
+          sourceId: source?.id ?? '',
+          accessVersion,
+          changed: true,
+          grants: [],
+        };
+        await this.recordOperation(tx, {
+          actorId: actor.userId,
+          idempotencyKey: options.idempotencyKey ?? randomUUID(),
+          operation: 'removeLibraryPackage',
+          targetId: recipientId,
+          requestHash,
+          catalogVersion: options.catalogVersion ?? ACCESS_CATALOG_VERSION,
+          receipt,
+          removedGrants,
+        });
+        await tx.auditLog.create({ data: {
+          userId: actor.userId,
+          action: 'removeLibraryPackage', entity: 'UserAccess', entityId: recipientId,
+          oldValues: { sourceId: source?.id ?? null, removedGrants },
+          newValues: { sourceId: null, grants: [], cleanedHistoricalLibraryGrants: cleanedLibraryGrants.length },
+        } });
+        return receipt;
+      }, ACCESS_ASSIGNMENT_TRANSACTION_OPTIONS);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: 'idempotency-conflict',
+          message: 'Otra operación con la misma clave de idempotencia está en curso.',
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Guarda la selección de casillas de Biblioteca como UNA fuente `template`
+   * (`biblioteca-seleccion`, alcance global) y, en la misma transacción,
+   * reemplaza los paquetes Productos/Fichas/Precios/Actualización (anterior) y
+   * purga los permisos de Biblioteca de fuentes manuales o anteriores. El
+   * cierre de dependencias se calcula aquí; el cliente nunca decide. Conserva
+   * Publicar en tienda solo si la selección sigue permitiendo editar fichas.
+   */
+  async replaceLibrarySelection(
+    actor: AccessIdentity,
+    recipientId: string,
+    input: {
+      readonly expectedVersion: number;
+      readonly catalogVersion?: string;
+      readonly idempotencyKey?: string;
+      readonly reason?: string;
+      readonly actionIds: readonly string[];
+    },
+  ): Promise<AssignmentReceipt> {
+    this.assertWritableIdentity(actor);
+    const catalogVersion = input.catalogVersion ?? ACCESS_CATALOG_VERSION;
+    this.assertCatalogVersion(catalogVersion);
+    await this.assertRecipient(recipientId);
+    this.assertExpectedVersion(input.expectedVersion);
+    const actionIds = closeLibrarySelection(input.actionIds);
+    const grants = actionIds.map((actionId) => ({ actionId, scope: 'global' as AccessScope }));
+    this.validateGrants(grants);
+
+    const requestHash = this.hashRequest(
+      recipientId, { kind: 'template', templateId: LIBRARY_SELECTION_TEMPLATE_ID }, grants,
+    );
+    if (input.idempotencyKey) {
+      const replay = await this.replayOperation(actor.userId, input.idempotencyKey, requestHash);
+      if (replay) return replay;
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const accessVersion = await this.bumpVersion(tx, recipientId, input.expectedVersion);
+        const sources = await tx.accessSource.findMany({
+          where: { userId: recipientId },
+          select: { id: true, kind: true, templateId: true },
+        });
+        const hasPublication = sources.some(
+          (source) => source.kind === 'template' && source.templateId === 'biblioteca-publicacion',
+        );
+        if (hasPublication && !actionIds.includes('products:write')) {
+          throw new BadRequestException('Quita primero Publicar en tienda: necesita poder editar fichas.');
+        }
+        const selection = sources.find(
+          (source) => source.kind === 'template' && source.templateId === LIBRARY_SELECTION_TEMPLATE_ID,
+        );
+        const replacedPackages = sources.filter(
+          (source) => source.kind === 'template' && SELECTION_REPLACED_PACKAGE_IDS.has(source.templateId ?? ''),
+        );
+        const replacedIds = replacedPackages.map((source) => source.id);
+        const previousGrants = await tx.accessGrant.findMany({
+          where: { sourceId: { in: [...replacedIds, ...(selection ? [selection.id] : [])] } },
+          select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
+        });
+        if (replacedIds.length) {
+          await tx.accessGrant.deleteMany({ where: { sourceId: { in: replacedIds } } });
+          await tx.accessSource.deleteMany({ where: { id: { in: replacedIds } } });
+        }
+        const cleanedLibraryGrants = await this.removeHistoricalLibraryGrants(tx, recipientId);
+
+        let sourceId = '';
+        if (grants.length) {
+          sourceId = await this.persistSource(tx, actor.userId, recipientId, {
+            expectedVersion: input.expectedVersion,
+            catalogVersion,
+            source: {
+              kind: 'template',
+              templateId: LIBRARY_SELECTION_TEMPLATE_ID,
+              ...(selection ? { sourceId: selection.id } : {}),
+              reason: input.reason ?? 'library-selection',
+            },
+            grants,
+          });
+        } else if (selection) {
+          await tx.accessSource.delete({ where: { id: selection.id } });
+        }
+
+        const receiptGrants = grants.map((grant) => ({ sourceId, actionId: grant.actionId, scope: grant.scope }));
+        const removedGrants = [...previousGrants, ...cleanedLibraryGrants];
+        await this.recordOperation(tx, {
+          actorId: actor.userId,
+          idempotencyKey: input.idempotencyKey ?? randomUUID(),
+          operation: 'replaceLibrarySelection',
+          targetId: recipientId,
+          requestHash,
+          catalogVersion,
+          receipt: { userId: recipientId, sourceId, accessVersion, changed: true, grants: receiptGrants },
+          removedGrants,
+        });
+        await tx.auditLog.create({ data: {
+          userId: actor.userId,
+          action: 'replaceLibrarySelection', entity: 'UserAccess', entityId: recipientId,
+          oldValues: { sourceId: selection?.id ?? null, grants: previousGrants, cleanedLibraryGrants },
+          newValues: {
+            sourceId: sourceId || null,
+            grants: actionIds.map((actionId) => ({ actionId, scopeKind: 'global', resourceId: '' })),
+            replacedPackageIds: replacedPackages.map((source) => source.templateId),
+            cleanedHistoricalLibraryGrantCount: cleanedLibraryGrants.length,
+          },
+        } });
+        return { userId: recipientId, sourceId, accessVersion, changed: true, grants: receiptGrants };
+      }, ACCESS_ASSIGNMENT_TRANSACTION_OPTIONS);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: 'idempotency-conflict',
+          message: 'Otra operación con la misma clave de idempotencia está en curso.',
+        });
+      }
+      throw error;
+    }
   }
 
   /** Versión OCC vigente del estado de concesiones del usuario (0 sin estado). */
@@ -448,6 +772,9 @@ export class AccessAssignmentsService {
           `La acción "${grant.actionId}" está deshabilitada y no puede concederse.`,
         );
       }
+      if (!isAssignableAction(grant.actionId)) {
+        throw new BadRequestException('Los permisos anteriores de Listas ya no pueden asignarse. Usa los accesos de Biblioteca.');
+      }
       if (!definition.allowedScopes.includes(grant.scope)) {
         throw new BadRequestException(
           `La acción "${grant.actionId}" no admite el alcance "${grant.scope}"; permitidos: ${definition.allowedScopes.join(', ')}.`,
@@ -480,15 +807,22 @@ export class AccessAssignmentsService {
     recipientId: string,
     targetSourceId: string | undefined,
     grants: ReadonlyArray<{ actionId: string }>,
+    purgesHistoricalLibrary = false,
   ): Promise<void> {
     const others = await this.prisma.accessGrant.findMany({
       where: {
         source: { userId: recipientId },
         ...(targetSourceId ? { sourceId: { not: targetSourceId } } : {}),
       },
-      select: { actionId: true },
+      select: { actionId: true, source: { select: { kind: true, templateId: true } } },
     });
-    const otherActionIds = new Set(others.map((row) => row.actionId));
+    // Aplicar un paquete vigente de Biblioteca purga los permisos de Biblioteca
+    // de fuentes manuales/anteriores en la misma operación: no pueden cubrir una
+    // dependencia, o el permiso nuevo quedaría huérfano tras la purga.
+    const survivingOthers = purgesHistoricalLibrary
+      ? others.filter((row) => !(isHistoricalLibrarySource(row.source) && isLibraryActionId(row.actionId)))
+      : others;
+    const otherActionIds = new Set(survivingOthers.map((row) => row.actionId));
     const resultingActionIds = new Set([
       ...otherActionIds,
       ...grants.map((grant) => grant.actionId),

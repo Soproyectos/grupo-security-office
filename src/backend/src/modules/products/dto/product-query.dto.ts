@@ -1,4 +1,4 @@
-import { IsOptional, IsNumber, IsString, IsBoolean, Min } from 'class-validator';
+import { IsOptional, IsNumber, IsString, IsBoolean, Min, Matches } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -33,6 +33,12 @@ export class ProductQueryDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @ApiPropertyOptional({ type: String, description: 'IDs de categorías separadas por coma; cada categoría incluye sus descendientes' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[^,\s]+(?:,[^,\s]+)*$/)
+  categoryIds?: string;
 
   @ApiPropertyOptional({ type: String, description: 'ID de marca para filtrar' })
   @IsOptional()

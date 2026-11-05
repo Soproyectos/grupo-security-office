@@ -3,22 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "prisma generate && nest build",
+    "build": "prisma generate && node prisma/biblioteca/ejecutar-local.js generate && nest build",
+    "postbuild": "node scripts/copy-library-client.cjs",
     "postinstall": "prisma generate",
     "dev": "nest start --watch",
     "start": "node dist/src/main",
     "start:prod": "node dist/src/main",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
+    "test:catalog:regression": "node scripts/run-catalog-regression-local.cjs",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "db:generate:library": "node prisma/biblioteca/ejecutar-local.js generate",
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed:categories": "ts-node prisma/seed-categories.ts",
     "db:import-biblioteca": "ts-node prisma/import-biblioteca.ts",
     "db:import-product-media": "ts-node scripts/import-product-media.ts",
     "db:bootstrap:dev-admin": "ts-node scripts/dev-admin-bootstrap.ts",
     "db:bootstrap:dev-rbac": "ts-node scripts/dev-rbac-bootstrap.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:biblioteca:generate": "prisma generate --schema prisma/biblioteca/schema.prisma",
+    "db:biblioteca:migrate": "prisma migrate deploy --schema prisma/biblioteca/schema.prisma",
+    "test:biblioteca:recorrido": "jest --runInBand --testRegex '.*\\.pgint\\.ts$' recorrido-minimo"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

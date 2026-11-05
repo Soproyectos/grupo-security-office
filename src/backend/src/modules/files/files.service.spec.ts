@@ -9,6 +9,8 @@ jest.mock('../../prisma/prisma.service', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { FilesService } from './files.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../library-audit/library-audit.service';
 
 describe('FilesService', () => {
   let service: FilesService;
@@ -17,7 +19,9 @@ describe('FilesService', () => {
     jest.resetAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [FilesService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [FilesService, { provide: PrismaService, useValue: mockPrisma },
+        { provide: BibliotecaPrismaService, useValue: new BibliotecaPrismaService(mockPrisma as unknown as PrismaService, { mode: 'legacy', writesFrozen: false }, () => { throw new Error('Unexpected client'); }) },
+        { provide: LibraryAuditService, useValue: { append: jest.fn() } }],
     }).compile();
 
     service = module.get<FilesService>(FilesService);

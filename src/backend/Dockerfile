@@ -2,7 +2,7 @@
 # Dockerfile - NestJS backend (2 stages)
 # ============================================================
 # Runtime keeps the full node_modules on purpose: the Prisma CLI is needed to
-# run `prisma migrate deploy` from this image on every deploy.
+# run separately approved migrations when needed. Code-only deployments do not run migrations.
 
 # ---- Stage 1: install dependencies and build ----
 FROM node:20-alpine AS build
@@ -16,6 +16,7 @@ RUN npm ci
 
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
+COPY scripts/copy-library-client.cjs ./scripts/copy-library-client.cjs
 RUN npm run build
 
 # ---- Stage 2: runtime image ----

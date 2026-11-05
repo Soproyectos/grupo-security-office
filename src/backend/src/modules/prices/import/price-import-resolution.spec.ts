@@ -17,6 +17,7 @@ import { createGrantsProvider, createPriceImportFake } from './price-import.test
 const LISTA = '00000000-0000-4000-8000-0000000000a1';
 const ctx: AccessContext = { userId: 'fixture-actor', roles: ['Admin Comercial'] };
 const storageDir = path.join(os.tmpdir(), 'gs-b3-resolution-test-storage');
+// `listas:read` is only here because the (unchanged) action catalog lists it as a dependency of `prices:read`.
 const LISTA_ACTIONS = ['prices:save', 'prices:preview', 'prices:read', 'prices:apply', 'listas:read'];
 
 function file(rows: unknown[][]): Express.Multer.File {
@@ -52,8 +53,7 @@ describe('R2 — resolución de referencias desconocidas', () => {
       categories: [{ id: 'cat-1', name: 'Cat' }, { id: 'cat-none', name: 'Sin categoría' }],
     });
     grants = createGrantsProvider();
-    grants.grantOnLista(LISTA, ...LISTA_ACTIONS);
-    grants.grant(...LISTA_ACTIONS, 'products:read', 'products:write'); // GLOBAL, with the dependency chain
+    grants.grant(...LISTA_ACTIONS, 'products:read', 'products:write'); // GLOBAL panel grants, with the dependency chain
     const acl: any = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
     const audit = fake.audit as unknown as AuditService;
     const changes = new ProductChangeService(fake.prisma, acl, grants as any);
@@ -96,22 +96,36 @@ describe('R2 — resolución de referencias desconocidas', () => {
       await expect(resolution.listUnknownReferences(id, ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('never exposes LISTA_FORBIDDEN rows (they are not pending products)', async () => {
-      fake.state.products.push({ id: 'product-x', sku: 'SKU-X', listaId: 'lista-secret' });
-      const id = await appliedRevision([['SKU-A', 100], ['SKU-X', 5], ['New-1', 250]]);
+    it('lists only unknown SKUs: known products of any lista are not pending (and no lista is looked up)', async () => {
+      fake.state.products.push({ id: 'product-x', sku: 'SKU-X', listaId: 'lista-other' });
+      const id = (await imports.saveRevision(file([['SKU-A', 100], ['SKU-X', 5], ['New-1', 250]]), 'key-resolution-known-01', ctx)).id;
+      await imports.applyRevision(id, ctx, { acknowledgeRejectedRows: 1 });
       const view = await resolution.listUnknownReferences(id, ctx);
       expect(view.items.map((i) => i.sku)).toEqual(['New-1']);
-      expect(JSON.stringify(view)).not.toMatch(/SKU-X|secret/);
+      expect(fake.prisma.lista.findMany).not.toHaveBeenCalled();
     });
 
-    it('a stranger who cannot see every lista of someone else\'s revision is refused', async () => {
+    it('a caller with only lista-scoped grants is refused (and the revision of someone else is readable with global grants)', async () => {
       const id = await appliedRevision();
-      await expect(resolution.listUnknownReferences(id, { userId: 'someone-else', roles: ['Admin Comercial'] })).resolves.toBeDefined(); // unknown rows tie to no lista
+      await expect(resolution.listUnknownReferences(id, { userId: 'someone-else', roles: ['Vendedor'] })).resolves.toBeDefined();
       grants.grants.splice(0, grants.grants.length);
       grants.grantOnLista(LISTA, 'prices:read', 'listas:read');
-      fake.state.revisionRows.find((r) => r.sku === 'SKU-A')!.listaId = 'lista-other';
-      fake.state.revisionRows.find((r) => r.sku === 'SKU-A')!.productId = 'product-other';
       await expect(resolution.listUnknownReferences(id, { userId: 'someone-else', roles: ['Admin Comercial'] })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it.each([['Admin Comercial'], ['Supervisor']])('the role %s with zero grants gets 403 on list and resolve (roles never grant)', async (role) => {
+      const id = await appliedRevision();
+      const caller = { userId: 'role-only', roles: [role] };
+      const noGrants = createGrantsProvider();
+      const acl: any = { assertListaAccess: jest.fn(), isListasAdmin: jest.fn().mockReturnValue(false) };
+      const audit = fake.audit as unknown as AuditService;
+      const changes = new ProductChangeService(fake.prisma, acl, noGrants as any);
+      const imp = new PriceImportService(fake.prisma, acl, audit, noGrants as any, changes);
+      const prod = new ProductsService(fake.prisma, acl, audit, {} as never, undefined, noGrants as any, undefined, changes);
+      const res = new PriceImportResolutionService(fake.prisma, imp, prod, changes, audit);
+      await expect(res.listUnknownReferences(id, caller)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(res.resolve(id, [{ rowNumber: 3, action: 'SKIP' }], caller)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(rowOf(3).resolution).toBe('PENDING_PRODUCT');
     });
   });
 

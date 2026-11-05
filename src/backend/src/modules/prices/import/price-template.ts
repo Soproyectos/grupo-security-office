@@ -1,29 +1,85 @@
 import { BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { CopPriceError, normalizeCopPrice } from '../../../common/money/cop-policy';
-import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_TARIFFS, PriceImportComparison, PriceImportRow, PriceImportTariff } from './price-import.types';
+import { MAX_PRICE_IMPORT_ROWS, PriceImportComparison, PriceImportRow, PriceImportTariff, PriceImportTariffRef } from './price-import.types';
+import { createTariffMatcher, orderTariffs } from './price-tariffs';
 import { readBoundedXlsxParts } from './xlsx-container';
 import { PRICE_DATA_SHEETS, validatePriceWorkbookStructure } from './price-workbook-structure';
 
 const blank = (cell?: XLSX.CellObject) => !cell || cell.v === undefined || cell.v === null || cell.v === '';
 const formula = (cell?: XLSX.CellObject) => cell?.f !== undefined || cell?.F !== undefined;
 
-/** Purchasing template headers (with IVA) and their tariff codes; "DPP ORO" is the existing DPP_ORO_IVA tariff. */
-const TARIFF_HEADERS: Record<string, PriceImportTariff> = {
-  'PRECIO INSTALADOR (CON IVA)': 'INSTALADOR_IVA',
-  'PRECIO TIENDA (CON IVA)': 'TIENDA_IVA',
-  'PRECIO DPP ORO (CON IVA)': 'DPP_ORO_IVA',
-  'PRECIO DPP PLATINO (CON IVA)': 'DPP_PLATINO_IVA',
-  'PRECIO CLIENTE FINAL (CON IVA)': 'CLIENTE_FINAL_IVA',
-};
 /** Informative columns of the template (price without IVA): never stored, always ignored. */
 const IGNORED_HEADER = /^PRECIO [A-Z ]+ \(SIN IVA\)$/;
 const MAX_TEMPLATE_COLUMNS = 8;
 const NOTE_ROW = /^nota:/i;
 
+/**
+ * Single-price column for suppliers without tariff tiers (price with IVA). It is exclusive with the tariff
+ * columns; `headerText` does not strip accents, so both spellings are listed explicitly.
+ */
+const SINGLE_PRICE_COLUMN = 'PRECIO UNICO (CON IVA)';
+const SINGLE_PRICE_HEADERS = new Set<string>([SINGLE_PRICE_COLUMN, 'PRECIO ÚNICO (CON IVA)']);
+
 const headerText = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').replace(/ ?\*$/, '').toUpperCase();
 
-export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[]; rows: PriceImportRow[]; ignoredColumns: string[] } {
+/**
+ * Validates the tariffs that receive a single price against the CODES of the tariffs available for the import
+ * (active, COP, open validity): only known ones, at least one, no repeats, in the stable tariff order.
+ * `undefined` means "every available tariff".
+ */
+function normalizeSinglePriceSelection(selection: readonly string[] | undefined, available: readonly PriceImportTariffRef[]): PriceImportTariff[] {
+  const ordered = orderTariffs(available).map((t) => t.code);
+  if (selection === undefined) {
+    if (!ordered.length) throw new BadRequestException('No hay escalafones disponibles para aplicar el precio único. Revisa las tarifas en Biblioteca.');
+    return ordered;
+  }
+  const requested = selection.map((name) => name.trim()).filter((name) => name !== '');
+  const unknown = [...new Set(requested.filter((name) => !ordered.includes(name)))];
+  if (unknown.length) {
+    throw new BadRequestException(`Escalafón no reconocido: ${unknown.join(', ')}. Usa: ${ordered.join(', ')}.`);
+  }
+  const chosen = ordered.filter((code) => requested.includes(code));
+  if (!chosen.length) throw new BadRequestException('Elige al menos un escalafón para aplicar el precio único.');
+  return chosen;
+}
+
+/** Splits the multipart CSV of `singlePriceTariffs`; absent = undefined (every available tariff). */
+export function splitSinglePriceTariffs(raw: string | null | undefined): string[] | undefined {
+  return raw === undefined || raw === null ? undefined : raw.split(',');
+}
+
+/**
+ * Parses the multipart field `singlePriceTariffs`: a CSV of tariff CODES (same convention as the `tariffs` of the
+ * template endpoint) validated against the available tariffs. Absent = every available tariff; present but blank,
+ * or with an unknown code = 400 (the message lists the valid codes).
+ */
+export function parseSinglePriceTariffs(raw: string | null | undefined, available: readonly PriceImportTariffRef[]): PriceImportTariff[] {
+  return normalizeSinglePriceSelection(splitSinglePriceTariffs(raw), available);
+}
+
+export interface PriceTemplateReadOptions {
+  /** Tariff codes that receive the price of a single-price file (default: every available tariff). Ignored for files with tariff columns. */
+  singlePriceTariffs?: readonly string[];
+  /** Tariffs eligible for the import (active, COP, open validity); defaults to every tariff given to the reader. */
+  availableTariffs?: readonly PriceImportTariffRef[];
+}
+
+export interface PriceTemplateReadResult {
+  tariffs: PriceImportTariff[];
+  rows: PriceImportRow[];
+  ignoredColumns: string[];
+  /** True when the file carries the single-price column; its rows are already expanded to `tariffs`. */
+  singlePrice: boolean;
+}
+
+/**
+ * Reads a purchasing workbook. `tariffs` are ALL the tariffs of Biblioteca (`{ code, name }`): a column header is
+ * matched by normalized name or by code, so a tariff that is inactive or expired is still recognized (the service
+ * reports it as unavailable) while a header that matches nothing is an error.
+ */
+export function readPriceTemplate(buffer: Buffer, tariffs: readonly PriceImportTariffRef[], options: PriceTemplateReadOptions = {}): PriceTemplateReadResult {
+  const matchTariff = createTariffMatcher(tariffs);
   const dataSheet = validatePriceWorkbookStructure(readBoundedXlsxParts(buffer));
   let workbook: XLSX.WorkBook;
   try {
@@ -53,10 +109,11 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
   if (sheet['!merges']?.length) throw new BadRequestException('La hoja de precios no debe tener celdas combinadas.');
   const header = (index: number) => sheet[XLSX.utils.encode_cell({ r: 0, c: index })] as XLSX.CellObject | undefined;
   if (!['REFERENCIA', 'REFERENCIA *'].includes(headerText(header(0)?.v)) || formula(header(0))) throw new BadRequestException('La primera columna debe llamarse REFERENCIA.');
-  /** Tariff per physical column after REFERENCIA; null = informative column to ignore. */
-  const columns: (PriceImportTariff | null)[] = [];
-  const tariffs: PriceImportTariff[] = [];
+  /** Tariff per physical column after REFERENCIA; null = informative column to ignore; SINGLE_PRICE_COLUMN = one price for every selected tariff. */
+  const columns: (PriceImportTariff | typeof SINGLE_PRICE_COLUMN | null)[] = [];
+  const found: PriceImportTariff[] = [];
   const ignoredColumns: string[] = [];
+  let hasSinglePrice = false;
   // Excel keeps formatted-but-empty trailing columns in the sheet range: only the titled ones count,
   // and a value under an untitled trailing column is an error rather than silently dropped.
   let lastTitled = 0;
@@ -65,29 +122,45 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
     for (let r = 1; r <= range.e.r; r++) {
       const stray = sheet[XLSX.utils.encode_cell({ r, c: col })] as XLSX.CellObject | undefined;
       if (!blank(stray) || formula(stray)) {
-        throw new BadRequestException(`La columna ${XLSX.utils.encode_col(col)} tiene datos pero no tiene título. Bórrala o ponle el título de una tarifa de la plantilla.`);
+        throw new BadRequestException(`La columna ${XLSX.utils.encode_col(col)} tiene datos pero no tiene título. Bórrala o ponle el nombre de una tarifa de Biblioteca.`);
       }
     }
   }
   for (let col = 1; col <= lastTitled; col++) {
     const cell = header(col);
     const text = headerText(cell?.v);
-    const code = TARIFF_HEADERS[text] ?? (PRICE_IMPORT_TARIFFS.includes(cell?.v as PriceImportTariff) ? (cell?.v as PriceImportTariff) : undefined);
-    if (!formula(cell) && !code && IGNORED_HEADER.test(text)) {
+    if (!formula(cell) && SINGLE_PRICE_HEADERS.has(text)) {
+      if (hasSinglePrice) {
+        throw new BadRequestException(`Revisa el título de la columna ${XLSX.utils.encode_col(col)}: «${String(cell?.v).trim().slice(0, 60)}» está repetida. Solo se admite una columna de precio único.`);
+      }
+      hasSinglePrice = true;
+      columns.push(SINGLE_PRICE_COLUMN);
+      continue;
+    }
+    const match = formula(cell) ? ({ kind: 'none' } as const) : matchTariff(cell?.v);
+    const code = match.kind === 'match' ? match.code : undefined;
+    if (!formula(cell) && !code && match.kind !== 'ambiguous' && IGNORED_HEADER.test(text)) {
       columns.push(null);
       ignoredColumns.push(String(cell?.v).trim());
       continue;
     }
-    if (formula(cell) || !code || tariffs.includes(code)) {
+    if (formula(cell) || !code || found.includes(code)) {
       const where = `columna ${XLSX.utils.encode_col(col)}`;
       const shown = String(cell?.v ?? '').trim().slice(0, 60) || '(vacío)';
-      const why = formula(cell) ? 'es una fórmula' : code ? 'está repetida' : 'no es una tarifa de la plantilla';
-      throw new BadRequestException(`Revisa el título de la ${where}: «${shown}» ${why}. Solo se admiten las tarifas con IVA de la plantilla, sin repetirlas.`);
+      const why = formula(cell) ? 'es una fórmula'
+        : match.kind === 'ambiguous' ? 'coincide con más de una tarifa'
+          : code ? 'está repetida' : 'no es una tarifa de la plantilla';
+      throw new BadRequestException(`Revisa el título de la ${where}: «${shown}» ${why}. Solo se admiten los nombres de las tarifas definidas en Biblioteca, sin repetirlas.`);
     }
     columns.push(code);
-    tariffs.push(code);
+    found.push(code);
   }
-  if (!tariffs.length) throw new BadRequestException('Incluye al menos una columna de precios con IVA.');
+  if (hasSinglePrice && found.length) {
+    throw new BadRequestException(`El archivo tiene la columna «${SINGLE_PRICE_COLUMN}» y también columnas de escalafón. Usa solo una de las dos formas: o el precio único, o las columnas de escalafón. Borra las que sobren y vuelve a subirlo.`);
+  }
+  if (!hasSinglePrice && !found.length) throw new BadRequestException('Incluye al menos una columna de precios con IVA.');
+  // Single price: the same value goes to every selected tariff, so everything downstream sees normal rows.
+  const selected = hasSinglePrice ? normalizeSinglePriceSelection(options.singlePriceTariffs, options.availableTariffs ?? tariffs) : [];
 
   const rows: PriceImportRow[] = [];
   const seen = new Map<string, PriceImportRow>();
@@ -138,14 +211,19 @@ export function readPriceTemplate(buffer: Buffer): { tariffs: PriceImportTariff[
         code, raw: normalized.raw, rounded: normalized.rounded, previous: null,
         difference: null, wasRounded: normalized.wasRounded, change: 'new',
       };
-      row.prices.push(price);
+      if (code === SINGLE_PRICE_COLUMN) for (const tariff of selected) row.prices.push({ ...price, code: tariff });
+      else row.prices.push(price);
     }
-    if (!row.prices.length && !row.issues.some((i) => i.column !== 'REFERENCIA')) issue('PRECIOS', 'PRICE_REQUIRED', 'Añade al menos un precio para esta referencia; deja vacías solo las tarifas que no cambiarán.');
+    if (!row.prices.length && !row.issues.some((i) => i.column !== 'REFERENCIA')) {
+      issue('PRECIOS', 'PRICE_REQUIRED', hasSinglePrice
+        ? 'Escribe el precio único de esta referencia; con la celda vacía no hay nada que revisar.'
+        : 'Añade al menos un precio para esta referencia; deja vacías solo las tarifas que no cambiarán.');
+    }
     row.status = row.issues.length ? 'error' : 'valid';
     rows.push(row);
   }
   if (!rows.length) throw new BadRequestException('La hoja de precios está vacía. Añade una referencia y al menos un precio.');
-  return { tariffs, rows, ignoredColumns };
+  return { tariffs: hasSinglePrice ? selected : found, rows, ignoredColumns, singlePrice: hasSinglePrice };
 }
 
 /** Guía corta de la plantilla (hoja INSTRUCCIONES; sin EJEMPLO/TARIFAS/CONTRATO). */
@@ -166,23 +244,23 @@ export interface TemplateReferenceInput {
 
 export interface BuildPriceTemplateInput {
   mode: 'vacias' | 'referencias';
-  /** Subconjunto de PRICE_IMPORT_TARIFFS; se emite SIEMPRE en el orden canónico. */
-  tariffs: PriceImportTariff[];
+  /** Tarifas a emitir (código + nombre), en el orden recibido; el encabezado de cada columna es el NOMBRE de la tarifa. */
+  tariffs: readonly PriceImportTariffRef[];
   references?: TemplateReferenceInput[];
 }
 
 /**
  * IMP-02 §3 — genera un XLSX NUEVO con las hojas exactas PRECIOS+INSTRUCCIONES.
  * Nunca parte del archivo del usuario (regla 1); las columnas son exactamente
- * las tarifas IVA seleccionadas en orden canónico (regla 2; DPP_ORO_IVA exacto).
+ * las tarifas seleccionadas, con el NOMBRE definido en Biblioteca como encabezado (el lector también acepta el código).
  */
 export function buildPriceTemplate(input: BuildPriceTemplateInput): Buffer {
-  const selected = PRICE_IMPORT_TARIFFS.filter((code) => input.tariffs.includes(code));
+  const selected = [...input.tariffs];
   if (selected.length === 0) throw new BadRequestException('Selecciona al menos una tarifa válida.');
-  const rows: (string | number | undefined)[][] = [['REFERENCIA', ...selected]];
+  const rows: (string | number | undefined)[][] = [['REFERENCIA', ...selected.map((t) => t.name)]];
   if (input.mode === 'referencias') {
     for (const ref of input.references ?? []) {
-      rows.push([ref.sku, ...selected.map((code) => {
+      rows.push([ref.sku, ...selected.map(({ code }) => {
         const raw = ref.prices?.[code];
         if (raw === undefined || raw === null || raw === '') return undefined;
         const numeric = Number(raw);
@@ -196,7 +274,8 @@ export function buildPriceTemplate(input: BuildPriceTemplateInput): Buffer {
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
 
-const OFFICIAL_HEADERS: [string, PriceImportTariff][] = Object.entries(TARIFF_HEADERS).map(([header, code]) => [header, code]);
+/** The columns are matched by tariff name, so the guide must say where those names come from. */
+const TARIFF_NAMES_NOTE = 'Los nombres de las columnas de precios son los nombres de las tarifas definidas en Biblioteca. Si una tarifa cambia de nombre en Biblioteca, el archivo debe usar el nombre nuevo.';
 
 /** Guide of the official template (sheet INSTRUCCIONES); it must describe exactly what the reader accepts. */
 const OFFICIAL_GUIDE: string[][] = [
@@ -205,18 +284,44 @@ const OFFICIAL_GUIDE: string[][] = [
   ['REFERENCIA: el código del producto, escrito como texto y sin repetirlo en el archivo. Debe existir ya en el catálogo; si no, la fila se rechaza y puedes omitirla o pedir que se cree en Biblioteca.'],
   ['Precios: todos con IVA incluido, como número de Excel, sin símbolo de moneda, fórmulas ni texto. Se redondean al peso entero.'],
   ['Celda vacía: conserva el precio actual de esa tarifa. Deja al menos un precio por fila.'],
+  [TARIFF_NAMES_NOTE],
+  ['Si tu proveedor no maneja escalafones, usa una sola columna «PRECIO UNICO (CON IVA)» en vez de las columnas de escalafón. No las mezcles: usa solo una de las dos formas. En pantalla eliges a cuáles escalafones se aplica ese precio.'],
   ['No cambies los títulos de las columnas ni el nombre de la hoja. Borra las filas de ejemplo antes de subir el archivo.'],
   ['Cada producto conserva su lista; el archivo no mueve productos entre listas. Los cambios de más del 30 % se avisan y hay que confirmarlos.'],
   ['Sube el archivo en Listas → Importar precios.'],
 ];
 
 /**
- * Official purchasing template: sheet PLANTILLA with readable "(CON IVA)" headers and the guide.
+ * Official purchasing template: sheet PLANTILLA with one column per available tariff (header = tariff name) and the guide.
  * It needs no lista and carries no data; the reader accepts it as is.
  */
-export function buildOfficialPriceTemplate(): Buffer {
+export function buildOfficialPriceTemplate(tariffs: readonly PriceImportTariffRef[]): Buffer {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['REFERENCIA *', ...OFFICIAL_HEADERS.map(([header]) => header)]]), 'PLANTILLA');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['REFERENCIA *', ...tariffs.map((t) => t.name)]]), 'PLANTILLA');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(OFFICIAL_GUIDE), 'INSTRUCCIONES');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+}
+
+/** Guide of the single-price template; it must describe exactly what the reader accepts. */
+const SINGLE_PRICE_GUIDE: string[][] = [
+  ['Plantilla de precio único — Grupo Security'],
+  ['Trabaja en la hoja PLANTILLA. Una fila por referencia (SKU).'],
+  ['REFERENCIA: el código del producto, escrito como texto y sin repetirlo en el archivo. Debe existir ya en el catálogo; si no, la fila se rechaza y puedes omitirla o pedir que se cree en Biblioteca.'],
+  ['PRECIO UNICO (CON IVA): el precio del proveedor con IVA incluido, como número de Excel, sin símbolo de moneda, fórmulas ni texto. Se redondea al peso entero.'],
+  ['Es el precio del proveedor, no un precio de venta: se copia tal cual a los escalafones que elijas en pantalla (por defecto, todos). Los escalafones son las tarifas definidas en Biblioteca.'],
+  ['No agregues columnas de escalafón: el precio único y las columnas de escalafón no se pueden mezclar en el mismo archivo.'],
+  ['No dejes vacía la celda del precio: una fila sin precio no se puede revisar. Los cambios de más del 30 % se avisan y hay que confirmarlos.'],
+  ['No cambies los títulos de las columnas ni el nombre de la hoja. Borra las filas de ejemplo antes de subir el archivo.'],
+  ['Sube el archivo en Listas → Importar precios.'],
+];
+
+/**
+ * Single-price purchasing template for suppliers without tariff tiers: sheet PLANTILLA with REFERENCIA and one
+ * "PRECIO UNICO (CON IVA)" column. Like the official template it needs no lista and carries no data.
+ */
+export function buildSinglePriceTemplate(): Buffer {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['REFERENCIA *', SINGLE_PRICE_COLUMN]]), 'PLANTILLA');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(SINGLE_PRICE_GUIDE), 'INSTRUCCIONES');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }

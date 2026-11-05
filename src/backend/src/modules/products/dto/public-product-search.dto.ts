@@ -1,5 +1,5 @@
-import { IsInt, IsOptional, IsString, MaxLength, MinLength, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsArray, ArrayMaxSize, IsInt, IsOptional, IsString, MaxLength, MinLength, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PublicProductSearchDto {
@@ -18,6 +18,18 @@ export class PublicProductSearchDto {
   @MinLength(1)
   @MaxLength(100)
   category?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Filtro por dato clave publicado, `<dato>:<valor>`; repetible, todos deben cumplirse',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Array.isArray(value) ? value : [value]))
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  keySpec?: string[];
 
   @ApiPropertyOptional({ type: Number, description: 'Productos a omitir (default 0)' })
   @IsOptional()

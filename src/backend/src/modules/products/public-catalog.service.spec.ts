@@ -55,7 +55,8 @@ const products = [
 function matchesProductWhere(row: any, where: any): boolean {
   if (where.AND && !where.AND.every((condition: any) => matchesProductWhere(row, condition))) return false;
   if (where.OR && !where.OR.some((condition: any) => matchesProductWhere(row, condition))) return false;
-  if (where.id !== undefined && row.id !== where.id) return false;
+  if (where.id?.in && !where.id.in.includes(row.id)) return false;
+  if (typeof where.id === 'string' && row.id !== where.id) return false;
   if (where.lifecycleStatus !== undefined && row.lifecycleStatus !== where.lifecycleStatus) return false;
   if (where.categoryId?.in && !where.categoryId.in.includes(row.categoryId)) return false;
   if (where.extraAttributes?.path?.[0] === 'biblioteca' && !row.extraAttributes?.biblioteca) return false;
@@ -94,6 +95,15 @@ describe('PublicCatalogService', () => {
     prisma.product.count.mockImplementation(
       async (args: any) => table.filter((row) => matchesProductWhere(row, args.where)).length,
     );
+    // Snapshot search/category filter (raw SQL): the fake reads the bound parameters (term, category ids).
+    (prisma as any).$queryRaw = jest.fn(async (sql: { values: unknown[] }) => {
+      const term = sql.values.find((v) => typeof v === 'string') as string | undefined;
+      const ids = sql.values.find((v) => Array.isArray(v)) as string[] | undefined;
+      return table
+        .filter((row) => !term || row.name.toLowerCase().includes(term.toLowerCase()) || row.sku.toLowerCase().includes(term.toLowerCase()))
+        .filter((row) => !ids || ids.includes(row.categoryId))
+        .map((row) => ({ id: row.id }));
+    });
     prisma.product.findFirst.mockImplementation(async (args: any) => {
       const row = table.find((candidate) => matchesProductWhere(candidate, args.where));
       return row ? { ...row, category: categoryById.get(row.categoryId) } : null;
@@ -104,6 +114,17 @@ describe('PublicCatalogService', () => {
   beforeEach(() => build());
 
   describe('search — listado por categoría', () => {
+    it('filtra la marca congelada antes de paginar y antes de resolver el detalle', async () => {
+      prisma.brand.findMany.mockResolvedValue([{ id: 'blocked-brand' }]);
+      await service.search({});
+      await service.getDetail('p-01');
+
+      const listWhere = prisma.product.findMany.mock.calls[0][0].where;
+      expect(prisma.product.count.mock.calls[0][0].where).toEqual(listWhere);
+      const revisionFilter = listWhere.AND[0].AND[2].OR[1].publicRevision.isNot;
+      expect(revisionFilter.OR).toContainEqual({ content: { path: ['brandId'], equals: 'blocked-brand' } });
+      expect(prisma.product.findFirst.mock.calls[0][0].where.AND).toEqual(listWhere.AND);
+    });
     it('con category devuelve los publicados de la categoría y sus descendientes', async () => {
       const result = await service.search({ category: 'cctv' });
 
@@ -120,7 +141,9 @@ describe('PublicCatalogService', () => {
         { lifecycleStatus: 'PUBLISHED' },
         expect.objectContaining({ extraAttributes: expect.objectContaining({ path: ['biblioteca'] }) }),
       ]));
-      expect([...where.categoryId.in].sort()).toEqual(['c-cctv', 'c-domos', 'c-ptz']);
+      const bound = (prisma as any).$queryRaw.mock.calls[0][0].values.find(Array.isArray) as string[];
+      expect([...bound].sort()).toEqual(['c-cctv', 'c-domos', 'c-ptz']);
+      expect(where.AND.some((c: any) => c.id?.in)).toBe(true);
     });
 
     it('incluye una ficha informativa oficial sin abrir otros borradores', async () => {

@@ -11,14 +11,19 @@
  * `d5AssertAction`) + ACL `view` sobre el producto. El batch respeta el alcance
  * por producto: lo no autorizado se reporta como `omitted` sin revelar datos.
  */
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Prisma as LibraryPrisma } from '../../../../prisma/biblioteca/generated/client';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../product-library';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
-import { d5AssertAction } from '../../../common/security/d5-action';
+import { assertGlobalGrant } from '../../../common/security/require-grant';
 import { ProductRevisionsService } from '../product-revisions.service';
 import { RULES_VERSION, ProductValidationInput, runValidation, isStaleReport, ValidationIssue, ValidationResult } from './validation-rules'
+import { isPriceCurrentlyValid, priceValidityWhere } from './price-validity'
 
 /** Mismo criterio que el motor (`validation-rules`): cualquier id bajo /api/files/. */
 const FILE_URL_RE = /^\/api\/files\/([^/?#]+)$/
@@ -43,20 +48,24 @@ export interface BatchResultItem {
 @Injectable()
 export class ProductValidationService {
   constructor(
-    private prisma: PrismaService,
+    private readonly operational: PrismaService,
     private acl: AclService,
     /** D5: con concesiones vigentes exige `products:validate`; sin ellas, la capa rol+ACL. */
     @Optional() private readonly grants?: AccessAssignmentsService,
     /** Si no hay borrador, la validación crea la revisión de trabajo con el snapshot vivo. */
     @Optional() private readonly revisions?: ProductRevisionsService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(operational),
+    @Inject(LibraryAuditService) private readonly audit: LibraryAuditService = new LibraryAuditService(library),
   ) {}
+
+  private get prisma() { return this.library.client; }
 
   /** POST /products/:id/validation — recalcula y persiste sobre la revisión de trabajo. */
   async validateOne(productId: string, ctx: AccessContext): Promise<ValidationReport> {
-    await d5AssertAction(this.grants, 'products:validate', ctx)
+    await assertGlobalGrant(this.grants, 'products:validate', ctx)
     await this.assertView(productId, ctx)
     // CAT-06: el cálculo/persistencia vive en runFresh (lo reutiliza publicar).
-    return (await this.runFresh(productId)).report
+    return (await this.runFresh(productId, ctx)).report
   }
 
   /**
@@ -66,26 +75,30 @@ export class ProductValidationService {
    * autorización — el llamador ya validó sesión/acciones (endpoint) o es el
    * scheduler interno.
    */
-  async runFresh(productId: string): Promise<{ report: ValidationReport; result: ValidationResult }> {
-    const input = await this.assemble(productId)
-    const result = runValidation(input)
+  async runFresh(productId: string, ctx?: AccessContext): Promise<{ report: ValidationReport; result: ValidationResult }> {
+    return this.library.writeTransaction(async (tx) => {
+      if (this.library.config.mode === 'dedicated') await tx.$queryRaw`SELECT id FROM products WHERE id=${productId} FOR UPDATE`;
+      const input = await this.assemble(productId, tx)
+      const result = runValidation(input)
 
-    const working = await this.workingRevision(productId, input.revisionId)
-    const report: ValidationReport = {
-      productId,
-      revisionId: working.id,
-      status: result.status,
-      issues: result.issues,
-      rulesVersion: result.rulesVersion,
-      at: new Date(),
-    }
-    await this.persist(working.id, report)
-    return { report, result }
+      const working = await this.workingRevision(productId, input.revisionId, tx)
+      const report: ValidationReport = {
+        productId,
+        revisionId: working.id,
+        status: result.status,
+        issues: result.issues,
+        rulesVersion: result.rulesVersion,
+        at: new Date(),
+      }
+      await this.persist(working.id, report, tx)
+      await this.audit.append(tx, { actor: { id: ctx?.userId }, action: 'PRODUCT_VALIDATED', entityType: 'ProductRevision', entityId: working.id, summary: { productId, status: report.status, rulesVersion: report.rulesVersion, issueCount: report.issues.length } });
+      return { report, result }
+    });
   }
 
   /** GET /products/:id/validation — último informe + bandera de obsolescencia (V2). */
   async reportOf(productId: string, ctx: AccessContext): Promise<(ValidationReport & { stale: boolean }) | null> {
-    await d5AssertAction(this.grants, 'products:validate', ctx)
+    await assertGlobalGrant(this.grants, 'products:validate', ctx)
     await this.assertView(productId, ctx)
 
     const rev = await this.prisma.productRevision.findFirst({
@@ -121,7 +134,7 @@ export class ProductValidationService {
     failed: number
     results: BatchResultItem[]
   }> {
-    await d5AssertAction(this.grants, 'products:validate', ctx)
+    await assertGlobalGrant(this.grants, 'products:validate', ctx)
     const ids = [...new Set((productIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))]
     if (ids.length === 0) throw new BadRequestException('La selección está vacía.')
     if (ids.length > 200) throw new BadRequestException('La validación por selección admite hasta 200 productos (el trabajo con filtros completos es CAT-07).')
@@ -134,17 +147,7 @@ export class ProductValidationService {
           results.push({ productId, outcome: 'omitted', reason: 'Fuera de tu alcance (no se revelan datos).' })
           continue
         }
-        const input = await this.assemble(productId)
-        const result = runValidation(input)
-        const working = await this.workingRevision(productId, input.revisionId)
-        await this.persist(working.id, {
-          productId,
-          revisionId: working.id,
-          status: result.status,
-          issues: result.issues,
-          rulesVersion: result.rulesVersion,
-          at: new Date(),
-        })
+        const { result } = await this.runFresh(productId, ctx)
         results.push({
           productId,
           outcome: result.status,
@@ -169,12 +172,9 @@ export class ProductValidationService {
   // ─── internos ─────────────────────────────────────────────────────────────
 
   private async assertView(productId: string, ctx: AccessContext): Promise<void> {
-    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true, listaId: true } })
+    await assertGlobalGrant(this.grants, 'products:validate', ctx)
+    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true } })
     if (!product) throw new NotFoundException('Producto no encontrado')
-    await d5AssertAction(this.grants, 'products:validate', ctx, {
-      id: productId, kind: 'product', productId, listId: product.listaId ?? undefined,
-    })
-    await this.acl.assertProductAccess(productId, ctx, 'view')
   }
 
   private async canView(productId: string, ctx: AccessContext): Promise<boolean> {
@@ -187,25 +187,25 @@ export class ProductValidationService {
   }
 
   /** Revisión de trabajo = la más nueva no PUBLICADA; si no hay, se crea con el snapshot vivo. */
-  private async workingRevision(productId: string, fallbackId: string): Promise<{ id: string }> {
-    const draft = await this.prisma.productRevision.findFirst({
+  private async workingRevision(productId: string, fallbackId: string, tx: LibraryPrisma.TransactionClient): Promise<{ id: string }> {
+    const draft = await tx.productRevision.findFirst({
       where: { productId, status: { not: 'PUBLICADA' as never } },
       orderBy: { version: 'desc' },
       select: { id: true },
     })
     if (draft) return draft
     if (this.revisions) {
-      const created = await this.revisions.markPendingFromLive(productId)
+      const created = await this.revisions.markPendingFromLive(productId, tx)
       if (created) return { id: created.id }
     }
     // Sin mecanismo de revisiones (specs de 2 args): se ancla al id ensamblado.
     return { id: fallbackId }
   }
 
-  private async persist(revisionId: string, report: ValidationReport): Promise<void> {
-    const rev = await this.prisma.productRevision.findUnique({ where: { id: revisionId }, select: { status: true } })
+  private async persist(revisionId: string, report: ValidationReport, tx: LibraryPrisma.TransactionClient): Promise<void> {
+    const rev = await tx.productRevision.findUnique({ where: { id: revisionId }, select: { status: true } })
     if (rev?.status === ('PUBLICADA' as never)) return // jamás se escribe sobre la publicada
-    await this.prisma.productRevision.update({
+    await tx.productRevision.update({
       where: { id: revisionId },
       data: {
         validatedAt: report.at,
@@ -217,8 +217,8 @@ export class ProductValidationService {
   }
 
   /** Ensambla el estado real del producto para el motor puro. */
-  private async assemble(productId: string): Promise<ProductValidationInput> {
-    const product = await this.prisma.product.findUnique({
+  private async assemble(productId: string, tx: LibraryPrisma.TransactionClient): Promise<ProductValidationInput> {
+    const product = await tx.product.findUnique({
       where: { id: productId },
       select: {
         id: true,
@@ -226,49 +226,43 @@ export class ProductValidationService {
         catalogName: true,
         catalogBrand: true,
         brandId: true,
+        brand: { select: { name: true } },
         catalogPublished: true,
         lifecycleStatus: true,
         listaId: true,
         category: { select: { isActive: true, slug: true } },
         images: { select: { url: true, isPrimary: true }, orderBy: { sortOrder: 'asc' } },
         catalogResources: { select: { kind: true, url: true, requiresLicense: true }, orderBy: { position: 'asc' } },
-        stock: { select: { availableQty: true } },
       },
     })
     if (!product) throw new NotFoundException('Producto no encontrado')
 
+    // Stock remains operational; no include or FK across databases.
+    const stock = await this.operational.stock.findUnique({ where: { productId }, select: { availableQty: true } })
     const urls = [...product.images.map((i) => i.url), ...product.catalogResources.map((r) => r.url)]
     const fileIds = [...new Set(urls.map((u) => FILE_URL_RE.exec(u)?.[1]).filter((x): x is string => !!x))]
     const files: ProductValidationInput['files'] = {}
     if (fileIds.length > 0) {
-      const rows = await this.prisma.uploadedFile.findMany({ where: { id: { in: fileIds } }, select: { id: true, detectedKind: true } })
+      const rows = await tx.uploadedFile.findMany({ where: { id: { in: fileIds } }, select: { id: true, detectedKind: true } })
       for (const id of fileIds) {
         const row = rows.find((r) => r.id === id)
         files[id] = { exists: !!row, detectedKind: row?.detectedKind ?? null }
       }
     }
 
-    let lista: ProductValidationInput['lista'] = null
-    let prices: ProductValidationInput['prices'] = []
-    if (product.listaId) {
-      const [l, ps] = await Promise.all([
-        this.prisma.lista.findUnique({ where: { id: product.listaId }, select: { isActive: true, archivedAt: true, deletionStatus: true, validUntil: true } }),
-        this.prisma.price.findMany({ where: { productId, listaId: product.listaId }, select: { value: true, validUntil: true } }),
-      ])
-      if (l) {
-        lista = {
-          isActive: l.isActive,
-          archived: l.archivedAt !== null,
-          pendingDeletion: l.deletionStatus === 'PENDING_DELETION',
-          expired: !!l.validUntil && l.validUntil < new Date(),
-        }
+    // El precio pertenece al producto; `listaId` no limita la oferta vigente.
+    const now = new Date()
+    const ps = await tx.price.findMany({
+      where: { productId, ...priceValidityWhere(now) },
+      select: { value: true, validFrom: true, validUntil: true },
+    })
+    const prices: ProductValidationInput['prices'] = ps.map((p) => {
+      const num = Number(p.value)
+      return {
+        valueOk: Number.isFinite(num) && num > 0,
+        expired: !isPriceCurrentlyValid(p.validFrom, p.validUntil, now),
       }
-      const now = new Date()
-      prices = ps.map((p) => {
-        const num = Number(p.value)
-        return { valueOk: Number.isFinite(num) && num > 0, expired: !!p.validUntil && p.validUntil < now }
-      })
-    }
+    })
 
     return {
       productId: product.id,
@@ -276,16 +270,16 @@ export class ProductValidationService {
       name: product.name,
       catalogName: product.catalogName,
       brandId: product.brandId,
+      brandName: product.brand?.name ?? null,
       catalogBrand: product.catalogBrand,
       categoryActive: product.category?.isActive ?? false,
       categorySlug: product.category?.slug ?? null,
       images: product.images,
       resources: product.catalogResources,
       files,
-      lista,
+      lista: null,
       prices,
-      expectsPublication: product.catalogPublished === true || product.lifecycleStatus === 'PUBLISHED',
-      stockZero: !!product.stock && product.stock.availableQty <= 0,
+      stockZero: !!stock && stock.availableQty <= 0,
     }
   }
 }

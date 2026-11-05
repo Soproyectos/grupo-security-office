@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from './product-library';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** Lista de precios pública por defecto: COP con IVA incluido (precio al cliente final). */
 export const DEFAULT_PUBLIC_PRICE_LIST_CODE = 'CLIENTE_FINAL_IVA';
 
-/** Único precio que un visitante anónimo puede ver. */
+/** Tarifa comercial; el borde HTTP exige una sesión de cliente verificada. */
 export interface PublicPrice {
   value: number;
   currency: string;
@@ -24,18 +26,21 @@ function openWindow(now: Date) {
 }
 
 /**
- * Resolución del precio público del storefront. Es la ÚNICA puerta por la que
- * un precio llega a un visitante anónimo: filtra estrictamente por el código de
+ * Resolución interna de la tarifa pública del storefront: filtra por el código de
  * la lista pública (`PUBLIC_PRICE_LIST_CODE`, por defecto `CLIENTE_FINAL_IVA`),
  * lista activa y ambas vigencias, y solo selecciona `productId`, `value` y
- * `currency` (nunca costos, otras listas ni datos de ACL).
+ * `currency` (nunca costos, otras listas ni datos de ACL). El controlador aplica
+ * después la sesión de cliente; este servicio no autoriza exposición anónima.
  */
 @Injectable()
 export class PublicPricingService {
   constructor(
-    private readonly prisma: PrismaService,
+    prisma: PrismaService,
     private readonly config: ConfigService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
+
+  private get prisma() { return this.library.client; }
 
   /** Código de la lista pública; un valor vacío en el entorno cae al default. */
   get priceListCode(): string {

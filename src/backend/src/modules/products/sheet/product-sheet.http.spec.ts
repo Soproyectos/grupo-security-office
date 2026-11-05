@@ -9,6 +9,9 @@ import { HttpExceptionFilter } from '../../../common/filters/http-exception.filt
 import { TransformInterceptor } from '../../../common/interceptors/transform.interceptor';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../product-library';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { ProductSheetController } from './product-sheet.controller';
 import { ProductSheetService } from './product-sheet.service';
@@ -78,6 +81,7 @@ describe('ProductSheetController (HTTP)', () => {
   let tx: any;
   let prisma: any;
   let acl: { assertProductAccess: jest.Mock };
+  let grantRows: Array<{ sourceId: string; actionId: string; scope: string }>;
   let audit: { log: jest.Mock };
 
   beforeEach(async () => {
@@ -94,17 +98,21 @@ describe('ProductSheetController (HTTP)', () => {
       $transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     };
     acl = { assertProductAccess: jest.fn().mockResolvedValue({ listaId: 'lista-1' }) };
+    grantRows = [{ sourceId: 's-r', actionId: 'products:read', scope: 'global' }, { sourceId: 's-w', actionId: 'products:write', scope: 'global' }, { sourceId: 's-n', actionId: 'products:notes', scope: 'global' }];
     audit = { log: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
       controllers: [ProductSheetController],
       providers: [
-      { provide: AccessAssignmentsService, useValue: { grantsForUser: jest.fn().mockResolvedValue([{ sourceId: 's-r', actionId: 'products:read', scope: 'global' }, { sourceId: 's-w', actionId: 'products:write', scope: 'global' }, { sourceId: 's-n', actionId: 'products:notes', scope: 'global' }]) } },
+      { provide: AccessAssignmentsService, useValue: { grantsForUser: jest.fn(async () => grantRows) } },
       ProductSheetService,
         RolesGuard,
         { provide: PrismaService, useValue: prisma },
         { provide: AclService, useValue: acl },
         { provide: AuditService, useValue: audit },
+        // Modo legacy: el cliente de biblioteca es la misma fachada que usa el servicio con 4 argumentos.
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(prisma) },
+        LibraryAuditService,
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -131,14 +139,16 @@ describe('ProductSheetController (HTTP)', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it.each(['Operador', 'Consulta', 'Supervisor'])('PUT as %s is forbidden by role', async (role) => {
+  it.each(['Operador', 'Consulta', 'Supervisor', 'Admin Comercial'])('PUT as %s without panel grants is forbidden (the role grants nothing)', async (role) => {
+    grantRows = [];
     const res = await put(validBody(), role);
     expect(res.status).toBe(403);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });
 
-  it.each(['Operador', 'Consulta'])('GET as %s is forbidden by role', async (role) => {
+  it.each(['Operador', 'Consulta', 'Admin Comercial'])('GET as %s without panel grants is forbidden (the role grants nothing)', async (role) => {
+    grantRows = [];
     const res = await request(app.getHttpServer()).get(`/api/products/${PRODUCT_ID}/sheet`).set('x-test-roles', role);
     expect(res.status).toBe(403);
   });
@@ -153,17 +163,38 @@ describe('ProductSheetController (HTTP)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ productId: PRODUCT_ID, name: 'DVR AcuSense', slug: 'ids-e04hqhi-d', published: true });
-    expect(acl.assertProductAccess).toHaveBeenCalledWith(PRODUCT_ID, { userId: 'user-1', roles: [role] }, 'edit_products');
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
     expect(tx.productCatalogSpecGroup.create).toHaveBeenCalledTimes(1);
     expect(tx.productCatalogResource.createMany).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'update_sheet', entity: 'Product', entityId: PRODUCT_ID, userId: 'user-1' }));
   });
 
-  it('PUT surfaces the ACL denial (403) when the user lacks edit_products on the Lista', async () => {
-    acl.assertProductAccess.mockRejectedValue(new ForbiddenException('Acceso restringido a este producto'));
-    const res = await put(validBody());
+  it('PUT with products:write but no products:read is forbidden (dependency of the grant)', async () => {
+    grantRows = [{ sourceId: 's-w', actionId: 'products:write', scope: 'global' }];
+    const res = await put(validBody(), 'Vendedor');
     expect(res.status).toBe(403);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('PUT ignores the Lista ACL: a Vendedor with the global grants saves even if the ACL would deny', async () => {
+    acl.assertProductAccess.mockRejectedValue(new ForbiddenException('Acceso restringido a este producto'));
+    prisma.product.findUnique
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ catalogName: 'DVR AcuSense', catalogSlug: 'ids-e04hqhi-d', catalogPublished: true }));
+    const res = await put(validBody(), 'Vendedor');
+    expect(res.status).toBe(200);
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
+  });
+
+  it('PUT as Super Admin keeps the bypass with zero grants', async () => {
+    grantRows = [];
+    prisma.product.findUnique
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ catalogName: 'DVR AcuSense', catalogSlug: 'ids-e04hqhi-d', catalogPublished: true }));
+    const res = await put(validBody(), 'Super Admin');
+    expect(res.status).toBe(200);
   });
 
   it('PUT returns 409 when the slug belongs to another product', async () => {
@@ -201,6 +232,6 @@ describe('ProductSheetController (HTTP)', () => {
     const res = await request(app.getHttpServer()).get(`/api/products/${PRODUCT_ID}/sheet`).set('x-test-roles', 'Admin Comercial');
     expect(res.status).toBe(200);
     expect(res.body.data.specGroups).toEqual([{ key: 'video', title: 'Video', items: [{ label: 'Canales', value: '4' }] }]);
-    expect(acl.assertProductAccess).toHaveBeenCalledWith(PRODUCT_ID, expect.anything(), 'view');
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
   });
 });

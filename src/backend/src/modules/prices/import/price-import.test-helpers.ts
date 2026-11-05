@@ -11,7 +11,7 @@ export interface FakeLista {
 }
 export interface FakeRestriction { userId: string; resourceType: 'PRODUCT'; resourceId: string; isActive: false }
 export interface FakeTariff {
-  id: string; code: string; isActive?: boolean; currency?: string;
+  id: string; code: string; name?: string; isActive?: boolean; currency?: string;
   validFrom?: Date | null; validUntil?: Date | null;
 }
 export interface FakePrice { id?: string; productId: string; priceListId: string; value: number | string; currency?: string; listaId?: string | null }
@@ -26,6 +26,16 @@ export interface PriceImportFakeSeed {
   brands?: Array<{ id: string; name: string }>;
   categories?: Array<{ id: string; name: string }>;
 }
+
+/** The five original tariffs with their historic names (tariffs are data: specs pass them to the reader/builders). */
+export const LEGACY_TARIFFS: Array<{ code: string; name: string }> = [
+  { code: 'INSTALADOR_IVA', name: 'Instalador (con IVA)' },
+  { code: 'TIENDA_IVA', name: 'Tienda (con IVA)' },
+  { code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)' },
+  { code: 'DPP_PLATINO_IVA', name: 'DPP Platino (con IVA)' },
+  { code: 'CLIENTE_FINAL_IVA', name: 'Cliente Final (con IVA)' },
+];
+export const LEGACY_TARIFF_CODES: string[] = LEGACY_TARIFFS.map((t) => t.code);
 
 type Where = Record<string, any>;
 
@@ -100,7 +110,7 @@ export function createGrantsProvider(initial: FakeGrant[] = []) {
 export function createPriceImportFake(seed: PriceImportFakeSeed = {}) {
   const products = (seed.products ?? []).map((p) => ({ ...p }));
   const tariffs = (seed.tariffs ?? []).map((t) => ({
-    isActive: true, currency: 'COP', validFrom: null, validUntil: null, ...t,
+    isActive: true, currency: 'COP', validFrom: null, validUntil: null, name: t.code, ...t,
   }));
   const prices = (seed.prices ?? []).map((p) => ({ currency: 'COP', listaId: null, ...p } as Record<string, any>));
   const listas = (seed.listas ?? []).map((l) => ({ isActive: true, archivedAt: null, deletionStatus: null, currency: 'COP', ...l }));

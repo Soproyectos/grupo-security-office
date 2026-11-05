@@ -15,6 +15,9 @@ import { TransformInterceptor } from '../../../common/interceptors/transform.int
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
 import { SessionService } from '../../../common/security/session.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { JwtStrategy } from '../../auth/jwt.strategy';
@@ -58,6 +61,9 @@ describe('Price import apply through HTTP', () => {
       providers: [PriceImportService, AclService, JwtStrategy,
         { provide: ConfigService, useValue: { get: () => SECRET } },
         { provide: PrismaService, useValue: prisma },
+        // Modo legacy: la fachada de biblioteca comparte el mismo cliente de prueba.
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(prisma as never) },
+        LibraryAuditService,
         { provide: SessionService, useValue: { isActive: async (jti: string) => jti === SESSION } },
         { provide: AuditService, useValue: { log: (...args: unknown[]) => fake.audit.log(...args), logTx: (...args: unknown[]) => fake.audit.logTx(...args) } },
         { provide: AccessAssignmentsService, useValue: { grantsForUser: async () => grants.grants } },
@@ -88,7 +94,7 @@ describe('Price import apply through HTTP', () => {
       accessGrant: { findMany: jest.fn(async () => grants.grants.map((g) => ({ sourceId: g.sourceId, actionId: g.actionId, scopeKind: g.scope, resourceId: g.resourceId ?? '' }))) },
     });
     grants = createGrantsProvider();
-    grants.grantOnLista(LIST, ...ACTIONS);
+    grants.grant(...ACTIONS); // global panel grants (listas:read only satisfies the catalog dependency of prices:read)
   });
 
   const auth = (req: request.Test) => req.auth(token, { type: 'bearer' });
@@ -143,14 +149,37 @@ describe('Price import apply through HTTP', () => {
     expect(conflict.body).toMatchObject({ code: 'REVISION_CONFLICT', details: { conflicts: [{ code: 'PRICE_CHANGED', sku: 'SKU-B' }] } });
   });
 
-  it('re-reads the grants on every request: no apply action is a 403, a global grant still covers the lista', async () => {
+  it('re-reads the grants on every request: a lista-tied or missing apply grant is a 403, the global one applies', async () => {
     const id = await saveRevision([['SKU-A', 110]]);
     grants.grants.splice(0, grants.grants.length);
-    grants.grantOnLista(LIST, 'prices:read', 'listas:read');
+    grants.grantOnLista(LIST, 'prices:read', 'prices:apply', 'listas:read');
     await apply(id).expect(403);
     grants.grants.splice(0, grants.grants.length);
-    grants.grant('prices:read', 'prices:apply', 'listas:read', 'prices:save', 'prices:preview');
+    grants.grant('prices:read', 'listas:read', 'prices:save', 'prices:preview');
+    await apply(id).expect(403);
+    grants.grant('prices:apply');
     await apply(id).expect(201);
+  });
+
+  it('roles that used to pass (Supervisor here) get 403 on save, apply and discard with zero grants', async () => {
+    const id = await saveRevision([['SKU-A', 110]]);
+    grants.grants.splice(0, grants.grants.length);
+    await auth(request(app.getHttpServer()).post('/api/prices/import/revisions'))
+      .field('idempotencyKey', 'http-key-zero-grants')
+      .attach('file', workbook([['SKU-A', 111]]), { filename: 'precios.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .expect(403);
+    await apply(id).expect(403);
+    await auth(request(app.getHttpServer()).delete(`/api/prices/import/revisions/${id}`)).expect(403);
+    expect(fake.state.revisions).toHaveLength(1);
+    expect(fake.state.revisions[0].status).toBe('GUARDADA');
+  });
+
+  it('discarding needs prices:save + prices:read only (no preview, no apply)', async () => {
+    const id = await saveRevision([['SKU-A', 110]]);
+    grants.grants.splice(0, grants.grants.length);
+    grants.grant('prices:save', 'prices:preview', 'prices:read', 'listas:read');
+    const response = await auth(request(app.getHttpServer()).delete(`/api/prices/import/revisions/${id}`)).expect(200);
+    expect(response.body.data.status).toBe('DESCARTADA');
   });
 
   it.each([

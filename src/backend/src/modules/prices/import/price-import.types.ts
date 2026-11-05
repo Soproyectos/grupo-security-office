@@ -1,7 +1,14 @@
-export const PRICE_IMPORT_TARIFFS = [
+/**
+ * Historic order of the five original tariffs. It is only an ordering hint (these codes first, then the rest by
+ * name) so lists stay stable for users; the tariffs themselves come from the database.
+ */
+export const LEGACY_TARIFF_ORDER: readonly string[] = [
   'INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA',
-] as const;
-export type PriceImportTariff = typeof PRICE_IMPORT_TARIFFS[number];
+];
+/** Tariff identity: `PriceList.code` (stable). Tariffs are data, so this is any code. */
+export type PriceImportTariff = string;
+/** A tariff as the import sees it: `code` is the identity, `name` is what users edit and what Excel headers carry. */
+export interface PriceImportTariffRef { code: string; name: string }
 export const MAX_PRICE_IMPORT_ROWS = 5000;
 
 /** Default threshold (percent, up or down) above which a price change is flagged. */
@@ -109,9 +116,20 @@ export interface PriceImportPreview {
     rowsInInaccessibleListas?: number;
     largeChangePrices?: number;
     largeChangeThresholdPct?: number;
+    /** Only in saved revisions of a single-price file: the tariffs that received the price. */
+    singlePrice?: PriceImportSinglePrice;
   };
   issues: PriceImportIssue[];
   rows: PriceImportRow[];
+  /** Set when the file has one price column (supplier without tariff tiers): its rows are expanded to these tariffs. Null for normal files. */
+  singlePrice?: PriceImportSinglePrice | null;
+  /** Every tariff eligible for the import (active, COP, open validity), in stable order: lets the UI label the single-price checkboxes. */
+  availableTariffs?: PriceImportTariffRef[];
+}
+
+/** Tariffs that receive the value of a single-price file (canonical order). */
+export interface PriceImportSinglePrice {
+  tariffs: PriceImportTariff[];
 }
 
 /** IMP-04 — tarifa resuelta guardada en la revisión (versiones de tarifas). */

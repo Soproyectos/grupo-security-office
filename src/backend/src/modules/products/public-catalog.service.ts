@@ -1,4 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Prisma as OperationalPrisma } from '@prisma/client';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from './product-library';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   buildBreadcrumb,
@@ -10,8 +13,12 @@ import {
   sanitizeTechnicalSpecs,
 } from './public-catalog.helpers';
 import { PublicPrice, PublicPricingService } from './public-pricing.service';
-import { PUBLIC_CATALOG_VISIBILITY } from './public-catalog-visibility';
-import { applyRevisionLens, loadActiveRevisionContents } from './public-revision-lens';
+import { Prisma } from '../../../prisma/biblioteca/generated/client';
+import { publicCatalogVisibility } from './public-catalog-visibility';
+import { blockedWebBrandIds } from './web-brand-policy';
+import { PublishedKeySpecsService, type KeySpecFacetsView } from '../library-specs/published-key-specs.service';
+import { parseKeySpecFilter } from '../library-specs/published-key-specs.rules';
+import { applyRevisionLens, effectiveIdentity, loadActiveRevisionContents } from './public-revision-lens';
 
 /** Fila del listado público: solo campos aptos para un visitante anónimo. */
 export interface PublicProductListItem {
@@ -53,6 +60,9 @@ export interface PublicProductDetail {
 
 export const PUBLIC_LIST_DEFAULT_LIMIT = 24;
 
+type PublishedCategory = { name: string; slug: string; id?: string; parentId?: string | null };
+type PublishedBrand = { name: string; slug?: string };
+
 /**
  * Lectura pública del catálogo para el storefront. Todas las consultas usan un
  * `select` explícito (nunca se propaga una fila de producto) y solo devuelven
@@ -62,9 +72,17 @@ export const PUBLIC_LIST_DEFAULT_LIMIT = 24;
 @Injectable()
 export class PublicCatalogService {
   constructor(
-    private readonly prisma: PrismaService,
+    prisma: PrismaService,
     private readonly pricing: PublicPricingService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Optional() private readonly keySpecs?: PublishedKeySpecsService,
   ) {}
+
+  private get prisma() { return this.library.client; }
+
+  private async visibility<TJsonNull>(jsonNull: TJsonNull) {
+    return publicCatalogVisibility(jsonNull, await blockedWebBrandIds(this.prisma));
+  }
 
   /**
    * Listado/búsqueda pública paginada (HOM-02 + categorías): publicados por
@@ -76,6 +94,8 @@ export class PublicCatalogService {
   async search(params: {
     q?: string;
     category?: string;
+    /** Repeated `<specKey>:<value>` filters on PUBLISHED key specs; all must match. */
+    keySpec?: string[];
     offset?: number;
     limit?: number;
   }): Promise<PublicProductListResponse> {
@@ -94,16 +114,32 @@ export class PublicCatalogService {
       if (categoryIds.length === 0) return empty;
     }
 
+    // Key-spec filters narrow by id; visibility below stays the one public rule.
+    let keySpecIds: string[] | undefined;
+    if (params.keySpec?.length) {
+      if (!this.keySpecs) throw new Error('Key-spec filters need PublishedKeySpecsService');
+      const filters = params.keySpec.map((raw) => {
+        const f = parseKeySpecFilter(raw);
+        if (!f) throw new BadRequestException('keySpec debe tener la forma <dato>:<valor>');
+        return f;
+      });
+      keySpecIds = await this.keySpecs.matchingProductIds(filters);
+      if (keySpecIds.length === 0) return empty;
+    }
+
+    // Published-isolation: text search and category filter match the PUBLISHED snapshot
+    // (live columns only when the revision lacks the key / the product has no pinned revision).
+    let snapshotIds: string[] | undefined;
+    if (term !== '' || categoryIds) {
+      snapshotIds = await this.snapshotMatchingIds(term, categoryIds);
+      if (snapshotIds.length === 0) return empty;
+    }
+
     const where = {
-      ...(categoryIds && { categoryId: { in: categoryIds } }),
       AND: [
-        PUBLIC_CATALOG_VISIBILITY,
-        ...(term !== ''
-          ? [{ OR: [
-              { name: { contains: term, mode: 'insensitive' as const } },
-              { sku: { contains: term, mode: 'insensitive' as const } },
-            ] }]
-          : []),
+        await this.visibility(Prisma.JsonNull),
+        ...(keySpecIds ? [{ id: { in: keySpecIds } }] : []),
+        ...(snapshotIds ? [{ id: { in: snapshotIds } }] : []),
       ],
     };
 
@@ -116,6 +152,8 @@ export class PublicCatalogService {
           name: true,
           lifecycleStatus: true,
           publicRevisionId: true,
+          categoryId: true,
+          brandId: true,
           category: { select: { name: true, slug: true } },
           brand: { select: { name: true } },
           images: {
@@ -139,17 +177,20 @@ export class PublicCatalogService {
     // CAT-02: the list serves the active snapshot when there is one (live columns as fallback).
     const contents = await loadActiveRevisionContents(this.prisma, products.map((p) => p.publicRevisionId));
 
+    const refs = await this.publishedRefs(products, contents);
+
     return {
       data: products.map((raw) => {
         const p = applyRevisionLens(raw, contents);
+        const ref = refs(raw);
         return {
           id: p.id,
           sku: p.sku,
           name: p.name,
-          imageUrl: p.images[0]?.url ?? null,
-          categoryName: p.category.name,
-          categorySlug: p.category.slug,
-          brandName: p.brand.name,
+          imageUrl: ([...p.images].sort((x, y) => Number(Boolean((y as { isPrimary?: boolean }).isPrimary)) - Number(Boolean((x as { isPrimary?: boolean }).isPrimary))))[0]?.url ?? null,
+          categoryName: ref.category?.name ?? null,
+          categorySlug: ref.category?.slug ?? null,
+          brandName: ref.brand?.name ?? null,
           isInformational: p.lifecycleStatus !== 'PUBLISHED',
           price: p.lifecycleStatus === 'PUBLISHED' ? (prices.get(p.id) ?? null) : null,
         };
@@ -162,9 +203,9 @@ export class PublicCatalogService {
    * Ficha pública de un producto. Un id inexistente y un borrador ajeno al lote
    * oficial responden igual (404) para no revelar el estado interno.
    */
-  async getDetail(id: string): Promise<PublicProductDetail> {
+  async getDetail(id: string, opts: { skipVisibility?: boolean } = {}): Promise<PublicProductDetail> {
     const product = await this.prisma.product.findFirst({
-      where: { id, AND: [PUBLIC_CATALOG_VISIBILITY] },
+      where: { id, ...(opts.skipVisibility ? {} : { AND: [await this.visibility(Prisma.JsonNull)] }) },
       select: {
         id: true,
         sku: true,
@@ -172,6 +213,8 @@ export class PublicCatalogService {
         lifecycleStatus: true,
         publicRevisionId: true,
         description: true,
+        categoryId: true,
+        brandId: true,
         technicalSpecs: true,
         documents: true,
         brand: { select: { name: true, slug: true } },
@@ -185,29 +228,110 @@ export class PublicCatalogService {
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     // CAT-02: el snapshot activo pisa la ficha; columnas vivas = fallback (K4).
-    const lensed = applyRevisionLens(product, await loadActiveRevisionContents(this.prisma, [product.publicRevisionId]));
+    const contents = await loadActiveRevisionContents(this.prisma, [product.publicRevisionId]);
+    const lensed = applyRevisionLens(product, contents, { preview: Boolean(opts.skipVisibility) });
 
+    // Published-isolation: public brand/category/breadcrumb come from the PUBLISHED snapshot;
+    // the admin preview (skipVisibility) shows the live rows.
+    const ref: { category: PublishedCategory | null; brand: PublishedBrand | null } = opts.skipVisibility
+      ? { category: product.category, brand: product.brand }
+      : (await this.publishedRefs([product], contents))(product);
     const [price, breadcrumb] = await Promise.all([
       this.pricing.getPublicPrice(product.id),
-      this.breadcrumbOf(product.category?.parentId ?? null),
+      this.breadcrumbOf(ref.category?.parentId ?? null),
     ]);
 
+    // Published-isolation: the public gallery is the PUBLISHED snapshot (same as the list);
+    // the admin preview (skipVisibility) shows the live/draft rows. A revision without
+    // `images` (legacy) keeps the live rows.
+    const source = !opts.skipVisibility && Array.isArray((lensed as { images?: unknown }).images)
+      ? ((lensed as unknown as { images: typeof product.images }).images)
+      : product.images;
     // Primaria primero; el resto conserva el orden por sortOrder de la consulta.
-    const images = [...product.images].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+    const images = [...source].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
 
     return {
       id: lensed.id,
       sku: lensed.sku,
       name: lensed.name,
       description: lensed.description ?? null,
-      brand: product.brand ? { name: product.brand.name, slug: product.brand.slug } : null,
-      category: product.category ? { name: product.category.name, slug: product.category.slug } : null,
+      brand: ref.brand ? { name: ref.brand.name, slug: ref.brand.slug } : null,
+      category: ref.category ? { name: ref.category.name, slug: ref.category.slug } : null,
       breadcrumb,
       images: images.map((image) => ({ url: image.url, alt: image.alt ?? null })),
       technicalSpecs: sanitizeTechnicalSpecs(lensed.technicalSpecs),
       datasheets: sanitizeDatasheets(lensed.documents),
       price: product.lifecycleStatus === 'PUBLISHED' ? price : null,
       isInformational: product.lifecycleStatus !== 'PUBLISHED',
+    };
+  }
+
+  /** Key-spec facets of a subcategory over the products visible under the public rule. */
+  async keySpecFacets(subcategoryId: string): Promise<KeySpecFacetsView> {
+    if (!this.keySpecs) throw new Error('Key-spec facets need PublishedKeySpecsService');
+    return this.keySpecs.facets(subcategoryId, await this.visibility(OperationalPrisma.JsonNull));
+  }
+
+  /**
+   * Ids of products matching the public text search and/or category filter, evaluated on the
+   * PUBLISHED snapshot: `name`/`sku`/`categoryId` of the pinned PUBLICADA revision when it holds
+   * the key, otherwise the live column. Visibility is NOT decided here (the caller applies it).
+   * Fully parameterized; the text match is case-insensitive and has no LIKE wildcards.
+   */
+  private async snapshotMatchingIds(term: string, categoryIds?: string[]): Promise<string[]> {
+    const conditions: Prisma.Sql[] = [];
+    if (term !== '') {
+      conditions.push(Prisma.sql`(
+        strpos(lower(COALESCE(r.content->>'name', p.name)), lower(${term})) > 0
+        OR strpos(lower(COALESCE(r.content->>'sku', p.sku)), lower(${term})) > 0
+      )`);
+    }
+    if (categoryIds) {
+      conditions.push(Prisma.sql`(CASE WHEN r.content IS NOT NULL AND jsonb_exists(r.content, 'categoryId')
+        THEN r.content->>'categoryId' ELSE p."categoryId" END) = ANY(${categoryIds}::text[])`);
+    }
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT p.id FROM products p
+      LEFT JOIN product_revisions r ON r.id = p."publicRevisionId" AND r.status = 'PUBLICADA'
+      WHERE ${Prisma.join(conditions, ' AND ')}`);
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Brand and category as PUBLISHED: the snapshot's ids when the revision holds them, else the
+   * live relations already selected. Only ids that differ from the live ones are loaded.
+   */
+  private async publishedRefs<T extends {
+    publicRevisionId?: string | null; categoryId: string | null; brandId: string | null;
+    category: unknown; brand: unknown;
+  }>(rows: T[], contents: Map<string, Record<string, unknown>>) {
+    const eff = (r: T) => ({
+      categoryId: effectiveIdentity(r, contents, 'categoryId', r.categoryId),
+      brandId: effectiveIdentity(r, contents, 'brandId', r.brandId),
+    });
+    const needCat = new Set<string>();
+    const needBrand = new Set<string>();
+    for (const r of rows) {
+      const e = eff(r);
+      if (e.categoryId && e.categoryId !== (r.categoryId ?? null)) needCat.add(e.categoryId);
+      if (e.brandId && e.brandId !== (r.brandId ?? null)) needBrand.add(e.brandId);
+    }
+    const [cats, brands] = await Promise.all([
+      needCat.size
+        ? this.prisma.category.findMany({ where: { id: { in: [...needCat] } }, select: { id: true, name: true, slug: true, parentId: true } })
+        : Promise.resolve([] as PublishedCategory[]),
+      needBrand.size
+        ? this.prisma.brand.findMany({ where: { id: { in: [...needBrand] } }, select: { id: true, name: true, slug: true } })
+        : Promise.resolve([] as Array<PublishedBrand & { id: string }>),
+    ]);
+    const catById = new Map<string, PublishedCategory>(cats.map((c) => [c.id as string, c]));
+    const brandById = new Map<string, PublishedBrand>(brands.map((b) => [b.id, b]));
+    return (r: T): { category: PublishedCategory | null; brand: PublishedBrand | null } => {
+      const e = eff(r);
+      return {
+        category: e.categoryId === (r.categoryId ?? null) ? (r.category as PublishedCategory | null) : e.categoryId ? (catById.get(e.categoryId) ?? null) : null,
+        brand: e.brandId === (r.brandId ?? null) ? (r.brand as PublishedBrand | null) : e.brandId ? (brandById.get(e.brandId) ?? null) : null,
+      };
     };
   }
 

@@ -216,11 +216,14 @@ export interface BatchExecutionResult {
   /** Duración total en ms */
   durationMs: number;
 
-  /** Filas que cayeron a categoría/marca default por falta de inferencia */
+  /** Filas que quedaron sin categoría/marca (sin dato o sin coincidencia): nunca se crea una por defecto. */
   defaultsByMissingInference?: {
     category: number;
     brand: number;
   };
+
+  /** Etiquetas de categoría/marca desconocidas: no se creó nada; el producto queda por clasificar. */
+  needsConfirmation?: ImportNeedsConfirmation[];
 
   /**
    * Filas de productos con identidad bloqueada (nameLockedAt) cuya identidad
@@ -231,6 +234,18 @@ export interface BatchExecutionResult {
 
   /** Productos nuevos creados como borrador por falta de identidad comercial. */
   pendingEnrichment?: number;
+}
+
+
+/**
+ * A brand/category label that matched nothing. NOTHING was created: the product row went through as an
+ * unclassified draft ("por clasificar") and a person confirms the label later.
+ */
+export interface ImportNeedsConfirmation {
+  rowIndex: number;
+  sku: string;
+  code: 'CATEGORY_NEEDS_CONFIRMATION' | 'BRAND_NEEDS_CONFIRMATION';
+  label: string;
 }
 
 /**

@@ -53,12 +53,14 @@ describe('product history: create', () => {
     expect(byField.name.newValue).toBe('Nuevo');
   });
 
-  it('records price:<TARIFF> rows for the initial prices in the same transaction', async () => {
+  it('rejects prices[] (prices only change by mass upload or the product sheet) and records nothing', async () => {
     const { service, tx, written, prisma } = build();
-    tx.product.create.mockResolvedValue(baseProduct({ id: 'p-new', sku: 'NEW-1' }));
-    await service.create({ sku: 'NEW-1', name: 'Nuevo', categoryId: 'c-1', brandId: 'b-1', listaId: 'L-1', prices: [{ priceListId: 'pl-1', value: 1500 }] } as never, ctx);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(written.find((r) => r.field === 'price:DPP_ORO_IVA')).toMatchObject({ oldValue: Prisma.DbNull, newValue: '1500', source: 'MANUAL' });
+    await expect(
+      service.create({ sku: 'NEW-1', name: 'Nuevo', categoryId: 'c-1', brandId: 'b-1', listaId: 'L-1', prices: [{ priceListId: 'pl-1', value: 1500 }] } as never, ctx),
+    ).rejects.toThrow('Los precios solo se cambian por carga masiva o desde la ficha del producto.');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.price.upsert).not.toHaveBeenCalled();
+    expect(written).toHaveLength(0);
   });
 
   it('records nothing when the insert fails', async () => {
@@ -93,11 +95,11 @@ describe('product history: update', () => {
     expect(written).toHaveLength(0);
   });
 
-  it('rolls the history back with the mutation when the price upsert fails', async () => {
-    const { service, tx, written, product } = build();
-    tx.product.update.mockResolvedValue({ ...product, name: 'Otra' });
-    tx.price.upsert.mockRejectedValue(new Error('price failed'));
-    await expect(service.update('p-1', { name: 'Otra', prices: [{ priceListId: 'pl-1', value: 10 }] } as never, ctx)).rejects.toThrow('price failed');
+  it('rejects prices[] on update without writing the product, the prices or the history', async () => {
+    const { service, tx, written } = build();
+    await expect(service.update('p-1', { name: 'Otra', prices: [{ priceListId: 'pl-1', value: 10 }] } as never, ctx)).rejects.toThrow('Los precios solo se cambian');
+    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.price.upsert).not.toHaveBeenCalled();
     expect(written).toHaveLength(0);
   });
 

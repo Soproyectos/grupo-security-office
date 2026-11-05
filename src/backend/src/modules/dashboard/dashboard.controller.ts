@@ -2,8 +2,10 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { DashboardInsightsService } from './dashboard-insights.service';
+import { LibraryStatsService } from './library-stats.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { RequireGrant } from '../../common/security/require-grant';
 import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
@@ -19,6 +21,7 @@ export class DashboardController {
   constructor(
     private readonly dashboardService: DashboardService,
     private readonly insights: DashboardInsightsService,
+    private readonly libraryStats: LibraryStatsService,
   ) {}
 
   private ctx(user: any): AccessContext {
@@ -56,10 +59,21 @@ export class DashboardController {
    * protege el dato, de modo que el endpoint que lo sirve valida por su cuenta.
    */
   @Get('insights/catalog')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Agregados de catálogo (productos, categorías, publicación)' })
   getCatalogInsights() {
     return this.insights.getCatalogInsights();
+  }
+
+  /**
+   * Estadísticas de Biblioteca para «Mi resumen». El servicio entrega solo las
+   * secciones concedidas (`libraryStats:*`) y `{}` si no hay ninguna.
+   */
+  @Get('library-stats')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Estadísticas de Biblioteca por pestaña, solo las concedidas al usuario' })
+  getLibraryStats(@CurrentUser() user: any) {
+    return this.libraryStats.getLibraryStats(this.ctx(user));
   }
 
   @Get('insights/users')

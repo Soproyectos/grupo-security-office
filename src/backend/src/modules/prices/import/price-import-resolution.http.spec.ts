@@ -15,6 +15,9 @@ import { TransformInterceptor } from '../../../common/interceptors/transform.int
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
 import { SessionService } from '../../../common/security/session.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { JwtStrategy } from '../../auth/jwt.strategy';
@@ -27,8 +30,9 @@ import { PriceImportService } from './price-import.service';
 import { createGrantsProvider, createPriceImportFake } from './price-import.test-helpers';
 
 /**
- * The resolution controller has NO class-level @Roles: a person whose role is not one of the
- * price-import roles still reaches it, and the service decides from the current grants.
+ * Neither controller uses roles: a person whose role is not one of the old price-import roles
+ * reaches the routes whenever the panel grants say so (@RequireGrant + the service decide from the
+ * current GLOBAL grants; a role, or a grant tied to a lista, never opens anything).
  */
 const LIST = '00000000-0000-4000-8000-0000000000a1';
 const BRAND = '00000000-0000-4000-8000-0000000000b1';
@@ -64,6 +68,9 @@ describe('Unknown-reference resolution through HTTP', () => {
       providers: [PriceImportService, PriceImportResolutionService, AclService, JwtStrategy,
         { provide: ConfigService, useValue: { get: () => SECRET } },
         { provide: PrismaService, useValue: prisma },
+        // Modo legacy: la fachada de biblioteca comparte el mismo cliente de prueba.
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(prisma as never) },
+        LibraryAuditService,
         { provide: SessionService, useValue: { isActive: async (jti: string) => jti === SESSION } },
         { provide: AuditService, useValue: { log: (...a: unknown[]) => fake.audit.log(...a), logTx: (...a: unknown[]) => fake.audit.logTx(...a) } },
         { provide: AccessAssignmentsService, useValue: { grantsForUser: async () => grants.grants } },
@@ -98,7 +105,6 @@ describe('Unknown-reference resolution through HTTP', () => {
       accessGrant: { findMany: jest.fn(async () => grants.grants.map((g) => ({ sourceId: g.sourceId, actionId: g.actionId, scopeKind: g.scope, resourceId: g.resourceId ?? '' }))) },
     });
     grants = createGrantsProvider();
-    grants.grantOnLista(LIST, ...ACTIONS);
     grants.grant(...ACTIONS, 'products:read', 'products:write');
   });
 
@@ -125,6 +131,21 @@ describe('Unknown-reference resolution through HTTP', () => {
 
   it('rejects unauthenticated calls', async () => {
     await request(app.getHttpServer()).get(url('whatever')).expect(401);
+  });
+
+  it('zero grants: both routes answer 403 before touching the revision, whatever the role', async () => {
+    const id = await appliedRevision();
+    grants.grants.splice(0, grants.grants.length);
+    await auth(request(app.getHttpServer()).get(url(id))).expect(403);
+    await resolve(id).send({ items: [{ rowNumber: 3, action: 'SKIP' }] }).expect(403);
+    expect(fake.state.revisionRows.find((r) => r.rowNumber === 3)!.resolution).toBe('PENDING_PRODUCT');
+  });
+
+  it('a prices:read grant tied to one lista does not open the routes', async () => {
+    const id = await appliedRevision();
+    grants.grants.splice(0, grants.grants.length);
+    grants.grantOnLista(LIST, 'prices:read', 'listas:read');
+    await auth(request(app.getHttpServer()).get(url(id))).expect(403);
   });
 
   it('creates through the endpoint (name trimmed) and replays idempotently', async () => {

@@ -15,9 +15,9 @@ describe('Workflow authorization and decisions',()=>{
   ])};
   service=new WorkflowService(prisma,hierarchy,grants as any);
  });
- it('restricts seller discovery to self and active seller role',async()=>{
+ it('restricts directory to the actor team (self included), active people, any role',async()=>{
   await service.sellers(seller);
-  expect(prisma.user.findMany.mock.calls[0][0].where).toEqual({isActive:true,id:{in:['seller']},roles:{some:{role:{name:'Vendedor'}}}});
+  expect(prisma.user.findMany.mock.calls[0][0].where).toEqual({isActive:true,id:{in:['seller']}});
  });
  it('restricts supervisor discovery to current subordinates',async()=>{
   // includeSelf (BASE-03 backend-equipo): el Supervisor forma parte de su
@@ -39,10 +39,22 @@ describe('Workflow authorization and decisions',()=>{
  it('allows admin inbox to show requests from every supervisor',()=>{
   service.requests(admin);expect(prisma.teamRequest.findMany.mock.calls[0][0].where).toEqual({});
  });
- it('deniega la agenda directa a quien tiene el mismo rol, pero no recibió grants',async()=>{
+ const outsider={userId:'outsider',roles:['Cliente']};
+ it('deniega la agenda a quien no tiene un rol interno ni grants',async()=>{
   grants.grantsForUser.mockResolvedValue([]);
-  await expect(service.activities(seller)).rejects.toThrow(ForbiddenException);
+  await expect(service.activities(outsider)).rejects.toThrow(ForbiddenException);
   expect(prisma.teamActivity.findMany).not.toHaveBeenCalled();
+ });
+ it('nivel 0: un rol interno sin grants ve solo su propia agenda',async()=>{
+  grants.grantsForUser.mockResolvedValue([]);
+  await service.activities(seller);
+  expect(prisma.teamActivity.findMany.mock.calls[0][0].where).toEqual({assigneeId:{in:['seller']}});
+ });
+ it('nivel 0: un rol interno sin grants no asigna ni ve el directorio del equipo',async()=>{
+  grants.grantsForUser.mockResolvedValue([]);
+  await expect(service.sellers(supervisor)).rejects.toThrow(ForbiddenException);
+  await expect(service.createActivity(supervisor,{title:'Visit',kind:'VISIT',assigneeId:'seller',startsAt:'2026-10-07T15:00:00Z'})).rejects.toThrow(ForbiddenException);
+  expect(prisma.teamActivity.create).not.toHaveBeenCalled();
  });
  it('un grant own de lectura no expande la consulta a subordinados',async()=>{
   grants.grantsForUser.mockResolvedValue([{sourceId:'own-read',actionId:'activities:read',scope:'own'}]);
@@ -51,7 +63,7 @@ describe('Workflow authorization and decisions',()=>{
  });
  it('leer agenda no concede crear una actividad por llamada directa',async()=>{
   grants.grantsForUser.mockResolvedValue([{sourceId:'own-read',actionId:'activities:read',scope:'own'}]);
-  await expect(service.createActivity(seller,{title:'Visit',kind:'VISIT',assigneeId:'seller',startsAt:'2026-10-07T15:00:00Z'})).rejects.toThrow(ForbiddenException);
+  await expect(service.createActivity(outsider,{title:'Visit',kind:'VISIT',assigneeId:'outsider',startsAt:'2026-10-07T15:00:00Z'})).rejects.toThrow(ForbiddenException);
   expect(prisma.teamActivity.create).not.toHaveBeenCalled();
  });
  it('rejects supervisor review even when called without controller guard',async()=>{

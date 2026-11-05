@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Req, UseGuards, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Req, UseGuards, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException, Sse, MessageEvent } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateIf } from 'class-validator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -19,7 +19,9 @@ import { AssignAccessDto } from './dto/assign-access.dto';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { LiveAdminIdentityService } from '../../common/security/live-admin-identity.service';
 import type { PassportSessionUser } from '../../common/security/live-admin-identity.service';
-import { ACCESS_CATALOG, ACCESS_CATALOG_VERSION, PACKAGE_TEMPLATES } from '../../common/security/access-catalog';
+import { ACCESS_CATALOG, ACCESS_CATALOG_VERSION, PACKAGE_TEMPLATES, isAssignableAction } from '../../common/security/access-catalog';
+import { Observable, Subject, interval } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 /**
  * COM-01 backend (E1 — DESVIACIÓN AUTORIZADA): cuerpo del PUT de concesiones.
@@ -50,11 +52,55 @@ export class PutUserAccessDto extends AssignAccessDto {
   packageId?: string;
 }
 
+/** Cuerpo del PUT de la selección de casillas de Biblioteca (Productos / Fichas / Precios). */
+export class PutLibraryAccessDto {
+  @ApiProperty({
+    description: 'Acciones marcadas (solo las 11 de Biblioteca; el servidor añade sus dependencias). Vacío = retirar todo Biblioteca',
+    example: ['products:read', 'products:write'],
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  actionIds: string[];
+
+  @ApiProperty({ description: 'Versión OCC vigente del estado de concesiones del destinatario' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  expectedVersion: number;
+
+  @ApiPropertyOptional({ description: 'Versión del catálogo con la que se pinta la pantalla' })
+  @IsOptional()
+  @IsString()
+  expectedCatalogVersion?: string;
+
+  @ApiPropertyOptional({ description: 'Clave de idempotencia del administrador' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
+
+  @ApiPropertyOptional({ description: 'Motivo, para auditoría' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+/** Body of PATCH /api/users/:id/supervisor. `null` removes the supervisor. */
+export class SetSupervisorDto {
+  @ValidateIf((o: SetSupervisorDto) => o.supervisorId !== null)
+  @IsUUID('all', { message: 'El jefe indicado no es válido.' })
+  supervisorId: string | null;
+}
+
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('api/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
+  private readonly accessEventStreams = new Map<string, Set<Subject<MessageEvent>>>();
+
   constructor(
     private readonly usersService: UsersService,
     private readonly hierarchyService: HierarchyService,
@@ -67,6 +113,37 @@ export class UsersController {
 
   private ctx(user: any): AccessContext {
     return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
+  }
+
+  private notifyAccessChanged(userId: string): void {
+    for (const stream of this.accessEventStreams.get(userId) ?? []) {
+      stream.next({ data: { type: 'access-changed' } });
+    }
+  }
+
+  @Sse('me/access-events')
+  @ApiOperation({ summary: 'Notifica cambios de acceso de la sesión autenticada' })
+  accessEvents(@Req() req: { user?: PassportSessionUser }): Observable<MessageEvent> {
+    const userId = req.user?.sub;
+    if (!userId) throw new UnauthorizedException();
+
+    return new Observable<MessageEvent>((observer) => {
+      const stream = new Subject<MessageEvent>();
+      const streams = this.accessEventStreams.get(userId) ?? new Set<Subject<MessageEvent>>();
+      streams.add(stream);
+      this.accessEventStreams.set(userId, streams);
+      const subscription = stream.subscribe(observer);
+      observer.next({ data: { type: 'access-changed' } });
+      const heartbeat = interval(25_000).pipe(map(() => ({ data: { type: 'heartbeat' } }))).subscribe(observer);
+
+      return () => {
+        heartbeat.unsubscribe();
+        subscription.unsubscribe();
+        stream.complete();
+        streams.delete(stream);
+        if (streams.size === 0) this.accessEventStreams.delete(userId);
+      };
+    });
   }
 
   @Get()
@@ -106,11 +183,15 @@ export class UsersController {
   @Put(':id')
   @Roles('Super Admin')
   @ApiOperation({ summary: 'Actualizar usuario' })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @CurrentUser() user: any,
   ) {
+    // Same hierarchy rules as PATCH :id/supervisor, so this endpoint is not a bypass.
+    if (updateUserDto.supervisorId !== undefined) {
+      await this.hierarchyService.assertActorCanSetSupervisor(this.ctx(user), id, updateUserDto.supervisorId);
+    }
     return this.usersService.update(id, updateUserDto, user?.sub ?? user?.id);
   }
 
@@ -121,16 +202,17 @@ export class UsersController {
     return this.usersService.remove(id, user?.sub ?? user?.id);
   }
 
+  // No role restriction on purpose: any team head may move people inside
+  // their own branch; the scope rules live in assertActorCanSetSupervisor.
   @Patch(':id/supervisor')
-  @Roles('Super Admin', 'Admin Comercial')
-  @ApiOperation({ summary: 'Asignar supervisor a un usuario' })
+  @ApiOperation({ summary: 'Asignar supervisor a un usuario (solo dentro de la rama de quien lo hace; Super Admin sin límite)' })
   async setSupervisor(
     @Param('id') id: string,
-    @Body() body: { supervisorId: string | null },
+    @Body() body: SetSupervisorDto,
     @CurrentUser() user: any,
   ) {
     const ctx = this.ctx(user);
-    await this.hierarchyService.assertCanSetSupervisor(id, body.supervisorId);
+    await this.hierarchyService.assertActorCanSetSupervisor(ctx, id, body.supervisorId);
     
     const updated = await this.usersService.update(id, { supervisorId: body.supervisorId }, ctx.userId);
     
@@ -220,7 +302,7 @@ export class UsersController {
     ]);
     return {
       userId: id,
-      ...(actor.roles.includes('Super Admin') ? { actions: ACCESS_CATALOG } : {}),
+      ...(actor.roles.includes('Super Admin') ? { actions: ACCESS_CATALOG.filter((action) => isAssignableAction(action.id)) } : {}),
       catalogVersion: ACCESS_CATALOG_VERSION,
       accessVersion,
       grants,
@@ -232,6 +314,7 @@ export class UsersController {
         return {
           id: pkg.id,
           name: pkg.name,
+          assignable: pkg.assignable !== false,
           selections: pkg.selections,
           applied: Boolean(applied),
           sourceId: applied?.id ?? null,
@@ -262,24 +345,53 @@ export class UsersController {
       if (dto.grants.length > 0) {
         throw new BadRequestException('Envíe packageId o grants, no ambos.');
       }
-      return this.accessAssignments.applyPackage(actor, id, dto.packageId, {
+      const receipt = await this.accessAssignments.applyPackage(actor, id, dto.packageId, {
         expectedVersion: dto.expectedVersion,
         catalogVersion: dto.expectedCatalogVersion,
         ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
         ...(dto.reason ? { reason: dto.reason } : {}),
       });
+      this.notifyAccessChanged(id);
+      return receipt;
     }
 
     if (dto.grants.length === 0) {
       throw new BadRequestException('Envíe al menos un grant o un packageId.');
     }
-    return this.accessAssignments.replaceManualSource(actor, id, {
+    const receipt = await this.accessAssignments.replaceManualSource(actor, id, {
       expectedVersion: dto.expectedVersion,
       catalogVersion: dto.expectedCatalogVersion,
       ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
       ...(dto.reason ? { reason: dto.reason } : {}),
       grants: dto.grants,
     });
+    this.notifyAccessChanged(id);
+    return receipt;
+  }
+
+  /**
+   * Guarda la selección de casillas de Biblioteca como UNA fuente por usuario.
+   * El servidor valida el conjunto permitido y calcula el cierre de
+   * dependencias; reemplaza los paquetes Productos/Fichas/Precios/anterior.
+   */
+  @Put(':id/access/library')
+  @Roles('Super Admin')
+  @ApiOperation({ summary: 'Guarda las casillas de Biblioteca (Productos, Fichas, Precios) de un usuario' })
+  async setUserLibraryAccess(
+    @Param('id') id: string,
+    @Body() dto: PutLibraryAccessDto,
+    @Req() req: { user?: PassportSessionUser },
+  ) {
+    const actor = await this.liveIdentity.fromRequest(req);
+    const receipt = await this.accessAssignments.replaceLibrarySelection(actor, id, {
+      expectedVersion: dto.expectedVersion,
+      ...(dto.expectedCatalogVersion ? { catalogVersion: dto.expectedCatalogVersion } : {}),
+      ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
+      ...(dto.reason ? { reason: dto.reason } : {}),
+      actionIds: dto.actionIds,
+    });
+    this.notifyAccessChanged(id);
+    return receipt;
   }
 
   /**
@@ -297,9 +409,11 @@ export class UsersController {
     @Req() req: { user?: PassportSessionUser },
   ) {
     const actor = await this.liveIdentity.fromRequest(req);
-    return this.accessAssignments.removePackage(actor, id, packageId, {
+    const receipt = await this.accessAssignments.removePackage(actor, id, packageId, {
       expectedVersion: Number(expectedVersion),
     });
+    this.notifyAccessChanged(id);
+    return receipt;
   }
 
   /** Retira una fuente manual completa; permite dejar al usuario sin paneles. */
@@ -318,9 +432,11 @@ export class UsersController {
       (item) => item.id === sourceId && item.kind === 'manual',
     );
     if (!source) throw new NotFoundException('Asignación manual no encontrada');
-    return this.accessAssignments.removeSource(actor, id, sourceId, {
+    const receipt = await this.accessAssignments.removeSource(actor, id, sourceId, {
       expectedVersion: Number(expectedVersion),
     });
+    this.notifyAccessChanged(id);
+    return receipt;
   }
 
   /**

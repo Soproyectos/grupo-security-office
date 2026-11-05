@@ -625,6 +625,8 @@ describe('ImportService — savePreset (normalización de mapping 500)', () => {
       })),
       delete: jest.fn().mockResolvedValue({}),
     };
+    // Los presets se escriben por la transacción de biblioteca (en legacy, la misma conexión).
+    mockPrismaLocal.$transaction = jest.fn(async (work: any) => work(mockPrismaLocal));
 
     mockColumnMapper = {
       toPreset: jest.fn().mockImplementation((m: any, name: string, userId: string, isDefault = false) => ({

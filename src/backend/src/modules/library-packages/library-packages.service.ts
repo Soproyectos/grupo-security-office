@@ -136,7 +136,17 @@ export class LibraryPackagesService {
       if (sections.includes('notas')) {
         if (await this.allowed('products:notes', product, ctx)) {
           member.permisosRequeridos.push('products:notes');
-          json('notas-privadas.json', { internalNotes: product.catalogInternalNotes, restricted: true }, 'notas');
+          // The notes list (one row per note, newest first). The old single-text column is obsolete and not exported.
+          const notes = await this.prisma.productInternalNote.findMany({
+            where: { productId: product.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          });
+          json('notas-privadas.json', {
+            notes: notes.map((note) => ({
+              id: note.id, text: note.text, authorName: note.authorName, createdAt: note.createdAt,
+              updatedAt: note.version > 0 ? note.updatedAt : null,
+            })),
+            restricted: true,
+          }, 'notas');
           manifest.restringidos.push({ ruta: `${base}/notas-privadas.json`, motivo: 'notas' });
         } else manifest.faltantes.push({ producto: product.id, ruta: `${base}/notas-privadas.json`, motivo: 'section-not-authorized' });
       }

@@ -9,7 +9,8 @@ jest.mock('../../prisma/prisma.service', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../library-audit/library-audit.service';
 
 const mockCategory = {
   id: 'cat-1',
@@ -47,11 +48,15 @@ describe('CategoriesService', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockPrisma.category.findMany.mockResolvedValue([]);
+    mockPrisma.category.count.mockResolvedValue(0);
+    mockPrisma.product.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CategoriesService,
-        { provide: PrismaService, useValue: mockPrisma },
+        { provide: BibliotecaPrismaService, useValue: { client: mockPrisma, writeTransaction: (work: (tx: typeof mockPrisma) => Promise<unknown>) => work(mockPrisma) } },
+        { provide: LibraryAuditService, useValue: { append: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile();
 
@@ -399,31 +404,105 @@ describe('CategoriesService', () => {
     });
 
     it('debe lanzar ConflictException si la categoría tiene productos', async () => {
-      mockPrisma.category.findUnique.mockResolvedValue({
-        ...mockCategory,
-        products: [{ id: 'p1' }],
-        children: [],
-      });
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      mockPrisma.product.count.mockResolvedValue(1);
 
       await expect(service.remove('cat-1')).rejects.toThrow(ConflictException);
       await expect(service.remove('cat-1')).rejects.toThrow('No se puede eliminar una categoría con productos');
+      expect(mockPrisma.category.delete).not.toHaveBeenCalled();
     });
 
     it('debe lanzar ConflictException si la categoría tiene subcategorías', async () => {
-      mockPrisma.category.findUnique.mockResolvedValue({
-        ...mockCategory,
-        products: [],
-        children: [{ id: 'child-1' }],
-      });
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      mockPrisma.category.count.mockResolvedValue(1);
 
       await expect(service.remove('cat-1')).rejects.toThrow(ConflictException);
       await expect(service.remove('cat-1')).rejects.toThrow('No se puede eliminar una categoría con subcategorías');
+    });
+
+    it('bloquea el borrado con subcategorías de biblioteca y devuelve el detalle de uso', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      (mockPrisma as any).subcategory = { count: jest.fn().mockResolvedValue(3) };
+
+      const err = await service.remove('cat-1').catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse().usage).toMatchObject({ canDelete: false, counts: { subcategories: 3 } });
+      delete (mockPrisma as any).subcategory;
     });
 
     it('debe lanzar NotFoundException si la categoría no existe', async () => {
       mockPrisma.category.findUnique.mockResolvedValue(null);
 
       await expect(service.remove('no-existe')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('reglas de catálogo maestro', () => {
+    it('rechaza un nombre equivalente (mayúsculas y tildes) entre hermanas', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(null);
+      mockPrisma.category.findMany.mockResolvedValue([{ id: 'x', name: 'Cámaras IP' }]);
+
+      const err = await service.create({ name: 'camaras ip', slug: 'camaras-nuevo' }).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse()).toMatchObject({ code: 'NAME_DUPLICATED', existing: { id: 'x' } });
+      expect(mockPrisma.category.create).not.toHaveBeenCalled();
+    });
+
+    it('renombrar conserva el id y no se confunde consigo misma', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      mockPrisma.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'CCTV' }]);
+      mockPrisma.category.update.mockResolvedValue({ ...mockCategory, name: 'cctv' });
+
+      await service.update('cat-1', { name: 'cctv' });
+
+      expect(mockPrisma.category.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'cat-1' } }));
+    });
+
+    it('exige confirmar el impacto al cambiar el padre con productos', async () => {
+      mockPrisma.category.findUnique
+        .mockResolvedValueOnce(mockCategory)
+        .mockResolvedValueOnce({ ...mockCategory, id: 'cat-9', parentId: null });
+      mockPrisma.product.count.mockResolvedValue(4);
+
+      const err = await service.update('cat-1', { parentId: 'cat-9' }).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse()).toMatchObject({ code: 'IMPACT_CONFIRMATION_REQUIRED', impact: { products: 4 } });
+      expect(mockPrisma.category.update).not.toHaveBeenCalled();
+    });
+
+    it('aplica el cambio de padre con confirmImpact', async () => {
+      mockPrisma.category.findUnique
+        .mockResolvedValueOnce(mockCategory)
+        .mockResolvedValueOnce({ ...mockCategory, id: 'cat-9', parentId: null });
+      mockPrisma.product.count.mockResolvedValue(4);
+      mockPrisma.category.update.mockResolvedValue({ ...mockCategory, parentId: 'cat-9' });
+
+      await service.update('cat-1', { parentId: 'cat-9', confirmImpact: true });
+
+      expect(mockPrisma.category.update).toHaveBeenCalled();
+    });
+
+    it('desactivar solo cambia isActive: no borra nada', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      mockPrisma.category.update.mockResolvedValue({ ...mockCategory, isActive: false });
+
+      await service.setActive('cat-1', false);
+
+      expect(mockPrisma.category.update).toHaveBeenCalledWith({ where: { id: 'cat-1' }, data: { isActive: false } });
+      expect(mockPrisma.category.delete).not.toHaveBeenCalled();
+    });
+
+    it('usage informa canDelete y los motivos', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(mockCategory);
+      mockPrisma.product.count.mockResolvedValue(2);
+
+      const usage = await service.usage('cat-1');
+
+      expect(usage.canDelete).toBe(false);
+      expect(usage.reasons[0]).toMatchObject({ code: 'HAS_PRODUCTS', count: 2 });
     });
   });
 });

@@ -58,10 +58,10 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
       expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({ in: [] });
     });
 
-    it('Admin Comercial sin entity query → entity in COMERCIAL_ENTITIES', async () => {
+    it('el cargo Admin Comercial no concede auditoría de Biblioteca', async () => {
       await service.findAll({}, COMERCIAL);
       expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({
-        in: [...COMERCIAL_ENTITIES],
+        in: ['Stock'],
       });
     });
 
@@ -70,15 +70,17 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
       expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({ in: [] });
     });
 
-    it('Admin Comercial pide entity comercial → filtra por esa entidad exacta', async () => {
+    it('la auditoría de productos requiere autorización de Biblioteca derivada por el controlador', async () => {
       await service.findAll({ entity: 'Product' }, COMERCIAL);
-      expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toBe('Product');
+      expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({ in: [] });
+      await service.findAll({ entity: 'Product' }, { ...COMERCIAL, libraryWrite: true });
+      expect(mockPrisma.auditLog.findMany.mock.calls[1][0].where.entity).toBe('Product');
     });
 
     it('Admin Comercial sin ctx roles → scope comercial (deny global)', async () => {
       await service.findAll({}, { roles: undefined });
       expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({
-        in: [...COMERCIAL_ENTITIES],
+        in: ['Stock'],
       });
     });
 
@@ -130,11 +132,9 @@ describe('AuditService — scope comercial (Admin Comercial)', () => {
       );
     });
 
-    it('C9: entity=Lista (Admin Comercial) filtra por LISTA (no cae en {in: []})', async () => {
+    it('C9: normalizar Lista no evade la autorización del historial de Biblioteca', async () => {
       await service.findAll({ entity: 'Lista' }, COMERCIAL);
-      expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toBe(
-        'LISTA',
-      );
+      expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.entity).toEqual({ in: [] });
     });
 
     it('C9: entity=PriceList se normaliza a su forma canónica PriceList', async () => {

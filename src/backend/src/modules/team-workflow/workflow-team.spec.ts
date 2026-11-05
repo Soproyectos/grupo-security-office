@@ -117,7 +117,7 @@ describe('BASE-03 backend-equipo — consulta y asignación de equipo', () => {
 
       expect(result).toEqual({ ok: true });
       const update = prisma.teamActivity.updateMany.mock.calls[0][0];
-      expect(update.where).toEqual({ id: 'act-sellerA' });
+      expect(update.where).toEqual({ id: 'act-sellerA', status: 'PENDING' });
       expect(update.data).toEqual(
         expect.objectContaining({ assigneeId: 'sellerB', updatedById: 'boss' }),
       );
@@ -395,11 +395,6 @@ describe('BASE-03 backend-equipo — consulta y asignación de equipo', () => {
     });
 
     it('un Supervisor puro puede crear una actividad consigo mismo como asignado', async () => {
-      prisma.user.findMany.mockImplementation(async (args: any) =>
-        (args?.where?.id?.in ?? [])
-          .filter((id: string) => id !== 'boss')
-          .map((id: string) => ({ id, name: `Name of ${id}` })),
-      );
       prisma.teamActivity.create.mockResolvedValue({ id: 'a4' });
 
       await service.createActivity(boss, activityDto('boss'));

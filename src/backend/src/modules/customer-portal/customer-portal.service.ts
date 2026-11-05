@@ -1,11 +1,14 @@
 import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PortalAccountState, PortalAccountType, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
+import { blockedWebBrandIds, webBrandVisibility } from '../products/web-brand-policy';
 import { AuditService } from '../audit/audit.service';
 import { CatalogQueryDto } from './dto/catalog-query.dto';
 import { RegisterPortalAccountDto } from './dto/register-portal-account.dto';
@@ -17,7 +20,13 @@ const DUMMY_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEe.7ROU8.4uWxTPoqkbnk1k1ZfMCTPQmPu
 
 @Injectable()
 export class CustomerPortalService {
-  constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService, private readonly config: ConfigService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService, private readonly config: ConfigService, private readonly audit: AuditService,
+    /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+  ) {}
+
+  /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService }
 
   /** Public signup always creates an independent basic account. Company identity
    * is a claim until checked by staff: never auto-link by a submitted NIT. */
@@ -39,16 +48,24 @@ export class CustomerPortalService {
     }
   }
 
+  /** La tarifa vive en la biblioteca: el escalafón y la asignación guardan solo su id y la tarifa se resuelve aparte (sin relación entre bases). */
+  private async priceListsById(ids:string[]) {
+    const unique=[...new Set(ids)];
+    const rows=unique.length?await this.db.priceList.findMany({where:{id:{in:unique}}}):[];
+    return new Map(rows.map((r)=>[r.id,r]));
+  }
   private async priceMapping(type:PortalAccountType,tierId?:string|null) {
     if(tierId) {
-      const tier=await this.prisma.portalTier.findUnique({where:{id:tierId},include:{priceList:true}});
+      const tier=await this.prisma.portalTier.findUnique({where:{id:tierId}});
       if(!tier?.isActive) throw new BadRequestException('Tu escalafón comercial no está activo; contacta a tu asesor');
       if(!tier.priceListId)return null;
-      if(!tier.priceList?.isActive) throw new BadRequestException('La tarifa de tu escalafón no está activa');
-      return {priceListId:tier.priceListId,priceList:tier.priceList};
+      const priceList=(await this.priceListsById([tier.priceListId])).get(tier.priceListId);
+      if(!priceList?.isActive) throw new BadRequestException('La tarifa de tu escalafón no está activa');
+      return {priceListId:tier.priceListId,priceList};
     }
-    const mapping=await this.prisma.portalPriceListMapping.findUnique({where:{type},include:{priceList:true}});
-    if(mapping?.priceList.isActive)return mapping;
+    const found=await this.prisma.portalPriceListMapping.findUnique({where:{type}});
+    const mapping=found?{...found,priceList:(await this.priceListsById([found.priceListId])).get(found.priceListId)}:null;
+    if(mapping?.priceList?.isActive)return mapping;
     if(type===PortalAccountType.FINAL_CUSTOMER)return null;
     throw new BadRequestException('No hay una tarifa activa configurada para este tipo de cliente');
   }
@@ -59,13 +76,17 @@ export class CustomerPortalService {
       tierId:true,tier:{select:{id:true,name:true,isActive:true}},createdAt:true,
     }});
   }
-  listTiers() {return this.prisma.portalTier.findMany({orderBy:{name:'asc'},include:{priceList:{select:{id:true,name:true,isActive:true}}}});}
+  async listTiers() {
+    const tiers=await this.prisma.portalTier.findMany({orderBy:{name:'asc'}});
+    const lists=await this.priceListsById(tiers.map((x)=>x.priceListId).filter((x):x is string=>!!x));
+    return tiers.map((x)=>{const l=x.priceListId?lists.get(x.priceListId):undefined;return {...x,priceList:l?{id:l.id,name:l.name,isActive:l.isActive}:null};});
+  }
   async saveTier(dto:PortalTierDto,actorId:string,id?:string) {
     if(id&&!await this.prisma.portalTier.findUnique({where:{id}}))throw new NotFoundException('Escalafón no encontrado');
     const duplicate=await this.prisma.portalTier.findFirst({where:{name:{equals:dto.name,mode:'insensitive'},...(id?{id:{not:id}}:{})}});
     if(duplicate)throw new ConflictException('Ya existe un escalafón con ese nombre');
     if(dto.priceListId) {
-      const list=await this.prisma.priceList.findUnique({where:{id:dto.priceListId}});
+      const list=await this.db.priceList.findUnique({where:{id:dto.priceListId}});
       if(!list?.isActive)throw new BadRequestException('Selecciona una tarifa activa');
     }
     const tier=id?await this.prisma.portalTier.update({where:{id},data:dto}):await this.prisma.portalTier.create({data:dto});
@@ -106,6 +127,7 @@ export class CustomerPortalService {
 
   async getCatalog(query: CatalogQueryDto, accountType?: PortalAccountType, tierId?:string|null) {
     const where: Prisma.ProductWhereInput = {
+      ...webBrandVisibility(await blockedWebBrandIds(this.db)),
       lifecycleStatus: 'PUBLISHED', isActive: true, isVisible: true,
       category: { isActive: true }, brand: { isActive: true },
       ...(query.search?.trim() ? { OR: [
@@ -116,18 +138,18 @@ export class CustomerPortalService {
     };
     const [mapping, data, total] = await Promise.all([
       accountType ? this.priceMapping(accountType,tierId) : null,
-      this.prisma.product.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: { name: 'asc' }, include: {
+      this.db.product.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: { name: 'asc' }, include: {
         category: { select: { name: true, slug: true } }, brand: { select: { name: true, slug: true } },
         images: { where: { isPrimary: true }, take: 1, select: { url: true, alt: true } },
       }}),
-      this.prisma.product.count({ where }),
+      this.db.product.count({ where }),
     ]);
     // Resolución de precios en UNA consulta (no N+1): tarifas vigentes del
     // price list del tipo, mapeadas por producto.
     const now = new Date();
     let pricesByProduct = new Map<string, { value: string; currency: string } | null>();
     if (mapping && data.length > 0) {
-      const prices = await this.prisma.price.findMany({
+      const prices = await this.db.price.findMany({
         where: {
           productId: { in: data.map((p) => p.id) },
           priceListId: mapping.priceListId,
@@ -156,8 +178,9 @@ export class CustomerPortalService {
    * unpublished item is deliberately a 404, rather than exposing its state.
    */
   async getProductDetail(id: string, accountType?: PortalAccountType, tierId?:string|null) {
-    const product = await this.prisma.product.findFirst({
+    const product = await this.db.product.findFirst({
       where: {
+        ...webBrandVisibility(await blockedWebBrandIds(this.db)),
         id,
         lifecycleStatus: 'PUBLISHED',
         isActive: true,
@@ -188,7 +211,7 @@ export class CustomerPortalService {
     const mapping = await this.priceMapping(accountType,tierId);
     if(!mapping) {detail.price=null;return detail;}
     const now = new Date();
-    const price = await this.prisma.price.findFirst({
+    const price = await this.db.price.findFirst({
       where: {
         productId: product.id,
         priceListId: mapping.priceListId,
@@ -218,7 +241,9 @@ export class CustomerPortalService {
     const account = await this.prisma.portalAccount.findUnique({ where: { id } });
     if (!account) throw new NotFoundException('Solicitud de portal no encontrada');
     if (account.state !== 'PENDING') throw new ConflictException('La solicitud ya fue revisada');
-    const mapping = await this.prisma.portalPriceListMapping.findUnique({ where: { type: account.type }, include: { priceList: true } });
+    const foundMapping = await this.prisma.portalPriceListMapping.findUnique({ where: { type: account.type } });
+    const mappingList = foundMapping ? (await this.priceListsById([foundMapping.priceListId])).get(foundMapping.priceListId) : undefined;
+    const mapping = foundMapping && mappingList ? { ...foundMapping, priceList: mappingList } : null;
     if (!mapping || !mapping.priceList.isActive) throw new BadRequestException('Configure una tarifa activa para el tipo de cliente antes de aprobar');
     let customerId = dto.customerId;
     if (customerId) {
@@ -276,14 +301,16 @@ export class CustomerPortalService {
   }
 
   async listMappings() {
-    return this.prisma.portalPriceListMapping.findMany({
-      include: { priceList: { select: { id: true, name: true, code: true, currency: true, isActive: true } } },
-      orderBy: { type: 'asc' },
+    const mappings = await this.prisma.portalPriceListMapping.findMany({ orderBy: { type: 'asc' } });
+    const lists = await this.priceListsById(mappings.map((m) => m.priceListId));
+    return mappings.map((m) => {
+      const l = lists.get(m.priceListId);
+      return { ...m, priceList: l ? { id: l.id, name: l.name, code: l.code, currency: l.currency, isActive: l.isActive } : null };
     });
   }
 
   async upsertMapping(dto: UpsertPortalPriceListMappingDto, actorId: string) {
-    const list = await this.prisma.priceList.findUnique({ where: { id: dto.priceListId } });
+    const list = await this.db.priceList.findUnique({ where: { id: dto.priceListId } });
     if (!list || !list.isActive) throw new BadRequestException('La tarifa debe existir y estar activa');
     const mapping = await this.prisma.portalPriceListMapping.upsert({ where: { type: dto.type }, create: dto, update: { priceListId: dto.priceListId } });
     await this.audit.log({ userId: actorId, action: 'upsert', entity: 'PortalPriceListMapping', entityId: mapping.id, newValues: { type: dto.type, priceListId: dto.priceListId } });

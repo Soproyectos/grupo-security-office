@@ -4,8 +4,11 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import {
   AclService,
   AccessContext,
@@ -23,7 +26,12 @@ export class AssignmentsService {
     private prisma: PrismaService,
     private acl: AclService,
     private audit: AuditService,
+    /** Lectura de Lista, producto, tarifa y categoría (biblioteca). Los accesos (Assignment) siguen siendo operativos. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
 
   /**
    * Lista asignaciones.
@@ -243,16 +251,16 @@ export class AssignmentsService {
     let resources: { id: string; name: string }[] = [];
     if (entity === 'LISTA') {
       const listas = isAdmin
-        ? await this.prisma.lista.findMany({ select: { id: true, name: true } })
-        : await this.prisma.lista.findMany({
+        ? await this.db.lista.findMany({ select: { id: true, name: true } })
+        : await this.db.lista.findMany({
             where: { id: { in: (await this.getManagedListaIds(ctx)) } },
             select: { id: true, name: true },
           });
       resources = listas;
     } else {
       const products = isAdmin
-        ? await this.prisma.product.findMany({ select: { id: true, name: true } })
-        : await this.prisma.product.findMany({
+        ? await this.db.product.findMany({ select: { id: true, name: true } })
+        : await this.db.product.findMany({
             where: { listaId: { in: (await this.getManagedListaIds(ctx)) } },
             select: { id: true, name: true },
           });
@@ -352,7 +360,7 @@ export class AssignmentsService {
       entity === 'LISTA'
         ? entityId
         : (
-            await this.prisma.product.findUnique({
+            await this.db.product.findUnique({
               where: { id: entityId },
               select: { listaId: true },
             })
@@ -361,10 +369,10 @@ export class AssignmentsService {
 
     const entityName =
       entity === 'LISTA'
-        ? (await this.prisma.lista.findUnique({ where: { id: entityId }, select: { name: true } }))
+        ? (await this.db.lista.findUnique({ where: { id: entityId }, select: { name: true } }))
             ?.name
         : (
-            await this.prisma.product.findUnique({
+            await this.db.product.findUnique({
               where: { id: entityId },
               select: { name: true },
             })
@@ -396,7 +404,7 @@ export class AssignmentsService {
       nivel: string | null;
     }[] = [];
     if (entity === 'LISTA' && userId) {
-      const productsOfLista = await this.prisma.product.findMany({
+      const productsOfLista = await this.db.product.findMany({
         where: { listaId },
         select: { id: true, name: true },
       });
@@ -463,7 +471,7 @@ export class AssignmentsService {
     if (entity === 'LISTA') {
       return this.acl.getUserLevel(ctx.userId!, resourceId, ctx.roles);
     }
-    const product = await this.prisma.product.findUnique({
+    const product = await this.db.product.findUnique({
       where: { id: resourceId },
       select: { listaId: true },
     });
@@ -506,7 +514,7 @@ export class AssignmentsService {
     const listaId =
       resourceType === 'PRODUCT'
         ? (
-            await this.prisma.product.findUnique({
+            await this.db.product.findUnique({
               where: { id: resourceId },
               select: { listaId: true },
             })
@@ -579,22 +587,22 @@ export class AssignmentsService {
     let resource: { id: string } | null = null;
 
     if (resourceType === 'PRODUCT') {
-      resource = await this.prisma.product.findUnique({
+      resource = await this.db.product.findUnique({
         where: { id: resourceId },
         select: { id: true },
       });
     } else if (resourceType === 'PRICE_LIST') {
-      resource = await this.prisma.priceList.findUnique({
+      resource = await this.db.priceList.findUnique({
         where: { id: resourceId },
         select: { id: true },
       });
     } else if (resourceType === 'CATEGORY') {
-      resource = await this.prisma.category.findUnique({
+      resource = await this.db.category.findUnique({
         where: { id: resourceId },
         select: { id: true },
       });
     } else if (resourceType === 'LISTA') {
-      resource = await this.prisma.lista.findUnique({
+      resource = await this.db.lista.findUnique({
         where: { id: resourceId },
         select: { id: true },
       });

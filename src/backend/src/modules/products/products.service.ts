@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   ConflictException,
   NotFoundException,
@@ -6,23 +7,28 @@ import {
   ForbiddenException,
   Optional,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import type { Prisma as LibraryPrisma } from '../../../prisma/biblioteca/generated/client';
+import { LibraryAuditService } from '../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from './product-library';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AclService, AccessContext, LEVEL_RANK } from '../../common/acl/acl.service';
+import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { ProductRevisionsService } from './product-revisions.service';
 import { AuditService } from '../audit/audit.service';
-import { diffFields, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeSource } from './product-change.service';
+import { diffFields, ProductChangeService, type ProductChangeSource } from './product-change.service';
 import { FilesService } from '../files/files.service';
 import { detectKind, declaredMatchesDetected, sha256Hex } from '../files/file-signature';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
-import { d5AssertAction } from '../../common/security/d5-action';
+import { assertGlobalGrant, hasGlobalGrant } from '../../common/security/require-grant';
+import { redactInternalNotes } from '../../common/security/internal-notes';
 import { ProductValidationService } from './validation/validation.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PublishProductDto } from './dto/publish-product.dto';
 import { UnpublishProductDto } from './dto/unpublish-product.dto';
-import { PriceInputDto } from './dto/price-input.dto';
 import { TransitionProductDto } from './dto/transition.dto';
 import { DeleteProductDto } from './dto/delete-product.dto';
 import { SchedulePublicationDto } from './dto/schedule-publication.dto';
@@ -34,13 +40,16 @@ import {
   LIFECYCLE_STATUSES,
   TRANSITION_RULES,
   EVENT_AUDIT_ACTION,
-  PRODUCTS_WRITE_ROLES,
 } from './lifecycle.types';
-import { Prisma, Product } from '@prisma/client';
+import { Prisma, Product, type ProductImageType } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { normalizeText } from './import/helpers/text-normalizer';
 import { findProductBySku, normalizeSku } from './helpers/sku-identity';
 import { pickPrimaryImageByProduct, primaryImageInclude } from './helpers/primary-image';
+import { priceValidityWhere } from './validation/price-validity';
+import { isWebBrandExcluded } from './web-brand-policy';
+import { ClassificationService } from './classification/classification.service';
+import type { ClassificationDb } from './classification/classification.types';
 
 const ALLOWED_IMAGE_MIMETYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -76,12 +85,17 @@ export interface ListaPublicationBatchResult {
   }>;
 }
 
+/** Scalar/delegate compatibility for the unchanged T03 Product contract. Operational
+ * delegates are deliberately absent; all cross-domain reads use operational explicitly. */
+type ProductCatalogClient = Pick<PrismaService, 'product' | 'category' | 'brand' | 'price' | 'priceList' | 'productImage' | 'productRevision' | 'lista' | 'publicationEvent' | '$transaction' | '$queryRaw' | '$queryRawUnsafe'>;
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
+  private similarityUnavailable = false;
 
   constructor(
-    private prisma: PrismaService,
+    private readonly operational: PrismaService,
     private acl: AclService,
     private audit: AuditService,
     private files: FilesService,
@@ -106,11 +120,79 @@ export class ProductsService {
     @Optional() private readonly validation?: ProductValidationService,
     /** Per-product history writer (Nest injects the shared one; specs may omit it). */
     @Optional() changes?: ProductChangeService,
+    @Optional() @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(operational),
+    @Optional() @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
+    @Optional() private readonly classification: ClassificationService = new ClassificationService(),
   ) {
-    this.changes = changes ?? new ProductChangeService(prisma, acl, grants);
+    this.changes = changes ?? new ProductChangeService(operational, acl, grants, library);
   }
 
   private readonly changes: ProductChangeService;
+
+  private isMissingSimilarityFunction(error: unknown): boolean {
+    const databaseError = error as {
+      code?: unknown;
+      meta?: { code?: unknown; message?: unknown };
+      message?: unknown;
+    } | null;
+    return databaseError?.code === 'P2010'
+      && String(databaseError.meta?.code) === '42883'
+      && /function\s+similarity\s*\(\s*text\s*,\s*text\s*\)\s+does not exist/i.test(
+        String(databaseError.meta?.message ?? databaseError.message ?? ''),
+      );
+  }
+
+  private get prisma(): ProductCatalogClient { return this.library.client as unknown as ProductCatalogClient; }
+
+  private writeTransaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.library.writeTransaction((tx) => work(tx as unknown as Prisma.TransactionClient));
+  }
+
+  private async appendLibraryEvent(tx: Prisma.TransactionClient, action: string, entityType: string, entityId: string, summary: LibraryPrisma.InputJsonObject, ctx?: AccessContext) {
+    if (this.library.config.mode === 'legacy') return;
+    return this.libraryAudit.append(tx as unknown as LibraryPrisma.TransactionClient, { actor: { id: ctx?.userId, name: ctx?.userName ?? null }, action, entityType, entityId, summary });
+  }
+
+  /** Auditoría histórica (AuditLog operativo): solo en legacy. En modo dedicado el evento va dentro de la transacción de biblioteca. */
+  private async legacyAudit(entry: Parameters<AuditService['log']>[0]): Promise<void> {
+    if (this.library.config.mode === 'legacy') await this.audit.log(entry);
+  }
+
+  /**
+   * Resumen de una operación por lotes (productos o Lista completa). Cada producto ya quedó
+   * escrito con su propio evento; esto deja el resumen agregado: AuditLog en legacy, evento de biblioteca en dedicado.
+   */
+  private async batchAudit(entry: Parameters<AuditService['log']>[0], ctx: AccessContext, ids?: string[]): Promise<void> {
+    if (this.library.config.mode === 'legacy') {
+      await this.audit.log(entry);
+      return;
+    }
+    const summary = { ...((entry.newValues ?? {}) as Record<string, unknown>), result: entry.result ?? null, ...(ids ? { total: ids.length, ids: ids.slice(0, 200) } : {}) } as LibraryPrisma.InputJsonObject;
+    const entityId = ids ? 'batch' : String(entry.entityId ?? 'batch');
+    await this.writeTransaction((tx) => this.appendLibraryEvent(tx, `BATCH_${String(entry.action).toUpperCase()}`, String(entry.entity ?? 'Product'), entityId, summary, ctx));
+  }
+
+  /** `subcategory` relation for reads; empty when the library client has no Subcategory model. */
+  private subcategoryInclude(): { subcategory?: { select: { id: true; name: true; slug: true } } } {
+    return (this.prisma as unknown as { subcategory?: unknown }).subcategory
+      ? { subcategory: { select: { id: true, name: true, slug: true } } }
+      : {};
+  }
+
+  /** Read model: exposes `subcategory` and the draft state "por clasificar" (C2) next to the product. */
+  private withClassificationStatus<T extends { subcategoryId?: string | null; brandId?: string | null }>(product: T) {
+    const subcategory = (product as { subcategory?: { id: string; name: string; slug: string } | null }).subcategory ?? null;
+    const missing: Array<'brand' | 'subcategory'> = [
+      ...(product.brandId ? [] : ['brand' as const]),
+      ...(product.subcategoryId ? [] : ['subcategory' as const]),
+    ];
+    return { ...product, subcategory, classificationStatus: (missing.length ? 'incomplete' : 'complete') as 'complete' | 'incomplete', classificationMissing: missing };
+  }
+
+  private assertOwnedTransaction(tx: Prisma.TransactionClient): void {
+    this.library.assertWritesAllowed();
+    if (this.library.config.mode === 'dedicated' && !this.library.ownsTransaction(tx)) throw new ServiceUnavailableException({ code: 'LIBRARY_FOREIGN_TRANSACTION', message: 'Se requiere una transacción activa de biblioteca.' });
+  }
 
   /** Identity/commercial fields of `create` and `update` recorded in the per-product history. */
   private static readonly EDIT_HISTORY_FIELDS = ['sku', 'name', 'description', 'categoryId', 'brandId', 'listaId'] as const;
@@ -142,10 +224,12 @@ export class ProductsService {
     before: Product,
     data: Prisma.ProductUncheckedUpdateInput,
     ctx?: AccessContext,
+    event?: { action: string; summary: LibraryPrisma.InputJsonObject },
   ): Promise<Product> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.writeTransaction(async (tx) => {
       const row = await tx.product.update({ where: { id }, data });
       await this.recordProductChanges(tx, before, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+      if (event) await this.appendLibraryEvent(tx, event.action, 'Product', id, event.summary, ctx);
       return row;
     });
   }
@@ -291,7 +375,7 @@ export class ProductsService {
     productIds: string[],
   ): Promise<Map<string, 'in_stock' | 'out_of_stock' | 'no_stock_data'>> {
     if (!productIds.length) return new Map();
-    const stocks = (await this.prisma.stock.findMany({
+    const stocks = (await this.operational.stock.findMany({
       where: { productId: { in: productIds } },
     })) ?? [];
     const map = new Map<string, 'in_stock' | 'out_of_stock' | 'no_stock_data'>();
@@ -309,7 +393,7 @@ export class ProductsService {
     categoryId?: string;
     search?: string;
     forceReload?: boolean;
-  }): Promise<{
+  }, ctx?: AccessContext): Promise<{
     data: any;
     meta: { total: number; take?: number }
   }> {
@@ -332,17 +416,17 @@ export class ProductsService {
           SELECT COUNT(*)::bigint as count
           FROM "products"
           ${countWhere}
-          AND (similarity("name", $1) + similarity("sku", $1) + similarity("description", $1)) > 0.1
+          AND (similarity("name", $1) + similarity("sku", $1) + similarity(COALESCE("description", ''), $1)) > 0.1
         `, searchTerm, ...(categoryId ? [categoryId] : []));
         const total = Number(countResult[0]?.count ?? 0);
 
         const products = await this.prisma.$queryRawUnsafe<any[]>(`
           SELECT
             p.*,
-            (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) as _similarity
+            (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(COALESCE(p."description", ''), $1)) as _similarity
           FROM "products" p
           ${selectWhere}
-          AND (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) > 0.1
+          AND (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(COALESCE(p."description", ''), $1)) > 0.1
           ORDER BY _similarity DESC
           LIMIT $2
         `, searchTerm, take, ...(categoryId ? [categoryId] : []));
@@ -351,11 +435,11 @@ export class ProductsService {
         const productIds = products.map(p => p.id);
         const [categories, brands, images, prices] = await Promise.all([
           productIds.length > 0 ? this.prisma.category.findMany({
-            where: { id: { in: [...new Set(products.map(p => p.categoryId))] } },
+            where: { id: { in: [...new Set(products.map(p => p.categoryId).filter((id): id is string => !!id))] } },
             select: { id: true, name: true, slug: true }
           }) : [],
           productIds.length > 0 ? this.prisma.brand.findMany({
-            where: { id: { in: [...new Set(products.map(p => p.brandId))] } },
+            where: { id: { in: [...new Set(products.map(p => p.brandId).filter((id): id is string => !!id))] } },
             select: { id: true, name: true, slug: true }
           }) : [],
           productIds.length > 0 ? this.prisma.productImage.findMany({
@@ -430,8 +514,9 @@ export class ProductsService {
     }
 
     const cached = this.getFromTrendingCache(cacheKey);
+    // La cache es compartida entre usuarios: las notas internas se quitan por llamada, nunca en la cache.
     return {
-      data: cached?.data || [],
+      data: await redactInternalNotes(this.grants, ctx, cached?.data || []),
       meta: cached?.meta || { total: 0, take: params?.take || 5 },
     };
   }
@@ -442,6 +527,7 @@ export class ProductsService {
       take?: number;
       search?: string;
       categoryId?: string;
+      categoryIds?: string[];
       brandId?: string;
       isVisible?: boolean;
       isActive?: boolean;
@@ -449,64 +535,118 @@ export class ProductsService {
     },
     ctx?: AccessContext,
   ) {
-    const { skip = 0, take = 50, search, categoryId, brandId, isVisible, isActive, activeListaOnly } = params || {};
+    const { skip = 0, take = 50, search, categoryId, categoryIds, brandId, isVisible, isActive, activeListaOnly } = params || {};
 
-    // ACL por Lista (deny-by-default) cuando se provee contexto de usuario.
-    // ctx opcional: los llamadores legacy/tests sin ctx conservan el comportamiento abierto.
-    let allowedListaIds: string[] | null = null;
-    if (ctx) {
-      allowedListaIds = await this.acl.getAllowedListaIds(ctx.userId, ctx.roles, 'view');
-    }
+    // Biblioteca autoriza SOLO por la concesion global `products:read` (nunca por cargo ni por Listas):
+    // con ella se ven todos los productos; sin ella 403 (no una lista vacia).
+    // ctx opcional: los llamadores internos/tests sin ctx conservan el comportamiento abierto.
+    if (ctx) await assertGlobalGrant(this.grants, 'products:read', ctx);
+
+    const selectedCategoryIds = [...new Set((categoryIds ?? []).filter(Boolean))];
+    const categoryChildren = selectedCategoryIds.length
+      ? (await this.prisma.category.findMany({
+          where: { parentId: { in: selectedCategoryIds } },
+          select: { id: true },
+        }) ?? [])
+      : [];
+    // Keep the legacy singular filter exact; the new multi-select filter expands
+    // each selected node by one level, matching the approved two-level tree.
+    const categoryFilterIds = [...new Set([
+      ...(categoryId ? [categoryId] : []),
+      ...selectedCategoryIds,
+      ...categoryChildren.map((category) => category.id),
+    ])];
 
     let products: any[];
     let total: number;
 
-    if (search && search.trim().length > 2) {
-      // Fuzzy search usando pg_trgm similarity
+    if (search?.trim()) {
+      // La búsqueda literal cubre cualquier término; pg_trgm solo añade orden/relevancia.
       const searchTerm = search.trim();
-      const listaFilter = allowedListaIds !== null
-        ? (allowedListaIds.length > 0 ? `AND "listaId" IN (${allowedListaIds.map(id => `'${id}'`).join(',')})` : `AND 1=0`) // ← Cambio aquí: 1=0 fuerza 0 resultados
-        : '';
-      const categoryFilter = categoryId ? `AND "categoryId" = '${categoryId}'` : '';
-      const brandFilter = brandId ? `AND "brandId" = '${brandId}'` : '';
-      const isVisibleFilter = isVisible !== undefined ? `AND "isVisible" = ${isVisible}` : '';
-      const isActiveFilter = isActive !== undefined ? `AND "isActive" = ${isActive}` : '';
+      // Todo valor externo viaja como parámetro ($n); en el SQL solo hay texto fijo.
+      // $1 es el término de búsqueda; los filtros ocupan $2..$n.
+      const filterParams: unknown[] = [];
+      const bind = (value: unknown) => {
+        filterParams.push(value);
+        return `$${filterParams.length + 1}`;
+      };
+      const categoryFilter = selectedCategoryIds.length
+        ? `AND p."categoryId" IN (${categoryFilterIds.map((id) => bind(id)).join(', ')})`
+        : categoryId ? `AND p."categoryId" = ${bind(categoryId)}` : '';
+      const brandFilter = brandId ? `AND p."brandId" = ${bind(brandId)}` : '';
+      const isVisibleFilter = isVisible !== undefined ? `AND p."isVisible" = ${bind(isVisible)}::boolean` : '';
+      const isActiveFilter = isActive !== undefined ? `AND p."isActive" = ${bind(isActive)}::boolean` : '';
       const activeListaOnlyFilter = activeListaOnly
-        ? `AND EXISTS (SELECT 1 FROM "listas" l WHERE l.id = "listaId" AND l."isActive" = true AND l."archivedAt" IS NULL)`
+        ? `AND EXISTS (SELECT 1 FROM "listas" l WHERE l.id = p."listaId" AND l."isActive" = true AND l."archivedAt" IS NULL)`
         : '';
 
-      const whereClause = `WHERE 1=1 ${listaFilter} ${categoryFilter} ${brandFilter} ${isVisibleFilter} ${isActiveFilter} ${activeListaOnlyFilter}`;
+      const whereClause = `WHERE 1=1 ${categoryFilter} ${brandFilter} ${isVisibleFilter} ${isActiveFilter} ${activeListaOnlyFilter}`;
+      const normalizedSearch = `NULLIF(regexp_replace(upper($1), '[^A-Z0-9]', '', 'g'), '')`;
+      const normalizedSku = `regexp_replace(upper(COALESCE(p."sku", '')), '[^A-Z0-9]', '', 'g')`;
+      const literalMatch = `(
+        POSITION(LOWER($1) IN LOWER(COALESCE(p."name", ''))) > 0
+        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."catalogName", ''))) > 0
+        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."sku", ''))) > 0
+        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."description", ''))) > 0
+        OR (${normalizedSearch} IS NOT NULL AND POSITION(${normalizedSearch} IN ${normalizedSku}) > 0)
+      )`;
+      const limitParam = `$${filterParams.length + 2}`;
+      const offsetParam = `$${filterParams.length + 3}`;
+      const runSearch = async (useSimilarity: boolean) => {
+        const fuzzyMatch = useSimilarity
+          ? `(similarity(COALESCE(p."name", ''), $1) + similarity(COALESCE(p."catalogName", ''), $1) + similarity(COALESCE(p."sku", ''), $1) + similarity(COALESCE(p."description", ''), $1)) > 0.1`
+          : 'false';
+        const similarityScore = useSimilarity
+          ? `(similarity(COALESCE(p."name", ''), $1) + similarity(COALESCE(p."catalogName", ''), $1) + similarity(COALESCE(p."sku", ''), $1) + similarity(COALESCE(p."description", ''), $1))`
+          : '0::real';
+        const searchClause = `AND (${literalMatch} OR ${fuzzyMatch})`;
 
-      // Total count with fuzzy search
-      const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(`
-        SELECT COUNT(*)::bigint as count
-        FROM "products"
-        ${whereClause}
-        AND (similarity("name", $1) + similarity("sku", $1) + similarity("description", $1)) > 0.1
-      `, searchTerm);
-      total = Number(countResult[0]?.count ?? 0);
+        // Conteo y resultados comparten el mismo predicado literal/fuzzy.
+        const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(`
+          SELECT COUNT(*)::bigint as count
+          FROM "products" p
+          ${whereClause}
+          ${searchClause}
+        `, searchTerm, ...filterParams);
+        const matchingCount = Number(countResult[0]?.count ?? 0);
 
-      // Paginated results ordered by similarity desc
-      products = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT
-          p.*,
-          (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) as _similarity
-        FROM "products" p
-        ${whereClause}
-        AND (similarity(p."name", $1) + similarity(p."sku", $1) + similarity(p."description", $1)) > 0.1
-        ORDER BY _similarity DESC
-        LIMIT $2 OFFSET $3
-      `, searchTerm, take, skip);
+        // Paginar con relevancia trigram si está disponible; substring siempre se incluye.
+        const foundProducts = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT
+            p.*,
+            ${similarityScore} as _similarity
+          FROM "products" p
+          ${whereClause}
+          ${searchClause}
+          ORDER BY _similarity DESC, p."createdAt" DESC, p.id ASC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `, searchTerm, ...filterParams, take, skip);
+        return { matchingCount, foundProducts };
+      };
+
+      let searchResult: Awaited<ReturnType<typeof runSearch>>;
+      const useSimilarity = searchTerm.length > 2 && !this.similarityUnavailable;
+      try {
+        searchResult = await runSearch(useSimilarity);
+      } catch (error) {
+        if (!useSimilarity || !this.isMissingSimilarityFunction(error)) throw error;
+        this.similarityUnavailable = true;
+        this.logger.warn('pg_trgm similarity is unavailable; using literal product search.');
+        // Retry exactly once without similarity; other SQL errors remain visible.
+        searchResult = await runSearch(false);
+      }
+      total = searchResult.matchingCount;
+      products = searchResult.foundProducts;
 
       // Fetch related data for each product
       const productIds = products.map(p => p.id);
       const [categories, brands, images, prices] = await Promise.all([
         productIds.length > 0 ? this.prisma.category.findMany({
-          where: { id: { in: [...new Set(products.map(p => p.categoryId))] } },
+          where: { id: { in: [...new Set(products.map(p => p.categoryId).filter((id): id is string => !!id))] } },
           select: { id: true, name: true, slug: true }
         }) : [],
         productIds.length > 0 ? this.prisma.brand.findMany({
-          where: { id: { in: [...new Set(products.map(p => p.brandId))] } },
+          where: { id: { in: [...new Set(products.map(p => p.brandId).filter((id): id is string => !!id))] } },
           select: { id: true, name: true, slug: true }
         }) : [],
         productIds.length > 0 ? this.prisma.productImage.findMany({
@@ -534,13 +674,12 @@ export class ProductsService {
         category: categoryMap.get(p.categoryId) || null,
         brand: brandMap.get(p.brandId) || null,
         images: imageMap.get(p.id) ? [imageMap.get(p.id)!] : [],
-        prices: pricesByProduct.get(p.productId) || [],
+        prices: pricesByProduct.get(p.id) || [],
         _similarity: undefined, // remove internal field
       }));
     } else {
       // Fallback: búsqueda por contains insensible (search ≤ 2 chars o sin search)
       const where: Prisma.ProductWhereInput = {
-        ...(allowedListaIds !== null && { listaId: { in: allowedListaIds.length ? allowedListaIds : ['no-existe-este-id'] } }),
         ...(search && {
           OR: [
             { name: { contains: search, mode: 'insensitive' } },
@@ -548,7 +687,9 @@ export class ProductsService {
             { description: { contains: search, mode: 'insensitive' } },
           ],
         }),
-        ...(categoryId && { categoryId }),
+        ...(selectedCategoryIds.length
+          ? { categoryId: { in: categoryFilterIds } }
+          : categoryId && { categoryId }),
         ...(brandId && { brandId }),
         ...(isVisible !== undefined && { isVisible }),
         ...(isActive !== undefined && { isActive }),
@@ -576,59 +717,21 @@ export class ProductsService {
       total = count;
     }
 
-    // Filtrado por restricción explícita de assignment PRODUCT (checklist 17/31).
-    // Si el usuario tiene assignment PRODUCT con isActive=false sobre algún producto,
-    // ese producto debe ser denegado (403) en findOne y excluido en findAll.
-    // Si el usuario tiene assignment PRODUCT activo con nivel suficiente, se permite.
-    let productAssignmentsCache: { resourceId: string; level: string; isActive: boolean }[] = [];
-    if (ctx) {
-      productAssignmentsCache = await this.prisma.assignment.findMany({
-        where: { userId: ctx.userId, resourceType: 'PRODUCT' },
-        select: { resourceId: true, level: true, isActive: true },
-      });
-    }
+    const stockStatusMap = await this.getStockStatusMap(products.map((p) => p.id));
 
-    const deniedProductIds = new Set<string>();
-    const activeAssignmentsByProduct = new Map<string, string[]>();
-    if (productAssignmentsCache?.length > 0) {
-      for (const a of productAssignmentsCache) {
-        if (!a.isActive) {
-          deniedProductIds.add(a.resourceId);
-        } else {
-          const levels = activeAssignmentsByProduct.get(a.resourceId) || [];
-          levels.push(a.level);
-          activeAssignmentsByProduct.set(a.resourceId, levels);
-        }
-      }
-    }
-
-    const filteredProducts = products.filter((p) => {
-      // Si el producto está en la lista de denegación por isActive=false, excluirlo
-      if (deniedProductIds.has(p.id)) return false;
-      // Si el usuario tiene assignment PRODUCT activo, verificar nivel
-      if (activeAssignmentsByProduct.has(p.id)) {
-        const productLevels = activeAssignmentsByProduct.get(p.id)!;
-        const hasSufficientLevel = productLevels.some((lvl) => {
-          const rank = (LEVEL_RANK[lvl] ?? 0);
-          return rank >= (LEVEL_RANK['view'] ?? 0);
-        });
-        if (!hasSufficientLevel) return false;
-      }
-      return true;
-    });
-
-    const stockStatusMap = await this.getStockStatusMap(filteredProducts.map((p) => p.id));
-
+    // Todas las rutas (Prisma y SQL crudo `p.*`) pasan por aqui: sin `products:notes` no sale `catalogInternalNotes`.
     return {
-      data: filteredProducts.map((p) => ({
+      data: await redactInternalNotes(this.grants, ctx, products.map((p) => ({
         ...p,
         stockStatus: stockStatusMap.get(p.id) ?? 'no_stock_data',
-      })),
+      }))),
       meta: { total, skip, take },
     };
   }
 
   async findOne(id: string, ctx?: AccessContext) {
+    // Solo la concesion global `products:read` (sin cargo, sin Listas); sin ella 403 antes de buscar.
+    if (ctx) await assertGlobalGrant(this.grants, 'products:read', ctx);
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
@@ -638,28 +741,19 @@ export class ProductsService {
         prices: {
           include: { priceList: true },
         },
+        ...this.subcategoryInclude(),
       },
     });
 
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Deny-by-default con restricción explícita por producto (checklist 17/31):
-    // assertProductAccess evalúa assignments PRODUCT (deny prevalece) y cae a la
-    // Lista dueña si no hay excepción por producto.
-    // A product WITHOUT lista (for example a hidden draft created from a price import)
-    // is decided by the same check: only a GLOBAL-scope `products:read` grant covers it,
-    // lista-scoped grants still get 404 (see AclService.assertProductAccess).
-    if (ctx) {
-      await this.acl.assertProductAccess(id, ctx, 'view');
-    }
-
-    const stock = await this.prisma.stock.findUnique({ where: { productId: id } });
+    const stock = await this.operational.stock.findUnique({ where: { productId: id } });
     const allowed = ctx ? await this.allowedActions(product, ctx) : undefined;
-    return {
-      ...product,
+    return redactInternalNotes(this.grants, ctx, {
+      ...this.withClassificationStatus(product),
       stockStatus: stock ? (stock.availableQty > 0 ? 'in_stock' : 'out_of_stock') : 'no_stock_data',
       ...(allowed ? { allowedActions: allowed } : {}),
-    };
+    });
   }
 
   /**
@@ -676,9 +770,10 @@ export class ProductsService {
    */
   async createPendingSheetDraft(
     tx: Prisma.TransactionClient,
-    input: { sku: string; name: string; brandId: string; categoryId: string; sourceRevisionId: string },
+    input: { sku: string; name: string; brandId?: string | null; categoryId?: string | null; sourceRevisionId: string },
     ctx: { userId?: string | null },
   ): Promise<Product> {
+    this.assertOwnedTransaction(tx);
     const sku = input.sku?.trim();
     const name = input.name?.trim();
     if (!sku) throw new BadRequestException({ code: 'INVALID_SKU', message: 'La referencia está vacía.' });
@@ -688,19 +783,19 @@ export class ProductsService {
     if (await findProductBySku(tx, sku, { id: true })) {
       throw new ConflictException({ code: 'SKU_EXISTS', message: 'Ya existe un producto con ese SKU.' });
     }
-    if (!(await tx.brand.findUnique({ where: { id: input.brandId }, select: { id: true } }))) {
+    if (input.brandId && !(await tx.brand.findUnique({ where: { id: input.brandId }, select: { id: true } }))) {
       throw new NotFoundException({ code: 'BRAND_NOT_FOUND', message: 'Marca no encontrada.' });
     }
-    if (!(await tx.category.findUnique({ where: { id: input.categoryId }, select: { id: true } }))) {
-      throw new NotFoundException({ code: 'CATEGORY_NOT_FOUND', message: 'Categoría no encontrada.' });
-    }
+    // A draft from a price import only knows a category: the subcategory is derived when it exists,
+    // otherwise the draft stays "por clasificar" (also without brand and/or category). Nothing is created here (C5).
+    const classified = await this.classification.assertWritable(tx as unknown as ClassificationDb, { categoryId: input.categoryId ?? undefined, brandId: input.brandId ?? null });
 
     const product = await tx.product.create({
       data: {
         sku,
         name,
-        brandId: input.brandId,
-        categoryId: input.categoryId,
+        brandId: input.brandId ?? null,
+        ...this.classification.toData(classified),
         listaId: null,
         lifecycleStatus: 'DRAFT',
         publishStatus: 'borrador',
@@ -722,7 +817,7 @@ export class ProductsService {
       { ...meta, field: 'created', oldValue: null, newValue: 'pending_enrichment' },
       ...diffFields(null, product, ['sku', 'name', 'brandId', 'categoryId'], meta),
     ]);
-    await this.audit.logTx(tx, {
+    await (this.library.config.mode === 'legacy' ? this.audit.logTx(tx, {
       userId: ctx.userId ?? undefined,
       action: 'price-import-create-draft',
       entity: 'Product',
@@ -730,22 +825,29 @@ export class ProductsService {
       productId: product.id,
       newValues: { sku: product.sku, name: product.name, brandId: product.brandId, categoryId: product.categoryId, revisionId: input.sourceRevisionId, listaId: null },
       result: 'SUCCESS',
-    });
+    }) : this.appendLibraryEvent(tx, 'PRICE_IMPORT_DRAFT_CREATED', 'Product', product.id, { sku: product.sku, name: product.name, brandId: product.brandId, categoryId: product.categoryId, sourceRevisionId: input.sourceRevisionId }, { userId: ctx.userId ?? undefined, roles: [] }));
     return product;
   }
 
   async create(dto: CreateProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
+    // Biblioteca autoriza SOLO por la concesion global `products:write` (nunca por cargo ni por Listas).
+    if (ctx) await assertGlobalGrant(this.grants, 'products:write', ctx);
+    ProductsService.rejectPricesInProductBody(dto.prices);
     // Identidad por SKU normalizado: "abc-1" y "ABC-1" son el mismo producto.
     const existingSku = await findProductBySku(this.prisma, dto.sku, { sku: true });
-    if (existingSku) throw new ConflictException('Ya existe un producto con ese SKU');
+    // The id lets the caller link to the existing product; the products are never merged by similarity.
+    if (existingSku) throw new ConflictException({ code: 'SKU_EXISTS', message: 'Ya existe un producto con ese SKU', existingProductId: existingSku.id });
 
-    const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
-    if (!category) throw new NotFoundException('Categoría no encontrada');
+    const classified = await this.classification.assertWritable(this.prisma as unknown as ClassificationDb, { categoryId: dto.categoryId || undefined, subcategoryId: dto.subcategoryId || undefined, brandId: dto.brandId || null });
+    // Pending name: without one the reference is the provisional name (same rule as the price import).
+    const name = typeof dto.name === 'string' && dto.name.trim() !== '' ? dto.name : dto.sku.trim();
 
-    const brand = await this.prisma.brand.findUnique({ where: { id: dto.brandId } });
-    if (!brand) throw new NotFoundException('Marca no encontrada');
-
-    await this.validatePriceLists(dto.prices);
+    // Minimum data is SKU + name: without brand the product is saved as an incomplete draft (never a placeholder brand).
+    if (dto.brandId) {
+      const brand = await this.prisma.brand.findUnique({ where: { id: dto.brandId } });
+      if (!brand) throw new NotFoundException('Marca no encontrada');
+    }
 
     // Resolver y validar specs tipados (nuevo formato) con fallback a legacy
     const specs = this.resolveSpecs(dto.specs, dto.technicalSpecs);
@@ -762,26 +864,15 @@ export class ProductsService {
     // el producto nuevo hereda la visibilidad por defecto de su Lista.
     const lista = await this.resolveLista(dto.listaId);
 
-    // ACL: crear producto exige `edit_products` sobre la Lista destino (checklist 29/30).
-    if (ctx) await this.acl.assertListaAccess(lista.id, ctx, 'edit_products');
-
-    // Bloqueo: si la Lista está pendiente de eliminación, no permitir crear producto
-        if (await this.isListaPendingDeletion(lista.id)) {
-      throw new ConflictException({
-        code: 'LISTA_PENDIENTE_ELIMINACION',
-        message: 'La Lista está pendiente de eliminación y no permite cambios.',
-      });
-    }
-
-    // Product, prices and their history commit or roll back together.
-    return this.prisma.$transaction(async (tx) => {
+    // Product and its history commit or roll back together.
+    return this.writeTransaction(async (tx) => {
       const product = await tx.product.create({
         data: {
           sku: dto.sku,
-          name: dto.name,
+          name,
           description: dto.description,
-          categoryId: dto.categoryId,
-          brandId: dto.brandId,
+          ...this.classification.toData(classified),
+          brandId: dto.brandId || null,
           listaId: lista.id,
           technicalSpecs: this.prepareSpecsForStorage(specs),
           extraAttributes: this.prepareSpecsForStorage(extraSpecs),
@@ -796,18 +887,20 @@ export class ProductsService {
         include: {
           category: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
+          ...this.subcategoryInclude(),
         },
       });
       await this.recordProductChanges(tx, null, product as never, [...ProductsService.EDIT_HISTORY_FIELDS, 'lifecycleStatus'], 'MANUAL', ctx);
 
-      if (dto.prices && dto.prices.length > 0) {
-        await this.upsertPrices(tx, product, lista.id, dto.prices, ctx);
-      }
-      return product;
+      await this.appendLibraryEvent(tx, 'PRODUCT_CREATED', 'Product', product.id, { sku: product.sku, name: product.name, brandId: product.brandId, categoryId: product.categoryId, listaId: product.listaId, lifecycleStatus: product.lifecycleStatus }, ctx);
+      return this.withClassificationStatus(product);
     });
   }
 
   async update(id: string, dto: UpdateProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
+    if (ctx) await assertGlobalGrant(this.grants, 'products:write', ctx);
+    ProductsService.rejectPricesInProductBody(dto.prices);
     // El estado del producto se gestiona vía FSM (POST /api/products/:id/transition).
     // Esta guarda explícita cubre llamadas directas al servicio (sin DTO whitelist).
     const stateKeys = ['isActive', 'isVisible', 'publishStatus', 'publishAt', 'unpublishAt'];
@@ -818,32 +911,10 @@ export class ProductsService {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // ACL: editar producto exige `edit_products` sobre el producto/Lista (checklist 29/30).
-    // assertProductAccess evalúa restricción explícita por producto + Lista dueña.
-    if (ctx && product.listaId) {
-      await this.acl.assertProductAccess(id, ctx, 'edit_products');
-    }
-    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir actualizar
-    if (product.listaId) {
-            if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista está pendiente de eliminación y no permite cambios.',
-        });
-      }
-      // Permiso Super Admin bypass
-      if (!this.acl.isListasAdmin(ctx?.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
-
     // Si se reasigna listaId, se autoriza además sobre la nueva Lista.
     let listaId: string | null = product.listaId ?? null;
     if (dto.listaId !== undefined) {
       const newLista = await this.resolveLista(dto.listaId);
-      if (ctx && newLista.id !== product.listaId) {
-        await this.acl.assertListaAccess(newLista.id, ctx, 'edit_products');
-      }
       listaId = newLista.id;
     }
 
@@ -856,17 +927,20 @@ export class ProductsService {
       }
     }
 
-    if (dto.categoryId) {
-      const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
-      if (!category) throw new NotFoundException('Categoría no encontrada');
-    }
+    // Only touched when the caller sends a classification field; categoryId/subcategoryId are never written independently.
+    // undefined = unchanged; explicit null = clear (brandId, subcategoryId, categoryId).
+    const classified = dto.categoryId || dto.categoryId === null || dto.subcategoryId !== undefined
+      ? await this.classification.assertWritable(
+        this.prisma as unknown as ClassificationDb,
+        { categoryId: dto.categoryId === null ? null : dto.categoryId || undefined, subcategoryId: dto.subcategoryId, brandId: dto.brandId === null ? null : dto.brandId || undefined },
+        { categoryId: product.categoryId, subcategoryId: product.subcategoryId, brandId: product.brandId },
+      )
+      : null;
 
     if (dto.brandId) {
       const brand = await this.prisma.brand.findUnique({ where: { id: dto.brandId } });
       if (!brand) throw new NotFoundException('Marca no encontrada');
     }
-
-    await this.validatePriceLists(dto.prices);
 
     // Resolver y validar specs tipados (nuevo formato) con fallback a legacy
     const specs = this.resolveSpecs(dto.specs, dto.technicalSpecs);
@@ -880,15 +954,21 @@ export class ProductsService {
       this.validateSpecs(extraSpecs, 'extraSpecs');
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.writeTransaction(async (tx) => {
+      let before = product;
+      if (this.library.config.mode === 'dedicated') {
+        await tx.$queryRaw`SELECT id FROM products WHERE id=${id} FOR UPDATE`;
+        before = await tx.product.findUniqueOrThrow({ where: { id } });
+        if (before.updatedAt.getTime() !== product.updatedAt.getTime() || before.listaId !== product.listaId) throw new ConflictException({ code: 'product-version-conflict', message: 'El producto cambió. Recarga antes de guardar.' });
+      }
       const row = await tx.product.update({
       where: { id },
       data: {
         ...(dto.sku && { sku: dto.sku }),
         ...(dto.name && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.categoryId && { categoryId: dto.categoryId }),
-        ...(dto.brandId && { brandId: dto.brandId }),
+        ...(classified && this.classification.toData(classified)),
+        ...(dto.brandId === null ? { brandId: null } : dto.brandId ? { brandId: dto.brandId } : {}),
         ...(dto.listaId !== undefined && { listaId }),
         ...(dto.specs !== undefined || dto.technicalSpecs !== undefined
           ? { technicalSpecs: this.prepareSpecsForStorage(specs) }
@@ -901,21 +981,21 @@ export class ProductsService {
       include: {
         category: { select: { id: true, name: true } },
         brand: { select: { id: true, name: true } },
+        ...this.subcategoryInclude(),
       },
       });
-      await this.recordProductChanges(tx, product, row as never, ProductsService.EDIT_HISTORY_FIELDS, 'MANUAL', ctx);
+      await this.recordProductChanges(tx, before, row as never, ProductsService.EDIT_HISTORY_FIELDS, 'MANUAL', ctx);
 
-      if (dto.prices && dto.prices.length > 0) {
-        await this.upsertPrices(tx, row, listaId, dto.prices, ctx);
-      }
+      if (this.library.config.mode === 'dedicated') await this.revisions?.markPendingFromLive(id, tx as unknown as LibraryPrisma.TransactionClient, { id: ctx?.userId });
+      await this.appendLibraryEvent(tx, 'PRODUCT_UPDATED', 'Product', id, { fields: Object.keys(dto), before: JSON.parse(JSON.stringify(before)), after: JSON.parse(JSON.stringify(row)) }, ctx);
       return row;
     });
 
     // CAT-02 alternativas: la edición legacy deja revisión pendiente; la
     // presentación pública no cambia (lente de revisión activo).
-    await this.revisions?.markPendingFromLive(id);
+    if (this.library.config.mode === 'legacy') await this.revisions?.markPendingFromLive(id);
 
-    return updated;
+    return this.withClassificationStatus(updated);
   }
 
   /**
@@ -923,23 +1003,11 @@ export class ProductsService {
    * con razón obligatoria (audit 'unpublish').
    */
   async unpublish(id: string, dto: UnpublishProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     if (ctx) await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir despublicar
-    if (product.listaId) {
-            if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista está pendiente de eliminación y no permite cambios.',
-        });
-      }
-      // Permiso Super Admin bypass
-      if (!this.acl.isListasAdmin(ctx?.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
 
     return this.transition(id, { event: 'UNPUBLISH', reason: dto.reason }, ctx);
   }
@@ -948,6 +1016,7 @@ export class ProductsService {
    * Adaptador legacy: alterna visibilidad traduciendo al contrato canónico.
    */
   async toggleVisibility(id: string, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -964,15 +1033,32 @@ export class ProductsService {
   }
 
   /**
-   * Checklist previo a publicación (documentado):
-   *  (a) Lista destino activa y no archivada.
+   * Checklist previo a publicación (documentado). Las Listas ya no existen: ninguna regla las consulta.
    *  (b) Producto activo (isActive).
-   *  (c) Al menos 1 precio vigente (validFrom nulo o <= now y validUntil nulo o futuro) en la Lista.
+   *  (c) Al menos 1 precio vigente del producto (validFrom nulo o <= now y validUntil nulo o futuro).
    *  (d) Al menos 1 imagen.
    *  (e) Stock: si existe registro de stock, exige availableQty > 0.
    *      Si NO existe registro de stock, NO se bloquea (decisión documentada).
    * Devuelve la lista de TODOS los requisitos fallidos (mensaje 400 detallado).
    */
+  private assertWebBrandAllowed(...labels: unknown[]) {
+    if (isWebBrandExcluded(...labels.map((label) => typeof label === 'string' ? label : null))) {
+      throw new BadRequestException({
+        code: 'WEB_BRAND_EXCLUDED',
+        message: 'Dahua e Imou no se pueden publicar en la tienda.',
+      });
+    }
+  }
+
+  private async assertRevisionWebBrandAllowed(content: unknown, currentBrandId: string | null) {
+    const snapshot = content as Record<string, unknown> | null;
+    this.assertWebBrandAllowed(snapshot?.catalogBrand);
+    if (typeof snapshot?.brandId === 'string' && snapshot.brandId !== currentBrandId) {
+      const brand = await this.prisma.brand.findUnique({ where: { id: snapshot.brandId }, select: { name: true } });
+      this.assertWebBrandAllowed(brand?.name);
+    }
+  }
+
   private async validatePublishRequirements(product: {
     id: string;
     listaId: string | null;
@@ -981,45 +1067,19 @@ export class ProductsService {
     const failures: string[] = [];
     const now = new Date();
 
-    // (a) Lista destino activa y no archivada.
-    let lista = null;
-    if (product.listaId) {
-      lista = await this.prisma.lista.findUnique({ where: { id: product.listaId } });
-    }
-    if (!lista || !lista.isActive || lista.archivedAt) {
-      failures.push('La lista destino no está activa o está archivada');
-    }
+    // La biblioteca no depende de Listas: ni la Lista de un producto ni su estado bloquean la publicación.
 
-    // (c) Al menos 1 precio vigente en la Lista.
-    // Los precios importados se crean con `listaId: null` y se vinculan vía
-    // `priceListId` (PriceList no tiene relación FK con Lista). Si no hay precio
-    // con el listaId de la lista, se hace fallback al precio vigente global del
-    // producto para que la publicación no se bloquee por este artefacto.
+    // (c) Al menos 1 precio vigente del producto (cualquier tarifa).
     // Se mantiene la regla de fondo: el precio debe existir y ser vigente
     // (validFrom <= hoy <= validUntil, límites abiertos con null).
-    const vigenciaFilter = {
-      AND: [
-        { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-        { OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
-      ],
-    };
-    let priceCount = await this.prisma.price.count({
+    const priceCount = await this.prisma.price.count({
       where: {
         productId: product.id,
-        ...(product.listaId ? { listaId: product.listaId } : {}),
-        ...vigenciaFilter,
+        ...priceValidityWhere(now),
       },
     });
-    if (priceCount === 0 && product.listaId) {
-      priceCount = await this.prisma.price.count({
-        where: {
-          productId: product.id,
-          ...vigenciaFilter,
-        },
-      });
-    }
     if (priceCount === 0) {
-      failures.push('El producto no tiene al menos un precio vigente en su lista');
+      failures.push('El producto no tiene al menos un precio vigente');
     }
 
     // (d) Al menos 1 imagen.
@@ -1029,7 +1089,7 @@ export class ProductsService {
     }
 
     // (e) Stock: solo bloquea si existe registro de stock con availableQty <= 0.
-    const stock = await this.prisma.stock.findUnique({ where: { productId: product.id } });
+    const stock = await this.operational.stock.findUnique({ where: { productId: product.id } });
     if (stock && stock.availableQty <= 0) {
       failures.push('El producto tiene stock registrado pero sin unidades disponibles (availableQty <= 0)');
     }
@@ -1045,8 +1105,9 @@ export class ProductsService {
    * - `unpublishAt` se ignora (no existe auto-despublicación).
    */
   async publish(id: string, dto: PublishProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     if (ctx) await this.assertCatalogProductAction(id, 'products:publish', ctx);
-    const product = await this.prisma.product.findUnique({ where: { id } });
+    const product = await this.prisma.product.findUnique({ where: { id }, include: { brand: { select: { name: true } } } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     const status = this.effectiveLifecycleStatus(product);
@@ -1076,8 +1137,8 @@ export class ProductsService {
         // CAT-06: cancelar la programación libera la revisión congelada SOLO
         // si existía pin (no altera la forma del update para filas legacy).
         ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}),
-      }, ctx);
-      await this.audit.log({
+      }, ctx, { action: 'PRODUCT_SCHEDULE_CANCELLED', summary: { lifecycleStatus: status, previousPublishAt: currentPublishAt.toISOString() } });
+      await this.legacyAudit({
         userId: ctx?.userId,
         action: 'cancel_schedule_publish',
         entity: 'Product',
@@ -1096,19 +1157,6 @@ export class ProductsService {
       throw new BadRequestException('No se puede publicar un producto archivado');
     }
 
-    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir publicar
-    if (product.listaId) {
-            if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista está pendiente de eliminación y no permite cambios.',
-        });
-      }
-      // Permiso Super Admin bypass
-      if (!this.acl.isListasAdmin(ctx?.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
 
     const publishAt = dto.publishAt ? new Date(dto.publishAt) : null;
     const isFuturePublish = !!publishAt && publishAt > new Date();
@@ -1116,6 +1164,7 @@ export class ProductsService {
     if (!isFuturePublish) {
       return this.transition(id, { event: 'PUBLISH' }, ctx);
     }
+    this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
 
     // Programación sobre DRAFT: persiste estado canónico DRAFT completo con publishAt.
     // CAT-06 (T3, MISMO servicio que schedulePublication): programar exige
@@ -1137,8 +1186,8 @@ export class ProductsService {
       publishedAt: null,
       unpublishReason: null,
       ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
-    }, ctx);
-    await this.audit.log({
+    }, ctx, { action: 'PRODUCT_SCHEDULED', summary: { lifecycleStatus: status, publishAt: publishAt.toISOString() } });
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: 'schedule_publish',
       entity: 'Product',
@@ -1299,52 +1348,23 @@ export class ProductsService {
     }
   }
 
-  /** ¿El contexto tiene nivel ACL suficiente sobre el producto? (sin lanzar errores). */
-  private async hasAclLevel(productId: string, ctx: AccessContext, level: string): Promise<boolean> {
-    if (this.acl.isListasAdmin(ctx.roles)) return true;
-    try {
-      await this.acl.assertProductAccess(productId, ctx, level);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async checkProductListaBlocked(productId: string, ctx: AccessContext): Promise<boolean> {
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    if (!product || !product.listaId) return false;
-
-    if (this.acl.isListasAdmin(ctx.roles)) return false;
-
-    await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-
-        if (await this.isListaPendingDeletion(product.listaId)) {
-      throw new ConflictException({
-        code: 'LISTA_PENDIENTE_ELIMINACION',
-        message: 'La Lista está pendiente de eliminación y no permite cambios.',
-      });
-    }
-    return false;
-  }
-
   /**
-   * Acciones FSM permitidas para un producto según su estado actual, RBAC del
-   * usuario (roles) y nivel ACL efectivo. No lanza errores: es informativo
+   * Acciones FSM permitidas para un producto según su estado actual y las
+   * concesiones globales del usuario (publish / write). No lanza errores: es informativo
    * para que la UI muestre solo acciones válidas.
    */
   async allowedActions(
     product: { id: string; lifecycleStatus?: string | null; publishStatus?: string | null; isActive?: boolean; isVisible?: boolean; publishAt?: Date | null },
     ctx?: AccessContext,
   ): Promise<LifecycleEvent[]> {
-    if (!ctx || !ctx.roles?.length) return [];
+    if (!ctx?.userId) return [];
     const status = this.effectiveLifecycleStatus(product);
     const allowed: LifecycleEvent[] = [];
 
     for (const [event, rule] of Object.entries(TRANSITION_RULES)) {
       if (!rule) continue;
       if (!rule.from.includes(status)) continue;
-      if (!rule.guard.roles.some((r) => ctx.roles.includes(r))) continue;
-      if (!(await this.hasAclLevel(product.id, ctx, rule.guard.aclLevel))) continue;
+      if (!(await hasGlobalGrant(this.grants, ProductsService.grantForEvent(event), ctx))) continue;
       allowed.push(event as LifecycleEvent);
     }
 
@@ -1357,22 +1377,10 @@ export class ProductsService {
    * transición válida → checklist (PUBLISH) → dual-write + auditoría.
    */
   async transition(id: string, dto: TransitionProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir transitar
-    if (product.listaId) {
-            if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista está pendiente de eliminación y no permite cambios.',
-        });
-      }
-      // Permiso Super Admin bypass
-      if (!this.acl.isListasAdmin(ctx?.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
 
     return this.doTransition(id, dto, ctx, false);
   }
@@ -1393,6 +1401,8 @@ export class ProductsService {
       this.logger.warn('[scheduler] tick anterior aún en curso; se descarta este tick');
       return { runAt, skipped: true, publishOk: 0, publishFailed: [] };
     }
+    // Con la biblioteca congelada (migración/respaldo) el scheduler no publica nada.
+    if (this.library.config.writesFrozen) return { runAt, skipped: true, publishOk: 0, publishFailed: [] };
     this.lifecycleTickRunning = true;
     try {
       const publishes = await this.processScheduledPublishes();
@@ -1411,6 +1421,7 @@ export class ProductsService {
     publishOk: number;
     publishFailed: Array<{ id: string; reasons: string }>;
   }> {
+    this.library.assertWritesAllowed();
     const now = new Date();
     const due = (await this.prisma.product.findMany({
       where: { lifecycleStatus: 'DRAFT', publishAt: { lte: now } },
@@ -1450,10 +1461,11 @@ export class ProductsService {
     ctx?: AccessContext,
     skipHumanAccessChecks = false,
   ) {
-    if (!skipHumanAccessChecks && ctx && (dto.event === 'PUBLISH' || dto.event === 'UNPUBLISH')) {
-      await this.assertCatalogProductAction(id, 'products:publish', ctx);
+    // Permiso por concesion global segun el evento (publish: PUBLISH/UNPUBLISH; write: ARCHIVE/RESTORE).
+    if (!skipHumanAccessChecks && ctx) {
+      await assertGlobalGrant(this.grants, ProductsService.grantForEvent(dto.event), ctx);
     }
-    const product = await this.prisma.product.findUnique({ where: { id } });
+    const product = await this.prisma.product.findUnique({ where: { id }, include: { brand: { select: { name: true } } } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     const event = dto.event;
@@ -1465,35 +1477,12 @@ export class ProductsService {
 
     const status = this.effectiveLifecycleStatus(product);
 
-    // Guarda RBAC (roles con el permiso del evento).
-    // Se omite cuando el scheduler o proceso interno invoca la transición
-    // sin contexto de usuario humano (skipHumanAccessChecks=true).
-    if (!skipHumanAccessChecks && ctx && !rule.guard.roles.some((r) => ctx.roles.includes(r))) {
-      throw new ForbiddenException(`No tienes permisos para ejecutar el evento ${event}`);
-    }
-
-    // Guarda ACL (nivel sobre el producto/Lista). Skip si listaId null.
-    // Se omite cuando skipHumanAccessChecks=true (ruta interna del scheduler).
-    if (!skipHumanAccessChecks && ctx && product.listaId) {
-      await this.acl.assertProductAccess(id, ctx, rule.guard.aclLevel);
-    }
-
     // Guardas de datos: reason / confirm.
     if (rule.guard.reasonRequired && !dto.reason?.trim()) {
       throw new BadRequestException(`El evento ${event} requiere un motivo (reason)`);
     }
     if (rule.guard.confirmRequired && dto.confirm !== true) {
       throw new BadRequestException(`El evento ${event} requiere confirmación (confirm: true)`);
-    }
-
-    // CAT-06 (P5, regla 1): publicar/retirar exige además la acción del catálogo
-    // `products:publish` cuando el usuario tiene concesiones (transición D5: sin
-    // grants manda la capa RBAC+ACL de arriba, intacta). El scheduler
-    // (skipHumanAccessChecks) es proceso interno: no porta contexto humano.
-    if (!skipHumanAccessChecks && ctx && (event === 'PUBLISH' || event === 'UNPUBLISH')) {
-      await d5AssertAction(this.grants, 'products:publish', ctx, {
-        id, kind: 'product', productId: id, listId: product.listaId ?? undefined,
-      });
     }
 
     // Transición válida según estado actual.
@@ -1504,6 +1493,7 @@ export class ProductsService {
     }
     // Checklist de publicación (P5): solo PUBLISH valida requisitos comerciales.
     if (event === 'PUBLISH') {
+      this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
       const failures = await this.validatePublishRequirements(product);
       if (failures.length > 0) {
         const detail = failures.map((f, i) => `${i + 1}) ${f}`).join('; ');
@@ -1530,9 +1520,12 @@ export class ProductsService {
       return this.applyTransitionWithPin(id, product, event, data, oldValues, ctx, skipHumanAccessChecks);
     }
 
-    const updated = await this.updateWithStateHistory(id, product, data, ctx);
+    const updated = await this.updateWithStateHistory(id, product, data, ctx, {
+      action: `PRODUCT_${event}`,
+      summary: { from: status, to: rule.to, event },
+    });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: EVENT_AUDIT_ACTION[event],
       entity: 'Product',
@@ -1572,24 +1565,30 @@ export class ProductsService {
    * graphía el estado vivo con el mecanismo CAT-02 (`markPendingFromLive`).
    */
   private async resolvePinnedRevision(
-    product: { id: string; scheduledRevisionId: string | null },
+    product: Pick<Product, 'id' | 'scheduledRevisionId' | 'brandId'>,
     preferScheduled = true,
   ): Promise<string | null> {
     if (preferScheduled && product.scheduledRevisionId) {
       const frozen = await this.prisma.productRevision.findUnique({
         where: { id: product.scheduledRevisionId },
-        select: { id: true, productId: true },
+        select: { id: true, productId: true, content: true },
       });
-      if (frozen && frozen.productId === product.id) return frozen.id;
+      if (frozen && frozen.productId === product.id) {
+        await this.assertRevisionWebBrandAllowed(frozen.content, product.brandId);
+        return frozen.id;
+      }
       // Defensivo: la revisión congelada ya no existe (borrada a mano) → se
       // resuelve por el estado vivo; jamás se publica `null` a ciegas.
     }
     const draft = await this.prisma.productRevision.findFirst({
       where: { productId: product.id, status: { not: 'PUBLICADA' as never } },
       orderBy: { version: 'desc' },
-      select: { id: true },
+      select: { id: true, content: true },
     });
-    if (draft) return draft.id;
+    if (draft) {
+      await this.assertRevisionWebBrandAllowed(draft.content, product.brandId);
+      return draft.id;
+    }
     const created = await this.revisions!.markPendingFromLive(product.id);
     return created?.id ?? null;
   }
@@ -1614,7 +1613,8 @@ export class ProductsService {
     const pinnedId = event === 'PUBLISH' ? await this.resolvePinnedRevision(product) : null;
     const previousPublicRevisionId = product.publicRevisionId ?? null;
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const eventSummary = { event, from: this.effectiveLifecycleStatus(product), pinnedRevisionId: pinnedId, previousPublicRevisionId } as LibraryPrisma.InputJsonObject;
+    const updated = await this.writeTransaction(async (tx) => {
       if (event === 'PUBLISH') {
         if (pinnedId) {
           await tx.productRevision.update({
@@ -1627,6 +1627,7 @@ export class ProductsService {
           data: { ...data, publicRevisionId: pinnedId, scheduledRevisionId: null },
         });
         await this.recordProductChanges(tx, product, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+        await this.appendLibraryEvent(tx, `PRODUCT_${event}`, 'Product', id, eventSummary, ctx);
         return row;
       }
       const row = await tx.product.update({
@@ -1634,10 +1635,11 @@ export class ProductsService {
         data: { ...data, publicRevisionId: null, scheduledRevisionId: null },
       });
       await this.recordProductChanges(tx, product, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
+      await this.appendLibraryEvent(tx, `PRODUCT_${event}`, 'Product', id, eventSummary, ctx);
       return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: EVENT_AUDIT_ACTION[event],
       entity: 'Product',
@@ -1692,20 +1694,10 @@ export class ProductsService {
     dto: SchedulePublicationDto,
     ctx: AccessContext,
   ): Promise<Product> {
+    this.library.assertWritesAllowed();
     await this.assertCatalogProductAction(id, 'products:publish', ctx);
-    const product = await this.prisma.product.findUnique({ where: { id } });
+    const product = await this.prisma.product.findUnique({ where: { id }, include: { brand: { select: { name: true } } } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    if (product.listaId) {
-      if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista esta pendiente de eliminacion y no permite cambios.',
-        });
-      }
-      if (!this.acl.isListasAdmin(ctx.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
     const status = this.effectiveLifecycleStatus(product);
     if (status === 'PUBLISHED') {
       throw new ConflictException('El producto ya esta publicado');
@@ -1726,6 +1718,7 @@ export class ProductsService {
     if (publishAt <= new Date()) {
       throw new BadRequestException('publishAt debe ser una fecha futura');
     }
+    this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
     const previous = product.publishAt ? new Date(product.publishAt) : null;
     // CAT-06 (T3, mismo servicio que la ruta legacy): programar exige validación
     // vigente AHORA y congela la revisión que el scheduler publicará al vencer
@@ -1738,7 +1731,7 @@ export class ProductsService {
     // La FSM es la fuente de verdad de isActive/isVisible/lifecycleStatus/publishStatus.
     // Este helper solo persiste publishAt, sin escribir directamente isActive/isVisible.
     const updated = await this.persistScheduledPublishAt(id, product, publishAt, ctx, scheduledRevisionId);
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'schedule_publish',
       entity: 'Product',
@@ -1758,20 +1751,10 @@ export class ProductsService {
     id: string,
     ctx: AccessContext,
   ): Promise<Product> {
+    this.library.assertWritesAllowed();
     await this.assertCatalogProductAction(id, 'products:publish', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    if (product.listaId) {
-      if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista esta pendiente de eliminacion y no permite cambios.',
-        });
-      }
-      if (!this.acl.isListasAdmin(ctx.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
     const status = this.effectiveLifecycleStatus(product);
     if (status !== 'DRAFT') {
       throw new ConflictException('Solo se puede cancelar una programacion en un producto en Borrador.');
@@ -1784,8 +1767,9 @@ export class ProductsService {
     // existía pin (la forma del update legacy se conserva).
     const updated = await this.updateWithStateHistory(
       id, product, { publishAt: null, ...(product.scheduledRevisionId ? { scheduledRevisionId: null } : {}) }, ctx,
+      { action: 'PRODUCT_SCHEDULE_CANCELLED', summary: { lifecycleStatus: status, previousPublishAt: current.toISOString() } },
     );
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'cancel_schedule_publish',
       entity: 'Product',
@@ -1813,7 +1797,7 @@ export class ProductsService {
       publishAt,
       publishedAt: null,
       ...(scheduledRevisionId !== undefined ? { scheduledRevisionId } : {}),
-    }, ctx);
+    }, ctx, { action: 'PRODUCT_SCHEDULED', summary: { lifecycleStatus: before.lifecycleStatus ?? null, publishAt: publishAt.toISOString() } });
   }
   /**
    * Bulk de transiciones: procesa producto a producto (sin transacción global).
@@ -1821,6 +1805,7 @@ export class ProductsService {
    * { applied, rejected } (el interceptor global lo envuelve en { data }).
    */
   async bulkTransition(ids: string[], dto: TransitionProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     const applied: { id: string; lifecycleStatus: string }[] = [];
     const rejected: { id: string; reason: string }[] = [];
 
@@ -1867,56 +1852,46 @@ export class ProductsService {
   }
 
   /**
-   * Borrado físico (P4): roles `products:write` (Super Admin / Admin Comercial),
-   * ACL `manage` sobre el producto/Lista, confirmación explícita (confirm: true)
+   * Borrado físico (P4): concesión global `products:delete`,
+   * confirmación explícita (confirm: true)
    * y clave maestra OBLIGATORIA si el producto tiene datos asociados (precios,
    * imágenes, stock, auditoría u órdenes de compra que lo referencien).
    * El evento DELETE es válido desde cualquier estado FSM (comportamiento actual
    * conservado). Se audita 'delete' con oldValues ANTES del borrado físico.
    */
   async remove(id: string, dto?: DeleteProductDto, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
+    // Borrado fisico: solo con la concesion global `products:delete` (nunca por cargo ni por Listas).
+    if (ctx) await assertGlobalGrant(this.grants, 'products:delete', ctx);
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Guarda RBAC: borrado físico exige `products:write` (Super Admin/Admin Comercial).
-    if (ctx && !ctx.roles?.some((r) => PRODUCTS_WRITE_ROLES.includes(r))) {
-      throw new ForbiddenException('No tienes permisos para eliminar productos');
-    }
-
-    // Guarda ACL: nivel `manage` sobre el producto/Lista (checklist 29/30).
-    if (ctx && product.listaId) {
-      await this.acl.assertProductAccess(id, ctx, 'manage');
-    }
-
-    // Bloqueo: si la Lista del producto está pendiente de eliminación, no permitir borrar
-    if (product.listaId) {
-            if (await this.isListaPendingDeletion(product.listaId)) {
-        throw new ConflictException({
-          code: 'LISTA_PENDIENTE_ELIMINACION',
-          message: 'La Lista está pendiente de eliminación y no permite cambios.',
-        });
-      }
-      // Permiso Super Admin bypass
-      if (!this.acl.isListasAdmin(ctx?.roles)) {
-        await this.acl.assertListaAccess(product.listaId, ctx, 'manage');
-      }
-    }
 
     // Guarda de confirmación: el borrado físico es destructivo e irreversible.
     if (dto?.confirm !== true) {
       throw new BadRequestException('Debes confirmar el borrado físico con confirm: true');
     }
 
+    // Con la biblioteca dedicada, un producto con referencias de proveedor o costos no se borra (FK RESTRICT del modelo): 409 claro en vez de un error de base.
+    if (this.library.config.mode === 'dedicated') {
+      const db = this.prisma as unknown as { providerEquivalence: { count(a: unknown): Promise<number> }; supplierCost: { count(a: unknown): Promise<number> } };
+      const [references, costs] = await Promise.all([db.providerEquivalence.count({ where: { productId: id } }), db.supplierCost.count({ where: { productId: id } })]);
+      if (references > 0 || costs > 0) {
+        throw new ConflictException({ code: 'PRODUCT_HAS_PROVIDER_DATA', message: `El producto tiene ${references} referencia(s) de proveedor y ${costs} costo(s) de compra: retíralos antes de borrarlo.` });
+      }
+    }
+
     // Datos asociados → exige la clave maestra (patrón Listas/removeLista).
     const [priceCount, imageCount, stock, auditCount] = await Promise.all([
       this.prisma.price.count({ where: { productId: id } }),
       this.prisma.productImage.count({ where: { productId: id } }),
-      this.prisma.stock.findUnique({ where: { productId: id } }),
-      this.prisma.auditLog.count({ where: { entity: 'Product', entityId: id } }),
+      this.operational.stock.findUnique({ where: { productId: id } }),
+      this.operational.auditLog.count({ where: { entity: 'Product', entityId: id } }),
     ]);
 
-    // Auditoría ANTES del borrado físico: deja constancia del producto eliminado.
-    await this.audit.log({
+    // Auditoría ANTES del borrado físico (legacy): deja constancia del producto eliminado.
+    // En modo dedicado el evento se escribe dentro de la misma transacción del borrado.
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: 'delete',
       entity: 'Product',
@@ -1933,9 +1908,18 @@ export class ProductsService {
 
     const images = await this.prisma.productImage.findMany({ where: { productId: id } });
 
-    await this.prisma.price.deleteMany({ where: { productId: id } });
-    await this.prisma.productImage.deleteMany({ where: { productId: id } });
-    await this.prisma.product.delete({ where: { id } });
+    await this.writeTransaction(async (tx) => {
+      await tx.price.deleteMany({ where: { productId: id } });
+      await tx.productImage.deleteMany({ where: { productId: id } });
+      await tx.product.delete({ where: { id } });
+      await this.appendLibraryEvent(tx, 'PRODUCT_DELETED', 'Product', id, {
+        sku: product.sku, name: product.name, lifecycleStatus: product.lifecycleStatus ?? null, precios: priceCount, imagenes: imageCount,
+      }, ctx);
+    });
+
+    // Con la biblioteca dedicada el borrado ya no cascadea hacia el inventario operativo (otra base): se retira aquí.
+    // No es atómico entre bases; un fallo deja una fila de stock sin producto (efecto no probado; riesgo registrado en docs/biblioteca-dominio/README.md).
+    if (this.library.config.mode === 'dedicated') await this.operational.stock.deleteMany({ where: { productId: id } });
 
     for (const image of images) {
       await this.files.deleteByUrl(image.url);
@@ -1952,15 +1936,23 @@ export class ProductsService {
    * transacción — un fallo de asociación no deja huérfanos. §4: con concesiones
    * exige la acción `products:write` (transición D5).
    */
+  /** Concesion global de panel requerida por cada evento FSM (nunca por cargo ni por Lista). */
+  private static grantForEvent(event: string): string {
+    return event === 'PUBLISH' || event === 'UNPUBLISH' ? 'products:publish' : 'products:write';
+  }
+
+  /** Los precios solo cambian por carga masiva o desde la ficha: el cuerpo de POST/PUT /products no los acepta. */
+  private static rejectPricesInProductBody(prices?: unknown[]): void {
+    if (Array.isArray(prices) && prices.length > 0) {
+      throw new BadRequestException('Los precios solo se cambian por carga masiva o desde la ficha del producto.');
+    }
+  }
+
+  /** Exige la concesion global `actionId` y que el producto exista (403 antes que 404). */
   private async assertCatalogProductAction(id: string, actionId: string, ctx: AccessContext): Promise<void> {
-    // Availability is not resource authorization. Read only identity/list before
-    // comparing the actual target with this action's current scoped grants.
-    await d5AssertAction(this.grants, actionId, ctx);
-    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true, listaId: true } });
+    await assertGlobalGrant(this.grants, actionId, ctx);
+    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    await d5AssertAction(this.grants, actionId, ctx, {
-      id, kind: 'product', productId: id, listId: product.listaId ?? undefined,
-    });
   }
 
   async uploadImage(
@@ -1969,17 +1961,10 @@ export class ProductsService {
     isPrimary = false,
     ctx?: AccessContext,
   ) {
-    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true, listaId: true } });
+    this.library.assertWritesAllowed();
+    if (ctx) await assertGlobalGrant(this.grants, 'products:write', ctx);
+    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-
-    if (ctx) await d5AssertAction(this.grants, 'products:write', ctx, {
-      id: productId, kind: 'product', productId, listId: product.listaId ?? undefined,
-    });
-
-    // Subir imagen exige `edit_products` sobre el producto (checklist 29/30).
-    if (ctx && product.listaId) {
-      await this.acl.assertProductAccess(productId, ctx, 'edit_products');
-    }
 
     if (!file) {
       throw new BadRequestException('Archivo requerido en el campo "file"');
@@ -2005,9 +1990,11 @@ export class ProductsService {
     }
 
     // CAT-04 (D5): todo o nada — el archivo y su asociación viajan juntos.
-    return this.prisma.$transaction(async (tx) => {
+    const image = await this.writeTransaction(async (tx) => {
+      if (this.library.config.mode === 'dedicated') await tx.$queryRaw`SELECT id FROM products WHERE id=${productId} FOR UPDATE`;
       const { url } = await this.files.store(file.buffer, file.mimetype, {
         tx,
+        actor: { id: ctx?.userId },
         originalName: file.originalname ?? null,
         ownerProductId: productId,
       });
@@ -2017,7 +2004,7 @@ export class ProductsService {
           data: { isPrimary: false },
         });
       }
-      return tx.productImage.create({
+      const image = await tx.productImage.create({
         data: {
           productId,
           url,
@@ -2026,7 +2013,14 @@ export class ProductsService {
           sortOrder: 0,
         },
       });
+      if (this.library.config.mode === 'dedicated') {
+        await this.revisions?.markPendingFromLive(productId, tx as unknown as LibraryPrisma.TransactionClient, { id: ctx?.userId });
+      }
+      await this.appendLibraryEvent(tx, 'PRODUCT_IMAGE_ADDED', 'ProductImage', image.id, { productId, url: image.url, isPrimary: image.isPrimary }, ctx);
+      return image;
     });
+    if (this.library.config.mode === 'legacy') await this.revisions?.markPendingFromLive(productId);
+    return image;
   }
 
   /**
@@ -2045,6 +2039,7 @@ export class ProductsService {
     file: Express.Multer.File,
     ctx?: AccessContext,
   ) {
+    this.library.assertWritesAllowed();
     if (kind === 'FIRMWARE') {
       throw new BadRequestException({
         code: 'firmware-upload-deferred',
@@ -2058,17 +2053,12 @@ export class ProductsService {
       return { kind: 'IMAGE' as const, image };
     }
 
+    if (ctx) await assertGlobalGrant(this.grants, 'products:write', ctx);
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { id: true, listaId: true },
+      select: { id: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    if (ctx) await d5AssertAction(this.grants, 'products:write', ctx, {
-      id: productId, kind: 'product', productId, listId: product.listaId ?? undefined,
-    });
-    if (ctx && product.listaId) {
-      await this.acl.assertProductAccess(productId, ctx, 'edit_products');
-    }
     if (!file) throw new BadRequestException('Archivo requerido en el campo "file"');
     if (file.size > MAX_DOCUMENT_SIZE) {
       throw new BadRequestException('El documento excede el tamaño máximo de 16MB');
@@ -2084,6 +2074,7 @@ export class ProductsService {
     const { id, url, detectedKind } = await this.files.store(file.buffer, file.mimetype, {
       originalName: file.originalname ?? null,
       ownerProductId: productId,
+      actor: { id: ctx?.userId },
     });
     return {
       kind: 'DOCUMENT' as const,
@@ -2100,19 +2091,26 @@ export class ProductsService {
    * rompe la revisión pública anterior»). La retención se audita; nunca es 409.
    */
   async deleteImage(imageId: string, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     const image = await this.prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
     if (ctx) await this.assertCatalogProductAction(image.productId, 'products:write', ctx);
 
-    // Eliminar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
-    if (ctx && image.productId) {
-      await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
+    if (this.library.config.mode === 'dedicated') {
+      return this.writeTransaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM products WHERE id=${image.productId} FOR UPDATE`;
+        const release = await this.files.release(image.url, { userId: ctx?.userId, excludeImageId: imageId, tx });
+        await tx.productImage.delete({ where: { id: imageId } });
+        await this.revisions?.markPendingFromLive(image.productId, tx as unknown as LibraryPrisma.TransactionClient, { id: ctx?.userId });
+        await this.appendLibraryEvent(tx, 'PRODUCT_IMAGE_DELETED', 'ProductImage', imageId, { productId: image.productId, url: image.url, retained: !release.deleted }, ctx);
+        return { message: release.deleted ? 'Imagen eliminada exitosamente' : 'Imagen eliminada; los bytes se conservan porque siguen referenciados', retained: !release.deleted };
+      });
     }
-
     const release = await this.files.release(image.url, { userId: ctx?.userId, excludeImageId: imageId });
 
     await this.prisma.productImage.delete({ where: { id: imageId } });
+    await this.revisions?.markPendingFromLive(image.productId);
     return {
       message: release.deleted
         ? 'Imagen eliminada exitosamente'
@@ -2122,26 +2120,24 @@ export class ProductsService {
   }
 
   /**
-   * Actualiza metadatos de una imagen (alt y/o isPrimary).
+   * Actualiza metadatos de una imagen (alt, isPrimary y/o type).
    * Si isPrimary: true, desmarca primero cualquier otra imagen principal del
    * mismo producto (updateMany isPrimary=false) y marca esta (transacción).
    * 404 si la imagen no existe. Audita con entity 'ProductImage', action 'update'.
    */
   async updateImage(
     imageId: string,
-    dto: { alt?: string; isPrimary?: boolean },
+    dto: { alt?: string; isPrimary?: boolean; type?: ProductImageType },
     ctx?: AccessContext,
   ) {
+    this.library.assertWritesAllowed();
     const image = await this.prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
-    // Actualizar imagen exige `edit_products` sobre el producto dueño (checklist 29/30).
-    if (ctx) {
-      await this.assertCatalogProductAction(image.productId, 'products:write', ctx);
-      await this.acl.assertProductAccess(image.productId, ctx, 'edit_products');
-    }
+    if (ctx) await this.assertCatalogProductAction(image.productId, 'products:write', ctx);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.writeTransaction(async (tx) => {
+      if (this.library.config.mode === 'dedicated') await tx.$queryRaw`SELECT id FROM products WHERE id=${image.productId} FOR UPDATE`;
       if (dto.isPrimary === true) {
         await tx.productImage.updateMany({
           where: { productId: image.productId, isPrimary: true },
@@ -2149,16 +2145,24 @@ export class ProductsService {
         });
       }
 
-      return tx.productImage.update({
+      const result = await tx.productImage.update({
         where: { id: imageId },
         data: {
           ...(dto.alt !== undefined && { alt: dto.alt }),
           ...(dto.isPrimary !== undefined && { isPrimary: dto.isPrimary }),
+          ...(dto.type !== undefined && { type: dto.type }),
         },
       });
+      if (this.library.config.mode === 'dedicated') {
+        await this.revisions?.markPendingFromLive(image.productId, tx as unknown as LibraryPrisma.TransactionClient, { id: ctx?.userId });
+      }
+      await this.appendLibraryEvent(tx, 'PRODUCT_IMAGE_UPDATED', 'ProductImage', imageId, { productId: image.productId, before: { alt: image.alt, isPrimary: image.isPrimary, type: image.type }, after: { alt: result.alt, isPrimary: result.isPrimary, type: result.type } }, ctx);
+      return result;
     });
 
-    await this.audit.log({
+    if (this.library.config.mode === 'legacy') {
+      await this.revisions?.markPendingFromLive(image.productId);
+      await this.audit.log({
       userId: ctx?.userId,
       action: 'update',
       entity: 'ProductImage',
@@ -2168,6 +2172,7 @@ export class ProductsService {
         url: image.url,
         alt: image.alt,
         isPrimary: image.isPrimary,
+        type: image.type,
         sortOrder: image.sortOrder,
       },
       newValues: {
@@ -2175,9 +2180,11 @@ export class ProductsService {
         url: result.url,
         alt: result.alt,
         isPrimary: result.isPrimary,
+        type: result.type,
         sortOrder: result.sortOrder,
       },
-    });
+      });
+    }
 
     return result;
   }
@@ -2204,83 +2211,6 @@ export class ProductsService {
     });
     if (!defaultLista) throw new NotFoundException('Lista por defecto (LISTA-GENERAL) no encontrada');
     return defaultLista;
-  }
-
-  /**
-   * Valida que todos los priceListId existan en BD.
-   */
-  private async validatePriceLists(prices?: PriceInputDto[]): Promise<void> {
-    if (!prices || prices.length === 0) return;
-
-    const ids = [...new Set(prices.map((p) => p.priceListId))];
-    const found = await this.prisma.priceList.findMany({
-      where: { id: { in: ids } },
-      select: { id: true },
-    });
-    const foundIds = new Set(found.map((pl) => pl.id));
-    const missing = ids.filter((id) => !foundIds.has(id));
-
-    if (missing.length > 0) {
-      throw new NotFoundException(
-        `Listas de precios no encontradas: ${missing.join(', ')}`,
-      );
-    }
-  }
-
-  /**
-   * Upsert individual por (productId, priceListId) dentro de una transacción.
-   * No borra precios no enviados para no perder datos.
-   * Asocia el precio a la misma Lista del producto (invariante Price.listaId == Product.listaId).
-   */
-  private async upsertPrices(
-    tx: Prisma.TransactionClient,
-    product: { id: string; sku: string },
-    listaId: string | null | undefined,
-    prices: PriceInputDto[],
-    ctx?: AccessContext,
-  ): Promise<void> {
-    const productId = product.id;
-    const priceListIds = [...new Set(prices.map((p) => p.priceListId))];
-    const tariffs = (await tx.priceList.findMany({ where: { id: { in: priceListIds } }, select: { id: true, code: true } })) ?? [];
-    const existing = (await tx.price.findMany({
-      where: { productId, priceListId: { in: priceListIds } }, select: { priceListId: true, value: true },
-    })) ?? [];
-    const codeById = new Map(tariffs.map((t) => [t.id, t.code]));
-    const before = new Map(existing.map((e) => [e.priceListId, e.value]));
-    const history: ReturnType<typeof diffFields> = [];
-
-    for (const price of prices) {
-      const validFrom = price.validFrom ? new Date(price.validFrom) : undefined;
-      const validUntil = price.validUntil ? new Date(price.validUntil) : undefined;
-
-      await tx.price.upsert({
-        where: { productId_priceListId: { productId, priceListId: price.priceListId } },
-        update: {
-          value: price.value,
-          ...(price.currency && { currency: price.currency }),
-          ...(validFrom && { validFrom }),
-          ...(validUntil && { validUntil }),
-          ...(listaId ? { listaId } : {}),
-        },
-        create: {
-          productId,
-          priceListId: price.priceListId,
-          ...(listaId ? { listaId } : {}),
-          value: price.value,
-          currency: price.currency ?? 'COP',
-          ...(validFrom && { validFrom }),
-          ...(validUntil && { validUntil }),
-        },
-      });
-
-      const field = `${PRICE_FIELD_PREFIX}${codeById.get(price.priceListId) ?? price.priceListId}`;
-      const previous = before.get(price.priceListId);
-      history.push(...diffFields(previous === undefined ? {} : { [field]: previous }, { [field]: new Prisma.Decimal(price.value) }, [field], {
-        productId, sku: product.sku, source: 'MANUAL', sourceRef: productId, actorId: ctx?.userId ?? null,
-      }));
-      before.set(price.priceListId, price.value as never);
-    }
-    await this.changes.record(tx, history);
   }
 
   /**
@@ -2366,7 +2296,8 @@ export class ProductsService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  async importFromExcel(file: Buffer) {
+  async importFromExcel(file: Buffer, ctx?: AccessContext) {
+    this.library.assertWritesAllowed();
     if (!file) {
       throw new BadRequestException('No se proporcionó archivo');
     }
@@ -2399,11 +2330,10 @@ export class ProductsService {
       created: 0,
       skipped: 0,
       errors: [] as { row: number; sku: string; error: string }[],
+      /** Unknown category/brand labels: nothing was created; the product is an unclassified draft until a person confirms them. */
+      needsConfirmation: [] as { row: number; sku: string; code: 'CATEGORY_NEEDS_CONFIRMATION' | 'BRAND_NEEDS_CONFIRMATION'; label: string }[],
     };
-
-    // Get existing categories and brands for name-to-id mapping
-    const categories = await this.prisma.category.findMany();
-    const brands = await this.prisma.brand.findMany();
+    const labelCache = new Map<string, any>();
 
     // Fallback explícito documentado: LISTA-GENERAL (lista semilla) para productos importados.
     const defaultLista = await this.prisma.lista.findUnique({
@@ -2412,8 +2342,6 @@ export class ProductsService {
     });
     const defaultListaId = defaultLista?.id ?? null;
 
-    const categoryMap = new Map(categories.map(c => [c.name.toLowerCase(), c.id]));
-    const brandMap = new Map(brands.map(b => [b.name.toLowerCase(), b.id]));
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] as any;
@@ -2459,41 +2387,13 @@ export class ProductsService {
           continue;
         }
 
-        // Find or create category
-        let categoryId = categoryMap.get(categoryName.toLowerCase());
-        if (!categoryId && categoryName) {
-          const newCategory = await this.prisma.category.create({
-            data: {
-              name: categoryName,
-              slug: categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-              isActive: true,
-            },
-          });
-          categoryId = newCategory.id;
-          categoryMap.set(categoryName.toLowerCase(), categoryId);
-        }
-
-        if (!categoryId) {
+        // Sin categoría o marca en la celda: se rechaza la fila como siempre (no se inventa ninguna).
+        if (!categoryName) {
           results.errors.push({ row: rowNum, sku, error: 'Categoría no especificada' });
           results.skipped++;
           continue;
         }
-
-        // Find or create brand
-        let brandId = brandMap.get(brandName.toLowerCase());
-        if (!brandId && brandName) {
-          const newBrand = await this.prisma.brand.create({
-            data: {
-              name: brandName,
-              slug: brandName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-              isActive: true,
-            },
-          });
-          brandId = newBrand.id;
-          brandMap.set(brandName.toLowerCase(), brandId);
-        }
-
-        if (!brandId) {
+        if (!brandName) {
           results.errors.push({ row: rowNum, sku, error: 'Marca no especificada' });
           results.skipped++;
           continue;
@@ -2507,21 +2407,34 @@ export class ProductsService {
           continue;
         }
 
-         await this.prisma.product.create({
-           data: {
-             sku,
-             name,
-             description: description || null,
-             categoryId,
-             brandId,
-             listaId: defaultListaId,
-             lifecycleStatus: 'DRAFT',
-             isActive: false,
-             isVisible: false,
-           },
-         });
+        // Solo se consultan las existentes: una categoría o marca desconocida NO se crea; la fila entra como borrador por clasificar.
+        const dbForLookup = this.prisma as unknown as ClassificationDb;
+        const categoryMatch = await this.classification.resolveExistingCategory(dbForLookup, categoryName, {}, labelCache);
+        const brandMatch = await this.classification.resolveExistingBrand(dbForLookup, brandName, labelCache);
+
+        await this.writeTransaction(async (tx) => {
+          // Existing category: derive its subcategory when there is one. Coherence goes through ClassificationService (conflict -> row error).
+          const classified = await this.classification.assertWritable(tx as unknown as ClassificationDb, { categoryId: categoryMatch.entity?.id, brandId: brandMatch.entity?.id ?? null });
+          const product = await tx.product.create({
+            data: {
+              sku,
+              name,
+              description: description || null,
+              ...this.classification.toData(classified),
+              brandId: brandMatch.entity?.id ?? null,
+              listaId: defaultListaId,
+              lifecycleStatus: 'DRAFT',
+              isActive: false,
+              isVisible: false,
+            },
+          });
+          await this.appendLibraryEvent(tx, 'PRODUCT_CREATED', 'Product', product.id, { sku: product.sku, name: product.name, source: 'EXCEL_IMPORT' }, ctx);
+        });
 
         results.created++;
+        for (const issue of [categoryMatch.issue, brandMatch.issue]) {
+          if (issue) results.needsConfirmation.push({ row: rowNum, sku, code: issue.code, label: issue.label });
+        }
       } catch (error) {
         results.errors.push({
           row: rowNum,
@@ -2563,6 +2476,7 @@ export class ProductsService {
       message: string;
     }>;
   }> {
+    this.library.assertWritesAllowed();
     const results: Array<{
       productId: string;
       sku?: string;
@@ -2634,14 +2548,14 @@ export class ProductsService {
     const agg: "SUCCESS" | "WARNING" | "ERROR" =
       succeeded > 0 && (skipped > 0 || failed > 0) ? "WARNING" :
       failed > 0 && succeeded === 0 ? "ERROR" : "SUCCESS";
-    await this.audit.log({
+    await this.batchAudit({
       userId: ctx.userId,
       action: "schedule_publish_bulk",
       entity: "Product",
       entityId: ids.join(","),
       newValues: { publishAt: dto.publishAt, succeeded, skipped, failed },
       result: agg,
-    });
+    }, ctx, ids);
     return { processed: ids.length, succeeded, skipped, failed, results };
   }
 
@@ -2665,6 +2579,7 @@ export class ProductsService {
       message: string;
     }>;
   }> {
+    this.library.assertWritesAllowed();
     const results: Array<{
       productId: string;
       sku?: string;
@@ -2702,14 +2617,14 @@ export class ProductsService {
     const agg: "SUCCESS" | "WARNING" | "ERROR" =
       succeeded > 0 && (skipped > 0 || failed > 0) ? "WARNING" :
       failed > 0 && succeeded === 0 ? "ERROR" : "SUCCESS";
-    await this.audit.log({
+    await this.batchAudit({
       userId: ctx.userId,
       action: "cancel_schedule_publish_bulk",
       entity: "Product",
       entityId: ids.join(","),
       newValues: { succeeded, skipped, failed },
       result: agg,
-    });
+    }, ctx, ids);
     return { processed: ids.length, succeeded, skipped, failed, results };
   }
 
@@ -2718,6 +2633,7 @@ export class ProductsService {
     listaId: string,
     ctx: AccessContext,
   ): Promise<ListaPublicationBatchResult> {
+    this.library.assertWritesAllowed();
     await this.assertListaPublishable(listaId, ctx);
     const products = (await this.prisma.product.findMany({
       where: { listaId },
@@ -2751,14 +2667,14 @@ export class ProductsService {
       }
     }
     const result = this.aggregateResult(succeeded, skipped, failed);
-    await this.audit.log({
+    await this.batchAudit({
       userId: ctx.userId,
       action: 'publicar_lista',
       entity: 'LISTA',
       entityId: listaId,
       newValues: { processed: products.length, succeeded, skipped, failed },
       result,
-    });
+    }, ctx);
     return { listaId, processed: products.length, succeeded, skipped, failed, results };
   }
 
@@ -2768,6 +2684,7 @@ export class ProductsService {
     dto: SchedulePublicationDto,
     ctx: AccessContext,
   ): Promise<ListaPublicationBatchResult> {
+    this.library.assertWritesAllowed();
     await this.assertListaPublishable(listaId, ctx);
     const products = (await this.prisma.product.findMany({
       where: { listaId },
@@ -2801,14 +2718,14 @@ export class ProductsService {
       }
     }
     const result = this.aggregateResult(succeeded, skipped, failed);
-    await this.audit.log({
+    await this.batchAudit({
       userId: ctx.userId,
       action: 'schedule_lista',
       entity: 'LISTA',
       entityId: listaId,
       newValues: { publishAt: dto.publishAt, processed: products.length, succeeded, skipped, failed },
       result,
-    });
+    }, ctx);
     return { listaId, processed: products.length, succeeded, skipped, failed, results };
   }
 
@@ -2817,20 +2734,21 @@ export class ProductsService {
     listaId: string,
     ctx: AccessContext,
   ): Promise<ListaPublicationBatchResult> {
+    this.library.assertWritesAllowed();
     await this.assertListaPublishable(listaId, ctx);
     const products = (await this.prisma.product.findMany({
       where: { listaId, publishAt: { not: null } },
       select: { id: true, sku: true },
     })) ?? [];
     if (products.length === 0) {
-      await this.audit.log({
+      await this.batchAudit({
         userId: ctx.userId,
         action: 'cancel_schedule_lista',
         entity: 'LISTA',
         entityId: listaId,
         newValues: { processed: 0, succeeded: 0, skipped: 0, failed: 0 },
         result: 'SUCCESS',
-      });
+      }, ctx);
       return { listaId, processed: 0, succeeded: 0, skipped: 0, failed: 0, results: [] };
     }
     const results: ListaPublicationBatchResult['results'] = [];
@@ -2853,14 +2771,14 @@ export class ProductsService {
       }
     }
     const result = this.aggregateResult(succeeded, skipped, failed);
-    await this.audit.log({
+    await this.batchAudit({
       userId: ctx.userId,
       action: 'cancel_schedule_lista',
       entity: 'LISTA',
       entityId: listaId,
       newValues: { processed: products.length, succeeded, skipped, failed },
       result,
-    });
+    }, ctx);
     return { listaId, processed: products.length, succeeded, skipped, failed, results };
   }
 

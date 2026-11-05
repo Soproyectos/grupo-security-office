@@ -5,11 +5,16 @@ import {
   ForbiddenException,
   BadRequestException,
   Optional,
+  Inject,
 } from '@nestjs/common';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { concessionAssertAction } from '../../common/security/d5-action';
 import { primaryImageInclude } from '../products/helpers/primary-image';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import type { PrismaClient as BibliotecaClient } from '../../../prisma/biblioteca/generated/client';
+import { LibraryAuditService, type LibraryActor, type LibraryEvent } from '../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateListaDto } from './dto/create-lista.dto';
@@ -27,7 +32,37 @@ export class ListasService {
     private audit: AuditService,
     private files: FilesService,
     @Optional() private grants?: AccessAssignmentsService,
+    /** Biblioteca: Lista, producto y precio. Assignment, User, Quote y AuditLog siguen siendo operativos. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
   ) {}
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
+
+  /**
+   * Escritura de biblioteca con su evento. Dedicado: transacción propia (dato y evento atómicos).
+   * Legacy: la misma llamada directa de siempre, sin transacción nueva (solo respeta la congelación).
+   */
+  private async writeWithEvent<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    if (this.dedicated) return this.library.writeTransaction((tx) => work(tx as unknown as Prisma.TransactionClient));
+    this.library.assertWritesAllowed();
+    return work(this.db as unknown as Prisma.TransactionClient);
+  }
+
+  /** Auditoría histórica (legacy). En modo dedicado los eventos van a biblioteca y AuditLog no se toca. */
+  private async legacyAudit(entry: Parameters<AuditService['log']>[0]): Promise<void> {
+    if (!this.dedicated) await this.audit.log(entry);
+  }
+
+  private async libraryEvent(tx: Prisma.TransactionClient, event: LibraryEvent): Promise<void> {
+    if (this.dedicated) await this.libraryAudit.append(tx as unknown as Parameters<LibraryAuditService['append']>[0], event);
+  }
+
+  private actor(ctx: AccessContext): LibraryActor {
+    return { id: ctx.userId ?? null, name: ctx.userName ?? null };
+  }
 
   /** Lista de Listas autorizadas (deny-by-default). */
   async findAll(ctx: AccessContext, params?: { isActive?: boolean; includeExpired?: boolean }) {
@@ -53,7 +88,7 @@ export class ListasService {
       where.OR = [{ validUntil: null }, { validUntil: { gte: new Date() } }];
     }
 
-    const listas = await this.prisma.lista.findMany({
+    const listas = await this.db.lista.findMany({
       where,
       include: { _count: { select: { products: true } } },
       orderBy: { updatedAt: 'desc' },
@@ -71,7 +106,7 @@ export class ListasService {
   /** Detalle de Lista (deny-by-default; admin ve incluso inactivas/archivadas). */
   async findOne(id: string, ctx: AccessContext) {
     await this.acl.assertListaAccess(id, ctx, 'view');
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.db.lista.findUnique({
       where: { id },
       include: { _count: { select: { products: true } } },
     });
@@ -116,12 +151,12 @@ export class ListasService {
     }
 
     const [products, total] = await Promise.all([
-      this.prisma.product.findMany({
+      this.db.product.findMany({
         where,
         include,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.product.count({ where }),
+      this.db.product.count({ where }),
     ]);
 
     return { data: products, meta: { total } };
@@ -131,7 +166,7 @@ export class ListasService {
   async findPrices(id: string, ctx: AccessContext) {
     await this.acl.assertListaAccess(id, ctx, 'view_prices');
 
-    const prices = await this.prisma.price.findMany({
+    const prices = await this.db.price.findMany({
       where: { product: { listaId: id } },
       include: {
         product: { select: { id: true, sku: true, name: true } },
@@ -151,14 +186,14 @@ export class ListasService {
   async findExpiringPrices(listaId: string, ctx: AccessContext, days = 30) {
     await this.acl.assertListaAccess(listaId, ctx, 'view_prices');
 
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.db.lista.findUnique({
       where: { id: listaId },
       select: { id: true },
     });
     if (!lista) throw new NotFoundException('Lista no encontrada');
 
     const now = Date.now();
-    const prices = await this.prisma.price.findMany({
+    const prices = await this.db.price.findMany({
       where: {
         listaId,
         validUntil: { not: null, lte: new Date(now + days * 86400000), gte: new Date(now) },
@@ -219,21 +254,31 @@ export class ListasService {
       }),
       this.prisma.auditLog.count({ where: { entity: 'LISTA', entityId: id } }),
     ]);
-    return { data: logs, meta: { total } };
+    if (!this.dedicated) return { data: logs, meta: { total } };
+    // Dedicado: los eventos nuevos viven en biblioteca; el AuditLog histórico se conserva y se muestra junto a ellos.
+    const events = await (this.library.client as unknown as BibliotecaClient).libraryAuditEvent.findMany({
+      where: { entityType: 'Lista', entityId: id }, orderBy: { occurredAt: 'desc' },
+    });
+    const fromLibrary = events.map((e) => ({
+      id: e.id, action: e.action, entity: 'LISTA', entityId: e.entityId, newValues: e.summary, createdAt: e.occurredAt,
+      user: e.actorId ? { id: e.actorId, name: e.actorName, email: null } : null, origin: 'biblioteca' as const,
+    }));
+    const merged = [...fromLibrary, ...logs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return { data: merged, meta: { total: total + fromLibrary.length } };
   }
 
   /** Crear Lista exige la acción global vigente, sin heredarla del cargo. */
   async create(dto: CreateListaDto, ctx: AccessContext) {
     await concessionAssertAction(this.grants, 'listas:create', ctx);
 
-    const existing = await this.prisma.lista.findUnique({
+    const existing = await this.db.lista.findUnique({
       where: { code: dto.code },
       select: { id: true },
     });
     if (existing) throw new ConflictException('Ya existe una Lista con ese código');
 
     if (dto.codigo) {
-      const dupCodigo = await this.prisma.lista.findUnique({
+      const dupCodigo = await this.db.lista.findUnique({
         where: { codigo: dto.codigo },
         select: { id: true },
       });
@@ -243,7 +288,8 @@ export class ListasService {
     await this.validateResponsible(dto.responsibleId);
     this.assertCoherentValidity(dto.validFrom, dto.validUntil);
 
-    const created = await this.prisma.lista.create({
+    const created = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.create({
       data: {
         code: dto.code,
         codigo: dto.codigo ?? null,
@@ -258,9 +304,12 @@ export class ListasService {
         validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
         createdById: ctx.userId,
       },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_CREATED', entityType: 'Lista', entityId: row.id, summary: { code: row.code, currency: row.currency, isActive: row.isActive, type: row.type } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'create',
       entity: 'LISTA',
@@ -298,7 +347,7 @@ export class ListasService {
    *   puebla después a conveniencia (evita duplicar datos transaccionales por error).
    */
   async duplicateLista(id: string, ctx: AccessContext) {
-    const source = await this.prisma.lista.findUnique({ where: { id } });
+    const source = await this.db.lista.findUnique({ where: { id } });
     if (!source) throw new NotFoundException('Lista no encontrada');
     await this.acl.assertListaAction(id, ctx, 'listas:duplicate');
 
@@ -306,7 +355,8 @@ export class ListasService {
     const name = `${source.name.slice(0, this.LISTA_NAME_MAX - nameSuffix.length)}${nameSuffix}`;
     const code = await this.generateUniqueCode(source.code);
 
-    const created = await this.prisma.lista.create({
+    const created = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.create({
       data: {
         code,
         name,
@@ -321,9 +371,12 @@ export class ListasService {
         createdById: ctx.userId ?? null,
         updatedById: ctx.userId ?? null,
       },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_DUPLICATED', entityType: 'Lista', entityId: row.id, summary: { sourceId: id, code: row.code, isActive: row.isActive } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'duplicate',
       entity: 'LISTA',
@@ -340,7 +393,7 @@ export class ListasService {
     const base = sourceCode.slice(0, this.LISTA_CODE_MAX - this.COPIA_SUFFIX.length - 4);
     let candidate = `${base}${this.COPIA_SUFFIX}${this.randomSuffix()}`;
     for (let attempt = 0; attempt < 5; attempt++) {
-      const exists = await this.prisma.lista.findUnique({
+      const exists = await this.db.lista.findUnique({
         where: { code: candidate },
         select: { id: true },
       });
@@ -366,7 +419,7 @@ export class ListasService {
       throw new ConflictException('No se puede editar una Lista con solicitud de eliminación pendiente');
     }
 
-    const lista = await this.prisma.lista.findUnique({ where: { id } });
+    const lista = await this.db.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
 
     const oldValues = {
@@ -395,13 +448,13 @@ export class ListasService {
     );
 
     if (dto.code && dto.code !== lista.code) {
-      const dup = await this.prisma.lista.findUnique({ where: { code: dto.code }, select: { id: true } });
+      const dup = await this.db.lista.findUnique({ where: { code: dto.code }, select: { id: true } });
       if (dup) throw new ConflictException('Ya existe una Lista con ese código');
     }
 
     if (dto.codigo !== undefined && dto.codigo !== lista.codigo) {
       if (dto.codigo) {
-        const dup = await this.prisma.lista.findUnique({ where: { codigo: dto.codigo }, select: { id: true } });
+        const dup = await this.db.lista.findUnique({ where: { codigo: dto.codigo }, select: { id: true } });
         if (dup) throw new ConflictException('Ya existe una Lista con ese código de identificación');
       }
     }
@@ -428,9 +481,16 @@ export class ListasService {
     if (dto.validFrom !== undefined) data.validFrom = dto.validFrom ? new Date(dto.validFrom) : null;
     if (dto.validUntil !== undefined) data.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
 
-    const updated = await this.prisma.lista.update({ where: { id }, data });
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.update({ where: { id }, data });
+      await this.libraryEvent(tx, {
+        actor: this.actor(ctx), action: requiresManage ? (dto.archivedAt ? 'LISTA_ARCHIVED' : 'LISTA_RESTORED') : 'LISTA_UPDATED',
+        entityType: 'Lista', entityId: id, summary: { fields: Object.keys(data) },
+      });
+      return row;
+    });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: requiresManage ? (dto.archivedAt ? 'archive' : 'restore') : 'update',
       entity: 'LISTA',
@@ -449,16 +509,20 @@ export class ListasService {
       throw new ConflictException('No se puede activar/desactivar una Lista con solicitud de eliminación pendiente');
     }
 
-    const lista = await this.prisma.lista.findUnique({ where: { id } });
+    const lista = await this.db.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
     await this.acl.assertListaAction(id, ctx, 'listas:update');
 
-    const updated = await this.prisma.lista.update({
-      where: { id },
-      data: { isActive: !lista.isActive },
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.update({
+        where: { id },
+        data: { isActive: !lista.isActive },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_TOGGLED', entityType: 'Lista', entityId: id, summary: { isActive: row.isActive } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'toggleActive',
       entity: 'LISTA',
@@ -477,16 +541,20 @@ export class ListasService {
       throw new ConflictException('No se puede archivar una Lista con solicitud de eliminación pendiente');
     }
 
-    const lista = await this.prisma.lista.findUnique({ where: { id } });
+    const lista = await this.db.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
     await this.acl.assertListaAction(id, ctx, 'listas:archive');
 
-    const updated = await this.prisma.lista.update({
-      where: { id },
-      data: { archivedAt: new Date(), isActive: false },
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.update({
+        where: { id },
+        data: { archivedAt: new Date(), isActive: false },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_ARCHIVED', entityType: 'Lista', entityId: id, summary: {} });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'archive',
       entity: 'LISTA',
@@ -507,20 +575,24 @@ export class ListasService {
       // (puede archivarse/restaurarse normalmente)
     }
 
-    const lista = await this.prisma.lista.findUnique({ where: { id } });
+    const lista = await this.db.lista.findUnique({ where: { id } });
     if (!lista) throw new NotFoundException('Lista no encontrada');
     await this.acl.assertListaAction(id, ctx, 'listas:update', { allowInactive: true });
 
     const wasArchived = !!lista.archivedAt;
-    const updated = await this.prisma.lista.update({
-      where: { id },
-      // CAT-01 C5 / H1: restaurar repondrá `archivedAt = null` E `isActive`
-      // (solo si estaba archivada; un restore sobre una Lista nunca archivada
-      // no debe reactivar nada).
-      data: { archivedAt: null, ...(wasArchived && { isActive: true }) },
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.lista.update({
+        where: { id },
+        // CAT-01 C5 / H1: restaurar repondrá `archivedAt = null` E `isActive`
+        // (solo si estaba archivada; un restore sobre una Lista nunca archivada
+        // no debe reactivar nada).
+        data: { archivedAt: null, ...(wasArchived && { isActive: true }) },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_RESTORED', entityType: 'Lista', entityId: id, summary: { wasArchived } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'restore',
       entity: 'LISTA',
@@ -563,7 +635,7 @@ export class ListasService {
 
     await this.acl.assertListaAction(id, ctx, 'listas:delete');
 
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.db.lista.findUnique({
       where: { id },
       select: { id: true, name: true, code: true },
     });
@@ -581,11 +653,11 @@ export class ListasService {
     }
 
     const productIds = (
-      await this.prisma.product.findMany({ where: { listaId: id }, select: { id: true } })
+      await this.db.product.findMany({ where: { listaId: id }, select: { id: true } })
     ).map((p) => p.id);
 
     const [prices, assignments] = await Promise.all([
-      this.prisma.price.count({
+      this.db.price.count({
         where: { OR: [{ listaId: id }, { productId: { in: productIds } }] },
       }),
       // Fix H9: solo accesos ACTIVOS de terceros bloquean. La auto-asignación del
@@ -621,7 +693,7 @@ export class ListasService {
     // auditoría queda como referencia histórica de la Lista inexistente.
     const snapshot = await this.prepareAuditSnapshot(id);
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'delete',
       entity: 'LISTA',
@@ -640,14 +712,29 @@ export class ListasService {
     // `Price.listaId = null` por la misma FK `ON DELETE SET NULL` y el snapshot
     // conserva code/name/conteos. Los accesos PRODUCT de los productos vivos se
     // conservan junto a sus productos.
-    await this.prisma.$transaction([
-      this.prisma.assignment.deleteMany({ where: { resourceType: 'LISTA', resourceId: id } }),
-      this.prisma.product.updateMany({
-        where: { id: { in: productIds } },
-        data: { listaId: null },
-      }),
-      this.prisma.lista.delete({ where: { id } }),
-    ]);
+    if (this.dedicated) {
+      // Dos bases: no hay transacción entre ellas. Primero la biblioteca (Lista, vínculos y evento, atómicos); después se
+      // retiran los accesos operativos (idempotente). Si ese último paso falla, la conciliación entre dominios lo reporta.
+      await this.library.writeTransaction(async (tx) => {
+        await tx.product.updateMany({ where: { id: { in: productIds } }, data: { listaId: null } });
+        await tx.lista.delete({ where: { id } });
+        await this.libraryEvent(tx as unknown as Prisma.TransactionClient, {
+          actor: this.actor(ctx), action: 'LISTA_DELETED', entityType: 'Lista', entityId: lista.id,
+          summary: { code: lista.code, name: lista.name, snapshot, productosConservados: productIds.length },
+        });
+      });
+      await this.prisma.assignment.deleteMany({ where: { resourceType: 'LISTA', resourceId: id } });
+    } else {
+      this.library.assertWritesAllowed();
+      await this.prisma.$transaction([
+        this.prisma.assignment.deleteMany({ where: { resourceType: 'LISTA', resourceId: id } }),
+        this.db.product.updateMany({
+          where: { id: { in: productIds } },
+          data: { listaId: null },
+        }),
+        this.db.lista.delete({ where: { id } }),
+      ]);
+    }
 
     return { message: 'Lista eliminada exitosamente', productosConservados: productIds.length };
   }
@@ -669,7 +756,7 @@ export class ListasService {
     }
     await this.acl.assertListaAction(listaId, ctx, 'listas:unlink');
 
-    const product = await this.prisma.product.findUnique({
+    const product = await this.db.product.findUnique({
       where: { id: productId },
       select: { id: true, sku: true, name: true, listaId: true },
     });
@@ -677,12 +764,16 @@ export class ListasService {
       throw new NotFoundException('Producto no encontrado en esta Lista');
     }
 
-    const updated = await this.prisma.product.update({
-      where: { id: productId },
-      data: { listaId: null },
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.product.update({
+        where: { id: productId },
+        data: { listaId: null },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_PRODUCT_UNLINKED', entityType: 'Lista', entityId: listaId, summary: { productId, sku: product.sku } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'unlink',
       entity: 'LISTA',
@@ -747,18 +838,21 @@ export class ListasService {
     const now = new Date();
     const purgeAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 días en ms
 
-    await this.prisma.lista.update({
-      where: { id },
-      data: {
-        deletionStatus: 'PENDING_DELETION' as const,
-        deletionRequestedAt: now,
-        deletionPurgeAt: purgeAt,
-        deletionReason: reason,
-        deletionRequestedById: ctx.userId,
-      } as Prisma.ListaUpdateInput,
+    await this.writeWithEvent(async (tx) => {
+      await tx.lista.update({
+        where: { id },
+        data: {
+          deletionStatus: 'PENDING_DELETION' as const,
+          deletionRequestedAt: now,
+          deletionPurgeAt: purgeAt,
+          deletionReason: reason,
+          deletionRequestedById: ctx.userId,
+        } as Prisma.ListaUpdateInput,
+      });
+      await this.libraryEvent(tx, { actor: this.actor(ctx), action: 'LISTA_DELETION_REQUESTED', entityType: 'Lista', entityId: id, summary: { deletionStatus: 'PENDING_DELETION', purgeAt: purgeAt.toISOString() } });
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'request_deletion',
       entity: 'LISTA',
@@ -793,7 +887,7 @@ export class ListasService {
     await this.acl.assertListaAction(id, ctx, 'listas:delete');
 
     // CHECK: Rechazar Lista inexistente, archivada o ya pendiente de eliminación.
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.db.lista.findUnique({
       where: { id },
       select: { id: true, isActive: true, archivedAt: true },
     });
@@ -817,7 +911,7 @@ export class ListasService {
    * @returns true si la Lista está pendiente de eliminación
    */
   private async isBlockedByDeletion(id: string): Promise<boolean> {
-    const lista = await this.prisma.lista.findUnique({
+    const lista = await this.db.lista.findUnique({
       where: { id },
     });
     return (lista as any)?.deletionStatus === 'PENDING_DELETION';
@@ -842,12 +936,12 @@ export class ListasService {
     assignmentCount: number;
   }> {
     const [lista, products, prices, assignments] = await Promise.all([
-      this.prisma.lista.findUnique({
+      this.db.lista.findUnique({
         where: { id },
         select: { id: true, name: true, code: true },
       }),
-      this.prisma.product.count({ where: { listaId: id } }),
-      this.prisma.price.count({ where: { listaId: id } }),
+      this.db.product.count({ where: { listaId: id } }),
+      this.db.price.count({ where: { listaId: id } }),
       this.prisma.assignment.count({ where: { resourceType: 'LISTA', resourceId: id } }),
     ]);
 

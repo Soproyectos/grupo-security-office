@@ -1,17 +1,19 @@
 jest.mock('../../../prisma/prisma.service', () => ({ PrismaService: class {} }));
+import { createHash } from 'crypto';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
-import { PriceImportService } from './price-import.service';
+import { PriceImportService, computeImportFileHash } from './price-import.service';
 import { buildPriceTemplate } from './price-template';
-import { PRICE_IMPORT_TARIFFS } from './price-import.types';
-import { createGrantsProvider, createPriceImportFake, type PriceImportFakeSeed } from './price-import.test-helpers';
+import { LEGACY_TARIFFS, LEGACY_TARIFF_CODES, createGrantsProvider, createPriceImportFake, type PriceImportFakeSeed } from './price-import.test-helpers';
 
 const LISTA_A = '00000000-0000-4000-8000-0000000000a1';
 const LISTA_B = '00000000-0000-4000-8000-0000000000b2';
 const ctx: AccessContext = { userId: 'fixture-actor', roles: ['Consulta'] };
+// `listas:read` still travels with the prices actions only because the (unchanged) action catalog lists it as a
+// dependency of `prices:read`; the service itself no longer requires it (next slice drops it from the catalog).
 const PREVIEW_ACTIONS = ['prices:preview', 'prices:read', 'listas:read'];
 
 function file(rows: unknown[][] = [['SKU-A', 100.5]], headers = ['REFERENCIA', 'DPP_ORO_IVA']): Express.Multer.File {
@@ -36,10 +38,11 @@ const baseSeed = (): PriceImportFakeSeed => ({
   ],
 });
 
-function build(seed: PriceImportFakeSeed = baseSeed(), grantLists: string[] = [LISTA_A]) {
+/** `withGrants`: global panel grants for the preview actions; false = a user with no grants at all. */
+function build(seed: PriceImportFakeSeed = baseSeed(), withGrants = true) {
   const fake = createPriceImportFake(seed);
   const grants = createGrantsProvider();
-  for (const listaId of grantLists) grants.grantOnLista(listaId, ...PREVIEW_ACTIONS);
+  if (withGrants) grants.grant(...PREVIEW_ACTIONS);
   const acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
   const service = new PriceImportService(fake.prisma as PrismaService, acl as unknown as AclService, fake.audit as unknown as AuditService, grants as any);
   return { ...fake, grants, acl, service };
@@ -53,7 +56,7 @@ describe('Read-only price preview over mixed listas (R1)', () => {
     expect(result).toMatchObject({ readOnly: true, taxIncluded: true, rounding: 'HALF_UP', listaId: null, summary: { validRows: 1, changedPrices: 1, roundedPrices: 1 } });
     expect(result.rows[0]).toMatchObject({ productId: 'product-a', listaId: LISTA_A, listaState: 'LISTA', status: 'valid' });
     expect(result.rows[0].prices[0]).toMatchObject({ raw: '100.5', rounded: '101', previous: '90', difference: '11', change: 'changed' });
-    expect(prisma.lista.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
     expect(prisma.product.update).not.toHaveBeenCalled();
     expect(prisma.price.update).not.toHaveBeenCalled();
     expect(prisma.price.create).not.toHaveBeenCalled();
@@ -81,47 +84,45 @@ describe('Read-only price preview over mixed listas (R1)', () => {
     expect((await build(unchanged).service.preview(file(), ctx)).summary.unchangedPrices).toBe(1);
   });
 
-  it('matches one SKU in each of two authorized listas in the same file and summarizes by lista', async () => {
-    const { service } = build(baseSeed(), [LISTA_A, LISTA_B]);
+  it('matches one SKU in each of two old listas in the same file with the global grant; no lista names are looked up', async () => {
+    const { service, prisma } = build();
     const result = await service.preview(file([['SKU-A', 100], ['SKU-B', 876544]]), ctx);
     expect(result.summary).toMatchObject({ rows: 2, validRows: 2, rejectedRows: 0, rowsInInaccessibleListas: 0 });
     expect(result.summary.byLista).toEqual(expect.arrayContaining([
-      { listaId: LISTA_A, code: 'LA', name: 'Lista Alfa', rows: 1, prices: 1 },
-      { listaId: LISTA_B, code: 'LB', name: 'Lista Beta Secreta', rows: 1, prices: 1 },
+      { listaId: LISTA_A, rows: 1, prices: 1 },
+      { listaId: LISTA_B, rows: 1, prices: 1 },
     ]));
     expect(result.rows.map((r) => r.listaId)).toEqual([LISTA_A, LISTA_B]);
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
   });
 
-  it('rejects rows of a lista the caller cannot use without revealing its name, id, prices or a draft offer', async () => {
-    const { service, prisma } = build();
-    const result = await service.preview(file([['SKU-A', 100], ['SKU-B', 777]]), ctx);
-    const forbidden = result.rows[1];
-    expect(forbidden).toMatchObject({ status: 'error', productId: null, listaId: null, prices: [{ previous: null, difference: null }] });
-    expect(forbidden.issues).toEqual([expect.objectContaining({ code: 'LISTA_FORBIDDEN', column: 'REFERENCIA' })]);
-    expect(forbidden.resolution).toBeNull();
-    expect(result.summary).toMatchObject({ validRows: 1, errorRows: 1, rowsInInaccessibleListas: 1, unknownRows: 0 });
-    expect(result.summary.byLista).toEqual([expect.objectContaining({ listaId: LISTA_A })]);
-    const body = JSON.stringify(result);
-    expect(body).not.toMatch(/Lista Beta|LB|876543|product-b/);
-    expect(body).not.toContain(LISTA_B);
-    expect(body).not.toMatch(/borrador|draft|PENDING_PRODUCT/i);
-    // The forbidden product's prices are never even loaded.
-    const priceQuery = prisma.price.findMany.mock.calls[0][0];
-    expect(priceQuery.where.productId.in).toEqual(['product-a']);
+  it('one global grant covers products of any lista and products without lista (no per-lista scoping, no LISTA_FORBIDDEN)', async () => {
+    const { service, acl } = build();
+    const result = await service.preview(file([['SKU-A', 100], ['SKU-B', 777], ['SKU-FREE', 60]]), ctx);
+    expect(result.rows.map((r) => r.status)).toEqual(['valid', 'valid', 'valid']);
+    expect(result.rows[2]).toMatchObject({ productId: 'product-free', listaId: null, listaState: 'SIN_LISTA' });
+    expect(result.summary).toMatchObject({ validRows: 3, errorRows: 0, rowsInInaccessibleListas: 0, unlistedRows: 1 });
+    expect(JSON.stringify(result)).not.toMatch(/LISTA_FORBIDDEN|LISTA_UNAVAILABLE/);
+    expect(acl.assertListaAccess).not.toHaveBeenCalled();
   });
 
-  it('treats a product without a lista as SIN_LISTA only for a global grant', async () => {
+  it('grants tied to one lista (or to one product) never open the preview: 403 before reading anything', async () => {
+    const { service, grants, prisma } = build(baseSeed(), false);
+    grants.grantOnLista(LISTA_A, ...PREVIEW_ACTIONS);
+    await expect(service.preview(file(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([['Admin Comercial'], ['Supervisor'], ['Operador']])('the role %s without grants is denied (roles never grant)', async (role) => {
+    const { service, prisma } = build(baseSeed(), false);
+    await expect(service.preview(file(), { userId: 'fixture-actor', roles: [role] })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+  });
+
+  it('a Vendedor (role that used to be rejected) previews with the global grants alone', async () => {
     const { service } = build();
-    const denied = await service.preview(file([['SKU-FREE', 60]]), ctx);
-    expect(denied.rows[0].issues[0].code).toBe('LISTA_FORBIDDEN');
-    expect(denied.rows[0].listaState).toBeUndefined();
-
-    const global = build();
-    global.grants.grant(...PREVIEW_ACTIONS);
-    const allowed = await global.service.preview(file([['SKU-FREE', 60]]), ctx);
-    expect(allowed.rows[0]).toMatchObject({ status: 'valid', productId: 'product-free', listaId: null, listaState: 'SIN_LISTA' });
-    expect(allowed.summary).toMatchObject({ unlistedRows: 1, validRows: 1 });
-    expect(allowed.summary.byLista).toEqual([]);
+    const result = await service.preview(file(), { userId: 'fixture-actor', roles: ['Vendedor'] });
+    expect(result.summary.validRows).toBe(1);
   });
 
   it('matches SKUs ignoring case and inner spaces (same rule as the unique index)', async () => {
@@ -132,6 +133,14 @@ describe('Read-only price preview over mixed listas (R1)', () => {
     expect(single.rows[0]).toMatchObject({ status: 'valid', productId: 'product-a' });
     const upper = await service.preview(file([['IDS-E04HQHI-D', 100]]), ctx);
     expect(upper.rows[0]).toMatchObject({ status: 'valid', productId: 'product-a' });
+  });
+
+  it('does not exempt Admin Comercial from an explicit product restriction (the role grants nothing)', async () => {
+    const seed = baseSeed();
+    seed.restrictions = [{ userId: ctx.userId!, resourceType: 'PRODUCT', resourceId: 'product-a', isActive: false }];
+    const { service } = build(seed);
+    const result = await service.preview(file(), { userId: ctx.userId!, roles: ['Admin Comercial'] });
+    expect(result.rows[0].issues[0].code).toBe('REFERENCE_UNAVAILABLE');
   });
 
   it('keeps the explicit product restriction before reading saved prices', async () => {
@@ -194,19 +203,19 @@ describe('Read-only price preview over mixed listas (R1)', () => {
 
   it.each([
     { isActive: false }, { archivedAt: new Date() }, { deletionStatus: 'REQUESTED' }, { currency: 'USD' },
-  ])('reports a row of an unavailable lista instead of failing the whole file: %p', async (state) => {
+  ])('the state of the old lista never blocks a row (Listas no longer exist): %p', async (state) => {
     const seed = baseSeed();
     Object.assign(seed.listas![0], state);
     const admin = { userId: 'fixture-admin', roles: ['Super Admin'] };
     const { service, prisma } = build(seed);
     const result = await service.preview(file([['SKU-A', 100], ['SKU-B', 200]]), admin);
-    expect(result.rows[0].issues[0].code).toBe('LISTA_UNAVAILABLE');
-    expect(result.rows[1].status).toBe('valid');
-    expect(prisma.price.findMany.mock.calls[0][0].where.productId.in).toEqual(['product-b']);
+    expect(result.rows.map((r) => r.status)).toEqual(['valid', 'valid']);
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
+    expect(prisma.price.findMany.mock.calls[0][0].where.productId.in.sort()).toEqual(['product-a', 'product-b']);
   });
 
   it('lets a Super Admin match every lista and unlisted product without grants', async () => {
-    const { service } = build(baseSeed(), []);
+    const { service } = build(baseSeed(), false);
     const admin = { userId: 'fixture-admin', roles: ['Super Admin'] };
     const result = await service.preview(file([['SKU-A', 100], ['SKU-B', 200], ['SKU-FREE', 60]]), admin);
     expect(result.summary).toMatchObject({ validRows: 3, rowsInInaccessibleListas: 0, unlistedRows: 1 });
@@ -229,17 +238,18 @@ describe('Read-only price preview over mixed listas (R1)', () => {
 });
 
 describe('authorizeProductsByLista', () => {
-  it('uses one fresh grant snapshot and the lista resource, and only global grants cover unlisted products', async () => {
-    const { service, grants } = build(baseSeed(), [LISTA_A]);
+  it('uses one fresh grant snapshot; only GLOBAL grants count (a grant on one lista covers nothing)', async () => {
+    const { service, grants } = build(baseSeed(), false);
+    grants.grantOnLista(LISTA_A, 'prices:read', 'listas:read');
     const products = [{ id: 'product-a', listaId: LISTA_A }, { id: 'product-b', listaId: LISTA_B }, { id: 'product-free', listaId: null }];
-    expect([...(await service.authorizeProductsByLista(products, ctx, ['prices:read']))]).toEqual(['product-a']);
+    expect([...(await service.authorizeProductsByLista(products, ctx, ['prices:read']))]).toEqual([]);
     expect(grants.grantsForUser).toHaveBeenCalledTimes(1);
     grants.grant('prices:read', 'listas:read');
     expect([...(await service.authorizeProductsByLista(products, ctx, ['prices:read']))].sort()).toEqual(['product-a', 'product-b', 'product-free']);
   });
 
   it('requires every action on the same resource', async () => {
-    const { service } = build(baseSeed(), [LISTA_A]);
+    const { service } = build();
     const products = [{ id: 'product-a', listaId: LISTA_A }];
     expect((await service.authorizeProductsByLista(products, ctx, ['prices:read', 'prices:apply'])).size).toBe(0);
   });
@@ -301,8 +311,10 @@ describe('R3 large price change alert (strictly above the threshold, up or down)
     }
   });
 
-  it('does not report a percent for a hidden previous price (forbidden lista)', async () => {
-    const { service } = build();
+  it('does not report a percent for a hidden previous price (explicitly restricted product)', async () => {
+    const seed = baseSeed();
+    seed.restrictions = [{ userId: ctx.userId!, resourceType: 'PRODUCT', resourceId: 'product-b', isActive: false }];
+    const { service } = build(seed);
     const result = await service.preview(file([['SKU-B', 1]]), ctx);
     expect(result.rows[0].prices[0]).toMatchObject({ previous: null, changePercent: null, largeChange: false });
   });
@@ -332,9 +344,117 @@ describe('Existing price rules keep holding through the preview (regression)', (
   });
 
   it('template v3 keeps the header and tariff order of the agreed columns', () => {
-    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: [...PRICE_IMPORT_TARIFFS].reverse() });
+    const buffer = buildPriceTemplate({ mode: 'vacias', tariffs: [...LEGACY_TARIFFS].reverse() });
     const book = XLSX.read(buffer, { type: 'buffer' });
     const header = XLSX.utils.sheet_to_json<string[]>(book.Sheets.PRECIOS, { header: 1 })[0];
-    expect(header).toEqual(['REFERENCIA', 'INSTALADOR_IVA', 'TIENDA_IVA', 'DPP_ORO_IVA', 'DPP_PLATINO_IVA', 'CLIENTE_FINAL_IVA']);
+    expect(header).toEqual(['REFERENCIA', ...[...LEGACY_TARIFFS].reverse().map((t) => t.name)]);
+  });
+});
+
+describe('Single-price files (supplier without tariff tiers)', () => {
+  const SINGLE = 'PRECIO UNICO (CON IVA)';
+  const singleFile = (rows: unknown[][] = [['SKU-A', 100]]) => file(rows, ['REFERENCIA', SINGLE]);
+  const rawHash = (f: Express.Multer.File) => createHash('sha256').update(f.buffer).digest('hex');
+  const previewHash = (audit: { log: jest.Mock }) => audit.log.mock.calls[0][0].entityId as string;
+
+  it('expands the price to the five tariffs by default; the unconfigured ones reach TARIFF_UNAVAILABLE', async () => {
+    const { service } = build();
+    const result = await service.preview(singleFile(), ctx);
+    expect(result.singlePrice).toEqual({ tariffs: LEGACY_TARIFF_CODES });
+    expect(result.rows[0].prices.map((p) => p.code)).toEqual(LEGACY_TARIFF_CODES);
+    const unavailable = result.issues.filter((i) => i.code === 'TARIFF_UNAVAILABLE');
+    const missing = ['CLIENTE_FINAL_IVA', 'DPP_PLATINO_IVA', 'INSTALADOR_IVA', 'TIENDA_IVA'];
+    expect(unavailable.filter((i) => i.row === null).map((i) => i.column).sort()).toEqual(missing);
+    expect(unavailable.filter((i) => i.row === 2).map((i) => i.column).sort()).toEqual(missing);
+    expect(result.rows[0].status).toBe('error');
+    expect(result.summary).toMatchObject({ rows: 1, validRows: 0, errorRows: 1 });
+  });
+
+  it('compares the expanded row with the stored price of the selected tariff', async () => {
+    const { service } = build();
+    const result = await service.preview(singleFile([['SKU-A', 100.5]]), ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
+    expect(result.singlePrice).toEqual({ tariffs: ['DPP_ORO_IVA'] });
+    expect(result.rows[0]).toMatchObject({ status: 'valid', productId: 'product-a', listaId: LISTA_A });
+    expect(result.rows[0].prices).toEqual([expect.objectContaining({ code: 'DPP_ORO_IVA', raw: '100.5', rounded: '101', previous: '90', difference: '11', change: 'changed' })]);
+    expect(result.summary).toMatchObject({ validRows: 1, prices: 1, changedPrices: 1 });
+    expect(result.issues).toEqual([]);
+  });
+
+  it('applies the 30% large-change flag per tariff to the expanded rows', async () => {
+    const seed = baseSeed();
+    seed.tariffs = [{ id: 'tariff-tienda', code: 'TIENDA_IVA' }, { id: 'tariff-final', code: 'CLIENTE_FINAL_IVA' }];
+    seed.prices = [
+      { productId: 'product-a', priceListId: 'tariff-tienda', value: 100 },
+      { productId: 'product-a', priceListId: 'tariff-final', value: 1000 },
+    ];
+    const { service } = build(seed);
+    const result = await service.preview(singleFile([['SKU-A', 110]]), ctx, { singlePriceTariffs: ['CLIENTE_FINAL_IVA', 'TIENDA_IVA'] });
+    expect(result.rows[0].status).toBe('valid');
+    expect(result.rows[0].prices).toEqual([
+      expect.objectContaining({ code: 'TIENDA_IVA', previous: '100', difference: '10', changePercent: '10.00', largeChange: false }),
+      expect.objectContaining({ code: 'CLIENTE_FINAL_IVA', previous: '1000', difference: '-890', changePercent: '-89.00', largeChange: true }),
+    ]);
+    expect(result.summary).toMatchObject({ prices: 2, largeChangePrices: 1, largeChangeThresholdPct: 30 });
+  });
+
+  it('applies the same global-grant authorization to the expanded rows (no per-lista scoping)', async () => {
+    const { service } = build();
+    const result = await service.preview(singleFile([['SKU-A', 100], ['SKU-B', 777]]), ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
+    expect(result.rows.map((r) => r.status)).toEqual(['valid', 'valid']);
+    expect(result.rows[1]).toMatchObject({ productId: 'product-b', prices: [expect.objectContaining({ previous: '876543' })] });
+    expect(JSON.stringify(result)).not.toMatch(/LISTA_FORBIDDEN|Lista Beta/);
+  });
+
+  it('a grant tied to one lista never opens the single-price preview', async () => {
+    const { service, grants } = build(baseSeed(), false);
+    grants.grantOnLista(LISTA_A, ...PREVIEW_ACTIONS);
+    await expect(service.preview(singleFile(), ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('keeps the preview permissions and refuses an empty selection before reading any tariff or price', async () => {
+    const { service, grants, prisma } = build();
+    await expect(service.preview(singleFile(), ctx, { singlePriceTariffs: [] })).rejects.toThrow(/Elige al menos un escalafón/);
+    expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+    grants.revoke('prices:preview');
+    await expect(service.preview(singleFile(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reports singlePrice null for a normal file, ignoring any selection', async () => {
+    const { service } = build();
+    const result = await service.preview(file(), ctx, { singlePriceTariffs: ['TIENDA_IVA'] });
+    expect(result.singlePrice).toBeNull();
+    expect(result.rows[0].prices.map((p) => p.code)).toEqual(['DPP_ORO_IVA']);
+  });
+
+  it('keeps the sha256 of the bytes as the file hash of a normal file, whatever selection is sent', async () => {
+    const { service, audit } = build();
+    const normal = file();
+    await service.preview(normal, ctx, { singlePriceTariffs: ['TIENDA_IVA'] });
+    expect(previewHash(audit)).toBe(rawHash(normal));
+  });
+
+  it('gives the same single-price bytes a different file hash for each selection (order does not matter)', async () => {
+    const f = singleFile();
+    const hashes = new Set<string>();
+    for (const selection of [undefined, ['DPP_ORO_IVA'], ['TIENDA_IVA', 'DPP_ORO_IVA'], ['DPP_ORO_IVA', 'TIENDA_IVA']] as const) {
+      const { service, audit } = build();
+      await service.preview(f, ctx, selection ? { singlePriceTariffs: selection } : {});
+      hashes.add(previewHash(audit));
+    }
+    // default (all five), DPP_ORO_IVA alone, and the DPP_ORO_IVA + TIENDA_IVA pair written in either order
+    expect(hashes.size).toBe(3);
+    expect(hashes.has(rawHash(f))).toBe(false);
+  });
+
+  it('computeImportFileHash: raw hash for normal files; sorted selection folded in for single price', () => {
+    const buffer = Buffer.from('fixture');
+    const raw = createHash('sha256').update(buffer).digest('hex');
+    const all = computeImportFileHash(buffer, { tariffs: LEGACY_TARIFF_CODES });
+    const some = computeImportFileHash(buffer, { tariffs: ['TIENDA_IVA', 'CLIENTE_FINAL_IVA'] });
+    expect(computeImportFileHash(buffer, null)).toBe(raw);
+    expect(new Set([raw, all, some]).size).toBe(3);
+    expect(computeImportFileHash(buffer, { tariffs: ['CLIENTE_FINAL_IVA', 'TIENDA_IVA'] })).toBe(some);
+    expect(some).toMatch(/^[a-f0-9]{64}$/);
   });
 });

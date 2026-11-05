@@ -11,7 +11,9 @@
  * trabajo, la `rulesVersion` o si editar creó otra revisión.
  */
 
-export const RULES_VERSION = 'cat05-r1'
+import { isWebBrandExcluded } from '../web-brand-policy'
+
+export const RULES_VERSION = 'cat05-r3'
 
 export type IssueSeverity = 'error' | 'warning' | 'info'
 
@@ -37,6 +39,7 @@ export interface ProductValidationInput {
   name: string
   catalogName: string | null
   brandId: string | null
+  brandName?: string | null
   catalogBrand: string | null
   categoryActive: boolean
   categorySlug: string | null
@@ -46,8 +49,6 @@ export interface ProductValidationInput {
   files: Record<string, FileMeta>
   lista: { isActive: boolean; archived: boolean; pendingDeletion: boolean; expired: boolean } | null
   prices: { valueOk: boolean; expired: boolean }[]
-  /** Espera una oferta pública: `catalogPublished` o lifecycle PUBLISHED. */
-  expectsPublication: boolean
   stockZero: boolean
 }
 
@@ -110,6 +111,13 @@ export function runValidation(input: ProductValidationInput): ValidationResult {
       section: 'identidad',
       message: 'El producto no tiene marca y la ficha repite un valor provisional o vacío.',
       fix: 'Asigna la marca del producto (o escríbela en Marca de la ficha).',
+    })
+  }
+  if (isWebBrandExcluded(input.brandName, input.catalogBrand)) {
+    issues.push({
+      code: 'WEB_BRAND_EXCLUDED', severity: 'error', field: 'brand', section: 'identidad',
+      message: 'Dahua e Imou no se pueden publicar en la tienda.',
+      fix: 'Conserva la ficha para consulta interna.',
     })
   }
 
@@ -186,39 +194,17 @@ export function runValidation(input: ProductValidationInput): ValidationResult {
   }
 
   // ─── oferta ───────────────────────────────────────────────────────────────
-  // El canal/destinatario de la «tarifa pública» NO se evalúa (decisión externa
-  // D-2); aquí solo la coherencia lista-precio propia del producto.
-  const listaOk = !!input.lista && input.lista.isActive && !input.lista.archived && !input.lista.pendingDeletion && !input.lista.expired
+  // El precio es requisito de publicación también para productos DRAFT listos.
+  // No se infiere su vigencia desde una Lista; se carga por producto.
   const priceOk = input.prices.some((p) => p.valueOk && !p.expired)
-  if (input.expectsPublication) {
-    if (!input.lista || !listaOk) {
-      issues.push({
-        code: 'offer.lista_valid',
-        severity: 'error',
-        field: 'listaId',
-        section: 'oferta',
-        message: 'La oferta pública no está vigente: el producto publicado necesita una Lista activa, no archivada y en vigencia.',
-        fix: 'Revisa la Lista del producto (activa, sin archivado/eliminación, vigencia).',
-      })
-    }
-    if (!priceOk) {
-      issues.push({
-        code: 'offer.price_valid',
-        severity: 'error',
-        field: 'prices',
-        section: 'oferta',
-        message: 'Sin precio válido en su Lista (falta, es inválido o venció).',
-        fix: 'Carga o corrige el precio del producto en su Lista.',
-      })
-    }
-  } else if (input.lista && !listaOk) {
+  if (!priceOk) {
     issues.push({
-      code: 'offer.lista_valid',
-      severity: 'warning',
-      field: 'listaId',
+      code: 'offer.price_valid',
+      severity: 'error',
+      field: 'prices',
       section: 'oferta',
-      message: 'La Lista propia no está vigente (inactiva, archivada, en eliminación o vencida).',
-      fix: 'Activa o corrige la Lista antes de publicar.',
+      message: 'El producto no tiene un precio de venta vigente, positivo y válido.',
+      fix: 'Carga o corrige un precio positivo con vigencia actual.',
     })
   }
 

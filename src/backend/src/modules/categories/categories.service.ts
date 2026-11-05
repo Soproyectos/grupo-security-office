@@ -1,8 +1,13 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '../../../prisma/biblioteca/generated/client';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService, type LibraryActor } from '../library-audit/library-audit.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { PUBLIC_CATALOG_VISIBILITY } from '../products/public-catalog-visibility';
+import { publicCatalogVisibility } from '../products/public-catalog-visibility';
+import { ClassificationService } from '../products/classification/classification.service';
+import { buildUsageReport, findNameCollision, impactConfirmationRequired, nameTaken } from '../masters/master-rules';
+import type { ClassificationDb } from '../products/classification/classification.types';
 
 type MenuCategoryRecord = {
   id: string;
@@ -31,7 +36,15 @@ export type MenuCategory = {
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly library: BibliotecaPrismaService, private readonly audit: LibraryAuditService) {}
+
+  private get prisma() { return this.library.client; }
+  private readonly classification = new ClassificationService();
+
+  /** Editor selector: root categories with their active subcategories. */
+  async classificationTree() {
+    return { data: await this.classification.tree(this.prisma as unknown as ClassificationDb) };
+  }
 
   async findAll() {
     const categories = await this.prisma.category.findMany({
@@ -88,11 +101,12 @@ export class CategoriesService {
   private async publishedCountsByCategory(
     categories: MenuCategoryRecord[],
   ): Promise<Map<string, number>> {
-    const grouped = await this.prisma.product.groupBy({
+    const args = {
       by: ['categoryId'],
-      where: PUBLIC_CATALOG_VISIBILITY,
+      where: publicCatalogVisibility(Prisma.JsonNull),
       _count: { _all: true },
-    });
+    } satisfies Prisma.ProductGroupByArgs;
+    const grouped = await this.prisma.product.groupBy(args);
 
     const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
     const totals = new Map<string, number>();
@@ -162,15 +176,17 @@ export class CategoriesService {
     return category;
   }
 
-  async create(dto: CreateCategoryDto) {
-    const existing = await this.prisma.category.findUnique({
+  async create(dto: CreateCategoryDto, actor?: LibraryActor) {
+    return this.library.writeTransaction(async (tx) => {
+    const existing = await tx.category.findUnique({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Ya existe una categoría con ese slug');
 
-    await this.validateParent(null, dto.parentId);
+    await this.validateParent(null, dto.parentId, tx);
+    await this.assertNameFree(tx, dto.name, dto.parentId ?? null);
 
-    const category = await this.prisma.category.create({
+    const category = await tx.category.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -184,27 +200,44 @@ export class CategoriesService {
       },
     });
 
+    await this.audit.append(tx, { actor, action: 'CATEGORY_CREATED', entityType: 'Category', entityId: category.id, summary: { fields: Object.keys(dto) } });
     return category;
+    });
   }
 
-  async update(id: string, dto: UpdateCategoryDto) {
-    const category = await this.prisma.category.findUnique({ where: { id } });
+  async update(id: string, dto: UpdateCategoryDto, actor?: LibraryActor) {
+    return this.library.writeTransaction(async (tx) => {
+    const category = await tx.category.findUnique({ where: { id } });
     if (!category) throw new NotFoundException('Categoría no encontrada');
 
     if (dto.slug && dto.slug !== category.slug) {
-      const existing = await this.prisma.category.findUnique({ where: { slug: dto.slug } });
+      const existing = await tx.category.findUnique({ where: { slug: dto.slug } });
       if (existing) throw new ConflictException('Ya existe una categoría con ese slug');
     }
 
-    await this.validateParent(id, dto.parentId);
+    await this.validateParent(id, dto.parentId, tx);
 
-    const updated = await this.prisma.category.update({
+    const targetParentId = dto.parentId !== undefined ? dto.parentId : category.parentId;
+    if (dto.name !== undefined || dto.parentId !== undefined) {
+      await this.assertNameFree(tx, dto.name ?? category.name, targetParentId ?? null, id);
+    }
+    if (dto.parentId !== undefined && (dto.parentId || null) !== (category.parentId ?? null) && !dto.confirmImpact) {
+      const usage = await this.usageOf(tx, id);
+      if (usage.counts.products + usage.counts.children + usage.counts.subcategories > 0) {
+        throw impactConfirmationRequired(
+          'Cambiar la categoría padre afecta productos y subcategorías asociados. Confirma el impacto para continuar.',
+          { ...usage.counts, fromParentId: category.parentId ?? null, toParentId: dto.parentId || null },
+        );
+      }
+    }
+
+    const updated = await tx.category.update({
       where: { id },
       data: {
         ...(dto.name && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.slug && { slug: dto.slug }),
-        ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+        ...(dto.parentId !== undefined && { parentId: dto.parentId || null }),
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
@@ -213,25 +246,66 @@ export class CategoriesService {
       },
     });
 
+    await this.audit.append(tx, { actor, action: 'CATEGORY_UPDATED', entityType: 'Category', entityId: id, summary: { fields: Object.keys(dto) } });
     return updated;
+    });
   }
 
-  async remove(id: string) {
-    const category = await this.prisma.category.findUnique({
-      where: { id },
-      include: { products: true, children: true },
-    });
-
+  /** Dependencies of a category and whether it can be deleted. */
+  async usage(id: string) {
+    const category = await this.prisma.category.findUnique({ where: { id }, select: { id: true } });
     if (!category) throw new NotFoundException('Categoría no encontrada');
-    if (category.products.length > 0) {
-      throw new ConflictException('No se puede eliminar una categoría con productos');
+    return this.usageOf(this.prisma, id);
+  }
+
+  private async usageOf(db: Pick<Prisma.TransactionClient, 'category' | 'product'> & { subcategory?: any }, id: string) {
+    const [products, children, subcategories] = await Promise.all([
+      db.product.count({ where: { categoryId: id } }),
+      db.category.count({ where: { parentId: id } }),
+      typeof db.subcategory?.count === 'function' ? (db.subcategory.count({ where: { categoryId: id } }) as Promise<number>) : Promise.resolve(0),
+    ]);
+    return buildUsageReport(id, { products, children, subcategories }, [
+      { key: 'products', code: 'HAS_PRODUCTS', message: (n) => `tiene ${n} producto(s)` },
+      { key: 'children', code: 'HAS_CHILDREN', message: (n) => `tiene ${n} categoría(s) hija(s)` },
+      { key: 'subcategories', code: 'HAS_SUBCATEGORIES', message: (n) => `tiene ${n} subcategoría(s)` },
+    ]);
+  }
+
+  /** Activates or deactivates; never touches products, prices or history. */
+  async setActive(id: string, isActive: boolean, actor?: LibraryActor) {
+    return this.library.writeTransaction(async (tx) => {
+      const category = await tx.category.findUnique({ where: { id } });
+      if (!category) throw new NotFoundException('Categoría no encontrada');
+      const updated = await tx.category.update({ where: { id }, data: { isActive } });
+      await this.audit.append(tx, { actor, action: 'CATEGORY_ACTIVE_CHANGED', entityType: 'Category', entityId: id, summary: { isActive } });
+      return updated;
+    });
+  }
+
+  async remove(id: string, actor?: LibraryActor) {
+    return this.library.writeTransaction(async (tx) => {
+    const category = await tx.category.findUnique({ where: { id }, select: { id: true } });
+    if (!category) throw new NotFoundException('Categoría no encontrada');
+
+    const usage = await this.usageOf(tx, id);
+    if (usage.counts.products > 0) {
+      throw new ConflictException({ code: 'DELETE_BLOCKED', message: 'No se puede eliminar una categoría con productos', usage });
     }
-    if (category.children.length > 0) {
-      throw new ConflictException('No se puede eliminar una categoría con subcategorías');
+    if (usage.counts.children > 0 || usage.counts.subcategories > 0) {
+      throw new ConflictException({ code: 'DELETE_BLOCKED', message: 'No se puede eliminar una categoría con subcategorías', usage });
     }
 
-    await this.prisma.category.delete({ where: { id } });
+    await tx.category.delete({ where: { id } });
+    await this.audit.append(tx, { actor, action: 'CATEGORY_DELETED', entityType: 'Category', entityId: id, summary: {} });
     return { message: 'Categoría eliminada exitosamente' };
+    });
+  }
+
+  /** 409 when a sibling (same parent) already has an equivalent name (case/accent-insensitive). */
+  private async assertNameFree(tx: Pick<Prisma.TransactionClient, 'category'>, name: string, parentId: string | null, selfId?: string) {
+    const siblings = await tx.category.findMany({ where: { parentId }, select: { id: true, name: true } });
+    const clash = findNameCollision(name, siblings, selfId);
+    if (clash) throw nameTaken('una categoría', clash);
   }
 
   /**
@@ -243,14 +317,14 @@ export class CategoriesService {
    *     descendiente de él.
    * Mantiene además la validación de existencia del padre.
    */
-  private async validateParent(nodeId: string | null, parentId?: string): Promise<void> {
+  private async validateParent(nodeId: string | null, parentId: string | undefined, prisma: Pick<Prisma.TransactionClient, 'category'>): Promise<void> {
     if (!parentId) return;
 
     if (parentId === nodeId) {
       throw new BadRequestException('Una categoría no puede ser su propio padre');
     }
 
-    const parent = await this.prisma.category.findUnique({ where: { id: parentId } });
+    const parent = await prisma.category.findUnique({ where: { id: parentId } });
     if (!parent) throw new NotFoundException('Categoría padre no encontrada');
 
     if (!nodeId) return;
@@ -265,7 +339,7 @@ export class CategoriesService {
       }
       if (visited.has(current)) break;
       visited.add(current);
-      const ancestor = await this.prisma.category.findUnique({
+      const ancestor = await prisma.category.findUnique({
         where: { id: current },
         select: { parentId: true },
       });

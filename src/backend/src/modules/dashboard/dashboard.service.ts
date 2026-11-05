@@ -1,6 +1,8 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, Inject } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import {
   bogotaYearMonth,
   currentMonthRangeBogota,
@@ -16,7 +18,27 @@ import {
 import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { resolveAccess } from '../../common/security/data-scope';
+import { concessionCanAction } from '../../common/security/d5-action';
 import type { AccessIdentity } from '../../common/security/data-scope';
+
+/** Stable error codes returned with the 403s of the personal dashboard endpoints. */
+export const DASHBOARD_ERRORS = {
+  salesGoalForbidden: 'DASHBOARD_SALES_GOAL_FORBIDDEN',
+  workspaceForbidden: 'DASHBOARD_WORKSPACE_FORBIDDEN',
+} as const;
+
+/**
+ * Actions that make `GET /dashboard/me` meaningful. The endpoint serves
+ * activity and commercial summaries, so a user holding none of them gets 403.
+ */
+export const WORKSPACE_COMMERCIAL_ACTIONS = [
+  'customers:read',
+  'quotes:read',
+  'targets:read',
+  'teamInsights:read',
+  'commercialPromotions:read',
+  'commercialPromotions:create',
+] as const;
 
 export const MY_LISTAS_DEFAULT_TAKE = 12;
 export const RECENT_ACTIVITY_TAKE = 10;
@@ -147,7 +169,12 @@ export class DashboardService {
      * Nest lo inyecta desde el SecurityModule `@Global`.
      */
     private grants?: AccessAssignmentsService,
+    /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
+
+  /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService }
 
   /**
    * COM-05 §4 / decisión H3: ver bloques o datos de equipo exige la acción
@@ -179,6 +206,15 @@ export class DashboardService {
   }
 
   /**
+   * Strict grant check for the personal dashboard (any scope is accepted: the
+   * data returned is always the caller's own). Super Admin is the explicit
+   * exception; no grants never falls back to the role.
+   */
+  private async can(ctx: AccessContext, actionId: string): Promise<boolean> {
+    return (await concessionCanAction(this.grants, actionId, ctx)).allowed;
+  }
+
+  /**
    * Resumen del espacio de trabajo del usuario autenticado, resuelto en una sola
    * llamada HTTP (el dashboard anterior componia varias desde el frontend, patron
    * que ya provoco 429s en el wizard de importacion).
@@ -190,6 +226,12 @@ export class DashboardService {
   /** Personal KPI: no team, catalog, hierarchy or other users' aggregates. */
   async getPersonalSalesGoal(ctx: AccessContext): Promise<PersonalSalesGoal> {
     if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    if (!(await this.can(ctx, 'targets:read'))) {
+      throw new ForbiddenException({
+        code: DASHBOARD_ERRORS.salesGoalForbidden,
+        message: 'No tienes permiso para ver la meta de ventas.',
+      });
+    }
     const at = new Date();
     const { year, month } = bogotaYearMonth(at);
     const period = `${year}-${String(month).padStart(2, '0')}`;
@@ -235,6 +277,19 @@ export class DashboardService {
   ): Promise<MyWorkspace> {
     const take = params.take ?? MY_LISTAS_DEFAULT_TAKE;
     const userId = ctx.userId;
+    // `commercial` (quotes, pipeline, customers, goal) is only built with quotes:read.
+    const canQuotes = await this.can(ctx, 'quotes:read');
+    let allowed = canQuotes;
+    for (const actionId of WORKSPACE_COMMERCIAL_ACTIONS) {
+      if (allowed) break;
+      allowed = await this.can(ctx, actionId);
+    }
+    if (!allowed) {
+      throw new ForbiddenException({
+        code: DASHBOARD_ERRORS.workspaceForbidden,
+        message: 'No tienes permiso para ver tu resumen comercial.',
+      });
+    }
     const allowedListaIds = await this.acl.getAllowedListaIds(
       userId,
       ctx.roles,
@@ -263,7 +318,7 @@ export class DashboardService {
         await Promise.all([
           this.getRecentActivityCount(userId, since),
           this.getRecentActivity(userId),
-          this.getCommercialBlock(userId, scope),
+          canQuotes ? this.getCommercialBlock(userId, scope) : Promise.resolve(undefined),
           this.getTeamBlock(userId, ctx.roles),
         ]);
       return {
@@ -291,8 +346,8 @@ export class DashboardService {
       commercial,
       team,
     ] = await Promise.all([
-      this.prisma.lista.count({ where: listaWhere }),
-      this.prisma.lista.findMany({
+      this.db.lista.count({ where: listaWhere }),
+      this.db.lista.findMany({
         where: listaWhere,
         orderBy: { updatedAt: 'desc' },
         take,
@@ -305,20 +360,20 @@ export class DashboardService {
           updatedAt: true,
         },
       }),
-      this.prisma.product.count({ where: { lista: listaWhere } }),
-      this.prisma.product.count({
+      this.db.product.count({ where: { lista: listaWhere } }),
+      this.db.product.count({
         where: { lista: listaWhere, isVisible: false },
       }),
       this.getRecentActivityCount(userId, since),
       this.getRecentActivity(userId),
-      this.getCommercialBlock(userId, scope),
+      canQuotes ? this.getCommercialBlock(userId, scope) : Promise.resolve(undefined),
       this.getTeamBlock(userId, ctx.roles),
     ]);
 
     const listaIds = listas.map((l) => l.id);
     const [counts, levelByLista] = await Promise.all([
       listaIds.length
-        ? this.prisma.product.groupBy({
+        ? this.db.product.groupBy({
             by: ['listaId'],
             where: { listaId: { in: listaIds } },
             _count: { _all: true },

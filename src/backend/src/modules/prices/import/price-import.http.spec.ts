@@ -12,6 +12,9 @@ import { TransformInterceptor } from '../../../common/interceptors/transform.int
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
 import { SessionService } from '../../../common/security/session.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { AuditService } from '../../audit/audit.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { JwtStrategy } from '../../auth/jwt.strategy';
@@ -20,11 +23,10 @@ import { PriceImportService } from './price-import.service';
 import { MAX_XLSX_BYTES } from './xlsx-container';
 
 /**
- * IMP-01 integrado — HTTP con NUESTRO stack (JwtAuthGuard del controller +
- * RolesGuard/PermissionsGuard por decorador; concesiones revalidadas POR
- * SOLICITUD en el servicio con AccessAssignmentsService). Claims stale del
- * token jamás conceden las acciones del preview (la autorización sale de los
- * grants de BD); la capa rol es la transición D5 documentada de la tanda.
+ * IMP-01 integrado — HTTP con NUESTRO stack (JwtAuthGuard + GrantGuard por @RequireGrant;
+ * concesiones GLOBALES del panel revalidadas POR SOLICITUD con AccessAssignmentsService).
+ * Claims stale del token y el cargo jamás conceden nada: la autorización sale de los grants de
+ * BD. Ninguna Lista interviene (una concesión ligada a una Lista no abre estos endpoints).
  */
 const LIST = '00000000-0000-4000-8000-000000000001';
 const OTHER_LIST = '00000000-0000-4000-8000-000000000002';
@@ -43,10 +45,20 @@ function workbook(rows: unknown[][] = [['0001-A', 123456.5], ['0002-B', 99000]])
   return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
 }
 
+/** File with the single-price column (supplier without tariff tiers); `extraHeaders` lets a test mix in tariff columns. */
+function singleWorkbook(rows: unknown[][] = [['0001-A', 123456.5], ['0002-B', 99000]], extraHeaders: string[] = []): Buffer {
+  const book = XLSX.utils.book_new();
+  const body = rows.map((row) => [...row, ...extraHeaders.map(() => 1)]);
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'PRECIO UNICO (CON IVA)', ...extraHeaders], ...body]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Completa la referencia y el precio con IVA.']]), 'INSTRUCCIONES');
+  return XLSX.write(book, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+}
+
 describe('Price template preview through HTTP, live sessions and real ACL', () => {
   let app: INestApplication;
   let grants: { sourceId: string; actionId: string; scope: 'list' | 'global' | 'own' | 'team' | 'product'; resourceId?: string }[];
   let userActive: boolean;
+  let userRole: string;
   let sessionActive: boolean;
   let assignments: { userId: string; resourceType: string; resourceId: string; level: string; isActive: boolean }[];
   const jwt = new JwtService({ secret: SECRET });
@@ -67,7 +79,7 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
   const prisma = {
     user: { findUnique: jest.fn(async ({ where }: any) => where.id === PERSON ? {
       id: PERSON, name: 'Fixture', email: 'fixture@example.test', isActive: userActive,
-      roles: [{ role: { name: 'Supervisor' } }],
+      roles: [{ role: { name: userRole } }],
     } : null) },
     assignment: { findMany: jest.fn(async ({ where }: any) => assignments.filter((a) => {
       if (where.userId && a.userId !== where.userId) return false;
@@ -96,7 +108,8 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     price: { ...writesForModel(), findMany: jest.fn(async ({ where }: any) => stored.filter((p) => where.productId.in.includes(p.productId) && where.priceListId.in.includes(p.priceListId))) },
     $transaction: jest.fn(),
   };
-  const grantRow = (actionId: string) => ({ sourceId: 'src-1', actionId, scope: 'list' as const, resourceId: LIST });
+  const grantRow = (actionId: string) => ({ sourceId: 'src-1', actionId, scope: 'global' as const, resourceId: undefined as string | undefined });
+  const listGrantRow = (actionId: string) => ({ sourceId: 'src-1', actionId, scope: 'list' as const, resourceId: LIST });
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -104,6 +117,9 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       providers: [PriceImportService, AclService, JwtStrategy,
         { provide: ConfigService, useValue: { get: () => SECRET } },
         { provide: PrismaService, useValue: prisma },
+        // Modo legacy: la fachada de biblioteca comparte el mismo cliente de prueba.
+        { provide: BibliotecaPrismaService, useValue: directLegacyProductLibrary(prisma as never) },
+        LibraryAuditService,
         { provide: SessionService, useValue: sessions },
         { provide: AuditService, useValue: audit },
         { provide: AccessAssignmentsService, useValue: { grantsForUser: async () => grants } },
@@ -119,9 +135,10 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
   beforeEach(() => {
     jest.clearAllMocks();
     userActive = true;
+    userRole = 'Supervisor';
     sessionActive = true;
     grants = ['prices:preview', 'prices:read', 'listas:read'].map((actionId) => grantRow(actionId));
-    assignments = [{ userId: PERSON, resourceType: 'LISTA', resourceId: LIST, level: 'view_prices', isActive: true }];
+    assignments = [];
   });
 
   afterEach(() => {
@@ -132,15 +149,17 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
   });
   afterAll(async () => { await app.close(); });
 
-  function upload(options: { token?: string | null; listaId?: string; buffer?: Buffer; fileName?: string } = {}) {
+  function upload(options: { token?: string | null; listaId?: string; buffer?: Buffer; fileName?: string; singlePriceTariffs?: string } = {}) {
     let req = request(app.getHttpServer()).post(endpoint);
     if (options.token !== null) req = req.auth(options.token ?? token, { type: 'bearer' });
-    return req.field('listaId', options.listaId ?? LIST).attach('file', options.buffer ?? workbook(), {
+    req = req.field('listaId', options.listaId ?? LIST);
+    if (options.singlePriceTariffs !== undefined) req = req.field('singlePriceTariffs', options.singlePriceTariffs);
+    return req.attach('file', options.buffer ?? workbook(), {
       filename: options.fileName ?? 'precios-fixture.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
   }
 
-  it('allows only preview/read/listas read with view_prices, without Biblioteca or global scope', async () => {
+  it('allows the preview with the global panel grants (preview + read, plus the catalog dependency) and no Lista assignment', async () => {
     const response = await upload().expect(201);
     const result = response.body.data;
     expect(result).toMatchObject({ listaId: null, readOnly: true, currency: 'COP', taxIncluded: true, rounding: 'HALF_UP',
@@ -156,7 +175,27 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
       .attach('file', workbook(), { filename: 'precios-fixture.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       .expect(201);
     expect(response.body.data.summary).toMatchObject({ rows: 2, validRows: 2, rowsInInaccessibleListas: 0 });
-    expect(response.body.data.summary.byLista).toEqual([{ listaId: LIST, code: 'LA', name: 'Lista Alfa', rows: 2, prices: 2 }]);
+    expect(response.body.data.summary.byLista).toEqual([{ listaId: LIST, rows: 2, prices: 2 }]);
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
+  });
+
+  it('works for a role that used to be rejected (Vendedor) and denies roles that used to pass when they hold no grants', async () => {
+    userRole = 'Vendedor';
+    await upload().expect(201);
+    prisma.price.findMany.mockClear();
+    for (const role of ['Admin Comercial', 'Supervisor']) {
+      userRole = role;
+      grants = [];
+      const response = await upload();
+      expect(response.status).toBe(403);
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a grant tied to one lista (or product) never opens the preview', async () => {
+    grants = ['prices:preview', 'prices:read', 'listas:read'].map((actionId) => listGrantRow(actionId));
+    await upload().expect(403);
+    expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
   it('logs only a domain summary and file hash rather than references, prices or binary content', async () => {
@@ -179,25 +218,24 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     grants = grants.filter((g) => g.actionId !== missing);
     const response = await upload();
     expect(response.status).toBe(403);
-    // La acción ausente se nombra; una dependencia ausente se señala como
-    // missing-dependency de la acción raíz (adaptación documentada).
+    // La acción ausente se nombra; una dependencia ausente se señala en la acción raíz (prices:preview).
     const message = String(response.body.message);
     expect(message).toMatch(new RegExp(`Sin permiso (${missing}|prices:preview)`));
-    if (missing !== 'prices:preview') expect(message).toContain('missing-dependency');
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
-  it('rejects a view-only Lista assignment without disclosing stored prices', async () => {
-    assignments[0].level = 'view';
+  it('a Lista assignment does not replace the missing prices:read grant: stored prices are never disclosed', async () => {
+    assignments = [{ userId: PERSON, resourceType: 'LISTA', resourceId: LIST, level: 'view_prices', isActive: true }];
     grants = grants.filter((grant) => grant.actionId !== 'prices:read');
     await upload().expect(403);
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
-  it('does not let an explicit lista in the request widen what the caller can use', async () => {
+  it('an explicit lista in the request is ignored: the global grant covers rows of every lista', async () => {
     const response = await upload({ listaId: OTHER_LIST, buffer: workbook([['FOREIGN-SECRET', 777]]) }).expect(201);
-    expect(response.body.data.rows[0].issues).toEqual([expect.objectContaining({ code: 'LISTA_FORBIDDEN' })]);
-    expect(prisma.price.findMany).not.toHaveBeenCalled();
+    expect(response.body.data.rows[0]).toMatchObject({ status: 'valid', productId: 'fixture-product-foreign' });
+    expect(response.body.data.rows[0].prices[0]).toMatchObject({ previous: '876543210' });
+    expect(JSON.stringify(response.body)).not.toMatch(/LISTA_FORBIDDEN/);
   });
 
   it('does not reveal prices for an explicitly restricted PRODUCT', async () => {
@@ -210,16 +248,14 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'price-import-preview', result: 'WARNING' }));
   });
 
-  it('rejects a SKU of a lista without grant, without leaking its lista, id, name or prices', async () => {
+  it('covers SKUs of every old lista in one file without any lista lookup or lista name in the response', async () => {
     const response = await upload({ buffer: workbook([['FOREIGN-SECRET', 777], ['0001-A', 100001]]) }).expect(201);
     const [foreign, own] = response.body.data.rows;
-    expect(foreign).toMatchObject({ status: 'error', productId: null, listaId: null, prices: [{ previous: null, difference: null }] });
-    expect(foreign.issues).toEqual([expect.objectContaining({ code: 'LISTA_FORBIDDEN' })]);
+    expect(foreign.status).toBe('valid');
     expect(own.status).toBe('valid');
-    expect(response.body.data.summary).toMatchObject({ rowsInInaccessibleListas: 1, validRows: 1 });
-    expect(JSON.stringify(response.body)).not.toMatch(/876543210|fixture-product-foreign|Lista Beta|LB"/);
-    expect(JSON.stringify(response.body)).not.toContain(OTHER_LIST);
-    expect(prisma.price.findMany.mock.calls[0][0].where.productId.in).toEqual(['fixture-product-a']);
+    expect(response.body.data.summary).toMatchObject({ rowsInInaccessibleListas: 0, validRows: 2 });
+    expect(JSON.stringify(response.body)).not.toMatch(/Lista Beta|Lista Alfa|LB"/);
+    expect(prisma.lista.findMany).not.toHaveBeenCalled();
   });
 
   it('revokes the preview action immediately while using the same signed token (fresh DB grants)', async () => {
@@ -278,5 +314,167 @@ describe('Price template preview through HTTP, live sessions and real ACL', () =
     expect(response.body.message).toBe('File too large');
     expect(prisma.price.findMany).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'price-import-preview' }));
+  });
+
+  describe('single price (supplier without tariff tiers)', () => {
+    it('declares singlePriceTariffs in the DTO (the production whitelist does not reject it) and expands only to that selection', async () => {
+      const response = await upload({ buffer: singleWorkbook(), singlePriceTariffs: 'DPP_ORO_IVA' }).expect(201);
+      const result = response.body.data;
+      expect(result.singlePrice).toEqual({ tariffs: ['DPP_ORO_IVA'] });
+      expect(result.summary).toMatchObject({ rows: 2, validRows: 2, errorRows: 0, prices: 2, changedPrices: 1, unchangedPrices: 1 });
+      expect(result.rows[0].prices).toEqual([expect.objectContaining({ code: 'DPP_ORO_IVA', raw: '123456.5', rounded: '123457', previous: '100000', change: 'changed' })]);
+    });
+
+    it('expands to the five tariffs when the field is absent; the unconfigured ones come back as TARIFF_UNAVAILABLE', async () => {
+      const response = await upload({ buffer: singleWorkbook() }).expect(201);
+      const result = response.body.data;
+      expect(result.singlePrice.tariffs).toHaveLength(5);
+      const unavailable = result.issues.filter((i: { code: string; row: number | null }) => i.code === 'TARIFF_UNAVAILABLE' && i.row === null)
+        .map((i: { column: string }) => i.column).sort();
+      expect(unavailable).toEqual(['CLIENTE_FINAL_IVA', 'DPP_PLATINO_IVA', 'INSTALADOR_IVA', 'TIENDA_IVA']);
+      expect(result.summary.validRows).toBe(0);
+    });
+
+    it('rejects a blank or unknown selection with a Spanish 400 before reading any price', async () => {
+      const blank = await upload({ buffer: singleWorkbook(), singlePriceTariffs: '' }).expect(400);
+      expect(blank.body.message).toContain('Elige al menos un escalafón');
+      const unknown = await upload({ buffer: singleWorkbook(), singlePriceTariffs: 'TIENDA_IVA,ORO_IVA' }).expect(400);
+      expect(unknown.body.message).toContain('Escalafón no reconocido: ORO_IVA');
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    });
+
+    it('ignores the selection for a file with tariff columns', async () => {
+      const response = await upload({ singlePriceTariffs: 'TIENDA_IVA' }).expect(201);
+      expect(response.body.data.singlePrice).toBeNull();
+      expect(response.body.data.rows[0].prices.map((p: { code: string }) => p.code)).toEqual(['DPP_ORO_IVA']);
+    });
+
+    it('refuses a file that mixes the single price with a tariff column', async () => {
+      const response = await upload({ buffer: singleWorkbook(undefined, ['DPP_ORO_IVA']) }).expect(400);
+      expect(response.body.message).toContain('columnas de escalafón');
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    });
+
+    it('allows exactly one more multipart field than before (listaId + singlePriceTariffs) and no more', async () => {
+      const response = await request(app.getHttpServer()).post(endpoint).auth(token, { type: 'bearer' })
+        .field('listaId', LIST).field('singlePriceTariffs', 'DPP_ORO_IVA').field('extra', 'x')
+        .attach('file', singleWorkbook(), { filename: 'precios-fixture.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      expect(response.status).toBe(400);
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    });
+
+    it('logs a different file hash for each selection of the same single-price file', async () => {
+      await upload({ buffer: singleWorkbook(), singlePriceTariffs: 'DPP_ORO_IVA' }).expect(201);
+      await upload({ buffer: singleWorkbook(), singlePriceTariffs: 'DPP_ORO_IVA,TIENDA_IVA' }).expect(201);
+      const hashes = audit.log.mock.calls.filter(([event]) => event.action === 'price-import-preview').map(([event]) => event.entityId);
+      expect(hashes).toHaveLength(2);
+      expect(new Set(hashes).size).toBe(2);
+    });
+  });
+
+  describe('official template download (single-price flag)', () => {
+    const route = '/api/prices/import/template/official';
+    // Binary body: superagent only buffers text/JSON by default, so collect the bytes with a custom parser.
+    const binaryParser = (res: any, callback: (error: Error | null, body: Buffer) => void) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => callback(null, Buffer.concat(chunks)));
+    };
+    const download = (query = '') => request(app.getHttpServer()).get(`${route}${query}`).auth(token, { type: 'bearer' })
+      .buffer(true).parse(binaryParser as never);
+    const header = (body: Buffer) => XLSX.utils.sheet_to_json<string[]>(XLSX.read(body, { type: 'buffer' }).Sheets.PLANTILLA, { header: 1 })[0];
+
+    it('keeps serving the official template when the flag is absent or false', async () => {
+      for (const query of ['', '?singlePrice=false']) {
+        const response = await download(query).expect(200);
+        expect(response.headers['content-disposition']).toMatch(/plantilla-precios-grupo-security-/);
+        expect(header(response.body)).toHaveLength(6);
+      }
+    });
+
+    it('serves the single-price template with singlePrice=true', async () => {
+      const response = await download('?singlePrice=true').expect(200);
+      expect(response.headers['content-disposition']).toMatch(/plantilla-precio-unico-grupo-security-/);
+      expect(header(response.body)).toEqual(['REFERENCIA *', 'PRECIO UNICO (CON IVA)']);
+    });
+
+    it('declares the flag in the query DTO: other values and unknown parameters are rejected', async () => {
+      await download('?singlePrice=maybe').expect(400);
+      await download('?other=1').expect(400);
+    });
+
+    it('needs the same prices:preview grant for both templates', async () => {
+      grants = grants.filter((g) => g.actionId !== 'prices:preview');
+      await download('?singlePrice=true').expect(403);
+      await download().expect(403);
+    });
+
+    it('zero grants: roles that used to pass get 403 (the old "no grants => allowed" rule is gone)', async () => {
+      grants = [];
+      for (const role of ['Admin Comercial', 'Supervisor']) {
+        userRole = role;
+        await download().expect(403);
+        await download('?singlePrice=true').expect(403);
+      }
+    });
+  });
+
+  describe('templates, exports and revisions need no lista and only global grants', () => {
+    const binaryParser = (res: any, callback: (error: Error | null, body: Buffer) => void) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => callback(null, Buffer.concat(chunks)));
+    };
+    const get = (url: string) => request(app.getHttpServer()).get(url).auth(token, { type: 'bearer' }).buffer(true).parse(binaryParser as never);
+
+    it('the empty template is served without listaId (prices:preview)', async () => {
+      const response = await get('/api/prices/import/template?mode=vacias').expect(200);
+      expect(response.headers['content-disposition']).toMatch(/plantilla-precios-\d{4}-\d{2}-\d{2}\.xlsx/);
+    });
+
+    it('the empty template and the reference download are denied without their grant', async () => {
+      grants = ['prices:read', 'listas:read'].map((a) => grantRow(a));
+      await get('/api/prices/import/template?mode=vacias').expect(403);
+      grants = ['prices:preview'].map((a) => grantRow(a));
+      await get('/api/prices/import/template?mode=referencias').expect(403);
+      expect(prisma.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('the export needs prices:read and never a lista; a lista-tied grant is not enough', async () => {
+      grants = ['prices:preview'].map((a) => grantRow(a));
+      await get('/api/prices/import/export').expect(403);
+      grants = ['prices:read', 'listas:read'].map((a) => listGrantRow(a));
+      await get('/api/prices/import/export').expect(403);
+      expect(prisma.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['GET', '/api/prices/import/revisions'],
+      ['GET', '/api/prices/import/revisions/rev-1'],
+      ['GET', '/api/prices/import/revisions/rev-1/file'],
+      ['POST', '/api/prices/import/revisions/rev-1/apply'],
+      ['DELETE', '/api/prices/import/revisions/rev-1'],
+      ['GET', '/api/prices/import/profiles'],
+      ['POST', '/api/prices/import/profiles/recognize'],
+    ])('%s %s denies a caller with zero grants whatever the role (Admin Comercial, Supervisor)', async (method, url) => {
+      grants = [];
+      for (const role of ['Admin Comercial', 'Supervisor']) {
+        userRole = role;
+        const response = await request(app.getHttpServer())[method.toLowerCase() as 'get'](url).auth(token, { type: 'bearer' }).send({});
+        expect(response.status).toBe(403);
+      }
+    });
+
+    it('listing revisions needs no listaId (the filter is optional) but does need prices:read', async () => {
+      grants = ['prices:preview'].map((a) => grantRow(a));
+      await request(app.getHttpServer()).get('/api/prices/import/revisions').auth(token, { type: 'bearer' }).expect(403);
+    });
+
+    it('provider profiles need providers:read / providers:write as GLOBAL grants', async () => {
+      grants = ['providers:read'].map((a) => grantRow(a));
+      await request(app.getHttpServer()).post('/api/prices/import/profiles').auth(token, { type: 'bearer' }).send({}).expect(403);
+      grants = ['providers:write', 'providers:read'].map((a) => listGrantRow(a));
+      await request(app.getHttpServer()).get('/api/prices/import/profiles').auth(token, { type: 'bearer' }).expect(403);
+    });
   });
 });

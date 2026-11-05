@@ -10,13 +10,13 @@
  *    sirve la tienda — el pin CAT-06).
  *  - `historial`  : eventos de `publication_events` (quién/qué/resultado).
  *
- * Alcance: `AclService.getAllowedListaIds('view')` — mismo criterio de lista
- * que el resto del catálogo (null = Super Admin sin filtro; productos sin
- * Lista quedan fuera para los no-admin, coherente con la capa legada).
- * Búsqueda por sku/nombre/catálogo y página de 50 (el trabajo pesado con
+ * Alcance: ninguno por Lista. La concesión global `products:read` (exigida por el
+ * controlador) ve todos los productos, con o sin Lista. Búsqueda por sku/nombre/catálogo y página de 50 (el trabajo pesado con
  * filtros completos es job asíncrono de CAT-07).
  */
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../product-library';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 
@@ -27,27 +27,23 @@ const PAGE_SIZE = 50
 @Injectable()
 export class PublicationBoardService {
   constructor(
-    private prisma: PrismaService,
+    prisma: PrismaService,
     private acl: AclService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
 
-  private scope(ctx: AccessContext) {
-    return this.acl.getAllowedListaIds(ctx.userId, ctx.roles ?? [], 'view')
-  }
+  private get prisma() { return this.library.client; }
 
   async board(view: string, ctx: AccessContext, opts: { search?: string; page?: number } = {}) {
     if (!VIEWS.includes(view as BoardView)) {
       throw new BadRequestException(`Vista de bandeja no reconocida: ${view}`)
     }
-    // Defensivo: sin identidad no hay alcance (getAllowedListaIds devolvería
-    // null = sin filtro). La sesión la exige ya el guard; esto es el candado.
+    // Defensivo: la sesión y la concesión las exige ya el guard; esto es el candado.
     if (!ctx.userId) throw new ForbiddenException('Se requiere sesión')
     const v = view as BoardView
     const page = Math.max(0, Math.floor(opts.page ?? 0))
     const skip = page * PAGE_SIZE
     const search = opts.search?.trim()
-    const listaIds = await this.scope(ctx)
-    const scopeWhere = listaIds === null ? {} : { listaId: { in: listaIds } }
     const searchWhere = search
       ? { OR: [
           { sku: { contains: search, mode: 'insensitive' as const } },
@@ -57,8 +53,8 @@ export class PublicationBoardService {
       : {}
 
     if (v === 'historial') {
-      // Eventos de productos del alcance (los sin Lista quedan fuera para no-admin).
-      const where = listaIds === null ? {} : { productId: { in: await this.visibleProductIds(listaIds) } }
+      // Eventos de todos los productos (sin alcance por Lista).
+      const where = {}
       const [count, rows] = await Promise.all([
         this.prisma.publicationEvent.count({ where }),
         this.prisma.publicationEvent.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: PAGE_SIZE }),
@@ -66,7 +62,7 @@ export class PublicationBoardService {
       return { view: v, page, pageSize: PAGE_SIZE, total: count, items: rows }
     }
 
-    const baseWhere = { ...scopeWhere, ...searchWhere }
+    const baseWhere = { ...searchWhere }
     const productSelect = {
       id: true, sku: true, name: true, catalogName: true, lifecycleStatus: true,
       publishAt: true, scheduledRevisionId: true, publicRevisionId: true, publishedAt: true,
@@ -118,24 +114,13 @@ export class PublicationBoardService {
     return { view: v, page, pageSize: PAGE_SIZE, total, items }
   }
 
-  /** Historial de un producto: ACL de lectura del producto (404/403 según capa). */
+  /** Historial de un producto. La concesión global `products:read` la exige el controlador; ninguna Lista interviene. */
   async productHistory(productId: string, ctx: AccessContext) {
     if (!ctx.userId) throw new ForbiddenException('Se requiere sesión')
-    await this.acl.assertProductAccess(productId, ctx, 'view')
     return this.prisma.publicationEvent.findMany({
       where: { productId },
       orderBy: { createdAt: 'desc' },
       take: 200,
     })
-  }
-
-  private async visibleProductIds(listaIds: string[]): Promise<string[]> {
-    if (listaIds.length === 0) return []
-    const rows = await this.prisma.product.findMany({
-      where: { listaId: { in: listaIds } },
-      select: { id: true },
-      take: 2000, // acotado: el historial es una lectura reciente; el job sin tope es CAT-07
-    })
-    return rows.map((r) => r.id)
   }
 }
