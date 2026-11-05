@@ -27,8 +27,10 @@ Fuera (no se versiona; se añade a `.gitignore` solo lo pesado/generado): `docs/
 - [x] D5 Lint, tipos y pruebas locales aprobados en la instantánea; build backend aprobado. Build frontend verificado en CI Linux porque esbuild está bloqueado en este Windows. Se registra esa diferencia de entorno, sin declarar exitoso el build local de frontend.
 - [ ] D6 Revisión nativa del acumulado pendiente: START del rango de release hasta `31a8274` no pudo iniciar por `lens_context_budget_exceeded` (718 archivos, 154.578 líneas). Ese rango no obtuvo autoridad ni receipt; las revisiones manuales no lo sustituyen. La salvaguarda posterior sí obtuvo aprobación nativa acotada, documentada debajo.
 - [x] D6a Salvaguarda de rollback implementada y verificada con nueve escenarios aislados; sintaxis Bash aprobada. Detiene el API antes de comprobar datos, solo permite rollback con resultado `f` y bloquea errores/incompatibilidad sin restaurar ni borrar datos. No se ejecutaron contenedores ni operaciones en VPS.
-- [ ] D7 Rama subida y PR #90 abierto como **borrador**, con resumen, migraciones y riesgos. Falta resolver el control nativo del acumulado antes de marcarlo listo. **Sin merge ni despliegue hasta el visto bueno final.**
-- [ ] D8 Con el visto bueno del usuario: merge, seguir CI y CD, smoke test.
+- [x] D7 PR #90 publicado y fusionado por el usuario en `96670843` (05/11, 12:34 Bogotá), confirmado expresamente en el chat. Esta sesión no hizo ese merge. El CI y la construcción de ambas imágenes pasaron; la revisión nativa del acumulado no llegó a completarse.
+- [ ] D7a PR de seguimiento #91: salvaguarda de rollback y registro de recuperación; borrador pendiente de cierre de CI y de resolver el bloqueo de datos antes de reintentar deploy.
+- [ ] D8 CD `42076282618` falló en la migración de subcategorías, antes de reemplazar API/frontend; smoke omitido. Hace falta diagnóstico/mapeo y aprobación productiva antes de recuperar P3018 y reintentar.
+- [ ] D8a Inventario SQL de solo lectura y conteos agregados: consulta preparada, autorización y ejecución pendientes.
 - [ ] D9 Verificar `dev.gruposecurity.cloud/tienda` y registrar el resultado.
 
 ## Reglas de ejecución
@@ -70,3 +72,11 @@ Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo 
 - Límite: la parada cubre los escritores del API; otros trabajos que escriban la biblioteca deben coordinarse antes de una recuperación. La consulta verifica la incompatibilidad conocida de marca/categoría, no todas las posibles diferencias entre versiones.
 - Salvaguarda guardada en `7343e98`: revisión nativa del índice de seis archivos (280 líneas), linaje `review-48655702a5d0a5e9`, aprobada por seguridad, recuperación, claridad y fiabilidad sin hallazgos y reconocida por `review acknowledge-approved`. Esa autoridad solo cubre la salvaguarda; no aprueba el acumulado de la release, el merge ni el despliegue.
 - Las revisiones manuales acotadas de backend y frontend no encontraron defectos accionables; la revisión de despliegue detectó el riesgo de rollback y un segundo lector confirmó su mitigación después de la corrección. No hubo acceso a VPS, datos reales, ejecución de migraciones ni cambios de servicios.
+
+### Estado real después del merge del usuario
+
+El usuario confirmó el merge externo del PR #90. El CD construyó y publicó las imágenes, verificó el respaldo `20261105T174312Z-96670843.dump` y aplicó la migración de notas internas. Después se detuvo por 29 categorías de profundidad mayor que dos: `20261029150000_library_subcategories`, P3018/P0001, antes de DDL/backfill. Según el log no se reemplazaron API/frontend ni se ejecutaron las migraciones posteriores. Salud y tienda respondieron HTTP 200 en la comprobación pública posterior; no se declara actualizada la web.
+
+El árbol de `origin/main` tras el merge es idéntico al de `31a8274`. Se sincroniza la ascendencia de la rama para que el PR #91 muestre solo el seguimiento y no vuelva a incluir la release original. La corrección de rollback ya revisada conserva su contenido. Los cinco borrados locales siguen fuera de los commits.
+
+Inventario propuesto, evidencia y recuperación sin editar migraciones históricas: [traspaso del bloqueo de categorías](../../docs/handoffs/2026-11-05-despliegue-bloqueado-categorias.md). No se ha elegido ni aplicado un mapeo de categorías productivas. El siguiente paso requiere autorización para el inventario de solo lectura; cualquier modificación de datos o `migrate resolve` requiere aprobación posterior del plan concreto.
