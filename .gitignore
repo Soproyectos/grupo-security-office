@@ -66,6 +66,17 @@ src/backend/uploads/*
 # Enriquecimiento Hikvision (salida local generada, no versionar)
 tools/enrichment_output/
 
+# Salidas y datos pesados de la Biblioteca (generados en local, no versionar)
+/scraper-fichas/
+/output/
+/salida-anexos/
+/salida-lista/
+/previous_biblioteca.json
+/prueba_api*.json
+/data/import/catalog-preparation/
+/docs/biblioteca-dominio/evidencia/
+*.tar.gz
+
 # Debug/temporal
 **/__pycache__/
 *.pyc
