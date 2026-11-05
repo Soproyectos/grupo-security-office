@@ -105,9 +105,9 @@ export default function CategorySidebar({
           <Link
             to="/catalogo"
             onClick={onNavigate}
-            className="block rounded-control px-3 py-2 text-micro font-bold uppercase tracking-wide text-ink-500 transition hover:bg-surface-100 hover:text-security-500"
+            className="block rounded-control px-3 py-2 text-sm font-bold text-security-600 transition hover:bg-surface-100"
           >
-            Ver todo el catálogo
+            Ver todo el catálogo <span aria-hidden="true">›</span>
           </Link>
         </li>
       )}

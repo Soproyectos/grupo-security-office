@@ -164,7 +164,7 @@ export function ProductDocumentsSection({ product }: { product: Product }) {
         <div>
           <h3 className="text-sm font-semibold text-neutral-700">Documentos adjuntos</h3>
           <p className="text-xs text-neutral-500">
-            Fichas técnicas del producto. La ficha pública las usa solo si no hay documentos en «Documentos y firmware».
+            Fichas técnicas del producto. La ficha pública las usa solo si no hay documentos en «Recursos».
             Se guardan al instante.
           </p>
         </div>

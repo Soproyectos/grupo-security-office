@@ -1,4 +1,4 @@
-import { SALES_LINE_HREF, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
+import { WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
 
 /**
  * As HOM-04 defines it, the sales-channels section of the storefront
@@ -20,12 +20,6 @@ type SalesChannel = {
 const WHATSAPP_ICON = (
   <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6" aria-hidden="true">
     <path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3zm0 16.3a7.3 7.3 0 0 1-3.7-2l-.3-.3-2.7.7.7-2.6-.2-.3A7.3 7.3 0 1 1 12 19.3zm4.1-5.4c-.2-.1-1.3-.6-1.5-.7-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.4.3-.6.1a6 6 0 0 1-3-2.6c-.2-.3 0-.4.1-.6l.5-.6c.1-.2.1-.3 0-.5l-.7-1.7c-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.5.1-.7.3-.9.9-.9 2.1.1 3.7a9.7 9.7 0 0 0 3.9 3.5c1.5.7 2.3.7 3 .6.5-.1 1.3-.6 1.5-1.1.2-.5.2-1 .1-1.1l-.5-.3z" />
-  </svg>
-)
-
-const PHONE_ICON = (
-  <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6" aria-hidden="true">
-    <path d="M6.6 3h2.2c.4 0 .8.3.9.7l1 3.2c.1.4 0 .8-.3.6l-1.8 1a12.6 12.6 0 0 0 5.9 5.9l1-1.8c.2-.3.6-.4 1-.3l3.2 1c.4.1.7.5.7.9v2.2c0 1.4-1.1 2.6-2.5 2.5C9.9 18.4 5.6 14.1 5.1 6.1 5 4.7 6.2 3 6.6 3z" />
   </svg>
 )
 
@@ -52,12 +46,6 @@ const SALES_CHANNELS: SalesChannel[] = [
     href: whatsappUrl(),
     external: true,
     icon: WHATSAPP_ICON,
-  },
-  {
-    title: 'Venta telefónica',
-    description: 'Llama a nuestra línea de ventas y haz tu pedido.',
-    href: SALES_LINE_HREF,
-    icon: PHONE_ICON,
   },
   {
     title: 'Proyectos',

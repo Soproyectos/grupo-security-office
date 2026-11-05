@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth.store'
 import { userAccessKey } from '../users/access'
 import type { AccessGrant } from '../../services/users.service'
 import {
+  AgendaServiceError,
   agendaActivitiesKey,
   mergeAgendaActivities,
   type AgendaActivity,
@@ -77,7 +78,7 @@ function login(roles: string[]) {
   Object.assign(useAuthStore.getInitialState(), session)
 }
 
-function render(client: QueryClient, grants: AccessGrant[] = []) {
+function render(client: QueryClient, grants: AccessGrant[] = [], scope: 'own' | 'team' = 'own') {
   client.setQueryData(userAccessKey(USER), {
     catalogVersion: 'panels-20261019-3',
     accessVersion: 1,
@@ -88,7 +89,7 @@ function render(client: QueryClient, grants: AccessGrant[] = []) {
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <AgendaCalendarPage />
+        <AgendaCalendarPage initialScope={scope} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -174,11 +175,11 @@ describe('vista propia por defecto (incremento propias)', () => {
     expect(rowsOf(html, 'Visita a cliente ajeno')).toBe(0)
   })
 
-  it('deja el filtro Mis vendedores para la vista de equipo, no para la propia', () => {
+  it('deja el filtro Personas del equipo para la vista de equipo, no para la propia', () => {
     login(['Super Admin'])
     const client = seeded([row({ id: 'a1' })])
 
-    expect(render(client)).not.toContain('Mis vendedores')
+    expect(render(client)).not.toContain('Personas del equipo')
   })
 })
 
@@ -213,7 +214,7 @@ describe('vista de equipo por concesiones vigentes', () => {
     const html = render(client)
 
     expect(html).not.toContain('Agenda del equipo')
-    expect(html).not.toContain('Mis vendedores')
+    expect(html).not.toContain('Personas del equipo')
   })
 })
 
@@ -226,7 +227,7 @@ describe('«Solo Agenda propia no muestra equipo» (sin permiso no hay llamada d
     const html = render(client)
 
     expect(html).not.toContain('Agenda del equipo')
-    expect(html).not.toContain('Mis vendedores')
+    expect(html).not.toContain('Personas del equipo')
 
     const equipo = captured.queries.find(q => q.key === 'workflow-sellers')
     expect(equipo).toBeDefined()
@@ -246,5 +247,141 @@ describe('«Solo Agenda propia no muestra equipo» (sin permiso no hay llamada d
     expect(captured.queries.find(q => q.key === 'workflow-sellers')?.enabled).toBe(true)
     // La misma clave de actividades sostiene ambas vistas: un solo panel.
     expect(captured.queries.filter(q => q.key === 'team-workflow')).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Agenda de equipo (agenda-equipos-y-permisos, T4/T5). La vista de equipo se
+// monta con `initialScope="team"` porque en render de servidor no hay clicks.
+// ---------------------------------------------------------------------------
+
+const SELLERS_KEY = ['workflow-sellers', USER]
+const TEAM_READ = [{ sourceId: 'src-1', actionId: 'activities:read', scope: 'team' as const }]
+const TEAM_ASSIGN = [...TEAM_READ, { sourceId: 'src-1', actionId: 'activities:assign', scope: 'team' as const }]
+const ANA = { id: OTHER, name: 'Ana del Equipo' }
+const teamRow = (over: Partial<AgendaActivity> & { id: string }) =>
+  row({ title: 'Tarea de Ana', assigneeId: OTHER, assignee: ANA, ...over })
+
+function seededTeam(rows: AgendaActivity[], people: { id: string; name: string }[] = [ANA]) {
+  const client = seeded(rows)
+  client.setQueryData(SELLERS_KEY, people)
+  return client
+}
+
+describe('equipo en solo lectura (puede ver equipo, no asignar)', () => {
+  beforeEach(() => login(['Operador']))
+
+  it('ve las tareas del equipo con el nombre de cada persona y sin banner de error', () => {
+    const html = render(seededTeam([row({ id: 'a1' }), teamRow({ id: 't1' })]), TEAM_READ, 'team')
+
+    expect(html).toMatch(/<h1[^>]*>Agenda del equipo<\/h1>/)
+    expect(rowsOf(html, 'Tarea de Ana')).toBe(1)
+    expect(html).toContain('Ana del Equipo')
+    expect(html).not.toContain('No se pudo cargar la agenda')
+    expect(html).toContain('Personas del equipo')
+  })
+
+  it('no ofrece Reasignar ni selector de persona fuera del diálogo', () => {
+    const html = render(seededTeam([teamRow({ id: 't1' })]), TEAM_READ, 'team')
+
+    expect(html).not.toContain('Reasignar')
+    expect(html).not.toContain('Asignar a')
+    expect(html).not.toContain('Selecciona una persona')
+  })
+
+  it('sigue pudiendo crear en su propia agenda', () => {
+    const html = render(seededTeam([teamRow({ id: 't1' })]), TEAM_READ, 'team')
+
+    expect(html).toContain('Crear actividad')
+  })
+
+  it('un 403 del directorio se trata como «sin equipo»: sin banner de error y con guía', () => {
+    // retryOnMount:false keeps the seeded error: SSR would otherwise reset it to pending.
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } })
+    client.setQueryData(KEY, [])
+    client.getQueryCache().build(client, { queryKey: SELLERS_KEY }).setState({
+      status: 'error',
+      error: new AgendaServiceError('forbidden', 'No tienes permiso para ver a tu equipo.', 403, 'TEAM_DIRECTORY_FORBIDDEN'),
+      fetchStatus: 'idle',
+    })
+
+    const html = render(client, TEAM_READ, 'team')
+
+    expect(html).not.toContain('No se pudo cargar la agenda')
+    expect(html).toContain('Todavía no tienes personas a tu cargo')
+  })
+
+  it('un fallo real de red del directorio sí muestra el aviso con Reintentar', () => {
+    // retryOnMount:false keeps the seeded error: SSR would otherwise reset it to pending.
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } })
+    client.setQueryData(KEY, [])
+    client.getQueryCache().build(client, { queryKey: SELLERS_KEY }).setState({
+      status: 'error',
+      error: new Error('Network Error'),
+      fetchStatus: 'idle',
+    })
+
+    const html = render(client, TEAM_READ, 'team')
+
+    expect(html).toContain('No se pudo cargar la agenda')
+    expect(html).toContain('Reintentar')
+  })
+})
+
+describe('estado vacío que guía', () => {
+  it('agenda propia sin tareas invita a crear la primera', () => {
+    login(['Vendedor'])
+
+    const html = render(seeded([]))
+
+    expect(html).toContain('Todavía no tienes tareas')
+    expect(html).toContain('Crear actividad')
+  })
+
+  it('equipo con personas pero sin tareas lo dice con otras palabras', () => {
+    login(['Operador'])
+
+    const html = render(seededTeam([]), TEAM_READ, 'team')
+
+    expect(html).toContain('Tu equipo todavía no tiene tareas')
+    expect(html).not.toContain('Todavía no tienes personas a tu cargo')
+  })
+
+  it('equipo sin personas explica por qué no hay nada', () => {
+    login(['Operador'])
+
+    const html = render(seededTeam([], []), TEAM_READ, 'team')
+
+    expect(html).toContain('Todavía no tienes personas a tu cargo')
+  })
+
+  it('si los filtros ocultan todo, lo dice en vez de parecer vacío', () => {
+    login(['Vendedor'])
+
+    const html = render(seeded([row({ id: 'a1', status: 'COMPLETED' })]))
+
+    expect(html).toContain('Ninguna tarea coincide con los filtros')
+  })
+
+  it('no aparece cuando hay tareas visibles', () => {
+    login(['Vendedor'])
+
+    const html = render(seeded([row({ id: 'a1' })]))
+
+    expect(html).not.toContain('Todavía no tienes tareas')
+    expect(html).not.toContain('Ninguna tarea coincide')
+  })
+})
+
+describe('equipo con permiso de asignar', () => {
+  it('el filtro de personas lista a todo el equipo, no solo vendedores', () => {
+    login(['Operador'])
+    const people = [ANA, { id: 'p-9', name: 'Raúl Consulta' }]
+
+    const html = render(seededTeam([teamRow({ id: 't1' })], people), TEAM_ASSIGN, 'team')
+
+    expect(html).toContain('Ana del Equipo')
+    expect(html).toContain('Raúl Consulta')
+    expect(html).not.toContain('Mis vendedores')
   })
 })

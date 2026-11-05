@@ -244,32 +244,10 @@ describe('CAT-03 · identificadores del fabricante (H4)', () => {
     expect(validateForm(form).manufacturerRefs).toBeUndefined()
   })
 
-  it('con permiso las notas viajan en el payload; sin permiso se OMITEN (el servidor las conserva)', () => {
-    // Con `canSeeInternalNotes: true` (fixture) el editor de Notas manda el
-    // texto (y vacío = null explícito para borrarlas).
-    const visible = toPayload(toForm(sheetFixture()))
-    expect(visible.internalNotes).toBe('Almacén Bodega 2: último lote sin garantía extendida.')
-    const cleared = toPayload({ ...toForm(sheetFixture()), internalNotes: '   ' })
-    expect(cleared.internalNotes).toBeNull()
-
-    // Sin permiso: `toForm` deja `internalNotes` en null y el payload OMITE la
-    // clave — undefined no viaja en JSON y el servidor conserva lo vigente.
-    const hiddenForm = toForm(sheetFixture({ canSeeInternalNotes: false, internalNotes: null }))
-    expect(hiddenForm.internalNotes).toBeNull()
-    const hidden = toPayload(hiddenForm)
-    expect('internalNotes' in hidden).toBe(false)
-    expect(JSON.parse(JSON.stringify(hidden))).not.toHaveProperty('internalNotes')
-  })
-
-  it('valida la longitud de las notas internas (espejo del DTO: 4000)', () => {
-    const form = toForm(sheetFixture())
-    form.internalNotes = 'x'.repeat(LIMITS.internalNotes + 1)
-    expect(validateForm(form).internalNotes).toMatch(/Máximo/)
-    form.internalNotes = 'nota corta'
-    expect(validateForm(form).internalNotes).toBeUndefined()
-    // Sin permiso no se valida (el campo ni existe en la UI).
-    form.internalNotes = null
-    expect(validateForm(form).internalNotes).toBeUndefined()
+  it('el payload de la ficha nunca lleva notas internas (el servidor da 400 si llegan)', () => {
+    const payload = toPayload(toForm(sheetFixture()))
+    expect('internalNotes' in payload).toBe(false)
+    expect(toForm(sheetFixture())).not.toHaveProperty('internalNotes')
   })
 })
 

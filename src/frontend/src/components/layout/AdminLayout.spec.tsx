@@ -101,7 +101,7 @@ describe('AdminLayout — preserva la navegación de los otros paneles (regla 3)
     const html = render()
 
     expect(html).toContain('Mi resumen')
-    expect(html).toContain('Agenda y tareas')
+    expect(html).toContain('Agenda')
     expect(html).not.toContain('Panel Comercial')
     expect(html).not.toContain('href="/users"')
   })

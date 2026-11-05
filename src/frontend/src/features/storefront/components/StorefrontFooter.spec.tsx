@@ -24,8 +24,8 @@ describe('columnas del footer', () => {
     expect(markup).toContain('aria-labelledby="footer-Legal-title"')
     expect(markup).toContain('aria-labelledby="footer-contacto-title"')
     expect(markup).toContain('Contacto')
-    // Every entry of "Servicio al cliente" lacks a destination: no empty column.
-    expect(markup).not.toContain('Servicio al cliente')
+    expect(markup).toContain('Servicio al cliente')
+    expect(markup).not.toContain('Preguntas frecuentes')
   })
 })
 
@@ -36,9 +36,7 @@ describe('enlaces', () => {
     for (const label of [
       'Preguntas frecuentes',
       'Rastrea tu pedido',
-      'Cambios y devoluciones',
       'Centro de ayuda',
-      'Sobre nosotros',
       'Trabaja con nosotros',
       'Mapa del sitio',
       'Términos y condiciones',
@@ -63,6 +61,19 @@ describe('enlaces', () => {
     expect(markup).not.toContain('href="#"')
   })
 
+  it('enlaza Nosotros, Sedes y Garantías a sus rutas internas', () => {
+    const markup = renderFooter()
+
+    for (const [label, route] of [
+      ['Sobre nosotros', '/nosotros'],
+      ['Sedes', '/sedes'],
+      ['Cambios y devoluciones', '/garantias'],
+    ]) {
+      expect(markup).toContain(`href="${route}"`)
+      expect(markup).toContain(label)
+    }
+  })
+
   it('convierte "Vende con nosotros" en un enlace de WhatsApp con mensaje', () => {
     const markup = renderFooter()
 
@@ -80,24 +91,24 @@ describe('enlaces', () => {
   })
 })
 
-describe('contacto demo', () => {
-  it('muestra los teléfonos y el email de demo desde las constantes', () => {
+describe('contacto', () => {
+  it('ofrece solo WhatsApp, con el único número publicado', () => {
     const markup = renderFooter()
 
-    expect(markup).toContain('(6) 123 4567')
-    expect(markup).toContain('(601) 123 4567')
-    expect(markup).toContain('href="tel:+5761234567"')
-    expect(markup).toContain('href="mailto:serviciocliente@gruposecurity.example"')
-    expect(markup).toContain('Horario de atención')
+    expect(markup).toContain('316 027 5100')
+    expect(markup).toContain('href="https://wa.me/573160275100?text=')
+    expect(markup).not.toContain('tel:')
+    expect(markup).not.toContain('mailto:')
+    expect(markup).not.toContain('Horario de atención')
   })
 })
 
 describe('fila inferior', () => {
-  it('muestra el copyright con el año actual y el NIT marcado demo', () => {
+  it('muestra el copyright con el año actual y sin NIT inventado', () => {
     const markup = renderFooter()
 
     expect(markup).toContain(`© ${new Date().getFullYear()} Grupo Security S.A.S.`)
-    expect(markup).toContain('NIT 900.000.000-0 (demo)')
+    expect(markup).not.toContain('NIT')
   })
 
   it('oculta las redes sociales sin URL real y conserva WhatsApp', () => {

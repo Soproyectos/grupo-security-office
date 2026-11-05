@@ -238,7 +238,7 @@ describe('categoría conocida', () => {
     expect(markup).toContain('text-security-500')
     expect(markup).toMatch(/mask-image:url\((&quot;|')?\/images\/category-icons\/bala\.svg/)
     // PTZ has neither cover nor icon: the circle keeps a neutral placeholder.
-    expect(occurrences(markup, 'bg-surface-100')).toBe(1)
+    expect(occurrences(markup, 'class="h-full w-full bg-surface-100"')).toBe(1)
   })
 
   it('muestra la grilla de productos con su precio y el conteo', () => {

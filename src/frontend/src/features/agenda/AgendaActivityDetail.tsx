@@ -56,7 +56,9 @@ export default function AgendaActivityDetail({
 }) {
   const [target, setTarget] = useState('')
   const events = activity.events ?? []
-  const offerReassign = canAssign && !!people?.length
+  const completed = activity.status === 'COMPLETED'
+  // A completed activity is locked: no reassigning, no links (server answers 409).
+  const offerReassign = canAssign && !completed && !!people?.length
   function reassign() {
     const person = people?.find(candidate => candidate.id === target)
     if (person) onReassign?.(person)
@@ -97,9 +99,14 @@ export default function AgendaActivityDetail({
           </ul>
         </section>
       )}
+      {completed && (
+        <p role="note" className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+          Esta actividad ya está completada y no se puede modificar: no se cambia la persona asignada ni sus enlaces.
+        </p>
+      )}
       <AgendaLinksSection
         links={activity.links}
-        canManage={canManageLinks}
+        canManage={canManageLinks && !completed}
         busy={busy}
         error={linkError}
         onAdd={(targetType, targetId) => onAddLink?.(targetType, targetId)}
@@ -119,9 +126,9 @@ export default function AgendaActivityDetail({
           <h4 className="text-sm font-semibold">Reasignar</h4>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block min-w-48 flex-1 text-sm">
-              Vendedor
+              Reasignar a
               <select className={inputStyle} value={target} onChange={e => setTarget(e.target.value)}>
-                <option value="">Selecciona un vendedor</option>
+                <option value="">Selecciona una persona</option>
                 {people?.map(person => (
                   <option key={person.id} value={person.id}>
                     {person.name}

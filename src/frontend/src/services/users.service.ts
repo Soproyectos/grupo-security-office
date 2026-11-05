@@ -35,13 +35,14 @@ export const updateUserSupervisor = async (userId: string, supervisorId: string 
 // Superficie del backend `users.controller.ts` (COM-01 backend, E1):
 //   GET    /users/:id/access                  → estado, procedencia y paquetes
 //   PUT    /users/:id/access                  → modo paquete o modo grants (OCC)
+//   PUT    /users/:id/access/library          → casillas de Biblioteca (una fuente por usuario)
 //   DELETE /users/:id/access/packages/:id     → retira SOLO esa fuente template
 // El navegador nunca inventa reglas: sólo ecoa la versión OCC y la del
 // catálogo que el servidor ya sirvió (409/400 si se desactualizan).
 // ---------------------------------------------------------------------------
 
 /** Versión del catálogo con la que el servidor sirve hoy el paquete. */
-export const ACCESS_CATALOG_VERSION = 'panels-20261019-3'
+export const ACCESS_CATALOG_VERSION = 'panels-20261104-1'
 
 export type AccessScope = 'own' | 'team' | 'list' | 'product' | 'global'
 
@@ -75,6 +76,8 @@ export interface AccessPackage {
   selections: AccessSelection[]
   applied: boolean
   sourceId: string | null
+  /** Catálogo actual: los paquetes anteriores solo pueden revocarse. */
+  assignable?: boolean
 }
 
 export interface UserAccessState {
@@ -277,6 +280,31 @@ export async function setUserAccessGrants(
   try {
     const res = await api.put(`/users/${userId}/access`, {
       grants,
+      expectedVersion,
+      expectedCatalogVersion: options.catalogVersion ?? ACCESS_CATALOG_VERSION,
+      ...(options.reason ? { reason: options.reason } : {}),
+      ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+    })
+    return res.data as AssignmentReceipt
+  } catch (error) {
+    throw toAccessError(error)
+  }
+}
+
+/**
+ * Guarda las casillas de Biblioteca (Productos / Fichas / Precios) como una sola
+ * selección. El servidor valida el conjunto, añade las dependencias y reemplaza
+ * los paquetes de Biblioteca anteriores en la misma operación.
+ */
+export async function setUserLibrarySelection(
+  userId: string,
+  actionIds: string[],
+  expectedVersion: number,
+  options: { catalogVersion?: string; reason?: string; idempotencyKey?: string } = {},
+): Promise<AssignmentReceipt> {
+  try {
+    const res = await api.put(`/users/${userId}/access/library`, {
+      actionIds,
       expectedVersion,
       expectedCatalogVersion: options.catalogVersion ?? ACCESS_CATALOG_VERSION,
       ...(options.reason ? { reason: options.reason } : {}),

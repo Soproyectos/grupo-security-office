@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useLocation, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom'
 import type { LifecycleStatus } from '../features/products/types/product.types'
 import {
   LIFECYCLE_STATUS_LABEL,
 } from '../features/products/lib/lifecycle'
 import { useProducts } from '../features/products/hooks/useProducts'
-import { ValidationBatchButton } from '../features/catalog-validation/ValidationBatchButton'
-import { PublicationBoardSection } from '../features/catalog-publication/PublicationBoardPanel'
 import { ProductCard } from '../features/products/components/ProductCard'
-import { ProductTableRow } from '../features/products/components/ProductTableRow'
+import { ProductQuickList } from '../features/products/components/ProductQuickList'
+import { usePriceLists } from '../features/products/hooks/usePriceLists'
+import { mergeTariffColumns } from '../features/products/lib/quick-list'
 import { ProductPagination } from '../components/ProductPagination'
-import { hasRole } from '../lib/rbac'
-import { ROLES } from '../lib/roles'
+import { buildProductsListParams, parseProductsListParams } from '../features/products/lib/products-list-url'
 import { SearchFilterBar, type SearchFilterChip } from '../components/filters/SearchFilterBar'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -23,18 +22,29 @@ const LIFECYCLE_FILTER_OPTIONS: LifecycleStatus[] = [
   'ARCHIVED',
 ]
 
+const URL_OPTIONS = {
+  pageSizes: PAGE_SIZE_OPTIONS,
+  defaultPageSize: DEFAULT_PAGE_SIZE,
+  lifecycleStatuses: LIFECYCLE_FILTER_OPTIONS,
+}
+
 export default function ProductsPage() {
   const navigate = useNavigate()
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const location = useLocation()
+  const navigationType = useNavigationType()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Filters and page live in the URL so links and "Volver" from the sheet editor restore them.
+  const [initial] = useState(() => parseProductsListParams(searchParams, URL_OPTIONS))
+  const [search, setSearch] = useState(initial.search)
+  const [page, setPage] = useState(initial.page)
+  const [pageSize, setPageSize] = useState(initial.pageSize)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(initial.viewMode)
 
   // Batch filters state
   const [filterChips, setFilterChips] = useState({
-    categoryIds: [] as string[],
-    brandIds: [] as string[],
-    lifecycleStatuses: [] as string[],
+    categoryIds: initial.categoryIds,
+    brandIds: initial.brandIds,
+    lifecycleStatuses: initial.lifecycleStatuses,
   })
 
   const filters = {
@@ -42,7 +52,6 @@ export default function ProductsPage() {
     categoryIds: filterChips.categoryIds,
     brandIds: filterChips.brandIds,
     lifecycleStatuses: filterChips.lifecycleStatuses,
-    activeListaOnly: true,
   }
 
   const { products, categories, brands, total, isLoading } = useProducts({
@@ -51,15 +60,42 @@ export default function ProductsPage() {
     pageSize,
   })
 
-  const isCatalogManager = hasRole(ROLES.SUPER_ADMIN) || hasRole(ROLES.ADMIN_COMERCIAL)
-
-  // El backend ya filtra por productos de Listas activas (activeListaOnly),
-  // asi total/totalPages quedan consistentes con lo mostrado.
+  // La biblioteca es el catalogo interno completo: no depende de Listas.
   const currentProducts = products ?? []
+  const { priceLists } = usePriceLists()
+
+  // Reset to the first page only when a filter really changes (not when it is restored from the URL).
+  const filterKey = JSON.stringify([search, filterChips])
+  const lastFilterKey = useRef(filterKey)
+  useEffect(() => {
+    if (lastFilterKey.current === filterKey) return
+    lastFilterKey.current = filterKey
+    setPage(1)
+  }, [filterKey])
 
   useEffect(() => {
-    setPage(1)
-  }, [search, filterChips])
+    const next = buildProductsListParams({ search, page, pageSize, viewMode, ...filterChips }, DEFAULT_PAGE_SIZE).toString()
+    if (next !== searchParams.toString()) setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, page, pageSize, viewMode, filterChips])
+
+  // Navigation to this page while it is mounted (header search `?search=`, the Productos tab, back/forward)
+  // makes the URL the truth again. Our own URL writes are REPLACE navigations and are skipped.
+  const seenLocationKey = useRef(location.key)
+  useEffect(() => {
+    if (seenLocationKey.current === location.key) return
+    seenLocationKey.current = location.key
+    if (navigationType === 'REPLACE') return
+    const url = parseProductsListParams(searchParams, URL_OPTIONS)
+    const chips = { categoryIds: url.categoryIds, brandIds: url.brandIds, lifecycleStatuses: url.lifecycleStatuses }
+    lastFilterKey.current = JSON.stringify([url.search, chips]) // keep the URL's page
+    setSearch(url.search)
+    setPage(url.page)
+    setPageSize(url.pageSize)
+    setViewMode(url.viewMode)
+    setFilterChips(chips)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, navigationType])
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
@@ -70,9 +106,11 @@ export default function ProductsPage() {
 
   const clearProductFilters = () => {
     setFilterChips({ categoryIds: [], brandIds: [], lifecycleStatuses: [] })
+    setSearch('')
     setPage(1)
   }
 
+  // The search box inside this tab filters only the Biblioteca products (the top bar goes to the global search).
   const productFilterChips: SearchFilterChip[] = [
     ...filterChips.categoryIds.map((id) => {
       const cat = categories.find((c) => c.id === id)
@@ -107,34 +145,16 @@ export default function ProductsPage() {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-condensed font-bold text-security-800">Productos</h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            Catálogo global de consulta. La creación y edición se realizan desde la Lista correspondiente.
-          </p>
-        </div>
-        {/* CAT-05: validar el alcance mostrado (los autorizados de lo que se ve). */}
-        <ValidationBatchButton productIds={currentProducts.map((p) => p.id)} />
-      </div>
-
-      {/* CAT-06: bandeja de publicación por alcance — lectura del contrato de servidor. */}
-      <PublicationBoardSection />
+    <div className="space-y-4">
+      {/* The help text lives in the Biblioteca tab strip (CommercialLayout) */}
 
       {/* Search and filters */}
       <SearchFilterBar
-        search={{
-          value: search,
-          onChange: setSearch,
-          placeholder: 'Buscar por nombre, SKU o descripción...',
-          ariaLabel: 'Buscar productos',
-        }}
+        search={{ value: search, onChange: (value) => { setSearch(value); setPage(1) }, placeholder: 'Buscar en Biblioteca por nombre, referencia o marca', ariaLabel: 'Buscar productos en Biblioteca' }}
         activeFilterCount={productsFilterCount}
         activeFilterChips={productFilterChips}
         onClearFilters={clearProductFilters}
-        clearFiltersDisabled={productsFilterCount === 0}
+        clearFiltersDisabled={productsFilterCount === 0 && !search.trim()}
         layout="sidebar"
         sidebarSections={[
           {
@@ -219,53 +239,53 @@ export default function ProductsPage() {
             ),
           },
         ]}
+        toolbarEnd={
+          <>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg border transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-security-500 text-white border-security-500'
+                    : 'bg-white text-neutral-500 border-neutral-300 hover:bg-neutral-50'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg border transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-security-500 text-white border-security-500'
+                    : 'bg-white text-neutral-500 border-neutral-300 hover:bg-neutral-50'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+            <ProductPagination
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              pageSize={pageSize}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+            />
+          </>
+        }
         content={
           <>
-            {/* View controls */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2.5 rounded-lg border transition-colors ${
-                    viewMode === 'grid'
-                      ? 'bg-security-500 text-white border-security-500'
-                      : 'bg-white text-neutral-500 border-neutral-300 hover:bg-neutral-50'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2.5 rounded-lg border transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-security-500 text-white border-security-500'
-                      : 'bg-white text-neutral-500 border-neutral-300 hover:bg-neutral-50'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
-              <ProductPagination
-                page={page}
-                totalPages={totalPages}
-                total={total}
-                pageSize={pageSize}
-                pageSizeOptions={PAGE_SIZE_OPTIONS}
-                onPageChange={setPage}
-                onPageSizeChange={(size) => {
-                  setPageSize(size)
-                  setPage(1)
-                }}
-              />
-            </div>
-
             {/* Products grid/list */}
             {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-8 gap-2">
                 {isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <div key={i} className="border border-gray-200 overflow-hidden animate-pulse">
@@ -287,11 +307,7 @@ export default function ProductsPage() {
                         ? `No hay productos en estado ${filterChips.lifecycleStatuses.map(s => LIFECYCLE_STATUS_LABEL[s as LifecycleStatus]).join(', ')}`
                         : 'No hay productos'}
                     </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      {isCatalogManager
-                        ? 'Crea productos desde una Lista para comenzar.'
-                        : 'No tienes listas asignadas. Solicita acceso a tu administrador.'}
-                    </p>
+                    <p className="text-gray-400 text-sm mt-1">No hay productos visibles en la Biblioteca.</p>
                   </div>
                 ) : (
                   currentProducts.map((product) => (
@@ -307,52 +323,17 @@ export default function ProductsPage() {
                 )}
               </div>
             ) : (
-              <div className="overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Producto</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Precio</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Categoría</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Marca</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Estado</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Ver</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {isLoading ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Cargando...</td>
-                      </tr>
-                    ) : currentProducts.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
-                        {filterChips.lifecycleStatuses.length > 0 && (products?.length ?? 0) > 0
-                          ? `No hay productos en estado ${filterChips.lifecycleStatuses.map(s => LIFECYCLE_STATUS_LABEL[s as LifecycleStatus]).join(', ')}`
-                          : 'No hay productos'}
-                        {!isCatalogManager && filterChips.lifecycleStatuses.length === 0 && (
-                          <span className="block text-xs mt-1 text-gray-500">
-                            No tienes listas asignadas. Solicita acceso a tu administrador.
-                          </span>
-                        )}
-                      </td>
-                      </tr>
-                    ) : (
-                      currentProducts.map((product) => (
-                        <ProductTableRow
-                          key={product.id}
-                          product={product}
-                          readOnly
-                          onEdit={() => {}}
-                          onTransition={() => {}}
-                          onDelete={() => {}}
-                          onOpen={(id) => navigate(`/commercial/products/${id}`)}
-                        />
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <ProductQuickList
+                products={currentProducts}
+                tariffs={mergeTariffColumns(priceLists.filter((list) => list.currency === 'COP'), currentProducts)}
+                isLoading={isLoading}
+                emptyMessage={
+                  filterChips.lifecycleStatuses.length > 0 && (products?.length ?? 0) > 0
+                    ? `No hay productos en estado ${filterChips.lifecycleStatuses.map((s) => LIFECYCLE_STATUS_LABEL[s as LifecycleStatus]).join(', ')}`
+                    : 'No hay productos'
+                }
+                onOpen={(id) => navigate(`/commercial/products/${id}`)}
+              />
             )}
 
             {/* Pagination */}

@@ -20,6 +20,47 @@ export async function saveProductSheet(productId: string, payload: ProductSheetP
   return res.data as ProductSheetApi
 }
 
+// ------------------------------ Internal notes ------------------------------
+
+/** One internal note as returned by `GET /products/:id/internal-notes`. */
+export interface InternalNoteApi {
+  id: string
+  text: string
+  authorName: string
+  createdAt: string
+  /** Null until the note is edited at least once. */
+  updatedAt: string | null
+  /** Computed by the server: true only for the author. */
+  canEdit: boolean
+  /** Optimistic-concurrency counter, sent back as `expectedVersion`. */
+  version: number
+}
+
+export const internalNoteKeys = {
+  list: (productId: string) => ['product-internal-notes', productId] as const,
+}
+
+/** GET /products/:id/internal-notes: all notes, newest first. */
+export async function fetchInternalNotes(productId: string): Promise<InternalNoteApi[]> {
+  const res = await api.get(`/products/${productId}/internal-notes`)
+  return res.data as InternalNoteApi[]
+}
+
+/** POST /products/:id/internal-notes: writes a new note authored by the session user. */
+export async function createInternalNote(productId: string, text: string): Promise<InternalNoteApi> {
+  const res = await api.post(`/products/${productId}/internal-notes`, { text })
+  return res.data as InternalNoteApi
+}
+
+/** PATCH /products/:id/internal-notes/:noteId: only the author may edit; 409 on stale version. */
+export async function updateInternalNote(productId: string, noteId: string, text: string, expectedVersion?: number): Promise<InternalNoteApi> {
+  const res = await api.patch(`/products/${productId}/internal-notes/${noteId}`, {
+    text,
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
+  })
+  return res.data as InternalNoteApi
+}
+
 /**
  * CAT-03 (regla 5): resumen de revisiones para mostrar el estado de validación.
  * Solo lectura: validar/publicar es CAT-05/CAT-06.

@@ -17,25 +17,23 @@ function renderSection(): string {
 }
 
 describe('canales de venta', () => {
-  it('pinta los cuatro canales con su título y descripción', () => {
+  it('pinta los tres canales con su título y descripción', () => {
     const markup = renderSection()
 
     expect(markup).toContain('aria-labelledby="home-canales-title"')
     expect(markup).toContain('WhatsApp')
-    expect(markup).toContain('Venta telefónica')
     expect(markup).toContain('Proyectos')
     expect(markup).toContain('Ventas al por mayor')
     expect(markup).toContain('Escríbenos por WhatsApp y te asesoramos en tu compra.')
-    expect(markup).toContain('Llama a nuestra línea de ventas y haz tu pedido.')
     expect(markup).toContain('Cotiza proyectos de seguridad para tu empresa o edificio.')
     expect(markup).toContain('Precios especiales por volumen para distribuidores e instaladores.')
   })
 
-  it('enlaza WhatsApp y la línea de ventas con los números de demo', () => {
+  it('enlaza WhatsApp con el número real y no ofrece llamadas', () => {
     const markup = renderSection()
 
-    expect(markup).toContain('href="https://wa.me/576011234567"')
-    expect(markup).toContain('href="tel:+5761234567"')
+    expect(markup).toContain('href="https://wa.me/573160275100"')
+    expect(markup).not.toContain('tel:')
   })
 
   it('deja WhatsApp como enlace externo con target y rel', () => {
@@ -59,7 +57,7 @@ describe('canales de venta', () => {
   it('pinta un ícono SVG por canal', () => {
     const markup = renderSection()
 
-    expect(markup.split('<svg').length - 1).toBe(4)
-    expect(markup.split('class="h-6 w-6"').length - 1).toBe(4)
+    expect(markup.split('<svg').length - 1).toBe(3)
+    expect(markup.split('class="h-6 w-6"').length - 1).toBe(3)
   })
 })

@@ -120,7 +120,9 @@ describe('ficha de un producto sin datos enriquecidos', () => {
 
   it('arma la migaja de pan con rutas de la tienda y termina en la categoría', () => {
     const markup = renderRoute()
-    const crumbs = markup.slice(markup.indexOf('aria-label="Ruta de navegación"'), markup.indexOf('</nav>'))
+    // The storefront header has its own <nav> before the breadcrumb: close the slice at the breadcrumb's </nav>.
+    const crumbsStart = markup.indexOf('aria-label="Ruta de navegación"')
+    const crumbs = markup.slice(crumbsStart, markup.indexOf('</nav>', crumbsStart))
 
     expect(crumbs).toContain('href="/tienda"')
     expect(crumbs).toContain('href="/catalogo/categoria/videovigilancia"')
@@ -164,12 +166,12 @@ describe('ficha de un producto sin datos enriquecidos', () => {
     expect(markup).not.toContain('Imágenes del producto')
   })
 
-  it('ofrece cotizar por WhatsApp y llamar', () => {
+  it('ofrece cotizar por WhatsApp', () => {
     const markup = renderRoute()
     const message = encodeURIComponent('Hola, quiero cotizar el producto Cámara Domo 4K (SKU: DS-2CD2143).')
 
-    expect(markup).toContain(`href="https://wa.me/576011234567?text=${message}"`)
-    expect(markup).toContain('href="tel:+576011234567"')
+    expect(markup).toContain(`href="https://wa.me/573160275100?text=${message}"`)
+    expect(markup).not.toContain('tel:')
     expect(markup.split('Cotizar por WhatsApp').length - 1).toBeGreaterThanOrEqual(2)
   })
 

@@ -1,15 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from '../../../services/api'
-import { fetchPublishedImages, saveProductSheet, uploadProductAsset } from './sheet.service'
+import { createInternalNote, fetchInternalNotes, fetchPublishedImages, saveProductSheet, updateInternalNote, uploadProductAsset } from './sheet.service'
+import { publishedImagesNotice } from './published-images'
 
-vi.mock('../../../services/api', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
+vi.mock('../../../services/api', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), patch: vi.fn() } }))
 
 describe('fetchPublishedImages (CAT-04 frontend-imagenes)', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('compara las fotos usando url, como las entrega la API pública', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: { images: [{ url: '/api/files/photo', alt: 'Producto' }] } })
+    const images = await fetchPublishedImages('p-1')
+    expect(publishedImagesNotice(['/api/files/photo'], images).state).toBe('igual')
+  })
+
   it('devuelve la galería lensada del detalle público', async () => {
-    ;vi.mocked(api.get).mockResolvedValue({ data: { images: [{ src: '/api/files/pub-1', alt: 'Publicada' }] } })
-    expect(await fetchPublishedImages('p-1')).toEqual([{ src: '/api/files/pub-1', alt: 'Publicada' }])
+    ;vi.mocked(api.get).mockResolvedValue({ data: { images: [{ url: '/api/files/pub-1', alt: 'Publicada' }] } })
+    expect(await fetchPublishedImages('p-1')).toEqual([{ url: '/api/files/pub-1', alt: 'Publicada' }])
     expect(api.get).toHaveBeenCalledWith('/public/products/p-1')
   })
 
@@ -26,6 +33,32 @@ describe('fetchPublishedImages (CAT-04 frontend-imagenes)', () => {
   it('otro error no se traga (sube para el aviso de red)', async () => {
     ;vi.mocked(api.get).mockRejectedValue({ response: { status: 500 } })
     await expect(fetchPublishedImages('p-1')).rejects.toEqual({ response: { status: 500 } })
+  })
+})
+
+describe('notas internas (lista propia, no la ficha)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('lista las notas del producto', async () => {
+    const notes = [{ id: 'n-1', text: 'Nota ficticia', authorName: 'Ana Prueba', createdAt: '2026-01-01T10:00:00.000Z', updatedAt: null, canEdit: true, version: 0 }]
+    vi.mocked(api.get).mockResolvedValue({ data: notes })
+    expect(await fetchInternalNotes('p-1')).toEqual(notes)
+    expect(api.get).toHaveBeenCalledWith('/products/p-1/internal-notes')
+  })
+
+  it('crea una nota enviando solo el texto', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: { id: 'n-2' } })
+    await createInternalNote('p-1', 'Texto ficticio')
+    expect(api.post).toHaveBeenCalledWith('/products/p-1/internal-notes', { text: 'Texto ficticio' })
+  })
+
+  it('edita una nota con la versión que se leyó y sin tocar la ficha', async () => {
+    vi.mocked(api.patch).mockResolvedValue({ data: { id: 'n-2', version: 3 } })
+    await updateInternalNote('p-1', 'n-2', 'Cambio ficticio', 2)
+    expect(api.patch).toHaveBeenCalledWith('/products/p-1/internal-notes/n-2', { text: 'Cambio ficticio', expectedVersion: 2 })
+    expect(api.put).not.toHaveBeenCalled()
+    await updateInternalNote('p-1', 'n-2', 'Otro')
+    expect(vi.mocked(api.patch).mock.calls[1]?.[1]).toEqual({ text: 'Otro' })
   })
 })
 

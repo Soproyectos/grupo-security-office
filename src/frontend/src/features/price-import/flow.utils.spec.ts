@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyRequirements, canApply } from './flow.utils'
+import { applyRequirements, canApply, PRICE_APPLY_INVALIDATE_KEYS } from './flow.utils'
 
 const summary = { rows: 5, validRows: 3, errorRows: 2, prices: 6, newPrices: 0, changedPrices: 6, unchangedPrices: 0, roundedPrices: 0 }
 
@@ -16,5 +16,11 @@ describe('price import flow rules', () => {
     expect(applyRequirements(summary).rejectedRows).toBe(2)
     expect(canApply(applyRequirements({ ...summary, validRows: 0 }), true, true)).toBe(false)
     expect(canApply(applyRequirements({ ...summary, errorRows: 0 }), false, false)).toBe(true)
+  })
+})
+
+describe('PRICE_APPLY_INVALIDATE_KEYS', () => {
+  it('covers products, product detail, prices, audit and price lists', () => {
+    expect(PRICE_APPLY_INVALIDATE_KEYS.map((key) => key[0])).toEqual(['products', 'product', 'product-prices', 'product-audit', 'priceLists'])
   })
 })

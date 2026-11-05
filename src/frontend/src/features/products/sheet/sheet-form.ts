@@ -87,11 +87,6 @@ export interface ProductSheetApi {
   /** CAT-03 (H4): identificadores del fabricante (públicos en la ficha editable). */
   manufacturerRefs: string[]
   /**
-   * CAT-03 (H1): notas INTERNAS. `null` cuando el actor no tiene `products:notes`
-   * (el servidor las conserva en ese caso y no las devuelve nunca al API público).
-   */
-  internalNotes: string | null
-  /**
    * CAT-03 (`frontend-tecnicos`): el actor puede ver/editar notas internas.
    * Distingue «sin notas» de «sin permiso» (UI honesta).
    */
@@ -130,11 +125,6 @@ export interface ProductSheetPayload {
   firmwareNote: string | null
   /** CAT-03 (H4): lista de identificadores del fabricante (el servidor deduplica). */
   manufacturerRefs: string[]
-  /**
-   * CAT-03 (H1): OMITIR el campo conserva las notas vigentes; solo un actor con
-   * `products:notes` puede cambiarlas (string) o borrarlas (null explícito).
-   */
-  internalNotes?: string | null
   /** CAT-03 (H2): OCC — versión que el cliente leyó; atrasada → 409 sin escribir. */
   expectedVersion?: number
   specGroups: { key?: string; title: string; items: { label: string; value: string }[] }[]
@@ -205,12 +195,6 @@ export interface SheetForm {
   resources: ResourceRow[]
   specsDisclaimer: string
   firmwareNote: string
-  /**
-   * CAT-03 (H1/`frontend-tecnicos`): texto de las notas internas, o `null`
-   * cuando el actor NO puede verlas (el payload las omite → el servidor las
-   * conserva). Vacío con permiso = borrarlas.
-   */
-  internalNotes: string | null
 }
 
 let uidCounter = 0
@@ -252,7 +236,6 @@ export function toForm(sheet: ProductSheetApi): SheetForm {
     })),
     specsDisclaimer: sheet.specsDisclaimer ?? '',
     firmwareNote: sheet.firmwareNote ?? '',
-    internalNotes: sheet.canSeeInternalNotes ? (sheet.internalNotes ?? '') : null,
   }
 }
 
@@ -285,9 +268,6 @@ export function toPayload(form: SheetForm): ProductSheetPayload {
     imageAlt: orNull(form.imageAlt),
     specsDisclaimer: orNull(form.specsDisclaimer),
     firmwareNote: orNull(form.firmwareNote),
-    // CAT-03: sin permiso las NOTAS se OMITEN del cuerpo (omitir = conservar en
-    // el servidor); con permiso, texto vacío las borra explícitamente (null).
-    ...(form.internalNotes === null ? {} : { internalNotes: orNull(form.internalNotes) }),
     specGroups: form.specGroups.map((g) => ({
       ...(g.key ? { key: g.key } : {}),
       title: g.title.trim(),
@@ -345,10 +325,6 @@ export function validateForm(form: SheetForm): SheetErrors {
   })
   if (form.specGroups.length > LIMITS.specGroups) errors.specGroups = `Máximo ${LIMITS.specGroups} grupos.`
   if (form.resources.length > LIMITS.resources) errors.resources = `Máximo ${LIMITS.resources} documentos y firmware.`
-
-  if (form.internalNotes !== null && form.internalNotes.length > LIMITS.internalNotes) {
-    errors.internalNotes = `Máximo ${LIMITS.internalNotes} caracteres.`
-  }
 
   form.features.forEach((f, i) => {
     if (!f.label.trim()) errors[`features.${i}.label`] = 'Escribe el texto de la característica.'

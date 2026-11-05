@@ -36,11 +36,12 @@ import {
 import { ROLES } from '../lib/roles'
 import { getApiErrorMessage } from '../lib/apiError'
 import { Button } from '../components/ui'
+import { categoryRows } from './category-tree'
 
 type TabKey = 'categories' | 'brands' | 'priceLists' | 'history'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'categories', label: 'Categorías' },
+  { key: 'categories', label: 'Categorías y subcategorías' },
   { key: 'brands', label: 'Marcas' },
   { key: 'priceLists', label: 'Tarifas' },
   { key: 'history', label: 'Historial' },
@@ -183,6 +184,7 @@ function CategoriesTab() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
+  const [search, setSearch] = useState('')
 
   const canEdit = hasPermission('categories:write')
   const canDelete = canDeleteCategories()
@@ -218,8 +220,8 @@ function CategoriesTab() {
 
   return (
     <TableShell
-      title="Categorías"
-      subtitle="Agrupan los productos del catálogo. Las que no existan se crean automáticamente durante la importación."
+      title="Categorías y subcategorías"
+      subtitle="Organiza los productos en categorías principales y subcategorías."
       action={
         canEdit && (
           <Button
@@ -231,7 +233,7 @@ function CategoriesTab() {
             }
             onClick={openCreate}
           >
-            Nueva Categoría
+            Nueva categoría
           </Button>
         )
       }
@@ -242,6 +244,10 @@ function CategoriesTab() {
           <button onClick={() => setActionError(null)} className="p-0.5 rounded hover:bg-red-100/60" aria-label="Cerrar" />
         </div>
       )}
+      <div className="border-b border-neutral-200 p-3">
+        <label className="sr-only" htmlFor="category-search">Buscar categoría</label>
+        <input id="category-search" className={fieldClass} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar categoría o subcategoría" />
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50">
@@ -259,11 +265,14 @@ function CategoriesTab() {
             ) : !categories || categories.length === 0 ? (
               <EmptyRow colSpan={5} message="No hay categorías" />
             ) : (
-              categories.map((cat) => (
+              categoryRows(categories, search).map((cat) => (
                 <tr key={cat.id} className="hover:bg-neutral-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium text-neutral-800">{cat.name}</td>
+                  <td className={`px-6 py-4 text-sm font-medium text-neutral-800 ${cat.parentId ? 'pl-12' : ''}`}>
+                    <span className="block text-xs font-normal text-neutral-500">{cat.parentId ? `Subcategoría · ${cat.parent?.name ?? categories.find((item) => item.id === cat.parentId)?.name ?? 'Categoría principal'}` : 'Categoría'}</span>
+                    {cat.name}
+                  </td>
                   <td className="px-6 py-4 text-xs font-mono text-neutral-500">{cat.slug}</td>
-                  <td className="px-6 py-4 text-sm text-neutral-600">{cat.productCount ?? 0}</td>
+                  <td className="px-6 py-4 text-sm text-neutral-600">{(cat.productCount ?? 0) + categories.filter((child) => child.parentId === cat.id).reduce((sum, child) => sum + (child.productCount ?? 0), 0)} <span className="text-xs text-neutral-500">{cat.parentId ? 'productos directos' : 'en categoría y subcategorías'}</span></td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full ${
                       cat.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
@@ -315,6 +324,7 @@ function CategoriesTab() {
       {showModal && (
         <CategoryModal
           category={editing}
+          categories={categories ?? []}
           onClose={() => {
             setShowModal(false)
             setEditing(null)
@@ -333,11 +343,13 @@ function CategoriesTab() {
 
 function CategoryModal({
   category,
+  categories,
   onClose,
   onSaved,
   onError,
 }: {
   category?: Category | null
+  categories: Category[]
   onClose: () => void
   onSaved: () => void
   onError: (error: unknown) => void
@@ -347,6 +359,7 @@ function CategoryModal({
   const [slug, setSlug] = useState(category?.slug ?? '')
   const [description, setDescription] = useState(category?.description ?? '')
   const [isActive, setIsActive] = useState(category?.isActive ?? true)
+  const [parentId, setParentId] = useState(category?.parentId ?? '')
   const [slugTouched, setSlugTouched] = useState(isEditing)
   const [error, setError] = useState<string | null>(null)
 
@@ -357,6 +370,7 @@ function CategoryModal({
         slug: slug.trim() || slugify(name),
         description: description.trim() || null,
         isActive,
+        parentId: parentId || null,
       }
       return isEditing && category ? updateCategory(category.id, payload) : createCategory(payload)
     },
@@ -378,9 +392,17 @@ function CategoryModal({
   }
 
   return (
-    <SettingsModalShell title={isEditing ? 'Editar Categoría' : 'Nueva Categoría'} onClose={onClose}>
+    <SettingsModalShell title={isEditing ? (category?.parentId ? 'Editar subcategoría' : 'Editar categoría') : 'Nueva categoría o subcategoría'} onClose={onClose}>
       <form onSubmit={submit} className="p-6 space-y-4">
         <FormError message={error} />
+        <div>
+          <label htmlFor="cat-parent" className="block text-sm font-medium text-neutral-800 mb-1.5">Tipo</label>
+          <select id="cat-parent" value={parentId} onChange={(event) => setParentId(event.target.value)} className={fieldClass}>
+            <option value="">Categoría principal</option>
+            {categories.filter((item) => !item.parentId && item.id !== category?.id && (category?.parentId || !isEditing || !categories.some((child) => child.parentId === category?.id))).map((item) => <option key={item.id} value={item.id}>Subcategoría de {item.name}</option>)}
+          </select>
+          {isEditing && !category?.parentId && categories.some((child) => child.parentId === category?.id) && <p className="mt-1 text-xs text-neutral-500">Esta categoría tiene subcategorías y no puede convertirse en subcategoría.</p>}
+        </div>
         <div>
           <label htmlFor="cat-name" className="block text-sm font-medium text-neutral-800 mb-1.5">Nombre</label>
           <input

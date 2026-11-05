@@ -13,7 +13,8 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       <Header />
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      {/* Wider canvas for the whole internal app (was max-w-7xl); keep in sync with the two containers in Header.tsx. */}
+      <main className="max-w-[1600px] mx-auto px-5 py-6">
         <Outlet />
       </main>
     </div>

@@ -6,6 +6,7 @@ export interface Category {
   slug: string
   description: string | null
   parentId: string | null
+  parent?: { id: string; name: string } | null
   sortOrder: number
   isActive: boolean
   productCount?: number
@@ -32,6 +33,7 @@ export interface CategoryPayload {
   slug: string
   description?: string | null
   isActive?: boolean
+  parentId?: string | null
 }
 
 export interface BrandPayload {

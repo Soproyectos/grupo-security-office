@@ -3,6 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { ProductCard } from './ProductCard'
+import { ProductTableRow } from './ProductTableRow'
 import { StockBadge } from './ProductIndicators'
 import type { Product } from '../types/product.types'
 
@@ -43,7 +44,7 @@ describe('ProductCard image', () => {
     )
     expect(html).toContain('<img')
     expect(html).toContain('src="/api/files/44a6225e"')
-    expect(html).not.toContain('<svg class="w-20 h-20')
+    expect(html).not.toContain('<svg class="w-14 h-14')
   })
 
   it('also shows an image that is not flagged primary (backend falls back to the first image)', () => {
@@ -56,7 +57,7 @@ describe('ProductCard image', () => {
   it('falls back to the placeholder only when the product has no images', () => {
     const html = render(baseProduct({ images: [] }))
     expect(html).not.toContain('<img')
-    expect(html).toContain('w-20 h-20')
+    expect(html).toContain('w-14 h-14')
   })
 })
 
@@ -75,5 +76,40 @@ describe('"SIN DATOS" badge', () => {
 
     const inStock = renderToStaticMarkup(createElement(StockBadge, { product: baseProduct({ stockStatus: 'in_stock', availableQty: 3 }) }))
     expect(inStock).toContain('STOCK OK')
+  })
+})
+
+describe('"Editar ficha" entry point', () => {
+  const noop = { onEdit: vi.fn(), onTransition: vi.fn(), onDelete: vi.fn(), readOnly: true }
+  const card = (onEditSheet?: (id: string) => void) =>
+    renderToStaticMarkup(
+      createElement(MemoryRouter, null, createElement(ProductCard, { product: baseProduct(), ...noop, onEditSheet })),
+    )
+  const row = (onEditSheet?: (id: string) => void) =>
+    renderToStaticMarkup(
+      createElement(
+        'table',
+        null,
+        createElement(
+          'tbody',
+          null,
+          createElement(ProductTableRow, { product: baseProduct(), ...noop, onOpen: vi.fn(), onEditSheet }),
+        ),
+      ),
+    )
+
+  it('appears on a read-only card and row only when onEditSheet is provided', () => {
+    expect(card(vi.fn())).toContain('Editar ficha')
+    expect(row(vi.fn())).toContain('Editar ficha')
+    expect(card()).not.toContain('Editar ficha')
+    expect(row()).not.toContain('Editar ficha')
+  })
+
+  it('does not turn the read-only catalog into an editor (no move/edit/delete controls)', () => {
+    const html = card(vi.fn()) + row(vi.fn())
+    expect(html).not.toContain('Mover de categoría')
+    expect(html).not.toContain('title="Editar"')
+    expect(html).not.toContain('title="Eliminar"')
+    expect(row(vi.fn())).toContain('>Ver<')
   })
 })

@@ -5,6 +5,7 @@ import {
   fetchUserAccess,
   removeUserPackage,
   setUserAccessGrants,
+  setUserLibrarySelection,
   UserAccessServiceError,
   userAccessErrorMessage,
 } from './users.service'
@@ -117,7 +118,7 @@ describe('users.service — concesiones por acción (COM-01)', () => {
     expect(api.put).toHaveBeenCalledWith('/users/user-1/access', {
       grants: [{ actionId: 'customers:read', scope: 'own' }],
       expectedVersion: 5,
-      expectedCatalogVersion: 'panels-20261019-3',
+      expectedCatalogVersion: 'panels-20261104-1',
     })
   })
 
@@ -181,5 +182,23 @@ describe('users.service — concesiones por acción (COM-01)', () => {
     expect(userAccessErrorMessage(httpError(409, { statusCode: 409 }))).toContain('cambiaron')
     expect(userAccessErrorMessage(httpError(403, { statusCode: 403 }))).toContain('Super Admin')
     expect(userAccessErrorMessage(httpError(404, { statusCode: 404 }))).toContain('existe')
+  })
+})
+
+describe('setUserLibrarySelection', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('envía las acciones marcadas con la versión OCC al endpoint de Biblioteca', async () => {
+    vi.mocked(api.put).mockResolvedValue({ data: { userId: 'user-1', sourceId: 'sel', accessVersion: 4, changed: true, grants: [] } })
+    const receipt = await setUserLibrarySelection('user-1', ['products:read'], 3, { catalogVersion: 'panels-20261028-2' })
+    expect(api.put).toHaveBeenCalledWith('/users/user-1/access/library', {
+      actionIds: ['products:read'], expectedVersion: 3, expectedCatalogVersion: 'panels-20261028-2',
+    })
+    expect(receipt.accessVersion).toBe(4)
+  })
+
+  it('traduce el 400 del servidor a un error tipado con su mensaje', async () => {
+    vi.mocked(api.put).mockRejectedValue({ response: { status: 400, data: { message: 'Quita primero Publicar en tienda: necesita poder editar fichas.' } } })
+    await expect(setUserLibrarySelection('user-1', [], 3)).rejects.toMatchObject({ code: 'invalid' })
   })
 })

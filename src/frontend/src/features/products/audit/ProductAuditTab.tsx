@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Alert } from '../../../components/ui'
 import { getApiErrorMessage } from '../../../lib/apiError'
-import { canViewAudit } from '../../../lib/rbac'
+import { useHasPermission } from '../../../lib/rbac'
+import api from '../../../services/api'
 import { fetchProductAudit, type AuditLog } from '../../../services/product-detail.service'
 import { describeAuditEntry, type AuditChangeRow, type AuditEntryView } from './audit-format'
 
@@ -54,11 +55,25 @@ function AuditEntry({ log }: { log: AuditLog }) {
 
 /** Plain-language history of a product: who changed what, when, and the readable old → new values. */
 export function ProductAuditTab({ productId }: { productId: string }) {
-  const canView = canViewAudit()
+  const canWrite = useHasPermission('products:write')
+  const canReadNotes = useHasPermission('products:notes')
+  const canView = canWrite && canReadNotes
 
   const { data: logs = [], isLoading, error } = useQuery({
-    queryKey: ['product-audit', productId],
+    queryKey: ['product-audit', productId, 'operations'],
     queryFn: () => fetchProductAudit('Product', productId),
+    enabled: canView,
+    retry: false,
+  })
+
+  const changes = useInfiniteQuery({
+    queryKey: ['product-audit', productId, 'fields'],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
+      const response = await api.get(`/products/${productId}/changes`, { params: { limit: 50, cursor: pageParam } })
+      return response.data as ProductChangePage
+    },
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: canView,
     retry: false,
   })
@@ -66,21 +81,45 @@ export function ProductAuditTab({ productId }: { productId: string }) {
   if (!canView) {
     return <p className="text-sm text-neutral-400 py-6 text-center">No tienes permisos para ver la auditoría.</p>
   }
-  if (isLoading) {
+  if (isLoading || changes.isLoading) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Cargando auditoría...</p>
   }
-  if (error) {
-    return <Alert variant="error">{getApiErrorMessage(error, 'No se pudo cargar la auditoría.')}</Alert>
+  if (error || changes.error) {
+    return <Alert variant="error">{getApiErrorMessage(error ?? changes.error, 'No se pudo cargar el historial. Parte de los cambios podría no estar disponible.')}</Alert>
   }
-  if (logs.length === 0) {
+  const entries = [...logs, ...(changes.data?.pages.flatMap((page) => page.items.map(changeAsAuditLog)) ?? [])]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  if (entries.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin eventos de auditoría para este producto.</p>
   }
 
   return (
+    <div className="space-y-3">
     <ol className="divide-y divide-neutral-100 border border-neutral-200 rounded-lg" aria-label="Historial de cambios del producto">
-      {logs.map((log) => (
+      {entries.map((log) => (
         <AuditEntry key={log.id} log={log} />
       ))}
     </ol>
+    {changes.hasNextPage && <button type="button" disabled={changes.isFetchingNextPage} onClick={() => void changes.fetchNextPage()}>Ver cambios anteriores</button>}
+    </div>
   )
+}
+
+interface ProductChangePage {
+  items: { id: string; field: string; oldValue: unknown; newValue: unknown; createdAt: string; actorId: string | null; actorName?: string | null }[]
+  nextCursor: string | null
+}
+
+function changeAsAuditLog(change: ProductChangePage['items'][number]): AuditLog {
+  return {
+    id: `field-${change.id}`,
+    userId: null,
+    action: 'update',
+    entity: 'Product',
+    entityId: '',
+    actorName: change.actorName || (change.actorId ? 'Integrante del equipo' : 'Sistema'),
+    oldValues: { [change.field]: change.oldValue },
+    newValues: { [change.field]: change.newValue },
+    createdAt: change.createdAt,
+  }
 }

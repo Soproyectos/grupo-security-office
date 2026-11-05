@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api, { resolveAssetUrl } from '../services/api'
@@ -22,46 +22,25 @@ import {
 import { usePriceLists } from '../features/products/hooks/usePriceLists'
 import { getApiErrorMessage } from '../lib/apiError'
 import { formatCurrency, formatDate } from '../lib/format'
-import { hasPermission } from '../lib/rbac'
+import { hasPermission, hasAnyRole } from '../lib/rbac'
 import { Button, Modal, Alert } from '../components/ui'
 import {
   useTransitionProduct,
   getTransitionHttpStatus,
 } from '../features/products/hooks/useProductTransition'
 import {
-  fetchProductStock,
-  updateProductStock,
   deleteProduct,
-  isNotImplemented,
   schedulePublish,
   cancelScheduledPublish,
   type TransitionPayload,
-  type ProductStock,
 } from '../services/product-detail.service'
-import {
-  fetchPricesByProduct,
-  createPrice,
-  updatePrice,
-  deletePrice,
-  fetchPriceLists,
-  type Price,
-} from '../services/prices.service'
 import { ProductFichaTab } from '../features/products/sheet/ProductFichaTab'
+import { ProductPricesSection } from '../features/products/prices/ProductPricesSection'
 import { ValidationSection } from '../features/catalog-validation/ValidationSection'
 import { ProductPublicationSection } from '../features/catalog-publication/ProductPublicationPanel'
-import { ProductAuditTab } from '../features/products/audit/ProductAuditTab'
-
-type DetailTab = 'ficha' | 'prices' | 'stock' | 'publish' | 'audit'
+import { visibleDetailTabs, type DetailTab } from '../features/products/lib/product-detail-access'
 
 // "Ficha" is the single editing surface: general information, photos, public sheet and attributes.
-const TABS: { id: DetailTab; label: string }[] = [
-  { id: 'ficha', label: 'Ficha' },
-  { id: 'prices', label: 'Precios' },
-  { id: 'stock', label: 'Stock' },
-  { id: 'publish', label: 'Publicación' },
-  { id: 'audit', label: 'Auditoría' },
-]
-
 const PRICE_LIST_ORDER = [
   'CLIENTE_FINAL_IVA',
   'DPP_ORO_IVA',
@@ -111,553 +90,12 @@ function formatScheduleDatetime(value: string): string {
   }).format(date)
 }
 
-function ComingSoon({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="text-center py-10">
-      <svg
-        className="w-12 h-12 mx-auto mb-3 text-neutral-300"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1}
-          d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-        />
-      </svg>
-      <p className="text-sm font-medium text-neutral-600">{title}</p>
-      <p className="text-xs text-neutral-400 mt-1">{message}</p>
-    </div>
-  )
-}
-
-// ------------------------------ Precios ------------------------------
-function PriceModal({
-  mode,
-  price,
-  productId,
-  productName,
-  onClose,
-  onSaved,
-}: {
-  mode: 'create' | 'edit'
-  price?: Price
-  productId: string
-  productName: string
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [value, setValue] = useState(price ? String(price.value) : '')
-  const [currency, setCurrency] = useState(price?.currency ?? '')
-  const [priceListId, setPriceListId] = useState(price?.priceListId ?? '')
-  const [validFrom, setValidFrom] = useState(price?.validFrom ? price.validFrom.slice(0, 10) : '')
-  const [validUntil, setValidUntil] = useState(price?.validUntil ? price.validUntil.slice(0, 10) : '')
-  const [formError, setFormError] = useState('')
-
-  const { data: priceLists = [], isLoading: listsLoading } = useQuery({
-    queryKey: ['priceLists'],
-    queryFn: fetchPriceLists,
-  })
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      if (mode === 'edit' && price) {
-        return updatePrice(price.id, {
-          value: Number(value),
-          currency,
-          validFrom: validFrom || null,
-          validUntil: validUntil || null,
-        })
-      }
-      return createPrice({
-        productId,
-        priceListId,
-        value: Number(value),
-        currency,
-        ...(validFrom ? { validFrom } : {}),
-        ...(validUntil ? { validUntil } : {}),
-      })
-    },
-    onSuccess: () => {
-      onSaved()
-      onClose()
-    },
-  })
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const num = Number(value)
-    if (!value || !Number.isFinite(num) || num <= 0) {
-      setFormError('El valor debe ser mayor que 0.')
-      return
-    }
-    if (!currency) {
-      setFormError('La moneda es requerida.')
-      return
-    }
-    if (mode === 'create' && !priceListId) {
-      setFormError('Selecciona una tarifa.')
-      return
-    }
-    if (validFrom && validUntil && validUntil < validFrom) {
-      setFormError('La fecha de fin no puede ser anterior a la fecha de inicio.')
-      return
-    }
-    setFormError('')
-    mutation.mutate()
-  }
-
-  return (
-    <Modal
-      open
-      onClose={() => {
-        if (!mutation.isPending) onClose()
-      }}
-      title={mode === 'edit' ? 'Editar precio' : 'Nuevo precio'}
-      footer={
-        <>
-          <Button variant="secondary" disabled={mutation.isPending} onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button type="submit" form="product-price-form" loading={mutation.isPending}>
-            {mode === 'edit' ? 'Guardar cambios' : 'Crear precio'}
-          </Button>
-        </>
-      }
-    >
-      <form id="product-price-form" onSubmit={handleSubmit} className="space-y-4">
-        {(formError || mutation.isError) && (
-          <Alert variant="error">
-            {formError || getApiErrorMessage(mutation.error, 'No se pudo guardar el precio.')}
-          </Alert>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-neutral-800 mb-1.5">Producto</label>
-          <input
-            value={productName}
-            disabled
-            className="w-full px-3 py-2.5 border border-neutral-200 rounded-lg bg-neutral-50 text-sm text-neutral-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-            Tarifa <span className="text-red-500">*</span>
-          </label>
-          {mode === 'edit' && price ? (
-            <input
-              value={price.priceList?.name ?? price.priceListId}
-              disabled
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-lg bg-neutral-50 text-sm text-neutral-500"
-            />
-          ) : (
-            <select
-              value={priceListId}
-              onChange={(e) => {
-                setPriceListId(e.target.value)
-                const pl = priceLists.find((item) => item.id === e.target.value)
-                if (pl && !currency) setCurrency(pl.currency)
-              }}
-              className={inputClass}
-            >
-              <option value="">Seleccionar tarifa...</option>
-              {listsLoading ? (
-                <option disabled>Cargando...</option>
-              ) : (
-                priceLists.map((pl) => (
-                  <option key={pl.id} value={pl.id}>
-                    {pl.name} ({pl.code})
-                  </option>
-                ))
-              )}
-            </select>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-              Valor <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-              Moneda <span className="text-red-500">*</span>
-            </label>
-            <input
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-              className={inputClass}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">Desde</label>
-            <input
-              type="date"
-              value={validFrom}
-              onChange={(e) => setValidFrom(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">Hasta</label>
-            <input
-              type="date"
-              value={validUntil}
-              onChange={(e) => setValidUntil(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function PricesTab({ product }: { product: Product }) {
-  const queryClient = useQueryClient()
-  const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; price: Price } | null>(null)
-  const canEdit = hasPermission('products:write')
-
-  const { data: prices = [], isLoading, error } = useQuery({
-    queryKey: ['product-prices', product.id],
-    queryFn: () => fetchPricesByProduct(product.id),
-  })
-
-  const remove = useMutation({
-    mutationFn: (id: string) => deletePrice(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['product-prices', product.id] })
-      queryClient.invalidateQueries({ queryKey: ['product', product.id] })
-    },
-  })
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-neutral-500 uppercase tracking-wide">
-          Precios del producto ({prices.length})
-        </p>
-        {canEdit && (
-          <Button onClick={() => setModal({ mode: 'create' })}>Nuevo precio</Button>
-        )}
-      </div>
-
-      {isLoading ? (
-        <p className="text-sm text-neutral-400 py-6 text-center">Cargando precios...</p>
-      ) : error ? (
-        <Alert variant="error">
-          {getApiErrorMessage(error, 'No se pudieron cargar los precios.')}
-        </Alert>
-      ) : prices.length === 0 ? (
-        <p className="text-sm text-neutral-400 py-6 text-center">
-          Este producto aún no tiene precios asignados.
-        </p>
-      ) : (
-        <div className="overflow-x-auto border border-neutral-200 rounded-lg">
-          <table className="min-w-full divide-y divide-neutral-200 text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600 uppercase">
-                  Tarifa
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600 uppercase">
-                  Precio
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600 uppercase">
-                  Vigencia
-                </th>
-                {canEdit && (
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600 uppercase">
-                    Acciones
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {prices.map((price) => (
-                <tr key={price.id} className="hover:bg-neutral-50">
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-neutral-800">
-                        {price.priceList?.name ?? price.priceListId}
-                      </span>
-                      {price.priceList?.code && (
-                        <span className="text-xs text-neutral-400 font-mono">
-                          {price.priceList.code}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-neutral-800 tabular-nums">
-                    {formatCurrency(Number(price.value), price.currency)}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-500 text-xs">
-                    {price.validFrom && price.validUntil
-                      ? `${formatDate(price.validFrom)} – ${formatDate(price.validUntil)}`
-                      : price.validFrom
-                        ? `Desde ${formatDate(price.validFrom)}`
-                        : price.validUntil
-                          ? `Hasta ${formatDate(price.validUntil)}`
-                          : 'Sin vigencia'}
-                  </td>
-                  {canEdit && (
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setModal({ mode: 'edit', price })}
-                          className="text-xs font-medium text-neutral-500 hover:text-[var(--color-primary)]"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          disabled={remove.isPending}
-                          onClick={() => {
-                            if (confirm('¿Eliminar este precio?')) remove.mutate(price.id)
-                          }}
-                          className="text-xs font-medium text-neutral-400 hover:text-red-500"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {modal && (
-        <PriceModal
-          mode={modal.mode}
-          price={modal.mode === 'edit' ? modal.price : undefined}
-          productId={product.id}
-          productName={product.name}
-          onClose={() => setModal(null)}
-          onSaved={() =>
-            queryClient.invalidateQueries({ queryKey: ['product-prices', product.id] })
-          }
-        />
-      )}
-    </div>
-  )
-}
-
-// ------------------------------ Stock ------------------------------
-function StockTab({ product }: { product: Product }) {
-  const queryClient = useQueryClient()
-  const [quantity, setQuantity] = useState('')
-  const [location, setLocation] = useState('')
-  const [adjustmentType, setAdjustmentType] = useState<'in' | 'out' | 'adjust' | ''>('')
-  const [reason, setReason] = useState('')
-  const [formError, setFormError] = useState('')
-  const canEdit = hasPermission('products:write')
-
-  const { data: stocks = [], isLoading, error } = useQuery({
-    queryKey: ['product-stock', product.id],
-    queryFn: () => fetchProductStock(product.id),
-    retry: false,
-  })
-
-  const unavailable = isNotImplemented(error)
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      updateProductStock(product.id, {
-        quantity: Number(quantity),
-        ...(location.trim() ? { location: location.trim() } : {}),
-        ...(adjustmentType ? { adjustmentType } : {}),
-        ...(reason.trim() ? { reason: reason.trim() } : {}),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['product-stock', product.id] })
-      queryClient.invalidateQueries({ queryKey: ['product', product.id] })
-      setQuantity('')
-      setLocation('')
-      setReason('')
-      setAdjustmentType('')
-    },
-  })
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const num = Number(quantity)
-    if (!Number.isFinite(num)) {
-      setFormError('La cantidad debe ser un número.')
-      return
-    }
-    if (num <= 0) {
-      setFormError('La cantidad debe ser mayor que 0.')
-      return
-    }
-    setFormError('')
-    mutation.mutate()
-  }
-
-  const adjustmentHint =
-    adjustmentType === 'in'
-      ? 'Suma la cantidad al stock disponible.'
-      : adjustmentType === 'out'
-        ? 'Resta la cantidad al stock disponible (no permite dejar stock negativo).'
-        : adjustmentType === 'adjust'
-          ? 'Establece el stock disponible al valor indicado.'
-          : 'Guarda el valor como stock disponible sin registrar movimiento.'
-
-  if (unavailable) {
-    return (
-      <ComingSoon
-        title="Stock"
-        message="El módulo de stock de producto estará disponible próximamente."
-      />
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      {error && !unavailable && (
-        <Alert variant="error">{getApiErrorMessage(error, 'No se pudo cargar el stock.')}</Alert>
-      )}
-
-      {isLoading ? (
-        <p className="text-sm text-neutral-400 py-6 text-center">Cargando stock...</p>
-      ) : stocks.length === 0 ? (
-        <p className="text-sm text-neutral-400 py-4 text-center">
-          Este producto aún no tiene registro de stock.
-        </p>
-      ) : (
-        <div className="overflow-x-auto border border-neutral-200 rounded-lg">
-          <table className="min-w-full divide-y divide-neutral-200 text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600 uppercase">
-                  Disponible
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600 uppercase">
-                  Reservado
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600 uppercase">
-                  Ubicación
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600 uppercase">
-                  Actualizado
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {stocks.map((stock: ProductStock) => (
-                <tr key={stock.id}>
-                  <td className="px-4 py-3 text-right font-medium text-neutral-800 tabular-nums">
-                    {stock.availableQty}
-                  </td>
-                  <td className="px-4 py-3 text-right text-neutral-600 tabular-nums">
-                    {stock.reservedQty}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-700">{stock.location ?? '—'}</td>
-                  <td className="px-4 py-3 text-neutral-500 text-xs">
-                    {formatDate(stock.updatedAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {canEdit && (
-        <form onSubmit={handleSubmit} className="space-y-3 border border-neutral-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-neutral-700">
-            {stocks.length > 0 ? 'Ajustar stock' : 'Registrar stock'}
-          </h3>
-          {(formError || mutation.isError) && (
-            <Alert variant="error">
-              {formError || getApiErrorMessage(mutation.error, 'No se pudo guardar el stock.')}
-            </Alert>
-          )}
-          {mutation.isSuccess && <Alert variant="success">Stock guardado correctamente.</Alert>}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Tipo de ajuste
-              </label>
-              <select
-                value={adjustmentType}
-                onChange={(e) => setAdjustmentType(e.target.value as 'in' | 'out' | 'adjust' | '')}
-                className={inputClass}
-              >
-                <option value="">Establecer stock</option>
-                <option value="in">Entrada (incrementar)</option>
-                <option value="out">Salida (decrementar)</option>
-                <option value="adjust">Ajuste (fijar valor)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Cantidad
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Ubicación</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className={inputClass}
-                placeholder="Ej: BODEGA-PEREIRA"
-                maxLength={120}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Motivo</label>
-            <input
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className={inputClass}
-              placeholder="Motivo del movimiento (opcional)"
-              maxLength={300}
-            />
-            <p className="text-xs text-neutral-400 mt-1">{adjustmentHint}</p>
-          </div>
-          <div className="flex justify-end">
-            <Button type="submit" loading={mutation.isPending}>
-              Guardar stock
-            </Button>
-          </div>
-        </form>
-      )}
-    </div>
-  )
-}
-
 // ------------------------------ Publicación (ciclo de vida FSM) ------------------------------
-function PublishTab({
+export function PublishTab({
   product,
   allowed,
-  canEdit,
+  canPublish,
+  canWrite,
   pending,
   error,
   onDirect,
@@ -671,7 +109,8 @@ function PublishTab({
 }: {
   product: Product
   allowed: LifecycleEvent[]
-  canEdit: boolean
+  canPublish: boolean
+  canWrite: boolean
   pending: boolean
   error: unknown
   onDirect: (event: LifecycleEvent) => void
@@ -741,10 +180,10 @@ function PublishTab({
         <Alert variant="error">{getApiErrorMessage(error, 'No se pudo aplicar la acción.')}</Alert>
       )}
 
-      {canEdit && (
+      {(canPublish || canWrite) && (
         <div className="flex flex-wrap gap-2">
-          {actionButton('PUBLISH')}
-          {canSchedule &&
+          {canPublish && actionButton('PUBLISH')}
+          {canPublish && canSchedule &&
             (scheduleActive ? (
               <>
                 <button
@@ -774,10 +213,10 @@ function PublishTab({
                 Programar publicación
               </button>
             ))}
-          {actionButton('UNPUBLISH')}
-          {actionButton('ARCHIVE')}
-          {actionButton('RESTORE')}
-          {hasPermission('products:delete') && (
+          {canPublish && actionButton('UNPUBLISH')}
+          {canWrite && actionButton('ARCHIVE')}
+          {canWrite && actionButton('RESTORE')}
+          {canWrite && hasPermission('products:delete') && (
             <button
               type="button"
               disabled={pending}
@@ -1179,12 +618,15 @@ function DeleteProductModal({
 }
 
 // ------------------------------ Página ------------------------------
-export default function ProductDetailPage() {
+export type ProductDetailMode = 'read' | 'publication'
+
+export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDetailMode }) {
   const { productId, listaId } = useParams<{ productId: string; listaId?: string }>()
   const navigate = useNavigate()
+  const isPublicationMode = mode === 'publication'
   // Modo contextual (desde Lista) → operativo; sin listaId → catálogo global read-only.
   const isContextual = Boolean(listaId)
-  const [tab, setTab] = useState<DetailTab>('ficha')
+  const [tab, setTab] = useState<DetailTab>(isPublicationMode ? 'publish' : 'ficha')
   const [selectedImage, setSelectedImage] = useState(0)
   const [lifecycleModal, setLifecycleModal] = useState<{ event: LifecycleModalEvent } | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -1260,15 +702,12 @@ export default function ProductDetailPage() {
   })
 
   const { priceLists } = usePriceLists()
-  const canEdit = hasPermission('products:write')
+  // The regular product detail is always consultation. Editing belongs to the Fichas tab (sheets) and the Precios tab (prices).
+  const canEdit = false
 
-  // El tab Precios exige ACL edit_prices en el backend (Super Admin + Admin Comercial);
-  // para el resto de roles se oculta para no disparar 403/404.
-  // La ficha pública solo se edita desde la Lista (modo contextual) y con permiso de escritura;
-  // sin Lista (catálogo global) solo se ve la información general (solo lectura) y la auditoría.
-  const visibleTabs = isContextual
-    ? TABS.filter((t) => t.id !== 'prices' || canEdit)
-    : TABS.filter((t) => t.id === 'ficha' || t.id === 'audit')
+  const canReadPrices = hasPermission('prices:read') || hasAnyRole(['Super Admin'])
+  const canPublish = isPublicationMode && hasPermission('products:publish')
+  const visibleTabs = visibleDetailTabs({ mode, canReadPrices })
   const effectiveTab: DetailTab = visibleTabs.some((t) => t.id === tab) ? tab : 'ficha'
 
   // ============ RETORNOS CONDICIONALES (ahora después de todos los hooks) ============
@@ -1369,18 +808,22 @@ export default function ProductDetailPage() {
     <div className="space-y-6 pb-8">
       <nav aria-label="Breadcrumb">
         <ol className="flex items-center gap-1.5 text-sm text-neutral-500 flex-wrap">
-          {isContextual ? (
+          {isPublicationMode ? (
+            <>
+              <li><Link to="/catalog-management/publication" className="hover:text-security-600">Bandeja de publicación</Link></li>
+              <li aria-hidden>›</li>
+              <li className="text-neutral-700">{product.brand?.name || 'Producto'}</li>
+            </>
+          ) : isContextual ? (
             <>
               <li>
-                <Link to="/commercial/lists" className="hover:text-security-600">
-                  Listas
+                <Link to="/commercial/products" className="hover:text-security-600">
+                  Productos
                 </Link>
               </li>
               <li aria-hidden>›</li>
               <li>
-                <Link to={`/commercial/lists/${listaId}`} className="hover:text-security-600">
-                  Lista
-                </Link>
+                <span>Biblioteca</span>
               </li>
               <li aria-hidden>›</li>
               <li className="text-neutral-700">
@@ -1402,6 +845,12 @@ export default function ProductDetailPage() {
           )}
         </ol>
       </nav>
+
+      <p className="text-sm text-neutral-500">
+        {isPublicationMode
+          ? 'Revisa la validación y administra la publicación de este producto.'
+          : 'Consulta de catálogo. Las fichas se editan en la pestaña Fichas y los precios se cargan en la pestaña Precios.'}
+      </p>
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         <div className="lg:flex lg:gap-0 lg:items-stretch">
@@ -1533,15 +982,15 @@ export default function ProductDetailPage() {
           {effectiveTab === 'ficha' && (
             <div className="space-y-6">
               {/* CAT-05: un solo motor — el informe vive en la revisión de trabajo. */}
-              <section className="border border-neutral-200 rounded-xl p-5 space-y-4" aria-label="Validación de la ficha">
+              {isPublicationMode && <section className="border border-neutral-200 rounded-xl p-5 space-y-4" aria-label="Validación de la ficha">
                 <div>
                   <h3 className="text-base font-semibold text-neutral-800">Validación</h3>
                   <p className="text-xs text-neutral-500 mt-0.5">
                     Reglas compartidas del catálogo sobre la revisión de trabajo. Editar la ficha deja el resultado obsoleto; publicar corresponde a su propio flujo.
                   </p>
                 </div>
-                <ValidationSection productId={product.id} canEditSheet={canEdit} />
-              </section>
+                <ValidationSection productId={product.id} canEditSheet={false} />
+              </section>}
               <ProductFichaTab
                 product={product}
                 categories={categories}
@@ -1552,14 +1001,14 @@ export default function ProductDetailPage() {
               />
             </div>
           )}
-          {effectiveTab === 'prices' && <PricesTab product={product} />}
-          {effectiveTab === 'stock' && <StockTab product={product} />}
+          {effectiveTab === 'prices' && !isPublicationMode && <ProductPricesSection product={product} mode="readOnly" />}
           {effectiveTab === 'publish' && (
             <div className="space-y-6">
               <PublishTab
                 product={product}
                 allowed={detailAllowed}
-                canEdit={canEdit || hasPermission('publish:manage')}
+                canPublish={canPublish}
+                canWrite={false}
                 pending={transition.isPending}
                 error={transition.error}
                 onDirect={(event) => runTransition({ event })}
@@ -1575,7 +1024,6 @@ export default function ProductDetailPage() {
               <ProductPublicationSection productId={product.id} />
             </div>
           )}
-          {effectiveTab === 'audit' && <ProductAuditTab productId={product.id} />}
         </div>
       </div>
 

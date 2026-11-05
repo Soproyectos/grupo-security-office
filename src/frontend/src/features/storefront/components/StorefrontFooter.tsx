@@ -1,16 +1,7 @@
-import {
-  BUSINESS_HOURS,
-  CUSTOMER_SERVICE_EMAIL,
-  SALES_LINE_DISPLAY,
-  SALES_LINE_HREF,
-  SALES_PHONE_DISPLAY,
-  SALES_PHONE_HREF,
-  WHATSAPP_MESSAGES,
-  whatsappUrl,
-} from '../constants/contact'
+import { SALES_PHONE_DISPLAY, WHATSAPP_MESSAGES, whatsappUrl } from '../constants/contact'
 
 /**
- * Full footer of the storefront: dark background with the red accent,
+ * Full footer of the storefront: light surface-100 background with storefront ink text (security-600 on hover),
  * responsive link columns, contact info and a bottom row with the copyright and
  * social icons.
  *
@@ -29,14 +20,15 @@ const COLUMNS: FooterColumn[] = [
     links: [
       { label: 'Preguntas frecuentes' },
       { label: 'Rastrea tu pedido' },
-      { label: 'Cambios y devoluciones' },
+      { label: 'Cambios y devoluciones', href: '/garantias' },
       { label: 'Centro de ayuda' },
     ],
   },
   {
     title: 'Compañía',
     links: [
-      { label: 'Sobre nosotros' },
+      { label: 'Sobre nosotros', href: '/nosotros' },
+      { label: 'Sedes', href: '/sedes' },
       { label: 'Vende con nosotros', href: whatsappUrl(WHATSAPP_MESSAGES.sellWithUs), external: true },
       { label: 'Trabaja con nosotros' },
       { label: 'Mapa del sitio' },
@@ -95,8 +87,11 @@ function hasHref(link: FooterLink): link is FooterLink & { href: string } {
   return link.href !== undefined
 }
 
+// `!` because the global `a` rules of index.css would otherwise win over the utility.
+const LINK_COLOR = 'transition !text-white/80 hover:!text-white hover:underline'
+
 const LINK_FOCUS =
-  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 
 const GRID_BY_COLUMNS: Record<number, string> = {
   0: 'sm:grid-cols-1 lg:grid-cols-1',
@@ -109,15 +104,15 @@ const GRID_BY_COLUMNS: Record<number, string> = {
 function FooterLinkList({ title, links }: { title: string; links: Array<FooterLink & { href: string }> }) {
   return (
     <nav aria-labelledby={`footer-${title}-title`}>
-      <h2 id={`footer-${title}-title`} className="mb-4 text-sm font-bold text-white">
+      <h2 id={`footer-${title}-title`} className="mb-2 text-sm font-bold text-white">
         {title}
       </h2>
-      <ul className="space-y-2.5">
+      <ul className="space-y-1">
         {links.map((link) => (
           <li key={link.label}>
             <a
               href={link.href}
-              className={`inline-flex min-h-6 items-center text-sm text-slate-300 transition hover:text-white hover:underline ${LINK_FOCUS}`}
+              className={`inline-flex min-h-6 items-center text-sm ${LINK_COLOR} ${LINK_FOCUS}`}
               {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             >
               {link.label}
@@ -136,42 +131,33 @@ export default function StorefrontFooter() {
   const socials = SOCIAL_LINKS.filter(hasHref)
 
   return (
-    <footer className="bg-[#1A1A1A] px-5 py-10 text-slate-300 lg:px-12">
+    <footer className="bg-storefront-ink px-5 py-6 text-white/80 lg:px-12">
       <div className="mx-auto max-w-7xl">
-        <div className={`grid grid-cols-1 gap-8 ${GRID_BY_COLUMNS[columns.length] ?? GRID_BY_COLUMNS[3]}`}>
+        <div className={`grid grid-cols-1 gap-x-8 gap-y-6 ${GRID_BY_COLUMNS[columns.length] ?? GRID_BY_COLUMNS[3]}`}>
           {columns.map((column) => (
             <FooterLinkList key={column.title} title={column.title} links={column.links} />
           ))}
           <div aria-labelledby="footer-contacto-title">
-            <h2 id="footer-contacto-title" className="mb-4 text-sm font-bold text-white">
+            <h2 id="footer-contacto-title" className="mb-2 text-sm font-bold text-white">
               Contacto
             </h2>
-            <ul className="space-y-2.5 text-sm">
-              <li>
-                <a href={SALES_LINE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
-                  Línea de ventas: {SALES_LINE_DISPLAY}
-                </a>
-              </li>
-              <li>
-                <a href={SALES_PHONE_HREF} className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}>
-                  Línea nacional: {SALES_PHONE_DISPLAY}
-                </a>
-              </li>
+            <ul className="space-y-1 text-sm">
               <li>
                 <a
-                  href={`mailto:${CUSTOMER_SERVICE_EMAIL}`}
-                  className={`transition hover:text-white hover:underline ${LINK_FOCUS}`}
+                  href={whatsappUrl(WHATSAPP_MESSAGES.contact)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className={`${LINK_COLOR} ${LINK_FOCUS}`}
                 >
-                  {CUSTOMER_SERVICE_EMAIL}
+                  Escríbenos por WhatsApp: {SALES_PHONE_DISPLAY}
                 </a>
               </li>
-              <li>Horario de atención: {BUSINESS_HOURS}</li>
             </ul>
           </div>
         </div>
-        <div className="mt-10 flex flex-col items-center gap-4 border-t border-slate-700 pt-6 text-xs sm:flex-row sm:justify-between">
+        <div className="mt-5 flex flex-col items-center gap-2 border-t border-white/15 pt-4 text-xs sm:flex-row sm:justify-between">
           <p>
-            © {new Date().getFullYear()} Grupo Security S.A.S. Todos los derechos reservados. · NIT 900.000.000-0 (demo)
+            © {new Date().getFullYear()} Grupo Security S.A.S. Todos los derechos reservados.
           </p>
           {socials.length > 0 && (
             <ul className="flex items-center gap-2">
@@ -181,7 +167,7 @@ export default function StorefrontFooter() {
                     href={social.href}
                     aria-label={social.label}
                     title={social.label}
-                    className={`flex h-11 w-11 items-center justify-center text-slate-300 transition hover:text-white ${LINK_FOCUS}`}
+                    className={`flex h-11 w-11 items-center justify-center transition !text-white/80 hover:!text-white ${LINK_FOCUS}`}
                     {...(social.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
                   >
                     <span className="sr-only">{social.label}</span>

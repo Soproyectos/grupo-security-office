@@ -62,11 +62,11 @@ describe('IMP-06 frontend — permisos separados por acción', () => {
     expect(canReadRevisions()).toBe(false)
   })
 
-  it('la capa legada `canManageListas` conserva la transición D5', () => {
+  it('el cargo (`canManageListas`) ya no habilita revisar, guardar ni aplicar: la interfaz coincide con el servidor', () => {
     vi.mocked(canManageListas).mockReturnValue(true)
-    expect(canReadRevisions()).toBe(true)
-    expect(canSaveRevisions()).toBe(true)
-    expect(canApplyRevisions()).toBe(true)
+    expect(canReadRevisions()).toBe(false)
+    expect(canSaveRevisions()).toBe(false)
+    expect(canApplyRevisions()).toBe(false)
   })
 })
 

@@ -15,6 +15,10 @@ export interface PreviewPrice {
   difference: string | null
   wasRounded: boolean
   change: 'new' | 'changed' | 'unchanged'
+  /** Percent change against the previous price (null when there is no previous price). */
+  changePercent?: string | number | null
+  /** True when the change is above the server's confirmation threshold. */
+  largeChange?: boolean
 }
 
 export interface PriceImportRow {
@@ -54,12 +58,15 @@ export interface PriceImportPreview {
   } & PriceImportMixedSummary
   issues: PriceImportIssue[]
   rows: PriceImportRow[]
+  /** Non-null when the file used the single-price column: the server expanded it to these tariffs. */
+  singlePrice?: { tariffs: string[] } | null
 }
 
 /** Single-template preview: rows are matched by SKU across the catalog, so no lista is sent. */
-export async function previewPriceFile(file: File, signal?: AbortSignal): Promise<PriceImportPreview> {
+export async function previewPriceFile(file: File, singlePriceTariffs?: string[], signal?: AbortSignal): Promise<PriceImportPreview> {
   const form = new FormData()
   form.append('file', file)
+  if (singlePriceTariffs && singlePriceTariffs.length > 0) form.append('singlePriceTariffs', singlePriceTariffs.join(','))
   const response = await api.post<PriceImportPreview>('/prices/import/preview', form, { signal })
   return response.data
 }
@@ -105,6 +112,16 @@ export async function downloadPriceTemplate(
 /** Official empty template (sheet PLANTILLA, "(CON IVA)" headers); needs no lista. */
 export async function downloadOfficialPriceTemplate(): Promise<{ blob: Blob; fileName: string }> {
   const response = await api.get('/prices/import/template/official', { responseType: 'blob' })
+  const headers = (response as { headers?: Record<string, string | undefined> }).headers
+  return {
+    blob: response.data as Blob,
+    fileName: parseTemplateFileName(headers?.['content-disposition'] ?? headers?.['Content-Disposition']),
+  }
+}
+
+/** Single-price template (one "PRECIO UNICO (CON IVA)" column); needs no lista. */
+export async function downloadSinglePriceTemplate(): Promise<{ blob: Blob; fileName: string }> {
+  const response = await api.get('/prices/import/template/official', { params: { singlePrice: 'true' }, responseType: 'blob' })
   const headers = (response as { headers?: Record<string, string | undefined> }).headers
   return {
     blob: response.data as Blob,
@@ -162,7 +179,7 @@ export interface PriceImportRevisionHeader {
   parserVersion: string
   trailerVersion: string | null
   tariffs: PriceImportRevisionTariff[]
-  summary: PriceImportPreview['summary']
+  summary: PriceImportPreview['summary'] & { singlePrice?: { tariffs: string[] } }
   createdById: string | null
   createdAt: string
   appliedAt: string | null
@@ -222,9 +239,15 @@ export async function getPriceRevision(id: string, page?: number, pageSize?: num
 }
 
 /** Single-template save: the server recalculates; no lista is sent. */
-export async function savePriceFileRevision(file: File, idempotencyKey: string, signal?: AbortSignal): Promise<PriceImportRevisionHeader> {
+export async function savePriceFileRevision(
+  file: File,
+  idempotencyKey: string,
+  singlePriceTariffs?: string[],
+  signal?: AbortSignal,
+): Promise<PriceImportRevisionHeader> {
   const form = new FormData()
   form.append('idempotencyKey', idempotencyKey)
+  if (singlePriceTariffs && singlePriceTariffs.length > 0) form.append('singlePriceTariffs', singlePriceTariffs.join(','))
   form.append('file', file)
   const response = await api.post<PriceImportRevisionHeader>('/prices/import/revisions', form, { signal })
   return response.data

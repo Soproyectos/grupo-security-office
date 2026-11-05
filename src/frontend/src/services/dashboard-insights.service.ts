@@ -382,6 +382,46 @@ export const fetchMyWorkspace = async (): Promise<MyWorkspace> => {
   return res.data as MyWorkspace
 }
 
+/** «Mi resumen»: estadísticas de Biblioteca. Solo llegan las secciones concedidas; sin ninguna, un objeto vacío. */
+export interface LibraryStatsProducts {
+  total: number
+  published: number
+  draft: number
+  archived: number
+  withoutImage: number
+  withoutPrice: number
+  topCategories: Array<{ name: string; count: number }>
+}
+
+export interface LibraryStatsUpdate {
+  unvalidated: number
+  notUpdated30Days: number
+  pendingPriceRevisions: number
+  lastPriceRevisionAppliedAt: string | null
+  jobsQueued: number
+  jobsRunning: number
+}
+
+export interface LibraryStatsPublication {
+  pending: number
+  withIssues: number
+  published: number
+  latestPublished: Array<{ name: string; publishedAt: string | null }>
+}
+
+export interface LibraryStats {
+  products?: LibraryStatsProducts
+  update?: LibraryStatsUpdate
+  publication?: LibraryStatsPublication
+}
+
+export const DASHBOARD_LIBRARY_STATS_QUERY_KEY = ['dashboard-library-stats'] as const
+
+export const fetchLibraryStats = async (): Promise<LibraryStats> => {
+  const res = await api.get('/dashboard/library-stats')
+  return (res.data ?? {}) as LibraryStats
+}
+
 /**
  * Etiqueta honesta de la fuente (COM-05 §3): «referencia manual» siempre;
  * añade «ERP sin conectar» cuando `sourceStatus` lo indica. Nunca «sincronizado».

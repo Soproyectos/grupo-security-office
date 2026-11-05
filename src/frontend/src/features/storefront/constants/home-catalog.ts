@@ -1,6 +1,6 @@
 /**
  * Catalog picks of the storefront home, in one place so a change of stock only
- * touches this file. Slugs must be categories that hold published products:
+ * touches this file. Slugs are the top-level categories of the public menu (/public/categories/menu):
  * a shelf whose category is empty hides itself, but a wrong slug is a silent
  * gap on the home.
  */
@@ -15,9 +15,18 @@ export interface HomeShelf {
 export const HOME_SHELF_LIMIT = 4
 
 export const HOME_SHELVES: HomeShelf[] = [
-  { slug: 'camaras-turbo', title: 'Videovigilancia' },
-  { slug: 'motores-para-puertas-levadizas', title: 'Automatización de puertas' },
-  { slug: 'ups-on-line', title: 'Energía y respaldo' },
+  { slug: 'camaras', title: 'Cámaras' },
+  { slug: 'alarmas', title: 'Alarmas' },
+  { slug: 'control-de-acceso', title: 'Control de acceso' },
+  { slug: 'casa-inteligente', title: 'Casa inteligente' },
+]
+
+/** Support categories shown as a plain mosaic (no products) under the shelves. */
+export const HOME_OTHER_CATEGORIES: HomeShelf[] = [
+  { slug: 'redes-y-wi-fi', title: 'Redes y Wi-Fi' },
+  { slug: 'energia-y-electricidad', title: 'Energía y electricidad' },
+  { slug: 'audio-y-perifoneo', title: 'Audio y perifoneo' },
+  { slug: 'parqueaderos', title: 'Parqueaderos' },
 ]
 
 /** Cap of the "Compra por categoría" tiles. */

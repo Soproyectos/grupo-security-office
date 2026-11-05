@@ -135,6 +135,7 @@ export default function PriceImportRevisionsSection({
                   {revisionStatusLabel(item.status)} · {formatDate(item.createdAt)} · {item.summary.validRows} fila(s) válida(s)
                   {item.appliedResult ? ` · ${item.appliedResult.appliedPrices} precio(s) aplicados` : ''}
                 </p>
+                {item.summary.singlePrice && <p className="text-xs text-neutral-500">Precio único aplicado a: {item.summary.singlePrice.tariffs.join(', ')}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="ghost" onClick={() => toggleRows(item.id)}>

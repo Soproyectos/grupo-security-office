@@ -12,7 +12,7 @@ interface GeneralInfoForm {
   sku: string
   name: string
   description: string
-  categoryId: string
+  /** Empty = "no brand yet": the product stays an incomplete draft (never a fake brand). */
   brandId: string
 }
 
@@ -20,27 +20,29 @@ const formOf = (product: Product): GeneralInfoForm => ({
   sku: product.sku,
   name: product.name,
   description: product.description ?? '',
-  categoryId: product.categoryId,
-  brandId: product.brandId,
+  brandId: product.brandId ?? '',
 })
 
 const sameForm = (a: GeneralInfoForm, b: GeneralInfoForm) =>
   a.sku === b.sku &&
   a.name === b.name &&
   a.description === b.description &&
-  a.categoryId === b.categoryId &&
   a.brandId === b.brandId
 
-/** SKU, name, description, category and brand. Read-only in the global catalog view. */
+/**
+ * SKU, name, description and brand. Read-only in the global catalog view.
+ * The category is NOT editable here: it is derived from the subcategory chosen in the Clasificación section,
+ * so this form can never write a category that contradicts it.
+ */
 export function ProductGeneralInfoSection({
   product,
-  categories,
   brands,
   readOnly = false,
   onDirtyChange,
 }: {
   product: Product
-  categories: Category[]
+  /** @deprecated No longer used: the category is derived, not edited here. Kept so callers need no change. */
+  categories?: Category[]
   brands: Brand[]
   readOnly?: boolean
   onDirtyChange?: (dirty: boolean) => void
@@ -50,7 +52,6 @@ export function ProductGeneralInfoSection({
   const [baseline, setBaseline] = useState<GeneralInfoForm>(() => formOf(product))
   const [error, setError] = useState('')
   const dirty = !sameForm(form, baseline)
-
   useEffect(() => {
     onDirtyChange?.(dirty)
   }, [dirty, onDirtyChange])
@@ -58,7 +59,13 @@ export function ProductGeneralInfoSection({
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
   const mutation = useMutation({
-    mutationFn: () => api.put(`/products/${product.id}`, form),
+    // Never sends categoryId/subcategoryId: classification goes through its own section. No brand -> explicit null.
+    mutationFn: () => api.put(`/products/${product.id}`, {
+      sku: form.sku,
+      name: form.name,
+      description: form.description,
+      brandId: form.brandId || null,
+    }),
     onSuccess: () => {
       setBaseline(form)
       queryClient.invalidateQueries({ queryKey: ['product', product.id] })
@@ -74,10 +81,6 @@ export function ProductGeneralInfoSection({
     }
     if (!form.sku.trim()) {
       setError('El SKU es requerido.')
-      return
-    }
-    if (!form.categoryId || !form.brandId) {
-      setError('Categoría y marca son requeridas.')
       return
     }
     setError('')
@@ -98,7 +101,7 @@ export function ProductGeneralInfoSection({
           </div>
           <div>
             <dt className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Categoría</dt>
-            <dd className="mt-1 text-neutral-800">{product.category?.name || 'Sin categoría'}</dd>
+            <dd className="mt-1 text-neutral-800">{product.category?.name || 'Sin categoría'}{product.subcategory ? ` · ${product.subcategory.name}` : ''}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Marca</dt>
@@ -110,7 +113,7 @@ export function ProductGeneralInfoSection({
           <dd className="mt-1 text-sm text-neutral-700">{product.description || 'Sin descripción'}</dd>
         </div>
         <p className="text-xs text-neutral-400">
-          Esta vista de catálogo es de solo lectura. La edición se realiza desde su Lista comercial.
+            Esta vista de catálogo es de solo lectura. La edición se hace en la pestaña Fichas.
         </p>
       </div>
     )
@@ -173,22 +176,13 @@ export function ProductGeneralInfoSection({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1.5" htmlFor="ficha-info-category">
-            Categoría
-          </label>
-          <select
-            id="ficha-info-category"
-            value={form.categoryId}
-            onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-            className={inputClass}
-          >
-            <option value="">Seleccionar...</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
+          <span className="block text-sm font-medium text-neutral-700 mb-1.5">Categoría y subcategoría</span>
+          <p className="px-3 py-2.5 border border-neutral-100 bg-neutral-50 rounded-lg text-sm text-neutral-700" data-testid="derived-category">
+            {product.category?.name || 'Sin categoría'}{product.subcategory ? ` · ${product.subcategory.name}` : ''}
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Se definen en la sección Clasificación de la Biblioteca; aquí solo se muestran para que no se contradigan.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-neutral-700 mb-1.5" htmlFor="ficha-info-brand">
@@ -200,7 +194,7 @@ export function ProductGeneralInfoSection({
             onChange={(e) => setForm({ ...form, brandId: e.target.value })}
             className={inputClass}
           >
-            <option value="">Seleccionar...</option>
+            <option value="">Sin marca todavía</option>
             {brands.map((brand) => (
               <option key={brand.id} value={brand.id}>
                 {brand.name}
