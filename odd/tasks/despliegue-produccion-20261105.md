@@ -20,18 +20,19 @@ Fuera (no se versiona; se añade a `.gitignore` solo lo pesado/generado): `docs/
 
 ## Tareas
 - [x] D0 Congelar: el usuario confirmó a Codex que esta es la única sesión editando `validacion-biblioteca` (05/11/2026).
-- [ ] D1 Arreglos para que el CI pase (lint servidor y pantalla; 17 errores `tsc`; prueba `product-detail.spec.tsx:125`; repetir build de pantalla).
+- [x] D1 Arreglos de CI verificados: lint, tipos y builds backend/frontend aprobados en Linux, ejecución `42073436653` del PR #90; 3.031 pruebas backend y 1.666 frontend aprobadas localmente.
 - [x] D2 Rama nueva `release/web-20261105`; exclusiones guardadas en `3d85280`.
 - [x] D3 Preservados los cuatro commits de Claude: `3d85280` (exclusiones), `a9e6ead` (esquema), `fc6476f` (backend), `bb6afde` (frontend). El cierre documental y de validación continúa con rutas explícitas; nunca `git add -A`.
 - [x] D4 `origin/main` (`437ebc2`) integrado y cinco conflictos resueltos; commit de merge y cierre validado `6cecf64`.
-- [ ] D5 Repetir localmente lo que corre el CI (lint, `tsc`, build, pruebas) y dejarlo en verde.
+- [x] D5 Lint, tipos y pruebas locales aprobados en la instantánea; build backend aprobado. Build frontend verificado en CI Linux porque esbuild está bloqueado en este Windows. Se registra esa diferencia de entorno, sin declarar exitoso el build local de frontend.
 - [ ] D6 Revisión nativa pendiente: evaluación alta; START del candidato final no pudo iniciar por `lens_context_budget_exceeded` (718 archivos, 154.578 líneas). No se creó autoridad ni receipt. Las revisiones manuales acotadas no sustituyen ese control.
+- [x] D6a Salvaguarda de rollback implementada y verificada con nueve escenarios aislados; sintaxis Bash aprobada. Detiene el API antes de comprobar datos, solo permite rollback con resultado `f` y bloquea errores/incompatibilidad sin restaurar ni borrar datos. No se ejecutaron contenedores ni operaciones en VPS.
 - [ ] D7 Push de la rama y pull request a `main` con resumen, migraciones y riesgos. **Parar aquí.**
 - [ ] D8 Con el visto bueno del usuario: merge, seguir CI y CD, smoke test.
 - [ ] D9 Verificar `dev.gruposecurity.cloud/tienda` y registrar el resultado.
 
 ## Reglas de ejecución
-Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo escritor a la vez sobre el árbol. Sin `git add -A`, sin `--force`, sin tocar `main` ni la base de producción por mi cuenta. Plan de reversa: el despliegue repone las imágenes anteriores si falla la salud; las migraciones solo avanzan y hay un `pg_dump` previo en el VPS.
+Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo escritor a la vez sobre el árbol. Sin `git add -A`, sin `--force`, sin tocar `main` ni la base de producción por mi cuenta. Plan de reversa: el despliegue solo repone las imágenes anteriores si puede detener el API candidato y comprueba que no hay fichas con marca/categoría nulas; si no puede garantizarlo, requiere intervención. Las migraciones solo avanzan y se conserva un `pg_dump` previo en el VPS.
 
 ## Continuación de Codex — 05/11/2026
 
@@ -56,3 +57,14 @@ Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo 
 - Frontend, desde `src/frontend`: `npm run lint` (0 errores, 20 avisos); `node_modules/.bin/tsc -b` (salida 0); `npm test -- --silent --reporter=json` (1.666 pruebas aprobadas, salida 0). En Windows se usaron los ejecutables `.cmd` equivalentes.
 - `git diff --cached --check`: salida 0 tras corregir únicamente espacios finales y líneas vacías adicionales al final de cuatro archivos nuevos.
 - `npm run build` del frontend: fallo de acceso denegado al borrar el temporal de esbuild; el build Linux del PR sigue pendiente. Sin prueba visual nueva: no se rediseñó la interfaz y la continuación solo recuperó dependencias ya conectadas.
+
+### Revisión de recuperación y CI remoto
+
+- PR borrador: https://github.com/Soproyectos/grupo-security-office/pull/90. CI Linux de `31a8274`, ejecución `42073436653`: **backend y frontend aprobados**, incluidos `npm ci`, lint, tipos y ambos builds. Confirma la compilación limpia del frontend pese al bloqueo local de Windows.
+- Revisiones manuales acotadas de backend y frontend: sin hallazgos accionables en las rutas examinadas; no son una auditoría completa ni un receipt nativo.
+- Hallazgo confirmado por un segundo lector: la migración `20261029150400` permite marca/categoría nulas; tras una escritura de la API nueva, la imagen anterior puede fallar al leer esos datos. `rollback_and_exit` no cerraba escrituras ni verificaba compatibilidad antes de restaurarla. Se corrige solo el mecanismo de recuperación, sin cambiar reglas de producto ni migraciones históricas.
+- Plan de corrección: parar el API candidato antes de consultar, usar `psql` de solo lectura dentro del contenedor DB mediante el Compose existente y permitir la imagen anterior solo ante resultado compatible inequívoco. Si no puede detenerse el API, hay filas nulas o la consulta falla, salir con error sin cambiar a la imagen anterior ni restaurar la base. Es una salvaguarda conservadora; un bloqueo requiere intervención/roll-forward y no promete disponibilidad.
+- Verificación prevista: `bash -n` y harness con `docker`/`flock` dobles, cubriendo rollback compatible, filas incompatibles, fallo o salida inesperada de consulta, fallo al detener, migración fallida, despliegue normal y ausencia de tag anterior. No se ejecuta Docker real ni se accede a una base.
+- Resultado observado: `bash -n deploy/vps/deploy.sh`, `bash -n deploy/vps/tests/deploy-rollback.test.sh` y `bash deploy/vps/tests/deploy-rollback.test.sh`, salida 0 y **9/9 escenarios aprobados**, incluido fallo parcial de recreación. La misma suite contra `31a8274` falló por ausencia de parada/verificación antes del rollback (RED reproducido). No es una prueba PostgreSQL ni un ensayo de despliegue en VPS.
+- Los dos scripts se mantienen con LF mediante reglas específicas de `.gitattributes`, para ejecutar el harness con Git Bash en Windows sin cambiar otros archivos. El CI incorpora un job aislado de sintaxis y regresión de rollback, sin dependencias ni Docker real.
+- Límite: la parada cubre los escritores del API; otros trabajos que escriban la biblioteca deben coordinarse antes de una recuperación. La consulta verifica la incompatibilidad conocida de marca/categoría, no todas las posibles diferencias entre versiones.

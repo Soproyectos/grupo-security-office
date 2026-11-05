@@ -8,7 +8,7 @@
 #   2. take a verified pg_dump of gs-db (pre-migration safety net)
 #   3. apply Prisma migrations with the new api image
 #   4. recreate api and frontend and wait until both are healthy
-#   5. on health failure, put the previous image tag back and exit 1
+#   5. on health failure, check data compatibility before restoring the previous tag; exit 1
 #
 # Database migrations are forward-only: a rollback restores the previous
 # images but NOT the schema. Restore the pre-deploy dump if that is needed.
@@ -105,11 +105,30 @@ rotate_predeploy_dumps() {
 rollback_and_exit() {
   err "$1"
   if [[ -n $rollback_tag ]]; then
-    log "Rolling back api and frontend to image tag $rollback_tag"
-    if IMAGE_TAG=$rollback_tag "${COMPOSE[@]}" up -d --no-deps api frontend && wait_healthy 120; then
-      log "Rollback finished: api and frontend are healthy on $rollback_tag"
+    log "Stopping the candidate api before checking whether the previous image can read the database"
+    if ! "${COMPOSE[@]}" stop -t 30 api; then
+      err "Could not stop the candidate api; compatibility was not checked and the previous images were NOT started"
+      err "Manual intervention or a forward fix is required; the database was not restored"
     else
-      err "Rollback to $rollback_tag did not become healthy; manual intervention is required"
+      local incompatible_rows
+      log "Checking whether products can be read by the previous api image"
+      if ! incompatible_rows=$("${COMPOSE[@]}" exec -T db sh -c \
+        'exec psql -v ON_ERROR_STOP=1 -XAtq -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"' \
+        sh 'SELECT EXISTS (SELECT 1 FROM "products" WHERE "brandId" IS NULL OR "categoryId" IS NULL);'); then
+        err "Database compatibility check failed; the candidate api remains stopped and the previous images were NOT started"
+        err "Manual intervention or a forward fix is required; the database was not restored"
+      elif [[ $incompatible_rows != f ]]; then
+        err "Database contains products the previous api may not read (or the compatibility result was unexpected: '${incompatible_rows:-empty}')"
+        err "The candidate api remains stopped; previous images were NOT started. Manual intervention or a forward fix is required"
+        err "The database was not restored"
+      else
+        log "Database compatibility check passed; rolling back api and frontend to image tag $rollback_tag"
+        if IMAGE_TAG=$rollback_tag "${COMPOSE[@]}" up -d --no-deps api frontend && wait_healthy 120; then
+          log "Rollback finished: api and frontend are healthy on $rollback_tag"
+        else
+          err "Rollback to $rollback_tag did not become healthy; manual intervention is required"
+        fi
+      fi
     fi
   else
     err "No previous image tag is known, so nothing was rolled back; containers are left as they are"

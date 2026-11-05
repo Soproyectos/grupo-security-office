@@ -1,0 +1,3 @@
+# Keep the deploy executable and its local regression harness runnable in Bash on Windows.
+deploy/vps/deploy.sh text eol=lf
+deploy/vps/tests/*.sh text eol=lf
