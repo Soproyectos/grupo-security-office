@@ -1,3 +1,4 @@
+import { localCatalogTestUrl, assertLocalCatalogDatabase } from '../../../../__test__/local-catalog-postgres';
 import { createPrismaMock } from '../../../../__test__/mocks/prisma.mock';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -392,11 +393,9 @@ describe('BatchExecutorService — Decisiones de secciones del wizard', () => {
     );
   });
 
-  it('aplica decisión skip: producto en la categoría default "Sin categoría"', async () => {
+  it('aplica decisión skip: producto sin categoría (por clasificar), sin crear ninguna por defecto', async () => {
     mockPrisma.lista.findUnique.mockResolvedValue(activeLista('lista-x'));
-    (mockPrisma.category as any).findFirst = jest
-      .fn()
-      .mockResolvedValue({ id: 'cat-default', name: 'Sin categoría', slug: 'sin-categoria' });
+    (mockPrisma.category as any).findFirst = jest.fn().mockResolvedValue(null);
 
     const result = await service.execute(
       [makeRow({ categoryName: 'cctv' })],
@@ -410,12 +409,12 @@ describe('BatchExecutorService — Decisiones de secciones del wizard', () => {
     expect(mockPrisma.category.create).not.toHaveBeenCalled();
     expect(mockPrisma.product.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ categoryId: 'cat-default' }),
+        data: expect.objectContaining({ categoryId: null }),
       }),
     );
   });
 
-  it('sourceValue no mapeado: conserva el comportamiento original (crea con el valor de la fila)', async () => {
+  it('sourceValue no mapeado y desconocido: NO crea la categoría; borrador por clasificar + CATEGORY_NEEDS_CONFIRMATION', async () => {
     mockPrisma.lista.findUnique.mockResolvedValue(activeLista('lista-x'));
 
     const result = await service.execute(
@@ -427,10 +426,13 @@ describe('BatchExecutorService — Decisiones de secciones del wizard', () => {
     );
 
     expect(result.created).toBe(1);
-    expect(mockPrisma.category.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ name: 'cctv' }),
-      }),
+    expect(mockPrisma.category.create).not.toHaveBeenCalled();
+    expect(mockPrisma.brand.create).not.toHaveBeenCalled();
+    expect(mockPrisma.product.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ categoryId: null }) }),
+    );
+    expect(result.needsConfirmation).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'CATEGORY_NEEDS_CONFIRMATION', label: 'cctv' })]),
     );
   });
 
@@ -571,8 +573,13 @@ describe('BatchExecutorService — Aislamiento de filas con SAVEPOINT', () => {
       makeRow({ rowIndex: 0, sku: 'SKU-FAIL', categoryName: 'Nueva' }),
       makeRow({ rowIndex: 1, sku: 'SKU-OK', categoryName: 'Nueva' }),
     ];
+    // Solo una decisión explícita del wizard (create) puede crear una categoría.
+    (mockPrisma.category as any).findFirst = jest.fn().mockResolvedValue(null);
 
-    const result = await service.execute(rows, makeCtx({ listaId: 'lista-x' }));
+    const result = await service.execute(rows, makeCtx({
+      listaId: 'lista-x',
+      sectionDecisions: { nueva: { targetName: 'Nueva', action: 'create' } },
+    }));
 
     expect(result.created).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -1027,13 +1034,8 @@ describe('BatchExecutorService — CAT-01 C7: lista destino archivada/inactiva d
  *   «Concurrencia entre vínculo manual/cargas conserva unicidad y eventos.»
  *   «Carga a otra lista, incluida archivada, no mueve producto.»
  *
- * Ejecuta contra PostgreSQL DESECHABLE `grupo_security_tanda_t09` con
- * DATABASE_URL INLINE (nunca `.env`, que apunta a Neon de PRODUCCIÓN):
- *
- *   docker exec gs-tanda-db psql -U postgres -d postgres \
- *     -c "CREATE DATABASE grupo_security_tanda_t09;"
- *   DATABASE_URL='postgresql://postgres:tanda-test-2026@localhost:54331/grupo_security_tanda_t09?schema=public' \
- *     npx prisma migrate deploy --schema prisma/schema.prisma
+ * Ejecuta contra una copia verificada del fixture sintetico local (127.0.0.1:55433).
+ * Preparar con npm run test:catalog:regression. Nunca hereda DATABASE_URL ni requiere Docker/migraciones.
  *
  * Dos PrismaClient = dos conexiones/pools reales: las promesas compiten de
  * verdad por las filas de `products` (bloqueo FOR UPDATE) y por el índice
@@ -1043,8 +1045,7 @@ describe('BatchExecutorService — CAT-01 C7: lista destino archivada/inactiva d
 jest.setTimeout(120_000);
 
 describe('BatchExecutorService — CAT-01 5.3: concurrencia con PostgreSQL desechable', () => {
-  const DATABASE_URL =
-    'postgresql://postgres:tanda-test-2026@localhost:54331/grupo_security_tanda_t09?schema=public';
+  const DATABASE_URL = localCatalogTestUrl('race');
 
   // Dos clientes = dos conexiones reales independientes.
   const prismaA = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
@@ -1136,6 +1137,8 @@ describe('BatchExecutorService — CAT-01 5.3: concurrencia con PostgreSQL desec
   beforeAll(async () => {
     await prismaA.$connect();
     await prismaB.$connect();
+    await assertLocalCatalogDatabase(prismaA, DATABASE_URL);
+    await assertLocalCatalogDatabase(prismaB, DATABASE_URL);
     ADMIN.userId = (
       await prismaA.user.create({
         data: {

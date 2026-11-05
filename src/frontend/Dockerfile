@@ -3,19 +3,22 @@
 # ============================================================
 
 # ---- Stage 1: Install dependencies ----
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 RUN npm ci
 
 # ---- Stage 2: Typecheck + Build ----
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
 COPY tsconfig.json vite.config.ts index.html tailwind.config.js postcss.config.js ./
 COPY public ./public
+# Match the existing production-mode Vite configuration (public frontend settings only).
+COPY .env.production ./.env.production
 COPY src ./src
 
 # Typecheck then bundle

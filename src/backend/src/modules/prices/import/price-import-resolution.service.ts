@@ -1,10 +1,13 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AccessContext } from '../../../common/acl/acl.service';
 import { CopPriceError, normalizeCopPrice } from '../../../common/money/cop-policy';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
 import { DEFAULT_BRAND_NAME, DEFAULT_CATEGORY_NAME } from '../../../scripts/import-biblioteca.logic';
 import { AuditService } from '../../audit/audit.service';
+import { LibraryAuditService, type LibraryEvent } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { diffFields, newBatchId, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeInput } from '../../products/product-change.service';
 import { ProductsService } from '../../products/products.service';
 import { PRICE_IMPORT_INCIDENCE_CODES } from './price-import.types';
@@ -13,7 +16,7 @@ import { PriceImportService } from './price-import.service';
 export const MAX_RESOLUTION_ITEMS = 200;
 
 export type ResolutionItem =
-  | { rowNumber: number; action: 'CREATE'; name: string; brandId: string; categoryId: string }
+  | { rowNumber: number; action: 'CREATE'; name: string; brandId?: string | null; categoryId?: string | null }
   | { rowNumber: number; action: 'SKIP' };
 
 export interface ResolutionOutcome {
@@ -66,7 +69,27 @@ export class PriceImportResolutionService {
     private readonly products: ProductsService,
     private readonly changes: ProductChangeService,
     private readonly audit: AuditService,
+    /** Biblioteca: revisiones, tarifas, marcas, categorías y precios. Sin proveedor inyectado usa la fachada legacy. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
   ) {}
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
+
+  private write<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.library.writeTransaction((tx) => work(tx as unknown as Prisma.TransactionClient));
+  }
+
+  /** Auditoría dentro de la transacción: legacy conserva AuditLog; dedicado escribe el evento de biblioteca. */
+  private async auditTx(tx: Prisma.TransactionClient, legacy: Parameters<AuditService['logTx']>[1], event: LibraryEvent): Promise<void> {
+    if (this.dedicated) {
+      await this.libraryAudit.append(tx as unknown as Parameters<LibraryAuditService['append']>[0], event);
+    } else {
+      await this.audit.logTx(tx as unknown as Parameters<AuditService['logTx']>[0], legacy);
+    }
+  }
 
   async listUnknownReferences(id: string, ctx: AccessContext, page = 1, pageSize = 100): Promise<UnknownReferenceView> {
     const revision = await this.imports.loadRevisionForResolution(id, ctx);
@@ -74,16 +97,16 @@ export class PriceImportResolutionService {
     const take = Math.min(Math.max(Math.trunc(pageSize) || 100, 1), MAX_RESOLUTION_ITEMS);
     const current = Math.max(Math.trunc(page) || 1, 1);
 
-    const rows = (await this.prisma.priceImportRevisionRow.findMany({
+    const rows = (await this.db.priceImportRevisionRow.findMany({
       where: { revisionId: id, resolution: 'PENDING_PRODUCT' }, orderBy: { rowNumber: 'asc' },
     })).filter((r) => (r.issues as unknown as Array<{ code?: string }> | null)?.some((i) => i.code === PRICE_IMPORT_INCIDENCE_CODES.UNKNOWN_REFERENCE));
     const pageRows = rows.slice((current - 1) * take, current * take);
     const numbers = new Set(pageRows.map((r) => r.rowNumber));
-    const prices = (await this.prisma.priceImportRevisionPrice.findMany({ where: { revisionId: id } })).filter((p) => numbers.has(p.rowNumber));
+    const prices = (await this.db.priceImportRevisionPrice.findMany({ where: { revisionId: id } })).filter((p) => numbers.has(p.rowNumber));
 
     const [brand, category] = await Promise.all([
-      this.prisma.brand.findFirst({ where: { name: DEFAULT_BRAND_NAME }, select: { id: true } }),
-      this.prisma.category.findFirst({ where: { name: DEFAULT_CATEGORY_NAME }, select: { id: true } }),
+      this.db.brand.findFirst({ where: { name: DEFAULT_BRAND_NAME }, select: { id: true } }),
+      this.db.category.findFirst({ where: { name: DEFAULT_CATEGORY_NAME }, select: { id: true } }),
     ]);
     return {
       revisionId: id,
@@ -135,7 +158,8 @@ export class PriceImportResolutionService {
   private toFailure(rowNumber: number, error: unknown): ResolutionOutcome {
     if (error instanceof ItemFailure) return { rowNumber, status: 'FAILED', code: error.code, message: error.message };
     // The unique normalized-SKU index lost a race with a concurrent insert: never a duplicate.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    // Duck typing: el cliente dedicado trae su propio runtime y `instanceof` no cruza entre clientes generados.
+    if ((error as { name?: unknown; code?: unknown } | null)?.name === 'PrismaClientKnownRequestError' && (error as { code?: unknown }).code === 'P2002') {
       return { rowNumber, status: 'FAILED', code: 'SKU_EXISTS', message: 'Ya existe un producto con ese SKU. Vuelve a aplicar o revisar la importación.' };
     }
     if (error instanceof HttpException) {
@@ -158,15 +182,18 @@ export class PriceImportResolutionService {
   }
 
   private async skip(revisionId: string, rowNumber: number, ctx: AccessContext): Promise<ResolutionOutcome> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.write(async (tx) => {
       const claim = await tx.priceImportRevisionRow.updateMany({
         where: { revisionId, rowNumber, resolution: 'PENDING_PRODUCT' },
         data: { resolution: 'SKIPPED', resolvedAt: new Date(), resolvedById: ctx.userId ?? null },
       });
       if (claim.count === 0) return this.previousOutcome(tx, revisionId, rowNumber);
-      await this.audit.logTx(tx, {
+      await this.auditTx(tx, {
         userId: ctx.userId, action: 'price-import-skip-unknown', entity: 'Price', entityId: revisionId,
         newValues: { revisionId, rowNumber }, result: 'SUCCESS',
+      }, {
+        actor: { id: ctx.userId ?? null, name: ctx.userName ?? null }, action: 'PRICE_IMPORT_UNKNOWN_SKIPPED', entityType: 'PriceImportRevision', entityId: revisionId,
+        summary: { revisionId, rowNumber },
       });
       return { rowNumber, status: 'SKIPPED' as const };
     });
@@ -174,7 +201,7 @@ export class PriceImportResolutionService {
 
   private async create(revisionId: string, item: Extract<ResolutionItem, { action: 'CREATE' }>, ctx: AccessContext): Promise<ResolutionOutcome> {
     const { rowNumber } = item;
-    return this.prisma.$transaction(async (tx) => {
+    return this.write(async (tx) => {
       // Claim first: a concurrent identical request waits on the row lock, then finds nothing pending.
       const claim = await tx.priceImportRevisionRow.updateMany({
         where: { revisionId, rowNumber, resolution: 'PENDING_PRODUCT' },
@@ -223,9 +250,12 @@ export class PriceImportResolutionService {
       }
       await this.changes.record(tx, history);
       await tx.priceImportRevisionRow.updateMany({ where: { revisionId, rowNumber }, data: { productId: product.id, listaId: null } });
-      await this.audit.logTx(tx, {
+      await this.auditTx(tx, {
         userId: ctx.userId, action: 'price-import-create-product', entity: 'Price', entityId: revisionId, productId: product.id,
         newValues: { revisionId, rowNumber, productId: product.id, tariffs: planned.map((p) => p.code), batchId }, result: 'SUCCESS',
+      }, {
+        actor: { id: ctx.userId ?? null, name: ctx.userName ?? null }, action: 'PRICE_IMPORT_UNKNOWN_CREATED', entityType: 'PriceImportRevision', entityId: revisionId,
+        summary: { revisionId, rowNumber, productId: product.id, tariffs: planned.map((p) => p.code), batchId },
       });
       return { rowNumber, status: 'CREATED' as const, productId: product.id };
     });

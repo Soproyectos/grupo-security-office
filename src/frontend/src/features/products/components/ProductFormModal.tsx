@@ -226,7 +226,7 @@ const [form, setForm] = useState({
       name: form.name,
       description: form.description,
       categoryId: form.categoryId,
-      brandId: form.brandId,
+      brandId: form.brandId || null,
       ...(product ? {} : { isActive: form.isActive }),
       ...(product ? {} : { isVisible: form.isVisible }),
       technicalSpecs: Object.keys(serializeSpecFields(technicalSpecs)).length ? serializeSpecFields(technicalSpecs) : undefined,
@@ -371,9 +371,8 @@ const [form, setForm] = useState({
                       value={form.brandId}
                       onChange={(e) => setForm({ ...form, brandId: e.target.value })}
                       className={inputClass}
-                      required
                     >
-                      <option value="">Seleccionar...</option>
+                      <option value="">Sin marca todavía</option>
                       {brands.map((brand) => (
                         <option key={brand.id} value={brand.id}>
                           {brand.name}

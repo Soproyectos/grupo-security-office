@@ -59,7 +59,7 @@ describe('ProductFichaTab', () => {
       expect(html).toContain(`id="ficha-${id}"`)
     }
     expect(html).toContain('value="DVR Turbo 4 canales"')
-    expect(html).toContain('Subir imagen')
+    expect(html).toContain('Subir fotos')
     expect(html).toContain('Documentos adjuntos')
     expect(html).toContain('Especificaciones técnicas')
   })

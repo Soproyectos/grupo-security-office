@@ -1,14 +1,21 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { Prisma as LibraryPrisma } from '../../../../prisma/biblioteca/generated/client';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../product-library';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
 import { concessionCanAction } from '../../../common/security/d5-action';
+import { assertGlobalGrant } from '../../../common/security/require-grant';
 
 import { AuditService } from '../../audit/audit.service';
 import { ProductRevisionsService } from '../product-revisions.service';
 import { FILES_URL_PREFIX } from '../../files/files.service';
 import { productDetailInclude } from '../public-detail/product.mapper';
+import { ClassificationService } from '../classification/classification.service';
+import type { ClassificationDb } from '../classification/classification.types';
 import {
   ProductSheetView,
   SHEET_FEATURE_ICONS,
@@ -80,8 +87,6 @@ export interface NormalizedSheet {
   firmwareNote: string | null;
   /** CAT-03 (H4): identificadores del fabricante. */
   manufacturerRefs: string[];
-  /** CAT-03 (H1): notas internas (nunca públicas). */
-  internalNotes: string | null;
   specGroups: { key: string; title: string; items: { label: string; value: string }[] }[];
   resources: {
     kind: SheetResourceKind;
@@ -157,13 +162,13 @@ export function normalizeSheet(dto: UpdateProductSheetDto): NormalizedSheet {
     specsDisclaimer: text(dto.specsDisclaimer),
     firmwareNote: text(dto.firmwareNote),
     manufacturerRefs: cleanList(dto.manufacturerRefs ?? [], { dedupe: true }),
-    internalNotes: text(dto.internalNotes),
     specGroups,
     resources,
   };
 }
 
-type ProductWithSheet = Prisma.ProductGetPayload<{ include: typeof productDetailInclude }>;
+// `subcategoryId` is optional here: the dedicated-library client types (LibraryPrisma) do not declare it yet.
+type ProductWithSheet = Omit<Prisma.ProductGetPayload<{ include: typeof productDetailInclude }>, 'subcategoryId'> & { subcategoryId?: string | null };
 
 /**
  * Admin read/write of the public product sheet ("ficha"): the enriched `catalog*`
@@ -174,7 +179,7 @@ type ProductWithSheet = Prisma.ProductGetPayload<{ include: typeof productDetail
 @Injectable()
 export class ProductSheetService {
   constructor(
-    private readonly prisma: PrismaService,
+    prisma: PrismaService,
     private readonly acl: AclService,
     private readonly audit: AuditService,
     /**
@@ -193,7 +198,12 @@ export class ProductSheetService {
      * lente público sigue leyendo `Product.publicRevisionId`.
      */
     @Optional() private readonly revisions?: ProductRevisionsService,
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
+    @Optional() private readonly classification: ClassificationService = new ClassificationService(),
   ) {}
+
+  private get prisma() { return this.library.client; }
 
   private async canAct(actionId: string, ctx: AccessContext, product?: { id: string; listaId: string | null }): Promise<boolean> {
     // Enmienda 2026-10-18: modelo estricto — sin Super Admin explícito ni
@@ -209,24 +219,22 @@ export class ProductSheetService {
     }
   }
 
-  private async authorizeProduct(id: string, actionId: string, ctx: AccessContext, level: string): Promise<void> {
-    // Reject users without the action before loading protected sheet relations.
-    await this.assertAction(actionId, ctx);
-    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true, listaId: true } });
+  private async authorizeProduct(id: string, actionId: string, ctx: AccessContext): Promise<void> {
+    // Solo la concesion global de panel (nunca por cargo ni por Listas); 403 antes de cargar la ficha.
+    await assertGlobalGrant(this.grants, actionId, ctx);
+    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
     if (!product) throw new NotFoundException('Producto no encontrado');
-    await this.assertAction(actionId, ctx, product);
-    await this.acl.assertProductAccess(id, ctx, level);
   }
 
   async get(id: string, ctx?: AccessContext): Promise<ProductSheetView> {
-    if (ctx) await this.authorizeProduct(id, 'products:read', ctx, 'view');
+    if (ctx) await this.authorizeProduct(id, 'products:read', ctx);
     const product = await this.load(id);
     const withNotes = ctx ? await this.canAct('products:notes', ctx, product) : true;
-    return this.toView(product, { withNotes });
+    return this.withClassification(this.toView(product, { withNotes }), product);
   }
 
   async update(id: string, dto: UpdateProductSheetDto, ctx?: AccessContext): Promise<ProductSheetView> {
-    if (ctx) await this.authorizeProduct(id, 'products:write', ctx, 'edit_products');
+    if (ctx) await this.authorizeProduct(id, 'products:write', ctx);
     const before = await this.load(id);
 
     // CAT-03 §4: acción del catálogo (`products:write`) además de la capa de
@@ -249,13 +257,18 @@ export class ProductSheetService {
 
     const sheet = normalizeSheet(dto);
 
-    // CAT-03 H1: las notas internas se conservan si el actor no tiene
-    // `products:notes` (y no se devuelven). Omitir el campo en el PUT también
-    // conserva las vigentes — los clientes que aún no muestran el apartado
-    // (y el editor sin la acción) no pueden borrarlas por accidente; solo un
-    // `internalNotes: null` explícito de un actor con la acción las borra.
-    const notesProvided = dto.internalNotes !== undefined;
-    const internalNotes = withNotes && notesProvided ? sheet.internalNotes : before.catalogInternalNotes;
+    // The sheet may (re)classify the product: subcategoryId is the truth and categoryId is derived from it.
+    const classified = dto.subcategoryId !== undefined
+      ? await this.classification.assertWritable(
+        this.prisma as unknown as ClassificationDb,
+        { subcategoryId: dto.subcategoryId },
+        { categoryId: before.categoryId, subcategoryId: before.subcategoryId, brandId: before.brandId },
+      )
+      : null;
+
+    // Internal notes are no longer part of the sheet: they live in `ProductInternalNote`
+    // (see ProductInternalNotesService). This PUT neither reads nor writes them, and the
+    // obsolete column `catalogInternalNotes` is left untouched until it is removed.
 
     if (sheet.slug) {
       const taken = await this.prisma.product.findFirst({
@@ -266,10 +279,19 @@ export class ProductSheetService {
     }
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      await this.library.writeTransaction(async (tx) => {
+        if (this.library.config.mode === 'dedicated') {
+          await tx.$queryRaw`SELECT id FROM products WHERE id=${id} FOR UPDATE`;
+          const current = await tx.product.findUnique({ where: { id }, select: { sheetVersion: true } });
+          if (!current) throw new NotFoundException('Producto no encontrado');
+          if (current.sheetVersion !== before.sheetVersion) {
+            throw new ConflictException({ code: 'sheet-version-conflict', currentVersion: current.sheetVersion, message: 'La ficha cambió. Recarga antes de guardar.' });
+          }
+        }
         await tx.product.update({
           where: { id },
           data: {
+            ...(classified && this.classification.toData(classified)),
             catalogName: sheet.name,
             catalogSlug: sheet.slug,
             catalogPublished: sheet.published,
@@ -285,7 +307,6 @@ export class ProductSheetService {
             catalogSpecsDisclaimer: sheet.specsDisclaimer,
             catalogFirmwareNote: sheet.firmwareNote,
             catalogManufacturerRefs: sheet.manufacturerRefs,
-            catalogInternalNotes: internalNotes,
             sheetVersion: { increment: 1 },
           },
         });
@@ -345,17 +366,28 @@ export class ProductSheetService {
             await tx.uploadedFile.update({ where: { id: f.id }, data: { visibility: 'PUBLIC' } });
           }
         }
+        if (this.library.config.mode === 'dedicated') {
+          await this.revisions?.markPendingFromLive(id, tx, { id: ctx?.userId });
+          await this.libraryAudit.append(tx, {
+            actor: { id: ctx?.userId }, action: 'PRODUCT_SHEET_UPDATED', entityType: 'Product', entityId: id,
+            summary: {
+              before: this.auditSnapshot(this.toView(before, { withNotes })) as unknown as LibraryPrisma.InputJsonObject,
+              after: this.auditSnapshot(this.toView(await tx.product.findUniqueOrThrow({ where: { id }, include: productDetailInclude }), { withNotes })) as unknown as LibraryPrisma.InputJsonObject,
+            },
+          });
+        }
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if ((error instanceof Prisma.PrismaClientKnownRequestError || error instanceof LibraryPrisma.PrismaClientKnownRequestError) && error.code === 'P2002') {
         // Lost a race on the unique slug (or a spec group key).
         throw new ConflictException('Ya existe otro producto con ese slug');
       }
       throw error;
     }
 
-    const after = this.toView(await this.load(id), { withNotes });
-    await this.audit.log({
+    const reloaded = await this.load(id);
+    const after = this.toView(reloaded, { withNotes });
+    if (this.library.config.mode === 'legacy') await this.audit.log({
       userId: ctx?.userId,
       action: 'update_sheet',
       entity: 'Product',
@@ -366,8 +398,18 @@ export class ProductSheetService {
     // CAT-03 H5 (regla 5): el cambio deja la validación PENDIENTE — mismo
     // mecanismo CAT-02 que usan las rutas legacy. No autoriza ni publica nada:
     // el lente público sigue sirviendo `publicRevisionId` sin tocar.
-    await this.revisions?.markPendingFromLive(id);
-    return after;
+    if (this.library.config.mode === 'legacy') await this.revisions?.markPendingFromLive(id);
+    return this.withClassification(after, reloaded);
+  }
+
+  /** Read-only classification context of the sheet; kept out of `toView` so audit snapshots and the public mapper stay unchanged. */
+  private async withClassification(view: ProductSheetView, p: ProductWithSheet): Promise<ProductSheetView> {
+    const subcategoryId = p.subcategoryId ?? null;
+    const subcategoryDelegate = (this.prisma as unknown as { subcategory?: { findUnique(args: unknown): Promise<{ id: string; name: string; slug: string } | null> } }).subcategory;
+    const subcategory = subcategoryId && subcategoryDelegate
+      ? await subcategoryDelegate.findUnique({ where: { id: subcategoryId }, select: { id: true, name: true, slug: true } })
+      : null;
+    return { ...view, subcategoryId, subcategory, classificationStatus: subcategoryId && p.brandId ? 'complete' : 'incomplete' };
   }
 
   private async load(id: string): Promise<ProductWithSheet> {
@@ -415,8 +457,7 @@ export class ProductSheetService {
       specsDisclaimer: p.catalogSpecsDisclaimer,
       firmwareNote: p.catalogFirmwareNote,
       manufacturerRefs: p.catalogManufacturerRefs ?? [],
-      // CAT-03 H1: sin `products:notes` las notas internas NO se devuelven.
-      internalNotes: opts.withNotes ? p.catalogInternalNotes : null,
+      // Whether the actor may open the internal-notes list (served by /internal-notes).
       canSeeInternalNotes: opts.withNotes,
       version: p.sheetVersion,
       specGroups: p.catalogSpecGroups.map((g) => ({
@@ -440,7 +481,7 @@ export class ProductSheetService {
 
   /** Audit payload: the editable sheet only (no read-only context, no timestamps). */
   private auditSnapshot(view: ProductSheetView) {
-    const { productId: _productId, sku: _sku, productName: _productName, updatedAt: _updatedAt, ...sheet } = view;
+    const { productId: _productId, sku: _sku, productName: _productName, updatedAt: _updatedAt, subcategoryId: _subcategoryId, subcategory: _subcategory, classificationStatus: _classificationStatus, ...sheet } = view;
     return sheet;
   }
 }

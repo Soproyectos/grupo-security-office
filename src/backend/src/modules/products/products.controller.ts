@@ -16,7 +16,8 @@ import { DeleteProductDto } from './dto/delete-product.dto';
 import { BulkSchedulePublicationDto } from './dto/bulk-schedule-publication.dto';
 import { SchedulePublicationDto } from './dto/schedule-publication.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { ALL_ROLES } from '../../common/rbac/roles.constants';
+import { RequireGrant } from '../../common/security/require-grant';
+import { RedactInternalNotesInterceptor } from '../../common/security/internal-notes.interceptor';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
@@ -27,6 +28,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 @ApiBearerAuth()
 @Controller('api/products')
 @UseGuards(JwtAuthGuard, RolesGuard)
+// Red de seguridad: ninguna respuesta de este controlador entrega `catalogInternalNotes` sin `products:notes`.
+@UseInterceptors(RedactInternalNotesInterceptor)
 export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
@@ -34,22 +37,23 @@ export class ProductsController {
   ) {}
 
   private ctx(user: any): AccessContext {
-    return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
+    return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [], userName: user?.name ?? null };
   }
 
   @Get('trending')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Obtener productos tendencia' })
   findTrending(
+    @CurrentUser() user: any,
     @Query('take') take?: number,
     @Query('categoryId') categoryId?: string,
-    @Query('search') search?: string
+    @Query('search') search?: string,
   ) {
-    return this.productsService.findTrending({ take, categoryId, search });
+    return this.productsService.findTrending({ take, categoryId, search }, this.ctx(user));
   }
 
   @Get('publish-scheduled')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Listar productos programados para publicaciÃ³n' })
   @ApiQuery({ name: 'from', required: false, type: String, description: 'Inicio del rango (ISO). Default: ahora.' })
   @ApiQuery({ name: 'to', required: false, type: String, description: 'Fin del rango (ISO). Default: ahora + 7 dÃ­as.' })
@@ -61,13 +65,14 @@ export class ProductsController {
   }
 
   @Get()
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Listar productos' })
   @ApiQuery({ name: 'skip', required: false, type: Number })
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Alias de take (paginación limit/offset); take tiene precedencia si se envían ambos' })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'categoryId', required: false, type: String })
+  @ApiQuery({ name: 'categoryIds', required: false, type: String, description: 'IDs de categorías separadas por coma; incluye sus descendientes' })
   @ApiQuery({ name: 'brandId', required: false, type: String })
   @ApiQuery({ name: 'isVisible', required: false, type: Boolean })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean })
@@ -81,6 +86,7 @@ export class ProductsController {
       take: query.take ?? query.limit ?? 50,
       search: query.search,
       categoryId: query.categoryId,
+      categoryIds: query.categoryIds?.split(',').map((id) => id.trim()).filter(Boolean),
       brandId: query.brandId,
       isVisible: query.isVisible,
       isActive: query.isActive,
@@ -89,14 +95,14 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Obtener producto por ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productsService.findOne(id, this.ctx(user));
   }
 
   @Post()
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({ summary: 'Crear producto' })
   @ApiResponse({ status: 201, description: 'Producto creado' })
   create(@Body() dto: CreateProductDto, @CurrentUser() user: any) {
@@ -104,21 +110,21 @@ export class ProductsController {
   }
 
   @Put(':id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({ summary: 'Actualizar producto' })
   update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() user: any) {
     return this.productsService.update(id, dto, this.ctx(user));
   }
 
   @Get(':id/revisions')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Versiones de revisión del producto (resumen, sin contenido)' })
   listRevisions(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productRevisionsService.listRevisions(id, this.ctx(user));
   }
 
   @Patch(':id/revision/draft')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({
     summary: 'Guardar borrador versionado (CAT-02) — no toca la revisión publicada ni los activos',
   })
@@ -127,21 +133,21 @@ export class ProductsController {
   }
 
   @Patch(':id/toggle-visibility')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Obsoleto', deprecated: true, description: 'Adaptador legacy: DRAFTâ†’PUBLISH, PUBLISHEDâ†’UNPUBLISH, ARCHIVEDâ†’400. No produce HIDDEN. Marcar reemplazado por POST /transition.' })
   toggleVisibility(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productsService.toggleVisibility(id, this.ctx(user));
   }
 
   @Patch(':id/toggle-active')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({ summary: 'Eliminado', deprecated: true, description: 'Obsoleto: devuelve 410 Gone sin modificar el producto. Usa ARCHIVE o RESTORE vÃ­a POST /transition o POST /bulk-transition.' })
   toggleActive(@Param('id') _id: string) {
     throw new GoneException('toggle-active estÃ¡ obsoleto. Usa la transiciÃ³n canÃ³nica ARCHIVE o RESTORE.');
   }
 
   @Patch(':id/publish')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Publicar o programar publicaciÃ³n de un producto (obsoleto)', deprecated: true, description: 'Sin publishAt futura: PUBLISH (DRAFTâ†’PUBLISHED). Con publishAt futura: persiste programaciÃ³n sobre DRAFT (el scheduler aplicarÃ¡ PUBLISH). unpublishAt se ignora. Reemplazado por POST /transition.' })
   @ApiResponse({ status: 200, description: 'Producto publicado o programado' })
   @ApiResponse({ status: 400, description: 'Requisitos previos a publicaciÃ³n no cumplidos (detalle)' })
@@ -155,7 +161,7 @@ export class ProductsController {
   }
 
   @Patch(':id/unpublish')
-  @Roles('Super Admin', 'Supervisor', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Despublicar un producto (obsoleto)', deprecated: true, description: 'Ejecuta UNPUBLISH (PUBLISHEDâ†’DRAFT). Acepta reason opcional para auditorÃ­a. Reemplazado por POST /transition.' })
   @ApiResponse({ status: 200, description: 'Producto despublicado' })
   @ApiResponse({ status: 400, description: 'Motivo invÃ¡lido' })
@@ -168,7 +174,8 @@ export class ProductsController {
   }
 
   @Post(':id/transition')
-  @Roles(...ALL_ROLES)
+  // Requisito base products:read; el servicio exige ademas products:publish (PUBLISH/UNPUBLISH) o products:write (ARCHIVE/RESTORE) segun el evento.
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'TransiciÃ³n canÃ³nica de ciclo de vida de un producto (PUBLISH, UNPUBLISH, ARCHIVE, RESTORE)' })
   @ApiResponse({ status: 200, description: 'TransiciÃ³n aplicada. Devuelve el producto con allowedActions.' })
   @ApiResponse({ status: 400, description: 'TransiciÃ³n invÃ¡lida, motivo/confirm/publishAt faltante o checklist de publicaciÃ³n incumplido.' })
@@ -182,7 +189,8 @@ export class ProductsController {
   }
 
   @Post('bulk-transition')
-  @Roles(...ALL_ROLES)
+  // Requisito base products:read; cada producto exige el permiso de su evento en el servicio.
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Aplicar un evento FSM a varios productos (1..500). Procesa producto a producto; devuelve applied y rejected.' })
   @ApiResponse({ status: 201, description: 'Procesado. Respuesta: { data: { applied, rejected } }.' })
   bulkTransition(
@@ -198,7 +206,7 @@ export class ProductsController {
   }
 
   @Delete(':id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:delete')
   @ApiOperation({ summary: 'Eliminar producto fÃ­sicamente. Exige confirm: true; si el producto tiene datos asociados, exige masterKey (409 si falta, 403 si es incorrecta).' })
   @ApiResponse({ status: 200, description: 'Producto eliminado exitosamente' })
   @ApiResponse({ status: 400, description: 'Falta confirm: true' })
@@ -209,7 +217,7 @@ export class ProductsController {
   }
 
   @Post('import')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Importar productos desde Excel' })
   @ApiConsumes('multipart/form-data')
@@ -223,12 +231,12 @@ export class ProductsController {
   })
   @ApiResponse({ status: 201, description: 'Productos importados' })
   @ApiResponse({ status: 400, description: 'Archivo invÃ¡lido' })
-  async importExcel(@UploadedFile() file: Express.Multer.File) {
-    return this.productsService.importFromExcel(file.buffer);
+  async importExcel(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: any) {
+    return this.productsService.importFromExcel(file.buffer, this.ctx(user));
   }
 
   @Post(':id/images')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Subir imagen de producto' })
   @ApiConsumes('multipart/form-data')
@@ -254,7 +262,7 @@ export class ProductsController {
   }
 
   @Post(':id/assets')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 16 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Subir un activo verificado de producto (IMAGE o DOCUMENT)' })
   @ApiConsumes('multipart/form-data')
@@ -285,7 +293,7 @@ export class ProductsController {
   }
 
   @Delete('images/:imageId')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({ summary: 'Eliminar imagen de producto' })
   @ApiResponse({ status: 200, description: 'Imagen eliminada' })
   @ApiResponse({ status: 404, description: 'Imagen no encontrada' })
@@ -294,8 +302,8 @@ export class ProductsController {
   }
 
   @Patch('images/:imageId')
-  @Roles('Super Admin', 'Admin Comercial')
-  @ApiOperation({ summary: 'Actualizar imagen de producto (alt y/o principal)' })
+  @RequireGrant('products:write')
+  @ApiOperation({ summary: 'Actualizar imagen de producto (alt, tipo y/o principal)' })
   @ApiResponse({ status: 200, description: 'Imagen actualizada' })
   @ApiResponse({ status: 404, description: 'Imagen no encontrada' })
   updateImage(
@@ -307,9 +315,7 @@ export class ProductsController {
   }
 
   @Post(':id/publication/schedule')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Permissions('products:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Programar publicaciÃ³n de un producto' })
   @ApiResponse({ status: 200, description: 'ProgramaciÃ³n registrada', type: Object })
   @ApiResponse({ status: 403, description: 'Se requiere permiso global publish:manage' })
@@ -324,9 +330,7 @@ export class ProductsController {
   }
 
   @Post(':id/publication/cancel')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Permissions('products:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Cancelar programaciÃ³n de publicaciÃ³n de un producto' })
   @ApiResponse({ status: 200, description: 'ProgramaciÃ³n cancelada', type: Object })
   @ApiResponse({ status: 403, description: 'Se requiere permiso global publish:manage' })
@@ -340,9 +344,7 @@ export class ProductsController {
   }
 
   @Post("publication/schedule-bulk")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Permissions('products:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Programar publicaci\u00f3n masiva de productos' })
   @ApiResponse({ status: 200, description: "Resultado consolidado", type: Object })
   schedulePublicationBulk(
@@ -353,9 +355,7 @@ export class ProductsController {
   }
 
   @Post("publication/cancel-bulk")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Permissions('products:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @ApiOperation({ summary: 'Cancelar programaci\u00f3n masiva de publicaci\u00f3n' })
   @ApiResponse({ status: 200, description: "Resultado consolidado", type: Object })
   cancelPublicationBulk(
@@ -374,7 +374,7 @@ export class ListasPublicationController {
   constructor(private readonly productsService: ProductsService) {}
 
   private ctx(user: any): AccessContext {
-    return { userId: user?.sub ?? user.id, roles: user?.roles ?? [] };
+    return { userId: user?.sub ?? user.id, roles: user?.roles ?? [], userName: user?.name ?? null };
   }
 
   @Post(':id/publication/publish')

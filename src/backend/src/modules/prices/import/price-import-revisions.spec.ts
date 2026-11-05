@@ -1,4 +1,5 @@
 jest.mock('../../../prisma/prisma.service', () => ({ PrismaService: class {} }));
+import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -15,6 +16,7 @@ const LISTA_B = '00000000-0000-4000-8000-0000000000b2';
 const ctx: AccessContext = { userId: 'fixture-actor', roles: ['Admin Comercial'] };
 const other: AccessContext = { userId: 'fixture-other', roles: ['Admin Comercial'] };
 const storageDir = path.join(os.tmpdir(), 'gs-imp04-test-storage');
+// `listas:read` is only here because the (unchanged) action catalog lists it as a dependency of `prices:read`.
 const ACTIONS = ['prices:save', 'prices:preview', 'prices:read', 'prices:apply', 'listas:read'];
 
 function file(rows: unknown[][] = [['SKU-A', 100.5]]): Express.Multer.File {
@@ -22,6 +24,14 @@ function file(rows: unknown[][] = [['SKU-A', 100.5]]): Express.Multer.File {
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'DPP_ORO_IVA'], ...rows]), 'PRECIOS');
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
   return { originalname: 'fixture-precios.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
+}
+
+/** File with the single-price column (supplier without tariff tiers) instead of tariff columns. */
+function singleFile(rows: unknown[][] = [['SKU-A', 100]]): Express.Multer.File {
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['REFERENCIA', 'PRECIO UNICO (CON IVA)'], ...rows]), 'PRECIOS');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Guía ficticia']]), 'INSTRUCCIONES');
+  return { originalname: 'fixture-precio-unico.xlsx', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) } as Express.Multer.File;
 }
 
 describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)', () => {
@@ -49,7 +59,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
         { id: 'product-b', sku: 'SKU-B', listaId: LISTA_B },
         { id: 'product-free', sku: 'SKU-FREE', listaId: null },
       ],
-      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA' }],
+      tariffs: [{ id: 'tariff-oro', code: 'DPP_ORO_IVA', name: 'DPP Oro (con IVA)' }],
       prices: [
         { productId: 'product-a', priceListId: 'tariff-oro', value: 90 },
         { productId: 'product-b', priceListId: 'tariff-oro', value: 500 },
@@ -57,8 +67,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     });
     acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
     grants = createGrantsProvider();
-    grants.grantOnLista(LISTA_A, ...ACTIONS);
-    grants.grantOnLista(LISTA_B, ...ACTIONS);
+    grants.grant(...ACTIONS);
     service = serviceFor(grants);
   });
 
@@ -78,19 +87,33 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     expect(fake.audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'price-import-revision-save', entity: 'Price', entityId: 'rev-1' }));
   });
 
-  it('ignora cualquier lista destino y guarda la lista de cada fila, también la de filas rechazadas (solo interna)', async () => {
-    grants.revoke('prices:read');
-    grants.grantOnLista(LISTA_A, 'prices:read');
+  it('ignora cualquier lista destino y guarda la lista de cada fila: con la concesión global todas las filas con producto son válidas', async () => {
     const mixed = file([['SKU-A', 100], ['SKU-B', 600], ['NO-SUCH', 5], ['SKU-FREE', 7]]);
     const header = await service.saveRevision(mixed, 'key-mixed-001', ctx);
     expect(header.listaId).toBeNull();
     const byRow = new Map(fake.state.revisionRows.map((r) => [r.sku, r]));
     expect(byRow.get('SKU-A')).toMatchObject({ status: 'valid', listaId: LISTA_A, productId: 'product-a' });
-    expect(byRow.get('SKU-B')).toMatchObject({ status: 'error', listaId: LISTA_B, productId: 'product-b' });
-    expect(byRow.get('SKU-B')!.issues[0].code).toBe('LISTA_FORBIDDEN');
+    expect(byRow.get('SKU-B')).toMatchObject({ status: 'valid', listaId: LISTA_B, productId: 'product-b' });
     expect(byRow.get('NO-SUCH')).toMatchObject({ status: 'error', productId: null, listaId: null, resolution: 'PENDING_PRODUCT' });
-    expect(byRow.get('SKU-FREE')).toMatchObject({ status: 'error', productId: 'product-free', listaId: null });
-    expect(header.summary).toMatchObject({ validRows: 1, rejectedRows: 3, unknownRows: 1, rowsInInaccessibleListas: 2 });
+    expect(byRow.get('SKU-FREE')).toMatchObject({ status: 'valid', productId: 'product-free', listaId: null });
+    expect(header.summary).toMatchObject({ validRows: 3, rejectedRows: 1, unknownRows: 1, rowsInInaccessibleListas: 0 });
+    expect(acl.assertListaAccess).not.toHaveBeenCalled();
+  });
+
+  it.each([['Admin Comercial'], ['Supervisor']])('el cargo %s sin concesiones (cero filas) recibe 403 al guardar', async (role) => {
+    await expect(serviceFor(createGrantsProvider()).saveRevision(file(), 'key-12345678', { userId: 'u-x', roles: [role] })).rejects.toThrow(ForbiddenException);
+    expect(fake.prisma.priceImportRevision.create).not.toHaveBeenCalled();
+  });
+
+  it('un Vendedor con las concesiones globales guarda la revisión (el cargo no cuenta)', async () => {
+    const header = await service.saveRevision(file(), 'key-vendedor-01', { userId: 'u-v', roles: ['Vendedor'] });
+    expect(header.status).toBe('GUARDADA');
+  });
+
+  it('una concesión ligada a una lista no abre el guardado', async () => {
+    const scoped = createGrantsProvider();
+    scoped.grantOnLista(LISTA_A, ...ACTIONS);
+    await expect(serviceFor(scoped).saveRevision(file(), 'key-12345678', ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('guardar dos veces con la misma clave, archivo y persona no duplica (idempotencia)', async () => {
@@ -131,6 +154,67 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
     expect(fake.state.revisionPrices[1].largeChange).toBe(true);
   });
 
+  describe('precio único', () => {
+    it('guarda el archivo expandido a la selección y la anota en el resumen, sin tocar Price', async () => {
+      const header = await service.saveRevision(singleFile([['SKU-A', 100.5]]), 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
+      expect(header.summary.singlePrice).toEqual({ tariffs: ['DPP_ORO_IVA'] });
+      expect(header.tariffs.map((t) => t.code)).toEqual(['DPP_ORO_IVA']);
+      expect(fake.state.revisionPrices).toEqual([expect.objectContaining({
+        tariffCode: 'DPP_ORO_IVA', receivedValue: '100.5', roundedValue: '101', previousValue: '90', change: 'changed', productId: 'product-a',
+      })]);
+      expect(fake.prisma.price.create).not.toHaveBeenCalled();
+      expect(fake.prisma.price.update).not.toHaveBeenCalled();
+    });
+
+    it('un archivo normal conserva el sha256 de sus bytes como hash y no anota singlePrice', async () => {
+      const normal = file();
+      const header = await service.saveRevision(normal, 'key-normal-01', ctx, { singlePriceTariffs: ['TIENDA_IVA'] });
+      expect(header.fileHash).toBe(createHash('sha256').update(normal.buffer).digest('hex'));
+      expect(header.summary).not.toHaveProperty('singlePrice');
+      expect(header.tariffs.map((t) => t.code)).toEqual(['DPP_ORO_IVA']);
+    });
+
+    it('el mismo archivo con otra selección nunca devuelve la revisión anterior', async () => {
+      fake.state.tariffs.push({ id: 'tariff-tienda', code: 'TIENDA_IVA', name: 'Tienda (con IVA)', isActive: true, currency: 'COP', validFrom: null, validUntil: null });
+      const single = singleFile();
+      const first = await service.saveRevision(single, 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] });
+      // Misma clave y misma selección: idempotente.
+      expect((await service.saveRevision(single, 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA'] })).id).toBe(first.id);
+      // Misma clave y otra selección: es otro contenido (409), no la cabecera anterior.
+      await expect(service.saveRevision(single, 'key-single-01', ctx, { singlePriceTariffs: ['DPP_ORO_IVA', 'TIENDA_IVA'] })).rejects.toThrow(ConflictException);
+      // Otra clave y otra selección: revisión nueva, con su propio hash y su propio original.
+      const second = await service.saveRevision(single, 'key-single-02', ctx, { singlePriceTariffs: ['DPP_ORO_IVA', 'TIENDA_IVA'] });
+      expect(second.id).not.toBe(first.id);
+      expect(second.fileHash).not.toBe(first.fileHash);
+      expect(second.fileAvailable).toBe(true);
+      expect(fake.prisma.priceImportRevision.create).toHaveBeenCalledTimes(2);
+      expect(fake.state.revisionPrices.filter((p) => p.revisionId === second.id).map((p) => p.tariffCode)).toEqual(['TIENDA_IVA', 'DPP_ORO_IVA']);
+    });
+
+    it('guarda las filas de precio único con todas las tarifas configuradas', async () => {
+      const header = await service.saveRevision(singleFile(), 'key-single-05', ctx);
+      expect(header.tariffs.map((t) => t.code)).toEqual(['DPP_ORO_IVA']);
+      expect(header.summary).toMatchObject({ validRows: 1, errorRows: 0, singlePrice: { tariffs: ['DPP_ORO_IVA'] } });
+      expect(fake.state.revisionRows[0]).toMatchObject({ sku: 'SKU-A', status: 'valid' });
+      expect(fake.state.revisionPrices).toHaveLength(1);
+    });
+
+    it('guarda el error de una tarifa inactiva sin aplicar precios', async () => {
+      fake.state.tariffs[0].isActive = false;
+      const header = await service.saveRevision(file(), 'key-inactive-01', ctx);
+      expect(header.summary).toMatchObject({ validRows: 0, errorRows: 1 });
+      expect(fake.state.revisionRows[0].issues).toContainEqual(expect.objectContaining({ code: 'TARIFF_UNAVAILABLE', column: 'DPP_ORO_IVA' }));
+      expect(fake.prisma.price.create).not.toHaveBeenCalled();
+      expect(fake.prisma.price.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una selección vacía o desconocida sin crear revisión', async () => {
+      await expect(service.saveRevision(singleFile(), 'key-single-06', ctx, { singlePriceTariffs: [] })).rejects.toThrow(BadRequestException);
+      await expect(service.saveRevision(singleFile(), 'key-single-06', ctx, { singlePriceTariffs: ['NOPE' as never] })).rejects.toThrow(BadRequestException);
+      expect(fake.prisma.priceImportRevision.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('lecturas', () => {
     const seedMixed = async () => {
       await service.saveRevision(file([['SKU-A', 100], ['SKU-B', 600], ['NO-SUCH', 5]]), 'key-mixed-001', ctx);
@@ -144,37 +228,30 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       expect(detail.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', raw: '100', rounded: '100', previous: '90', change: 'changed', largeChange: false });
       expect(detail.rows[2]).toMatchObject({ sku: 'NO-SUCH', listaState: 'UNKNOWN', resolution: 'PENDING_PRODUCT' });
       expect(detail.byLista).toEqual(expect.arrayContaining([
-        { listaId: LISTA_A, code: 'LA', name: 'Lista Alfa', rows: 1, prices: 1 },
-        { listaId: LISTA_B, code: 'LB', name: 'Lista Beta Secreta', rows: 1, prices: 1 },
+        { listaId: LISTA_A, rows: 1, prices: 1 },
+        { listaId: LISTA_B, rows: 1, prices: 1 },
       ]));
+      expect(fake.prisma.lista.findMany).not.toHaveBeenCalled();
     });
 
-    it('NUNCA devuelve filas, precios ni nombres de listas sin prices:read: solo la cuenta', async () => {
+    it('con una concesión ligada a una lista NO se devuelve nada de la revisión: 403 antes de leer filas', async () => {
       await seedMixed();
       const onlyA = createGrantsProvider();
       onlyA.grantOnLista(LISTA_A, ...ACTIONS);
-      const detail = await serviceFor(onlyA).getRevision('rev-1', 1, 100, other);
-      expect(detail.rowsInInaccessibleListas).toBe(1);
-      expect(detail.totalRows).toBe(2);
-      expect(detail.rows.map((r) => r.sku)).toEqual(['SKU-A', 'NO-SUCH']);
-      expect(detail.byLista.map((l) => l.listaId)).toEqual([LISTA_A]);
-      expect(detail.summary.byLista!.map((l) => l.listaId)).toEqual([LISTA_A]);
-      expect(detail.summary.rowsInInaccessibleListas).toBe(1);
-      const body = JSON.stringify(detail);
-      expect(body).not.toMatch(/Lista Beta|SKU-B|product-b|LB"/);
-      expect(body).not.toContain(LISTA_B);
+      fake.prisma.priceImportRevisionRow.findMany.mockClear();
+      await expect(serviceFor(onlyA).getRevision('rev-1', 1, 100, other)).rejects.toThrow(ForbiddenException);
+      await expect(serviceFor(onlyA).getRevision('rev-1', 1, 100, ctx)).rejects.toThrow(ForbiddenException);
+      expect(fake.prisma.priceImportRevisionRow.findMany).not.toHaveBeenCalled();
     });
 
-    it('niega (403) a quien no es el creador y no ve ninguna lista de la revisión', async () => {
+    it('con la concesión global lee la revisión de otra persona completa (sin listas ocultas)', async () => {
       await service.saveRevision(file([['SKU-A', 100], ['SKU-B', 600]]), 'key-mixed-002', ctx);
       const nobody = createGrantsProvider();
       nobody.grant('prices:read', 'listas:read');
-      // Global grants would see everything; a grant on another lista sees nothing here.
-      const stranger = createGrantsProvider();
-      stranger.grantOnLista('00000000-0000-4000-8000-0000000000c3', ...ACTIONS);
-      await expect(serviceFor(stranger).getRevision('rev-1', 1, 100, other)).rejects.toThrow(ForbiddenException);
-      expect((await serviceFor(nobody).getRevision('rev-1', 1, 100, other)).totalRows).toBe(2);
-      expect((await serviceFor(stranger).getRevision('rev-1', 1, 100, ctx)).rows).toEqual([]);
+      const detail = await serviceFor(nobody).getRevision('rev-1', 1, 100, other);
+      expect(detail.totalRows).toBe(2);
+      expect(detail.rowsInInaccessibleListas).toBe(0);
+      expect(detail.rows.map((r) => r.sku)).toEqual(['SKU-A', 'SKU-B']);
     });
 
     it('sigue leyendo una revisión heredada de una sola lista (sin instantánea por fila)', async () => {
@@ -189,7 +266,7 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       expect(detail).toMatchObject({ listaId: LISTA_A, totalRows: 1, appliedResult: { appliedPrices: 1 } });
       expect(detail.rows[0]).toMatchObject({ sku: 'SKU-A', listaId: LISTA_A, listaState: 'LISTA' });
       expect(detail.rows[0].prices[0]).toMatchObject({ code: 'DPP_ORO_IVA', previous: '90', changePercent: null, largeChange: false });
-      expect(acl.assertListaAccess).toHaveBeenCalledWith(LISTA_A, ctx, 'view_prices');
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
     });
 
     it('tolera page/pageSize ausentes o inválidos y pagina en servidor', async () => {
@@ -201,10 +278,23 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       expect(paged.totalRows).toBe(3);
     });
 
-    it('no consulta una revisión heredada de una lista fuera de alcance (403)', async () => {
+    it('una revisión heredada de otra lista se lee con la concesión global: ninguna Lista interviene', async () => {
       fake.state.revisions.push({ id: 'rev-x', listaId: LISTA_B, status: 'GUARDADA', fileName: 'x.xlsx', fileHash: 'h', fileSize: 1, idempotencyKey: 'k', policyVersion: 'p', parserVersion: 'v', trailerVersion: null, tariffs: [], summary: {}, createdById: null, createdAt: new Date() });
       acl.assertListaAccess.mockRejectedValue(new ForbiddenException('ajena'));
-      await expect(service.getRevision('rev-x', 1, 100, ctx)).rejects.toThrow(ForbiddenException);
+      await expect(service.getRevision('rev-x', 1, 100, ctx)).resolves.toMatchObject({ id: 'rev-x', listaId: LISTA_B });
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
+    });
+
+    it('el cargo Admin Comercial o Supervisor sin concesiones no lee revisiones ni las lista', async () => {
+      await seedMixed();
+      for (const roles of [['Admin Comercial'], ['Supervisor']]) {
+        const nobody = serviceFor(createGrantsProvider());
+        const caller = { userId: 'u-none', roles };
+        await expect(nobody.getRevision('rev-1', 1, 100, caller)).rejects.toThrow(ForbiddenException);
+        await expect(nobody.listRevisions(undefined, 1, 25, caller)).rejects.toThrow(ForbiddenException);
+        await expect(nobody.getRevisionFile('rev-1', caller)).rejects.toThrow(ForbiddenException);
+        await expect(nobody.discardRevision('rev-1', caller)).rejects.toThrow(ForbiddenException);
+      }
     });
 
     it('404 cuando la revisión no existe', async () => {
@@ -219,24 +309,32 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
         where: { OR: [{ listaId: LISTA_A }, { rows: { some: { listaId: LISTA_A } } }] },
       }));
       expect(page.items.map((r) => r.id)).toEqual(['rev-1']);
-      const onlyA = createGrantsProvider();
-      onlyA.grantOnLista(LISTA_A, ...ACTIONS);
-      const sanitized = await serviceFor(onlyA).listRevisions(LISTA_A, 1, 25, ctx);
-      expect(JSON.stringify(sanitized)).not.toMatch(/Lista Beta/);
-      expect(sanitized.items[0].summary.rowsInInaccessibleListas).toBe(1);
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
     });
 
-    it('sin concesión prices:read no se consulta el historial de la lista (403)', async () => {
+    it('sin listaId lista TODAS las revisiones (la lista ya no es obligatoria ni se comprueba)', async () => {
+      await seedMixed();
+      await service.saveRevision(file([['SKU-B', 600]]), 'key-only-b-01', ctx);
+      const page = await service.listRevisions(undefined, 1, 25, ctx);
+      expect(fake.prisma.priceImportRevision.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: {} }));
+      expect(page.items.map((r) => r.id).sort()).toEqual(['rev-1', 'rev-2']);
+      expect(page.total).toBe(2);
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
+    });
+
+    it('sin concesión prices:read no se consulta el historial (403)', async () => {
       grants.revoke('prices:read');
+      await expect(service.listRevisions(undefined, 1, 25, ctx)).rejects.toThrow(ForbiddenException);
       await expect(service.listRevisions(LISTA_A, 1, 25, ctx)).rejects.toThrow(ForbiddenException);
     });
 
-    it('el historial de una lista ajena no se lista (403)', async () => {
-      acl.assertListaAccess.mockRejectedValue(new ForbiddenException('ajena'));
-      await expect(service.listRevisions(LISTA_B, 1, 25, ctx)).rejects.toThrow(ForbiddenException);
+    it('una concesión ligada a una lista no abre el historial (403)', async () => {
+      const onlyB = createGrantsProvider();
+      onlyB.grantOnLista(LISTA_B, ...ACTIONS);
+      await expect(serviceFor(onlyB).listRevisions(LISTA_B, 1, 25, ctx)).rejects.toThrow(ForbiddenException);
     });
 
-    it('el archivo de una revisión mixta solo lo baja su creador o quien ve todas sus listas; 404 si ya no está', async () => {
+    it('el archivo de una revisión lo baja quien tiene prices:read global (no una concesión de lista); 404 si ya no está', async () => {
       await seedMixed();
       expect((await service.getRevisionFile('rev-1', ctx)).fileName).toBe('fixture-precios.xlsx');
       const onlyA = createGrantsProvider();
@@ -247,10 +345,11 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       await expect(service.getRevisionFile('rev-1', ctx)).rejects.toThrow(NotFoundException);
     });
 
-    it('el archivo de una revisión heredada de una lista ajena no se descarga (403)', async () => {
+    it('el archivo de una revisión heredada no consulta ninguna Lista (si el original ya no está, 404)', async () => {
       fake.state.revisions.push({ id: 'legacy-2', listaId: LISTA_B, status: 'GUARDADA', fileName: 'x.xlsx', fileHash: 'h', fileSize: 1, idempotencyKey: 'k2', policyVersion: 'p', parserVersion: 'v', trailerVersion: null, tariffs: [], summary: {}, createdById: null, createdAt: new Date() });
       acl.assertListaAccess.mockRejectedValue(new ForbiddenException('ajena'));
-      await expect(service.getRevisionFile('legacy-2', ctx)).rejects.toThrow(ForbiddenException);
+      await expect(service.getRevisionFile('legacy-2', ctx)).rejects.toThrow(NotFoundException);
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
     });
 
     it('descarta una revisión pendiente y bloquea descartar una ya aplicada', async () => {
@@ -261,11 +360,17 @@ describe('IMP-04 — revisión de precios guardada y recuperable (listas mixtas)
       await expect(service.discardRevision('rev-1', ctx)).rejects.toThrow(ConflictException);
     });
 
-    it('descartar una revisión mixta exige ser su creador o ver todas sus listas', async () => {
+    it('descartar exige prices:save + prices:read globales (sin prices:preview); una concesión de lista no basta', async () => {
       await seedMixed();
       const onlyA = createGrantsProvider();
       onlyA.grantOnLista(LISTA_A, ...ACTIONS);
       await expect(serviceFor(onlyA).discardRevision('rev-1', other)).rejects.toThrow(ForbiddenException);
+      const readOnly = createGrantsProvider();
+      readOnly.grant('prices:read', 'listas:read');
+      await expect(serviceFor(readOnly).discardRevision('rev-1', other)).rejects.toThrow(ForbiddenException);
+      const saveAndRead = createGrantsProvider();
+      saveAndRead.grant('prices:save', 'prices:preview', 'prices:read', 'listas:read');
+      expect((await serviceFor(saveAndRead).discardRevision('rev-1', other)).status).toBe('DESCARTADA');
     });
   });
 });

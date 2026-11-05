@@ -48,8 +48,12 @@ export interface Product {
   sku: string
   name: string
   description: string | null
-  categoryId: string
-  brandId: string
+  /** Null while the draft has no category yet ("por clasificar"). */
+  categoryId: string | null
+  /** Subcategory (child of the root category). Absent or null while the product is still to be classified. */
+  subcategoryId?: string | null
+  /** Null while the draft has no brand yet. Never a placeholder brand. */
+  brandId: string | null
   listaId?: string | null
   technicalSpecs: Record<string, unknown> | null
   extraAttributes?: Record<string, unknown> | null
@@ -66,8 +70,12 @@ export interface Product {
   unpublishReason?: string | null
   stockStatus?: 'in_stock' | 'out_of_stock' | 'no_stock_data' | string | null
   availableQty?: number | null
-  category: { id: string; name: string; slug: string }
-  brand: { id: string; name: string; slug: string }
+  category: { id: string; name: string; slug: string } | null
+  subcategory?: { id: string; name: string; slug: string } | null
+  classificationStatus?: 'complete' | 'incomplete'
+  /** What a draft still lacks, e.g. ['brand', 'subcategory']. */
+  classificationMissing?: Array<'brand' | 'subcategory'>
+  brand: { id: string; name: string; slug: string } | null
   images: ProductImage[]
   documents?: ProductDocument[]
   prices: ProductPrice[]
@@ -87,8 +95,10 @@ export interface ProductPayload {
   sku: string
   name: string
   description?: string | null
-  categoryId: string
-  brandId: string
+  categoryId?: string | null
+  subcategoryId?: string | null
+  /** Optional: a draft with only sku + name is saved as "por clasificar". null clears the brand. */
+  brandId?: string | null
   listaId?: string
   technicalSpecs?: Record<string, unknown> | null
   extraAttributes?: Record<string, unknown> | null

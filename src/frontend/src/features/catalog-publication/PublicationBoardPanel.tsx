@@ -1,8 +1,9 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Alert } from '../../components/ui'
 import { getApiErrorMessage } from '../../lib/apiError'
 import { fetchBoard } from './publication-api'
+import './library-publication.css'
 import {
   BOARD_VIEWS,
   describeBoardItem,
@@ -16,15 +17,17 @@ import {
 function ItemState({ item }: { item: BoardItem }) {
   const { schedule, published, validation } = describeBoardItem(item)
   const badge = viewBadge(item.lifecycleStatus === 'PUBLISHED' ? 'publicados' : validation && validation.includes('bloquean') ? 'problemas' : 'pendientes')
+  const isPublished = item.lifecycleStatus === 'PUBLISHED'
   const accion = offeredAction(item.lifecycleStatus)
+  const hasErrors = Boolean(item.workingRevision?.errorCount)
   return (
-    <div className="space-y-1 text-sm">
+    <div className="library-publication__item-state">
       <p>
-        <span className={`font-medium ${badge.tone}`} data-testid={`item-badge-${item.id}`}>{badge.label}</span>
-        {accion && <span className="text-xs text-neutral-500"> · la acción disponible la confirma el servidor (publicar/retirar por sus endpoints)</span>}
+        <span className={`library-publication__status ${badge.tone}`} data-testid={`item-badge-${item.id}`}>{badge.label}</span>
+        {accion === 'retirar' && <span className="text-xs text-neutral-600"> · Visible en la tienda</span>}
       </p>
-      {validation && <p className="text-neutral-600">{validation}</p>}
-      {published && <p className="text-xs text-emerald-700">{published}</p>}
+      {validation && (!isPublished || hasErrors) && <p className="text-neutral-600">{validation}</p>}
+      {published && !isPublished && <p className="text-xs text-emerald-700">{published}</p>}
       {schedule && (
         <p className="text-xs text-amber-700" data-testid="schedule-notice">
           {schedule}
@@ -32,6 +35,14 @@ function ItemState({ item }: { item: BoardItem }) {
       )}
     </div>
   )
+}
+
+/** The row action says what the person will actually do on the next screen. */
+function reviewLabel(view: BoardView, item: BoardItem): string {
+  if (view === 'historial') return 'Ver historial'
+  if (item.lifecycleStatus === 'PUBLISHED') return 'Ver publicado'
+  if (view === 'problemas') return 'Ver problemas'
+  return 'Revisar y publicar'
 }
 
 /** Presentacional: la bandeja pinta lo que el servidor calculó; no re-valida nada. */
@@ -46,6 +57,7 @@ export function PublicationBoardPanel({
   onSearch,
   onView,
   onPage,
+  returnTo = '/catalog-management/publication',
 }: {
   view: BoardView
   items: BoardItem[]
@@ -57,60 +69,70 @@ export function PublicationBoardPanel({
   onSearch: (v: string) => void
   onView: (v: BoardView) => void
   onPage: (p: number) => void
+  returnTo?: string
 }) {
   return (
-    <div className="space-y-3" data-testid="publication-board">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="library-publication__board-panel" data-testid="publication-board">
+      <div className="library-publication__toolbar">
+        <div className="library-publication__views" role="group" aria-label="Vistas de publicación">
         {BOARD_VIEWS.map((v) => (
           <button
             key={v.id}
             type="button"
             onClick={() => onView(v.id)}
-            className={`px-3 py-1.5 text-sm rounded-lg border ${view === v.id ? 'bg-security-700 text-white border-security-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+            aria-pressed={view === v.id}
+            className={`library-publication__view${view === v.id ? ' is-active' : ''}`}
           >
             {v.label}
           </button>
         ))}
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Buscar SKU o nombre…"
-          aria-label="Buscar en la bandeja"
-          className="ml-auto px-3 py-1.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)]"
-        />
+        </div>
+        <label className="library-publication__search">
+          <span className="sr-only">Buscar producto</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="SKU o nombre"
+            aria-label="Buscar SKU o nombre"
+          />
+        </label>
       </div>
 
       {error && <Alert variant="error">{error}</Alert>}
 
-      {busy ? (
-        <p className="text-sm text-neutral-400">Cargando bandeja…</p>
+      {error ? null : busy ? (
+        <p className="library-publication__loading" role="status">Cargando productos…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-neutral-400" data-testid="board-empty">Nada en esta vista para tu alcance.</p>
+        <p className="library-publication__empty" data-testid="board-empty">No hay productos en esta vista. Prueba otra búsqueda o cambia el filtro.</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="library-publication__rows">
           {items.map((item) => (
-            <li key={item.id} className="border border-neutral-200 rounded-lg p-3" data-testid={`board-item-${item.id}`}>
-              <p className="text-sm font-medium text-neutral-800">
-                {item.name} <span className="text-xs text-neutral-500">({item.sku})</span>
-                {item.category ? <span className="text-xs text-neutral-400"> · {item.category}</span> : null}
-              </p>
-              {view === 'historial' ? (
-                <p className="text-xs text-neutral-500">Ver el detalle del producto para su historia completa.</p>
-              ) : (
-                <ItemState item={item} />
-              )}
+            <li key={item.id} className="library-publication__row" data-testid={`board-item-${item.id}`}>
+              <div className="library-publication__identity">
+                <h3>{item.name}</h3>
+                <p><span className="library-publication__sku">{item.sku}</span>{item.category ? <span> · {item.category}</span> : null}</p>
+              </div>
+              <ItemState item={item} />
+              <Link
+                to={`/catalog-management/publication/products/${item.id}`}
+                state={{ from: returnTo }}
+                className="library-publication__review-link"
+                aria-label={`${reviewLabel(view, item)}: ${item.name}`}
+              >
+                {reviewLabel(view, item)}
+              </Link>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="flex items-center gap-3 text-xs text-neutral-500">
-        <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className="px-2 py-1 rounded border border-neutral-200 disabled:opacity-40">
+      <div className="library-publication__pagination">
+        <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)}>
           Anterior
         </button>
-        <span>Página {page + 1} · {total} en total</span>
-        <button type="button" disabled={(page + 1) * 50 >= total} onClick={() => onPage(page + 1)} className="px-2 py-1 rounded border border-neutral-200 disabled:opacity-40">
+        <span>Página {page + 1} · {total} productos</span>
+        <button type="button" disabled={(page + 1) * 50 >= total} onClick={() => onPage(page + 1)}>
           Siguiente
         </button>
       </div>
@@ -119,55 +141,44 @@ export function PublicationBoardPanel({
 }
 
 /**
- * Contenedor conectado (CAT-06 `frontend`): la bandeja vive en ProductsPage como
- * sección plegable; las acciones (publicar/retirar/programar) siguen por los
- * endpoints existentes de la ficha/Lista — el servidor decide y re-valida.
+ * Dedicated publication view. Its search and pagination survive a visit to a
+ * product through the URL; the server remains the authority for readiness.
  */
 export function PublicationBoardSection() {
-  const [open, setOpen] = useState(false)
-  const [view, setView] = useState<BoardView>('pendientes')
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(0)
+  const [params, setParams] = useSearchParams()
+  const view = BOARD_VIEWS.some((item) => item.id === params.get('view')) ? params.get('view') as BoardView : 'pendientes'
+  const search = params.get('search') ?? ''
+  const requestedPage = Number(params.get('page') ?? 0)
+  const page = Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0
+  const update = (key: string, value: string) => setParams((current) => {
+    const next = new URLSearchParams(current)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    if (key !== 'page') next.delete('page')
+    return next
+  }, { replace: true })
   const query = useQuery({
     queryKey: ['publication-board', view, search, page],
     queryFn: () => fetchBoard(view, { search: search || undefined, page }),
-    enabled: open,
     refetchOnWindowFocus: false,
   })
 
   return (
-    <section className="border border-neutral-200 rounded-xl" aria-label="Bandeja de publicación">
-      <button type="button" className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-neutral-700" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        Bandeja de publicación
-        <span className="text-neutral-400">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4">
-          {query.isError && (
-            <Alert variant="error">
-              {getApiErrorMessage(query.error, 'No se pudo cargar la bandeja (¿tienes acceso a alguna Lista?).')}
-            </Alert>
-          )}
+    <section className="library-publication library-publication--board" aria-label="Bandeja de publicación">
           <PublicationBoardPanel
             view={view}
             items={query.data?.items ?? []}
             total={query.data?.total ?? 0}
             page={page}
             busy={query.isFetching}
-            error={null}
+            error={query.isError ? getApiErrorMessage(query.error, 'No se pudieron cargar los productos. Intenta de nuevo.') : null}
             search={search}
-            onSearch={(v) => {
-              setSearch(v)
-              setPage(0)
-            }}
-            onView={(v) => {
-              setView(v)
-              setPage(0)
-            }}
-            onPage={setPage}
+            onSearch={(value) => update('search', value)}
+            onView={(value) => update('view', value)}
+            onPage={(value) => update('page', value > 0 ? String(value) : '')}
+            returnTo={`/catalog-management/publication${params.size ? `?${params}` : ''}`}
           />
-        </div>
-      )}
+      {query.isError && <button type="button" onClick={() => void query.refetch()} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700">Reintentar</button>}
     </section>
   )
 }

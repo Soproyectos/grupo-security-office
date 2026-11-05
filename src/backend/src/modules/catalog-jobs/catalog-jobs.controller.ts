@@ -3,9 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequireGrant } from '../../common/security/require-grant';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { CatalogJobsService, EnqueueDto } from './catalog-jobs.service';
 
 /** Entrada de encolado (el scope se valida Y se resuelve por alcance en el servidor). */
@@ -25,8 +24,6 @@ export class EnqueueJobDto {
   retryKey?: string;
 }
 
-const ALL_ROLES = ['Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta'] as const
-
 /**
  * CAT-07 — API del trabajador común. El encolado exige la acción SUBYACENTE del
  * kind (regla 1: sin colas con permisos propios duplicados); la lectura y la
@@ -36,13 +33,13 @@ const ALL_ROLES = ['Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', '
 @ApiTags('Catalog Jobs')
 @ApiBearerAuth()
 @Controller('api/catalog-jobs')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(...ALL_ROLES)
+@RequireGrant('products:read')
+@UseGuards(JwtAuthGuard)
 export class CatalogJobsController {
   constructor(private readonly jobs: CatalogJobsService) {}
 
-  private ctx(user: any): { userId: string; roles: string[] } {
-    return { userId: user?.sub ?? user?.id ?? '', roles: user?.roles ?? [] };
+  private ctx(user: any): { userId: string; roles: string[]; userName?: string | null } {
+    return { userId: user?.sub ?? user?.id ?? '', roles: user?.roles ?? [], userName: user?.name ?? null };
   }
 
   @Post()
@@ -82,13 +79,13 @@ export class CatalogJobsController {
 @ApiTags('Catalog Jobs')
 @ApiBearerAuth()
 @Controller('api/products')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(...ALL_ROLES)
+@RequireGrant('products:read')
+@UseGuards(JwtAuthGuard)
 export class CatalogJobsHistoryController {
   constructor(private readonly jobs: CatalogJobsService) {}
 
-  private ctx(user: any): { userId: string; roles: string[] } {
-    return { userId: user?.sub ?? user?.id ?? '', roles: user?.roles ?? [] };
+  private ctx(user: any): { userId: string; roles: string[]; userName?: string | null } {
+    return { userId: user?.sub ?? user?.id ?? '', roles: user?.roles ?? [], userName: user?.name ?? null };
   }
 
   @Get(':id/job-history')

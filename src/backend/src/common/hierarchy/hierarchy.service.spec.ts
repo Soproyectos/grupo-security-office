@@ -134,6 +134,66 @@ describe('HierarchyService', () => {
     });
   });
 
+  describe('assertActorCanSetSupervisor (alcance de rama)', () => {
+    const boss = { userId: 'boss', roles: ['Operador'] };
+    const admin = { userId: 'root', roles: ['Super Admin'] };
+    // 1ª consulta = rama del actor (getSubordinateIds); 2ª = ancestros del nuevo jefe (anti-ciclo).
+    const branch = (ids: string[]) => prismaMock.$queryRaw.mockResolvedValueOnce(ids.map((id) => ({ id, depth: 1 })));
+    const codeOf = (promise: Promise<unknown>) =>
+      promise.then(() => null, (e) => e.getResponse().code);
+
+    it('Super Admin: cualquiera hacia cualquiera, sin consultar su rama', async () => {
+      prismaMock.$queryRaw.mockResolvedValueOnce([]);
+      await expect(service.assertActorCanSetSupervisor(admin, 'x', 'y')).resolves.toBeUndefined();
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('Super Admin: sigue bloqueado por ciclos', async () => {
+      prismaMock.$queryRaw.mockResolvedValueOnce([{ id: 'x', depth: 1 }]);
+      expect(await codeOf(service.assertActorCanSetSupervisor(admin, 'x', 'y'))).toBe('SUPERVISOR_CYCLE');
+    });
+
+    it('otro actor: mueve a un subordinado hacia sí mismo', async () => {
+      branch(['ana', 'luis']);
+      prismaMock.$queryRaw.mockResolvedValueOnce([]);
+      await expect(service.assertActorCanSetSupervisor(boss, 'luis', 'boss')).resolves.toBeUndefined();
+    });
+
+    it('otro actor: mueve a un subordinado hacia otro de su rama', async () => {
+      branch(['ana', 'luis']);
+      prismaMock.$queryRaw.mockResolvedValueOnce([{ id: 'boss', depth: 1 }]);
+      await expect(service.assertActorCanSetSupervisor(boss, 'luis', 'ana')).resolves.toBeUndefined();
+    });
+
+    it('otro actor: no puede mover a alguien fuera de su rama', async () => {
+      branch(['ana']);
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'stranger', 'boss'))).toBe('SUPERVISOR_TARGET_OUT_OF_BRANCH');
+    });
+
+    it('otro actor: no puede cambiar su propio jefe ni el de sus superiores', async () => {
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'boss', 'ana'))).toBe('SUPERVISOR_SELF_CHANGE');
+      branch(['ana']);
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'ceo', 'boss'))).toBe('SUPERVISOR_TARGET_OUT_OF_BRANCH');
+    });
+
+    it('otro actor: no puede mandar a alguien a un jefe fuera de su rama', async () => {
+      branch(['ana', 'luis']);
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'luis', 'stranger'))).toBe('SUPERVISOR_DESTINATION_OUT_OF_BRANCH');
+    });
+
+    it('otro actor: no puede dejar a alguien sin jefe', async () => {
+      branch(['ana']);
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'ana', null))).toBe('SUPERVISOR_REMOVAL_NOT_ALLOWED');
+    });
+
+    it('otro actor: no puede crear un ciclo dentro de su rama (A bajo su propio subordinado)', async () => {
+      branch(['ana', 'luis']);
+      // ancestros de luis incluyen a ana → ana bajo luis sería ciclo
+      prismaMock.$queryRaw.mockResolvedValueOnce([{ id: 'ana', depth: 1 }, { id: 'boss', depth: 2 }]);
+      expect(await codeOf(service.assertActorCanSetSupervisor(boss, 'ana', 'luis'))).toBe('SUPERVISOR_CYCLE');
+    });
+  });
+
   describe('assertCanSetSupervisor', () => {
     it('allows null supervisor', async () => {
       await expect(service.assertCanSetSupervisor('a', null)).resolves.not.toThrow();

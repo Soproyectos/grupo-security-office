@@ -135,7 +135,7 @@ function ProductCard({ product }: { product: Product }) {
         </svg>
       </div>
       <div className="p-3">
-        <p className="text-[10px] font-semibold text-[var(--color-primary)] uppercase">{product.brand.name}</p>
+        <p className="text-[10px] font-semibold text-[var(--color-primary)] uppercase">{product.brand?.name ?? 'Sin marca'}</p>
         <p className="text-xs text-[var(--color-text-primary)] mt-1 line-clamp-2 leading-tight">{product.name}</p>
         <p className="text-[10px] text-[var(--color-text-tertiary)] font-mono mt-1">{product.sku}</p>
       </div>
@@ -614,7 +614,7 @@ function AdminDashboard() {
                 {pendingProducts.map((product) => (
                   <li key={product.id} className="flex items-center justify-between gap-4 p-4">
                     <div className="min-w-0">
-                      <p className="text-[10px] font-semibold text-[var(--color-primary)] uppercase truncate">{product.brand.name}</p>
+                      <p className="text-[10px] font-semibold text-[var(--color-primary)] uppercase truncate">{product.brand?.name ?? 'Sin marca'}</p>
                       <p className="text-sm text-[var(--color-text-primary)] truncate">{product.name}</p>
                       <p className="text-[10px] text-[var(--color-text-tertiary)] font-mono mt-0.5">{product.sku}</p>
                     </div>

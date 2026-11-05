@@ -1,7 +1,6 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { ALL_ROLES } from '../../common/rbac/roles.constants';
+import { RequireGrant } from '../../common/security/require-grant';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -10,7 +9,7 @@ import { ProductChangeService } from './product-change.service';
 
 /**
  * Per-product change history. Authorization is decided in the service
- * (`products:read` + product access; `price:*` fields need `prices:read`).
+ * (`products:read`, `products:write`, and `products:notes`; `price:*` fields need `prices:read`).
  */
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -24,13 +23,13 @@ export class ProductChangesController {
   }
 
   @Get()
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:read', 'products:write', 'products:notes')
   @ApiOperation({ summary: 'Historial de cambios del producto (más recientes primero)' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Máximo 100' })
   @ApiQuery({ name: 'field', required: false, type: String })
   @ApiQuery({ name: 'source', required: false, type: String })
-  @ApiResponse({ status: 403, description: 'Sin permiso products:read' })
+  @ApiResponse({ status: 403, description: 'Sin concesiones globales products:read, products:write y products:notes' })
   @ApiResponse({ status: 404, description: 'Producto no encontrado' })
   list(
     @Param('id') id: string,

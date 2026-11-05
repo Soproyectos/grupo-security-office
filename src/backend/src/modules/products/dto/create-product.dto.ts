@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsOptional, IsBoolean, IsArray, ValidateNested, IsUUID, IsIn, IsISO8601, IsObject } from 'class-validator';
+import { IsString, MinLength, IsOptional, ValidateIf, IsBoolean, IsArray, ValidateNested, IsUUID, IsIn, IsISO8601, IsObject } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PriceInputDto } from './price-input.dto';
@@ -10,23 +10,31 @@ export class CreateProductDto {
   @MinLength(2)
   sku: string;
 
-  @ApiProperty({ example: 'Cámara IP Bullet 4MP' })
+  @ApiPropertyOptional({ example: 'Cámara IP Bullet 4MP', description: 'Optional: a draft without a name is saved with its reference as provisional name ("nombre pendiente"). Blank counts as missing.' })
+  @ValidateIf((o) => typeof o.name === 'string' && o.name.trim() !== '')
   @IsString()
   @MinLength(2)
-  name: string;
+  name?: string;
 
   @ApiPropertyOptional({ example: 'Cámara de alta resolución para exterior' })
   @IsString()
   @IsOptional()
   description?: string;
 
-  @ApiProperty({ example: 'category-uuid-here' })
+  @ApiPropertyOptional({ example: 'category-uuid-here', description: 'Optional: a draft with only sku + name is saved as "por clasificar". Never replaced by a placeholder category.' })
   @IsString()
-  categoryId: string;
+  @IsOptional()
+  categoryId?: string | null;
 
-  @ApiProperty({ example: 'brand-uuid-here' })
+  @ApiPropertyOptional({ example: 'subcategory-uuid-here', description: 'Library subcategory. When sent, categoryId must match its derived category (CLASSIFICATION_CONFLICT otherwise).' })
   @IsString()
-  brandId: string;
+  @IsOptional()
+  subcategoryId?: string | null;
+
+  @ApiPropertyOptional({ example: 'brand-uuid-here', description: 'Optional: a draft without brand stays "por clasificar" and cannot be published.' })
+  @IsString()
+  @IsOptional()
+  brandId?: string | null;
 
   @ApiPropertyOptional({ example: 'lista-uuid-here', description: 'Lista comercial a la que pertenece el producto. Si no se envía, se asigna LISTA-GENERAL (regla de fallback).' })
   @IsString()

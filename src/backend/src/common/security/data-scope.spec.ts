@@ -284,21 +284,21 @@ describe('data-scope — resolver (BASE-04 §3, §7, §8)', () => {
     });
 
     it('resuelve scope list por recurso concreto', () => {
-      const grants = [grant('products:read', 'list', 's-1', 'L1')];
+      const grants = [grant('listas:read', 'list', 's-1', 'L1')];
       const allowed = resolveAccess({
         identity: identity(),
-        actionId: 'products:read',
+        actionId: 'listas:read',
         grants,
-        resource: { id: 'p-1', listId: 'L1' },
+        resource: { id: 'L1', kind: 'lista', listId: 'L1' },
       });
       expect(allowed.allowed).toBe(true);
       expect(allowed.scope).toBe('list');
 
       const denied = resolveAccess({
         identity: identity(),
-        actionId: 'products:read',
+        actionId: 'listas:read',
         grants,
-        resource: { id: 'p-2', listId: 'L2' },
+        resource: { id: 'L2', kind: 'lista', listId: 'L2' },
       });
       expect(denied.allowed).toBe(false);
       expect(denied.reason).toBe('no-covering-grant');

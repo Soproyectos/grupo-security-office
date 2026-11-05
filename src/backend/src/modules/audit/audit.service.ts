@@ -21,6 +21,8 @@ export const COMERCIAL_ENTITIES = [
 export interface AuditContext {
   roles?: string[];
   userId?: string;
+  /** Derived by the controller from live global grants; never supplied by a query parameter. */
+  libraryWrite?: boolean;
 }
 
 
@@ -157,14 +159,16 @@ export class AuditService {
     // - entity comercial → filtra por esa entidad.
     // - entity NO comercial (p.ej. User/Role/Assignment) → 0 filas (deny, no revela).
     let entityWhere: Prisma.AuditLogWhereInput = {};
+    // Library history can contain private before/after values, including notes.
+    const allowedEntities = ctx?.libraryWrite ? [...COMERCIAL_ENTITIES] : ['Stock'];
     if (global) {
       if (entityFilter) entityWhere.entity = entityFilter;
     } else if (entityFilter) {
-      entityWhere.entity = (COMERCIAL_ENTITIES as readonly string[]).includes(entityFilter)
+      entityWhere.entity = allowedEntities.includes(entityFilter)
         ? entityFilter
         : { in: [] };
     } else {
-      entityWhere.entity = { in: [...COMERCIAL_ENTITIES] };
+      entityWhere.entity = { in: allowedEntities };
     }
 
     const where: Prisma.AuditLogWhereInput = {

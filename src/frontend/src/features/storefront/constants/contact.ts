@@ -4,15 +4,11 @@
  * read from.
  */
 
-// TODO: replace demo contact data before production
-export const SALES_WHATSAPP_NUMBER = '576011234567'
-export const SALES_PHONE_HREF = 'tel:+576011234567'
-export const SALES_PHONE_DISPLAY = '(601) 123 4567'
-export const SALES_LINE_HREF = 'tel:+5761234567'
-export const SALES_LINE_DISPLAY = '(6) 123 4567'
-export const CUSTOMER_SERVICE_EMAIL = 'serviciocliente@gruposecurity.example'
-export const BUSINESS_HOURS_SHORT = 'lun a sáb 7:00 a. m. a 7:00 p. m.'
-export const BUSINESS_HOURS = 'lunes a sábado de 7:00 a.m. a 7:00 p.m. · domingos y festivos de 8:00 a.m. a 2:00 p.m.'
+// The only published contact number: the WhatsApp button of gruposecurity.co
+// (wa.me/3160275100, Colombian mobile, country code 57 added). Every contact
+// action of the storefront goes through WhatsApp.
+export const SALES_WHATSAPP_NUMBER = '573160275100'
+export const SALES_PHONE_DISPLAY = '316 027 5100'
 
 /** Prefilled WhatsApp messages of the commercial entry points. */
 export const WHATSAPP_MESSAGES = {
@@ -21,6 +17,11 @@ export const WHATSAPP_MESSAGES = {
   wholesale: 'Hola, quiero información sobre precios al por mayor para distribuidores e instaladores.',
   sellWithUs: 'Hola, quiero información para vender mis productos con Grupo Security.',
 } as const
+
+/** Prefilled message of the "configure equipment" support request; `need` completes "necesito ...". */
+export function configureSupportMessage(need: string): string {
+  return `Hola, compré una cámara en Grupo Security y necesito ${need}.\nReferencia: [escribe la referencia]\nFactura o pedido: [escribe el número]`
+}
 
 /** WhatsApp link, with a prefilled message when one is given. */
 export function whatsappUrl(message?: string): string {

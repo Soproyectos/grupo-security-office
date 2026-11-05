@@ -1,4 +1,4 @@
-import { PRICE_IMPORT_TARIFFS, type PriceImportTariff } from './price-import.types';
+import { LEGACY_TARIFF_ORDER, type PriceImportTariff } from './price-import.types';
 
 /**
  * IMP-07B (07B) — Núcleo puro del perfil de proveedor: validación, huella de
@@ -43,8 +43,11 @@ export interface ProfileValidation {
 
 const clean = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
-/** Valida y normaliza un perfil. Devuelve TODOS los errores (no el primero). */
-export function validateProviderProfile(input: ProviderProfileInput): ProfileValidation {
+/**
+ * Valida y normaliza un perfil. Devuelve TODOS los errores (no el primero). `knownTariffs` son los códigos de las
+ * tarifas existentes (en su orden estable); las tarifas del perfil se guardan en ese orden.
+ */
+export function validateProviderProfile(input: ProviderProfileInput, knownTariffs: readonly string[] = LEGACY_TARIFF_ORDER): ProfileValidation {
   const errors: string[] = [];
   const providerName = clean(input?.providerName);
   const sheet = clean(input?.sheet);
@@ -72,9 +75,9 @@ export function validateProviderProfile(input: ProviderProfileInput): ProfileVal
   if (currency !== 'COP') errors.push('La moneda del perfil solo puede ser COP (IVA incluido).');
 
   const requested = Array.isArray(input?.tariffs) ? input.tariffs.map(clean).filter((t) => t !== '') : [];
-  const invalidTariffs = requested.filter((t) => !(PRICE_IMPORT_TARIFFS as readonly string[]).includes(t));
+  const invalidTariffs = requested.filter((t) => !knownTariffs.includes(t));
   if (invalidTariffs.length > 0) errors.push(`Tarifa no reconocida: ${invalidTariffs.join(', ')}.`);
-  const tariffs = PRICE_IMPORT_TARIFFS.filter((code) => requested.includes(code));
+  const tariffs = knownTariffs.filter((code) => requested.includes(code));
   if (tariffs.length === 0) errors.push('Selecciona al menos una tarifa válida.');
 
   const expectedColumns = Array.isArray(input?.expectedColumns)
@@ -117,8 +120,9 @@ export function profileMatchesHeaders(profile: { expectedColumns: readonly strin
 export function profileStructureChanged(
   current: NormalizedProviderProfile,
   next: ProviderProfileInput,
+  knownTariffs: readonly string[] = LEGACY_TARIFF_ORDER,
 ): boolean {
-  const validation = validateProviderProfile(next);
+  const validation = validateProviderProfile(next, knownTariffs);
   if (validation.errors.length > 0 || !validation.value) return true;
   const n = validation.value;
   const tariffsEqual =

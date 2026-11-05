@@ -1,7 +1,10 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, Inject, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../product-library';
 import { AuditService } from '../../../modules/audit/audit.service';
 import { ExcelAdapter } from './sources/excel-adapter';
 import { HeaderDetectorService } from './pipeline/header-detector.service';
@@ -58,7 +61,14 @@ export class ImportService {
     private rowValidator: RowValidatorService,
     private rowNormalizer: RowNormalizerService,
     private batchExecutor: BatchExecutorService,
+    /** Productos, precios, presets y sesiones de importación viven en la biblioteca. */
+    @Optional() @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Optional() @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
   ) {}
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
 
   /**
    * FASE 1: Preview — Analiza el archivo y retorna lo que se importaría.
@@ -411,6 +421,7 @@ export class ImportService {
             pendingEnrichment: result.pendingEnrichment ?? 0,
           },
           executionErrors: result.errors,
+          needsConfirmation: result.needsConfirmation ?? [],
           durationMs: result.durationMs,
           completedAt: ctx.completedAt ?? new Date().toISOString(),
         },
@@ -458,7 +469,7 @@ export class ImportService {
     const skuTrimmed = sku?.trim();
     if (!skuTrimmed) return { data: null };
 
-    const products = await this.prisma.product.findMany({
+    const products = await this.db.product.findMany({
       where: {
         sku: { equals: skuTrimmed, mode: 'insensitive' },
         ...(listaId ? { listaId } : {}),
@@ -477,7 +488,7 @@ export class ImportService {
     // el listaId de la lista, se hace fallback al precio vigente global del
     // producto (sin filtro de listaId) para que el wizard compare "precio
     // actual" aunque el precio se importó sin listaId.
-    let prices = await this.prisma.price.findMany({
+    let prices = await this.db.price.findMany({
       where: {
         productId: product.id,
         ...(listaId ? { listaId } : {}),
@@ -486,7 +497,7 @@ export class ImportService {
     });
 
     if (listaId && prices.length === 0) {
-      prices = await this.prisma.price.findMany({
+      prices = await this.db.price.findMany({
         where: { productId: product.id },
         orderBy: { updatedAt: 'desc' },
       });
@@ -551,7 +562,7 @@ export class ImportService {
     const trimmedSkus = skus.map((s) => s?.trim()).filter((s): s is string => !!s);
     if (trimmedSkus.length === 0) return { data: [] };
 
-    const products = await this.prisma.product.findMany({
+    const products = await this.db.product.findMany({
       where: {
         OR: trimmedSkus.map((sku) => ({ sku: { equals: sku, mode: 'insensitive' as const } })),
         ...(listaId ? { listaId } : {}),
@@ -563,7 +574,7 @@ export class ImportService {
     const productIds = products.map((p) => p.id);
 
     const allPrices = productIds.length
-      ? await this.prisma.price.findMany({
+      ? await this.db.price.findMany({
           where: { productId: { in: productIds } },
           orderBy: { updatedAt: 'desc' },
         })
@@ -638,7 +649,7 @@ export class ImportService {
    * Lista todos los presets del usuario.
    */
   async listPresets(userId: string): Promise<MappingPreset[]> {
-    const presets = await this.prisma.importMapping.findMany({
+    const presets = await this.db.importMapping.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
@@ -657,7 +668,7 @@ export class ImportService {
    * Obtiene un preset por ID.
    */
   async getPreset(presetId: string): Promise<MappingPreset | null> {
-    const preset = await this.prisma.importMapping.findUnique({
+    const preset = await this.db.importMapping.findUnique({
       where: { id: presetId },
     });
 
@@ -698,13 +709,17 @@ export class ImportService {
       isDefault,
     );
 
-    const preset = await this.prisma.importMapping.create({
-      data: {
-        name: presetData.name,
-        mappings: presetData.mappings as any,
-        userId: presetData.userId,
-        isDefault: presetData.isDefault,
-      },
+    const preset = await this.library.writeTransaction(async (tx) => {
+      const row = await tx.importMapping.create({
+        data: {
+          name: presetData.name,
+          mappings: presetData.mappings as any,
+          userId: presetData.userId,
+          isDefault: presetData.isDefault,
+        },
+      });
+      if (this.dedicated) await this.libraryAudit.append(tx as never, { actor: { id: userId }, action: 'IMPORT_MAPPING_CREATED', entityType: 'ImportMapping', entityId: row.id, summary: { name: row.name, isDefault: row.isDefault } });
+      return row;
     });
 
     return {
@@ -721,7 +736,7 @@ export class ImportService {
    * Elimina un preset.
    */
   async deletePreset(presetId: string, userId: string): Promise<void> {
-    const preset = await this.prisma.importMapping.findUnique({
+    const preset = await this.db.importMapping.findUnique({
       where: { id: presetId },
     });
 
@@ -729,7 +744,10 @@ export class ImportService {
       throw new BadRequestException('Preset no encontrado');
     }
 
-    await this.prisma.importMapping.delete({ where: { id: presetId } });
+    await this.library.writeTransaction(async (tx) => {
+      await tx.importMapping.delete({ where: { id: presetId } });
+      if (this.dedicated) await this.libraryAudit.append(tx as never, { actor: { id: userId }, action: 'IMPORT_MAPPING_DELETED', entityType: 'ImportMapping', entityId: presetId, summary: { name: preset.name } });
+    });
   }
 
   // === Helpers privados ===
@@ -745,7 +763,8 @@ export class ImportService {
       startedAt: ctx.startedAt.toISOString(),
     };
 
-    await this.prisma.importSession.upsert({
+    this.library.assertWritesAllowed();
+    await this.db.importSession.upsert({
       where: { id: ctx.importId },
       update: { data: serializable as unknown as Prisma.InputJsonValue },
       create: {
@@ -761,7 +780,7 @@ export class ImportService {
    * Retorna `null` si no existe (importId inválido, ya ejecutado, o expirado).
    */
   private async loadContext(importId: string): Promise<ImportContext | null> {
-    const session = await this.prisma.importSession.findUnique({
+    const session = await this.db.importSession.findUnique({
       where: { id: importId },
     });
     if (!session) return null;
@@ -774,7 +793,8 @@ export class ImportService {
    * Elimina el contexto persistido tras completar `execute()`.
    */
   private async deleteContext(importId: string): Promise<void> {
-    await this.prisma.importSession.deleteMany({ where: { id: importId } });
+    this.library.assertWritesAllowed();
+    await this.db.importSession.deleteMany({ where: { id: importId } });
   }
 
   /**
@@ -808,7 +828,7 @@ export class ImportService {
     if (skus.length === 0) return;
 
     // Identidad por SKU normalizado (mayúsculas, sin espacios), no por SKU exacto.
-    const existingBySku = await findProductsBySkus(this.prisma, skus, { sku: true });
+    const existingBySku = await findProductsBySkus(this.db, skus, { sku: true });
 
     for (const row of rows) {
       const existing = existingBySku.get(normalizeSku(row.sku));

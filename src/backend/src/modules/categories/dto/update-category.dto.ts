@@ -52,4 +52,9 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @ApiPropertyOptional({ description: 'Confirma el impacto de cambiar la categoría padre cuando hay productos o subcategorías asociados.' })
+  @IsOptional()
+  @IsBoolean()
+  confirmImpact?: boolean;
 }

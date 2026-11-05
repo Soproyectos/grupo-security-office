@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useCategoryMenu } from '../../hooks/useCategoryMenu'
 import { createMegaMenuStore } from './menu-controller'
@@ -10,8 +11,16 @@ import MegaMenu from './MegaMenu'
  * state through `createMegaMenuStore` (open/close, selected root, hover intent,
  * mobile drill-down) and wires the browser events to it: Escape and route
  * changes close the menu and the focus goes back to the trigger.
+ *
+ * The header decides how the trigger looks (it is the "Catálogo" item of the
+ * main navigation), so its classes and content come from the caller.
  */
-export default function CategoryMenuContainer() {
+export interface CategoryMenuContainerProps {
+  triggerClassName: string
+  triggerContent: ReactNode
+}
+
+export default function CategoryMenuContainer({ triggerClassName, triggerContent }: CategoryMenuContainerProps) {
   const { status, categories, retry } = useCategoryMenu()
   const [store] = useState(createMegaMenuStore)
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState)
@@ -86,14 +95,9 @@ export default function CategoryMenuContainer() {
         onClick={store.toggle}
         aria-expanded={state.open}
         aria-controls={MENU_PANEL_ID}
-        className="flex items-center gap-2 rounded-[10px] border-2 border-[#CE0203] bg-[#CE0203] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#AD0102]"
+        className={triggerClassName}
       >
-        <span className="flex flex-col gap-[3px]" aria-hidden="true">
-          <span className="h-[2px] w-4 rounded bg-white" />
-          <span className="h-[2px] w-4 rounded bg-white" />
-          <span className="h-[2px] w-4 rounded bg-white" />
-        </span>
-        Categorías
+        {triggerContent}
       </button>
       {state.open && (
         <>

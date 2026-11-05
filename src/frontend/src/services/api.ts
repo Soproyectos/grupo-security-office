@@ -23,7 +23,7 @@ const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '')
 /** Resuelve una ruta relativa devuelta por la API a una URL absoluta usable en <img src>. */
 export function resolveAssetUrl(path?: string | null): string {
   if (!path) return ''
-  if (/^https?:\/\//i.test(path)) return path
+  if (/^(https?:\/\/|data:|blob:)/i.test(path)) return path
   return `${BACKEND_ORIGIN}${path}`
 }
 

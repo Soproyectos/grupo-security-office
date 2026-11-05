@@ -157,8 +157,11 @@ model Product {
   sku                    String                    @unique
   name                   String
   description            String?
-  categoryId             String
-  brandId                String
+  categoryId             String?
+  brandId                String?
+  /// Library classification (migration 20261029150000_library_subcategories). Optional: the
+  /// deployed app does not know it, and a null one is "Por clasificar". `categoryId` stays.
+  subcategoryId          String?
   technicalSpecs         Json?
   isActive               Boolean                   @default(false)
   isVisible              Boolean                   @default(false)
@@ -203,9 +206,13 @@ model Product {
   prices                 Price[]
   catalogResources       ProductCatalogResource[]
   catalogSpecGroups      ProductCatalogSpecGroup[]
+  internalNotes          ProductInternalNote[]
   images                 ProductImage[]
-  brand                  Brand                     @relation(fields: [brandId], references: [id])
-  category               Category                  @relation(fields: [categoryId], references: [id])
+  brand                  Brand?                    @relation(fields: [brandId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  category               Category?                 @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  subcategory            Subcategory?              @relation(fields: [subcategoryId], references: [id], onDelete: Restrict)
+  specValues             ProductSpecValue[]
+  sources                ProductSource[]
   lista                  Lista?                    @relation(fields: [listaId], references: [id])
   publishedBy            User?                     @relation("ProductPublishedBy", fields: [publishedById], references: [id])
   /// CAT-02/K2: referencia pública ACTIVA (la revisión publicada que sirve el catálogo).
@@ -221,6 +228,7 @@ model Product {
   stock                  Stock?
 
   @@index([categoryId])
+  @@index([subcategoryId])
   @@index([brandId])
   @@index([listaId])
   @@index([publishStatus])
@@ -231,6 +239,25 @@ model Product {
   @@index([lifecycleStatus])
   @@index([catalogPublished, catalogBrand])
   @@map("products")
+}
+
+/// Internal (private) notes of a product, one row per note. Never published.
+/// Author is a plain id + frozen display name (no FK to users): the dedicated library database has no users table.
+/// authorId NULL + authorName 'Sistema' = notes migrated from the legacy single-text column.
+model ProductInternalNote {
+  id         String   @id @default(uuid())
+  productId  String
+  authorId   String?
+  authorName String
+  text       String
+  /// Optimistic-concurrency counter: starts at 0, +1 per edit.
+  version    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt(sort: Desc)])
+  @@map("product_internal_notes")
 }
 
 model ProductCatalogSpecGroup {
@@ -278,21 +305,22 @@ model ProductCatalogResource {
 }
 
 model Category {
-  id          String     @id @default(uuid())
-  name        String
-  description String?
-  slug        String     @unique
-  parentId    String?
-  sortOrder   Int        @default(0)
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  iconUrl     String?    @db.VarChar(500)
-  imageUrl    String?    @db.VarChar(500)
-  isFeatured  Boolean    @default(false)
-  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryTree")
-  products    Product[]
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  slug          String        @unique
+  parentId      String?
+  sortOrder     Int           @default(0)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  iconUrl       String?       @db.VarChar(500)
+  imageUrl      String?       @db.VarChar(500)
+  isFeatured    Boolean       @default(false)
+  parent        Category?     @relation("CategoryTree", fields: [parentId], references: [id])
+  children      Category[]    @relation("CategoryTree")
+  products      Product[]
+  subcategories Subcategory[]
 
   @@index([parentId])
   @@map("categories")
@@ -1536,4 +1564,194 @@ model StorefrontBanner {
   updatedAt     DateTime @updatedAt
 
   @@map("storefront_banners")
+}
+
+// ---------------------------------------------------------------------------
+// Library block 1 (docs/biblioteca-dominio/estructura-biblioteca.md, sections
+// 2.1 and 6.1). Migrations 20261029150000..20261029150200.
+//
+// Deliberately NO foreign key to users, customers or operational tables: the
+// plain-text `approvedById` / `updatedById` below carry no relation (same idea
+// as `product_internal_notes.authorId`), so these tables can later move to a
+// dedicated library database that has no users table. Rules the tables cannot
+// express (the parent of a subcategory is a root category, one option for an
+// OPTION datum) live in src/modules/products/key-specs. The raw-SQL CHECK
+// constraints of these tables are not representable here and Prisma ignores them.
+// ---------------------------------------------------------------------------
+
+enum SpecDataType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  OPTION
+  MULTI_OPTION
+}
+
+enum SubcategorySpecStatus {
+  PROPOSED
+  APPROVED
+  RETIRED
+}
+
+enum SpecValueStage {
+  WORKING
+  PUBLISHED
+}
+
+/// KNOWN carries a value; NOT_APPLICABLE and UNKNOWN are explicit answers with no value.
+enum SpecValueState {
+  KNOWN
+  NOT_APPLICABLE
+  UNKNOWN
+}
+
+/// Second level of the library classification; hangs from a ROOT category.
+model Subcategory {
+  id               String            @id @default(uuid())
+  categoryId       String
+  name             String
+  slug             String
+  sortOrder        Int               @default(0)
+  isActive         Boolean           @default(true)
+  searchTerms      String[]          @default([])
+  /// Trace of the child category this subcategory was copied from (no FK on purpose).
+  legacyCategoryId String?           @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  category         Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  products         Product[]
+  specs            SubcategorySpec[]
+
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@map("subcategories")
+}
+
+/// Dictionary of key data ("datos principales"): what a datum is, its type and unit.
+model SpecDefinition {
+  id        String             @id @default(uuid())
+  key       String             @unique
+  label     String
+  dataType  SpecDataType
+  /// Canonical unit of NUMBER values; the value is always stored in it.
+  unit      String?
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  options   SpecOption[]
+  specs     SubcategorySpec[]
+  values    ProductSpecValue[]
+
+  // Target of the composite FK that keeps a stored value's type equal to its definition's.
+  @@unique([id, dataType])
+  @@map("spec_definitions")
+}
+
+/// Allowed choice of an OPTION / MULTI_OPTION definition.
+model SpecOption {
+  specDefinitionId String
+  key              String
+  label            String
+  sortOrder        Int                      @default(0)
+  isActive         Boolean                  @default(true)
+  definition       SpecDefinition           @relation(fields: [specDefinitionId], references: [id], onDelete: Cascade)
+  selections       ProductSpecValueOption[]
+
+  @@id([specDefinitionId, key])
+  @@map("spec_options")
+}
+
+/// Template ("molde") row: one datum asked by one subcategory. Only APPROVED rows count.
+model SubcategorySpec {
+  subcategoryId    String
+  specDefinitionId String
+  status           SubcategorySpecStatus @default(PROPOSED)
+  isRequired       Boolean               @default(false)
+  isFilterable     Boolean               @default(false)
+  /// Written justification; mandatory when `isRequired` (CHECK in the migration).
+  requiredReason   String?
+  sortOrder        Int                   @default(0)
+  /// Plain values, no relation to users (see the block comment above).
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  subcategory      Subcategory           @relation(fields: [subcategoryId], references: [id])
+  definition       SpecDefinition        @relation(fields: [specDefinitionId], references: [id])
+
+  @@id([subcategoryId, specDefinitionId])
+  @@index([specDefinitionId])
+  @@map("subcategory_specs")
+}
+
+/// One stored key datum of a product, per stage: WORKING is the editor draft,
+/// PUBLISHED is what the sheet and the store filters read. Only the column of
+/// the definition's type is filled (CHECK in the migration); OPTION and
+/// MULTI_OPTION keep their choices in `product_spec_value_options`.
+model ProductSpecValue {
+  productId        String
+  specDefinitionId String
+  stage            SpecValueStage
+  /// Copy of the definition's type, tied to it by a composite FK.
+  dataType         SpecDataType
+  valueText        String?
+  /// Stored in the unit of the definition; scale 6 is what the sheet displays.
+  valueNumber      Decimal?                 @db.Decimal(18, 6)
+  valueBoolean     Boolean?
+  /// KNOWN: the value columns/options hold the answer. Otherwise they are all empty.
+  state            SpecValueState           @default(KNOWN)
+  /// Plain value, no relation to users (see the block comment above).
+  updatedById      String?
+  updatedAt        DateTime                 @updatedAt
+  product          Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  definition       SpecDefinition           @relation(fields: [specDefinitionId, dataType], references: [id, dataType])
+  options          ProductSpecValueOption[]
+
+  @@id([productId, specDefinitionId, stage])
+  @@unique([productId, specDefinitionId, stage, state])
+  @@index([specDefinitionId, stage, valueNumber])
+  @@index([specDefinitionId, stage, valueText])
+  @@map("product_spec_values")
+}
+
+/// A chosen option of a stored OPTION / MULTI_OPTION value. The composite FK to
+/// `spec_options` makes an option outside the dictionary impossible.
+model ProductSpecValueOption {
+  productId        String
+  specDefinitionId String
+  stage            SpecValueStage
+  optionKey        String
+  /// Copy of the value's state, CHECKed to KNOWN: options can only exist under a KNOWN value.
+  /// The FK is DEFERRABLE INITIALLY DEFERRED in the migration (Prisma cannot express it).
+  state            SpecValueState   @default(KNOWN)
+  value            ProductSpecValue @relation(fields: [productId, specDefinitionId, stage, state], references: [productId, specDefinitionId, stage, state], onDelete: Cascade, onUpdate: NoAction, map: "product_spec_value_options_value_fkey")
+  option           SpecOption       @relation(fields: [specDefinitionId, optionKey], references: [specDefinitionId, key], onDelete: Restrict)
+
+  @@id([productId, specDefinitionId, stage, optionKey])
+  @@index([specDefinitionId, optionKey, stage])
+  @@map("product_spec_value_options")
+}
+
+/// Where a product appeared in the supplier lists. Provenance is kept: the FK is
+/// RESTRICT and nothing in the app deletes rows of this table.
+model ProductSource {
+  id                      String   @id @default(uuid())
+  productId               String
+  sourceFile              String
+  sourceSheet             String
+  /// 1-based row of the original sheet (CHECK >= 1 in the migration).
+  sourceRow               Int
+  cutoffDate              DateTime @db.Date
+  originalReference       String
+  originalDescription     String?
+  originalSection         String?
+  originalBrandLabel      String?
+  classificationCriterion String?
+  extra                   Json?
+  createdAt               DateTime @default(now())
+  product                 Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceFile, sourceSheet, sourceRow, cutoffDate])
+  @@index([productId])
+  @@map("product_sources")
 }

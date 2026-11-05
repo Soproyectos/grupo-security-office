@@ -2,6 +2,7 @@ import type { PublicProductDetail } from '../public-catalog.service';
 import type {
   DocumentTypeDto,
   FirmwareFileDto,
+  KeySpecDto,
   ProductDetailDto,
   ProductDocumentDto,
 } from './dto/product-detail.dto';
@@ -78,7 +79,7 @@ function toBreadcrumb(p: ProductRecord, base: PublicProductDetail): ProductDetai
  * `p` holds the optional enriched catalog data: enriched fields win, base data
  * fills the gaps.
  */
-export function toProductDetailDto(p: ProductRecord, base: PublicProductDetail): ProductDetailDto {
+export function toProductDetailDto(p: ProductRecord, base: PublicProductDetail, keySpecs: KeySpecDto[] = []): ProductDetailDto {
   const documents: ProductDocumentDto[] = [];
   const firmwareFiles: FirmwareFileDto[] = [];
 
@@ -158,6 +159,7 @@ export function toProductDetailDto(p: ProductRecord, base: PublicProductDetail):
     highlights: p.catalogHighlights,
     features: Array.isArray(p.catalogFeatures) ? (p.catalogFeatures as ProductDetailDto['features']) : [],
     availableModels: p.catalogAvailableModels,
+    keySpecs,
     specGroups,
     specsDisclaimer: opt(p.catalogSpecsDisclaimer),
     documents,

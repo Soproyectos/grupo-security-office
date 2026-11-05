@@ -33,8 +33,8 @@ describe('IMP-07 (07A) frontend — exportación de la lista', () => {
     expect(html).toContain('Exportar precios (.xlsx)')
   })
 
-  it('la capa legada `canManageListas` también habilita la exportación', () => {
+  it('el cargo (`canManageListas`) ya no habilita la exportación: solo cuenta prices:read', () => {
     vi.mocked(canManageListas).mockReturnValue(true)
-    expect(canExportPrices()).toBe(true)
+    expect(canExportPrices()).toBe(false)
   })
 })

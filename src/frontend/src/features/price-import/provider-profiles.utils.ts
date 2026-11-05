@@ -3,7 +3,7 @@
  * La interfaz decide qué mostrar; el servidor revalida siempre las acciones
  * (`providers:read` / `providers:write`).
  */
-import { canManageListas, hasPermission } from '../../lib/rbac'
+import { hasPermission } from '../../lib/rbac'
 import type { ProviderProfileInput, ProviderRecognition, ResolvedReference } from '../../services/price-import.service'
 
 /** Mismas tarifas que el backend (`PRICE_IMPORT_TARIFFS`), orden canónico. */
@@ -18,14 +18,14 @@ export const PROVIDER_TARIFFS = [
 export const PROVIDER_SEPARATORS = ['.', ','] as const
 export const PROVIDER_THOUSANDS = ['', '.', ','] as const
 
-/** Ver los perfiles guardados requiere `providers:read` (o la capa legada). */
+/** Ver los perfiles guardados requiere `providers:read` (nunca el cargo). */
 export function canManageProviderProfiles(): boolean {
-  return hasPermission('providers:read') || canManageListas()
+  return hasPermission('providers:read')
 }
 
 /** Crear/revisar perfiles de proveedor requiere `providers:write`. */
 export function canEditProviderProfiles(): boolean {
-  return hasPermission('providers:write') || canManageListas()
+  return hasPermission('providers:write')
 }
 
 export interface ProfileFormErrors {

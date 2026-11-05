@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import type { Prisma as LibraryPrisma } from '../../../prisma/biblioteca/generated/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { CopPriceError, isCopCurrency, normalizeCopPrice, resolvePriceCurrency } from '../../common/money/cop-policy';
 import { AuditService } from '../audit/audit.service';
+import { LibraryAuditService, type LibraryActor, type LibraryEvent } from '../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import { diffFields, PRICE_FIELD_PREFIX, ProductChangeService } from '../products/product-change.service';
+import { ProductRevisionsService } from '../products/product-revisions.service';
 import { CreatePriceDto } from './dto/create-price.dto';
 import { UpdatePriceDto } from './dto/update-price.dto';
 import { CreatePriceListDto } from './dto/create-price-list.dto';
+import { findTariffNameCollision } from './import/price-tariffs';
+import { buildUsageReport, deleteBlocked, impactConfirmationRequired } from '../masters/master-rules';
 
 /** Monedas permitidas para listas y precios (ISO 4217). */
 const ALLOWED_CURRENCIES = ['COP', 'USD', 'EUR'] as const;
@@ -21,8 +29,44 @@ export class PricesService {
     private audit: AuditService,
     /** Per-product history writer (Nest injects the shared one; specs may omit it). */
     @Optional() changes?: ProductChangeService,
+    /** Biblioteca: tarifas, precios y productos. Sin proveedor inyectado (specs legados) usa la fachada legacy. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
+    /** CAT-02: price mutations refresh only the working revision. */
+    @Optional() private readonly revisions?: ProductRevisionsService,
   ) {
-    this.changes = changes ?? new ProductChangeService(prisma, acl);
+    this.changes = changes ?? new ProductChangeService(prisma, acl, undefined, library);
+  }
+
+  /** Contrato compartido de los modelos de biblioteca: el cliente de biblioteca se usa con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
+
+  private write<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.library.writeTransaction((tx) => work(tx as unknown as Prisma.TransactionClient));
+  }
+
+  /**
+   * Escritura de un solo dato con su evento de biblioteca. Dedicado: transacción propia (dato y evento atómicos).
+   * Legacy: la misma llamada directa de siempre, sin transacción nueva (solo respeta la congelación).
+   */
+  private async writeWithEvent<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    if (this.dedicated) return this.write(work);
+    this.library.assertWritesAllowed();
+    return work(this.db as unknown as Prisma.TransactionClient);
+  }
+
+  /** Auditoría histórica (legacy). En modo dedicado los eventos van a biblioteca y AuditLog no se toca. */
+  private async legacyAudit(entry: Parameters<AuditService['log']>[0]): Promise<void> {
+    if (!this.dedicated) await this.audit.log(entry);
+  }
+
+  private async libraryEvent(tx: Prisma.TransactionClient, event: LibraryEvent): Promise<void> {
+    if (this.dedicated) await this.libraryAudit.append(tx as unknown as Parameters<LibraryAuditService['append']>[0], event);
+  }
+
+  private actor(id?: string, name?: string): LibraryActor {
+    return { id: id ?? null, name: name ?? null };
   }
 
   /** Valida que la moneda (si se envía) esté en la whitelist. */
@@ -150,27 +194,23 @@ export class PricesService {
   }
 
   /**
-   * Control de solapamiento (checklist 21): busca otro precio del mismo producto
-   * con la misma priceListId o la misma Lista (listaId) cuya vigencia se solape.
+   * Control de solapamiento: busca otro precio del mismo producto y tarifa
+   * (priceListId) cuya vigencia se solape. La Lista es solo metadato asociado.
    * Si hay conflicto → 409 con mensaje claro.
    */
   private async assertNoOverlap(params: {
     productId: string;
     priceListId?: string;
-    listaId?: string | null;
     excludeId?: string;
     validFrom: Date | string | null;
     validUntil: Date | string | null;
   }): Promise<void> {
-    const { productId, priceListId, listaId, excludeId, validFrom, validUntil } = params;
+    const { productId, priceListId, excludeId, validFrom, validUntil } = params;
 
-    const others = (await this.prisma.price.findMany({
+    const others = (await this.db.price.findMany({
       where: {
         productId,
-        OR: [
-          ...(priceListId ? [{ priceListId }] : []),
-          ...(listaId ? [{ listaId }] : []),
-        ],
+        ...(priceListId ? { priceListId } : {}),
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
     })) ?? [];
@@ -188,8 +228,8 @@ export class PricesService {
 
   async findAllPriceLists() {
     // PriceList es metadato de tarifa (Majorista/Detalle/Oro/...); no contiene precios.
-    // Se expone a roles autenticados (no se filtra por Lista).
-    const lists = await this.prisma.priceList.findMany({
+    // El permiso (products:read global) lo exige PriceActionGuard; aquí no se filtra por Lista.
+    const lists = await this.db.priceList.findMany({
       include: {
         _count: { select: { prices: true } },
       },
@@ -204,24 +244,13 @@ export class PricesService {
     };
   }
 
-  async findOnePriceList(id: string, ctx?: AccessContext) {
-    // ACL: los precios incluidos se filtran por las Listas donde el usuario tiene
-    // view_prices o superior (ver precios exige view_prices; escribirlos sigue exigiendo edit_prices).
-    let allowedListaIds: string[] | null = null;
-    if (ctx) {
-      allowedListaIds = await this.acl.getAllowedListaIds(ctx.userId, ctx.roles, 'view_prices');
-    }
-
-    const pricesWhere =
-      allowedListaIds === null
-        ? undefined
-        : { product: { listaId: { in: allowedListaIds } } };
-
-    const list = await this.prisma.priceList.findUnique({
+  async findOnePriceList(id: string, _ctx?: AccessContext) {
+    // El permiso (products:read + prices:read globales, porque incluye precios) lo exige PriceActionGuard.
+    // Ya no se filtra por Lista: quien tiene la concesión global ve todos los precios de la tarifa.
+    const list = await this.db.priceList.findUnique({
       where: { id },
       include: {
         prices: {
-          ...(pricesWhere ? { where: pricesWhere } : {}),
           include: { product: { select: { id: true, sku: true, name: true } } },
         },
       },
@@ -231,25 +260,42 @@ export class PricesService {
     return list;
   }
 
+  /**
+   * Tariffs are data and an Excel header is matched by tariff name (or code): a name whose normalized form equals
+   * the name or code of ANOTHER tariff would make a header ambiguous, so it is rejected.
+   */
+  private async assertTariffNameIsUnambiguous(label: string, text: string, selfId?: string): Promise<void> {
+    const rows = await this.db.priceList.findMany({ select: { id: true, code: true, name: true } });
+    const clash = findTariffNameCollision(text, rows.filter((r: { id: string }) => r.id !== selfId));
+    if (clash) {
+      throw new ConflictException(`${label} «${text}» se confunde con la tarifa «${clash.name}» (${clash.code}): en el Excel de precios no se podría distinguir. Usa otro nombre.`);
+    }
+  }
+
   async createPriceList(dto: CreatePriceListDto, actorId?: string) {
-    const existing = await this.prisma.priceList.findUnique({ where: { code: dto.code } });
+    const existing = await this.db.priceList.findUnique({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Ya existe una lista con ese código');
+    await this.assertTariffNameIsUnambiguous('El nombre', dto.name);
 
     this.validateCurrency(dto.currency);
     this.validatePriceListDates(dto.validFrom ?? null, dto.validUntil ?? null);
 
-    const created = await this.prisma.priceList.create({
-      data: {
-        name: dto.name,
-        code: dto.code,
-        currency: dto.currency ?? 'COP',
-        isActive: dto.isActive ?? true,
-        validFrom: dto.validFrom,
-        validUntil: dto.validUntil,
-      },
+    const created = await this.writeWithEvent(async (tx) => {
+      const row = await tx.priceList.create({
+        data: {
+          name: dto.name,
+          code: dto.code,
+          currency: dto.currency ?? 'COP',
+          isActive: dto.isActive ?? true,
+          validFrom: dto.validFrom,
+          validUntil: dto.validUntil,
+        },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(actorId), action: 'PRICE_LIST_CREATED', entityType: 'PriceList', entityId: row.id, summary: { code: row.code, currency: row.currency, isActive: row.isActive } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: actorId,
       action: 'create',
       entity: 'PriceList',
@@ -267,16 +313,60 @@ export class PricesService {
     return created;
   }
 
-  async updatePriceList(id: string, dto: Partial<CreatePriceListDto>, actorId?: string) {
-    const list = await this.prisma.priceList.findUnique({ where: { id } });
+  /**
+   * Dependencies of a tariff. Prices live in the library; quotes, customer accounts, portal tiers and portal mappings
+   * belong to the operational database, which is where they are counted.
+   */
+  async priceListUsage(id: string) {
+    const list = await this.db.priceList.findUnique({ where: { id }, select: { id: true } });
+    if (!list) throw new NotFoundException('Lista de precios no encontrada');
+    return this.usageOf(id);
+  }
+
+  private async usageOf(id: string) {
+    const ops = this.prisma as unknown as Record<string, { count?: (args: unknown) => Promise<number> } | undefined>;
+    const operational = async (model: string): Promise<number> => {
+      const delegate = ops[model];
+      return typeof delegate?.count === 'function' ? delegate.count({ where: { priceListId: id } }) : 0;
+    };
+    const [prices, quotes, customerAccounts, portalTiers, portalMappings] = await Promise.all([
+      this.db.price.count({ where: { priceListId: id } }),
+      operational('quote'),
+      operational('customerAccount'),
+      operational('portalTier'),
+      operational('portalPriceListMapping'),
+    ]);
+    return buildUsageReport(id, { prices, quotes, customerAccounts, portalTiers, portalMappings }, [
+      { key: 'prices', code: 'HAS_PRICES', message: (n) => `tiene ${n} precio(s) asociado(s)` },
+      { key: 'quotes', code: 'HAS_QUOTES', message: (n) => `la usan ${n} cotización(es)` },
+      { key: 'customerAccounts', code: 'HAS_CUSTOMER_ACCOUNTS', message: (n) => `está asignada a ${n} cuenta(s) de cliente` },
+      { key: 'portalTiers', code: 'HAS_PORTAL_TIERS', message: (n) => `la usan ${n} nivel(es) del portal` },
+      { key: 'portalMappings', code: 'HAS_PORTAL_MAPPINGS', message: (n) => `la usan ${n} equivalencia(s) del portal` },
+    ]);
+  }
+
+  async updatePriceList(id: string, dto: Partial<CreatePriceListDto> & { confirmImpact?: boolean }, actorId?: string) {
+    const list = await this.db.priceList.findUnique({ where: { id } });
     if (!list) throw new NotFoundException('Lista de precios no encontrada');
 
     if (dto.code && dto.code !== list.code) {
-      const existing = await this.prisma.priceList.findUnique({ where: { code: dto.code } });
+      const existing = await this.db.priceList.findUnique({ where: { code: dto.code } });
       if (existing) throw new ConflictException('Ya existe una lista con ese código');
     }
+    if (dto.name) await this.assertTariffNameIsUnambiguous('El nombre', dto.name, id);
+    if (dto.code && dto.code !== list.code) await this.assertTariffNameIsUnambiguous('El código', dto.code, id);
 
     this.validateCurrency(dto.currency);
+
+    if (dto.currency && dto.currency !== list.currency && !dto.confirmImpact) {
+      const priceCount = await this.db.price.count({ where: { priceListId: id } });
+      if (priceCount > 0) {
+        throw impactConfirmationRequired(
+          'Cambiar la moneda de una tarifa con precios cargados deja esos precios en otra moneda. Confirma el impacto para continuar.',
+          { priceCount, fromCurrency: list.currency, toCurrency: dto.currency },
+        );
+      }
+    }
 
     const validFrom = dto.validFrom !== undefined ? dto.validFrom : list.validFrom;
     const validUntil = dto.validUntil !== undefined ? dto.validUntil : list.validUntil;
@@ -291,12 +381,16 @@ export class PricesService {
       ...(dto.validUntil !== undefined && { validUntil: dto.validUntil }),
     };
 
-    const updated = await this.prisma.priceList.update({
-      where: { id },
-      data,
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.priceList.update({
+        where: { id },
+        data,
+      });
+      await this.libraryEvent(tx, { actor: this.actor(actorId), action: 'PRICE_LIST_UPDATED', entityType: 'PriceList', entityId: id, summary: { fields: Object.keys(data) } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: actorId,
       action: 'update',
       entity: 'PriceList',
@@ -316,15 +410,19 @@ export class PricesService {
   }
 
   async togglePriceListActive(id: string, actorId?: string) {
-    const list = await this.prisma.priceList.findUnique({ where: { id } });
+    const list = await this.db.priceList.findUnique({ where: { id } });
     if (!list) throw new NotFoundException('Lista de precios no encontrada');
 
-    const updated = await this.prisma.priceList.update({
-      where: { id },
-      data: { isActive: !list.isActive },
+    const updated = await this.writeWithEvent(async (tx) => {
+      const row = await tx.priceList.update({
+        where: { id },
+        data: { isActive: !list.isActive },
+      });
+      await this.libraryEvent(tx, { actor: this.actor(actorId), action: 'PRICE_LIST_TOGGLED', entityType: 'PriceList', entityId: id, summary: { isActive: row.isActive } });
+      return row;
     });
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: actorId,
       action: 'update',
       entity: 'PriceList',
@@ -337,17 +435,18 @@ export class PricesService {
   }
 
   async removePriceList(id: string, actorId?: string) {
-    const list = await this.prisma.priceList.findUnique({
-      where: { id },
-      include: { _count: { select: { prices: true } } },
-    });
+    const list = await this.db.priceList.findUnique({ where: { id } });
 
     if (!list) throw new NotFoundException('Lista de precios no encontrada');
-    if (list._count.prices > 0) {
-      throw new ConflictException('No se puede eliminar una lista con precios asociados');
+    const usage = await this.usageOf(id);
+    if (!usage.canDelete) {
+      if (usage.counts.prices > 0 && usage.reasons.length === 1) {
+        throw new ConflictException({ code: 'DELETE_BLOCKED', message: 'No se puede eliminar una lista con precios asociados', usage });
+      }
+      throw deleteBlocked('la lista de precios', usage);
     }
 
-    await this.audit.log({
+    await this.legacyAudit({
       userId: actorId,
       action: 'delete',
       entity: 'PriceList',
@@ -355,15 +454,16 @@ export class PricesService {
       newValues: { name: list.name, code: list.code },
     });
 
-    await this.prisma.priceList.delete({ where: { id } });
+    await this.writeWithEvent(async (tx) => {
+      await tx.priceList.delete({ where: { id } });
+      await this.libraryEvent(tx, { actor: this.actor(actorId), action: 'PRICE_LIST_DELETED', entityType: 'PriceList', entityId: id, summary: { code: list.code } });
+    });
     return { message: 'Lista de precios eliminada exitosamente' };
   }
 
-  async findPricesByProduct(productId: string, ctx?: AccessContext) {
-    // Deny-by-default: ver precios exige view_prices sobre la Lista del producto.
-    if (ctx) await this.acl.assertProductAccess(productId, ctx, 'view_prices');
-
-    const prices = await this.prisma.price.findMany({
+  async findPricesByProduct(productId: string, _ctx?: AccessContext) {
+    // El permiso (prices:read global) lo exige PriceActionGuard; ninguna Lista interviene.
+    const prices = await this.db.price.findMany({
       where: { productId },
       include: { priceList: true },
     });
@@ -371,19 +471,10 @@ export class PricesService {
     return { data: prices };
   }
 
-  async findPricesByPriceList(priceListId: string, ctx?: AccessContext) {
-    // Deny-by-default: solo precios cuyo producto pertenece a una Lista donde el
-    // usuario tiene view_prices o superior (ver precios exige view_prices).
-    let pricesWhere: { priceListId: string; product?: { listaId: { in: string[] } } } = { priceListId };
-    if (ctx) {
-      const allowed = await this.acl.getAllowedListaIds(ctx.userId, ctx.roles, 'view_prices');
-      if (allowed !== null) {
-        pricesWhere.product = { listaId: { in: allowed } };
-      }
-    }
-
-    const prices = await this.prisma.price.findMany({
-      where: pricesWhere,
+  async findPricesByPriceList(priceListId: string, _ctx?: AccessContext) {
+    // El permiso (prices:read global) lo exige PriceActionGuard; ninguna Lista interviene.
+    const prices = await this.db.price.findMany({
+      where: { priceListId },
       include: {
         product: { select: { id: true, sku: true, name: true } },
       },
@@ -393,22 +484,19 @@ export class PricesService {
   }
 
   async createPrice(dto: CreatePriceDto, ctx?: AccessContext) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.db.product.findUnique({
       where: { id: dto.productId },
       select: { id: true, sku: true, listaId: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    const priceList = await this.prisma.priceList.findUnique({ where: { id: dto.priceListId } });
+    const priceList = await this.db.priceList.findUnique({ where: { id: dto.priceListId } });
     if (!priceList) throw new NotFoundException('Lista de precios no encontrada');
 
     // Moneda coherente: si el DTO trae currency debe coincidir con la de la tarifa.
     this.assertPriceCurrencyMatches(dto.currency, priceList.currency);
 
-    // ACL: crear precio exige `edit_prices` sobre la Lista del producto (checklist 29/30).
-    if (ctx && product.listaId) await this.acl.assertListaAccess(product.listaId, ctx, 'edit_prices');
-
-    const existing = await this.prisma.price.findUnique({
+    const existing = await this.db.price.findUnique({
       where: {
         productId_priceListId: {
           productId: dto.productId,
@@ -440,18 +528,16 @@ this.validateCurrency(dto.currency);
     const validFrom = this.parsePriceDate(dto.validFrom);
     const validUntil = this.parsePriceDate(dto.validUntil);
 
-    // Control de solapamiento (checklist 21): 409 si otro precio del mismo producto
-    // (misma priceListId o misma Lista) tiene una vigencia que se solapa con la nueva.
+    // Control de solapamiento: 409 si otra entrada de la misma tarifa se solapa.
     await this.assertNoOverlap({
       productId: dto.productId,
       priceListId: dto.priceListId,
-      listaId: productListaId,
       validFrom,
       validUntil,
     });
 
     // The price and its per-product history commit or roll back together.
-    const created = await this.prisma.$transaction(async (tx) => {
+    const created = await this.write(async (tx) => {
       const row = await tx.price.create({
         data: {
           productId: dto.productId,
@@ -468,10 +554,13 @@ this.validateCurrency(dto.currency);
         },
       });
       await this.recordPriceChange(tx, product, priceList.code, null, row.value, row.id, ctx);
+      await this.libraryEvent(tx, { actor: this.actor(ctx?.userId, ctx?.userName), action: 'PRICE_CREATED_MANUAL', entityType: 'Price', entityId: row.id, summary: { productId: row.productId, priceListId: row.priceListId, tariff: priceList.code } });
+      if (this.dedicated) await this.revisions?.markPendingFromLive(row.productId, tx as unknown as LibraryPrisma.TransactionClient, this.actor(ctx?.userId, ctx?.userName));
       return row;
     });
 
-    await this.audit.log({
+    if (!this.dedicated) await this.revisions?.markPendingFromLive(created.productId);
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: 'create',
       entity: 'Price',
@@ -493,17 +582,12 @@ this.validateCurrency(dto.currency);
   }
 
   async updatePrice(id: string, dto: UpdatePriceDto, ctx?: AccessContext) {
-    const price = await this.prisma.price.findUnique({ where: { id } });
+    const price = await this.db.price.findUnique({ where: { id } });
     if (!price) throw new NotFoundException('Precio no encontrado');
-
-    // ACL: actualizar precio exige `edit_prices` sobre la Lista del producto dueño.
-    if (ctx) {
-      await this.acl.assertProductAccess(price.productId, ctx, 'edit_prices');
-    }
 
     // Moneda coherente: si se cambia currency, debe coincidir con la de la tarifa destino.
     if (dto.currency !== undefined) {
-      const priceList = await this.prisma.priceList.findUnique({
+      const priceList = await this.db.priceList.findUnique({
         where: { id: price.priceListId },
       });
       if (priceList) {
@@ -513,7 +597,7 @@ this.validateCurrency(dto.currency);
 
     // Invariante: si se cambia el listaId, debe coincidir con la Lista del producto.
     if (dto.listaId !== undefined) {
-      const product = await this.prisma.product.findUnique({
+      const product = await this.db.product.findUnique({
         where: { id: price.productId },
         select: { id: true, listaId: true },
       });
@@ -538,8 +622,8 @@ this.validateCurrency(dto.currency);
       ? this.normalizeCopInput(dto.value, resolvePriceCurrency(dto.currency, price.currency))
       : undefined;
 
-    // Control de solapamiento (checklist 21): 409 si otro precio del mismo producto
-    // (misma priceListId o misma Lista) se solapa con la nueva vigencia (excluye este precio).
+    // Control de solapamiento: 409 si otra entrada de la misma tarifa se solapa
+    // con la nueva vigencia (excluye este precio).
     // Fechas normalizadas a Date (string 'YYYY-MM-DD' → Date) para evitar 500 de Prisma (BUG-1).
     const newFrom =
       dto.validFrom !== undefined ? this.parsePriceDate(dto.validFrom) : price.validFrom;
@@ -548,7 +632,6 @@ this.validateCurrency(dto.currency);
     await this.assertNoOverlap({
       productId: price.productId,
       priceListId: price.priceListId,
-      listaId: price.listaId,
       excludeId: price.id,
       validFrom: newFrom,
       validUntil: newUntil,
@@ -562,7 +645,7 @@ this.validateCurrency(dto.currency);
       ...(dto.validUntil !== undefined && { validUntil: newUntil }),
     };
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.write(async (tx) => {
       const row = await tx.price.update({
         where: { id },
         data,
@@ -575,13 +658,16 @@ this.validateCurrency(dto.currency);
         tx, { id: row.productId, sku: row.product?.sku ?? '' }, row.priceList?.code ?? price.priceListId,
         price.value, row.value, id, ctx,
       );
+      await this.libraryEvent(tx, { actor: this.actor(ctx?.userId, ctx?.userName), action: 'PRICE_UPDATED_MANUAL', entityType: 'Price', entityId: id, summary: { productId: row.productId, priceListId: row.priceListId, fields: Object.keys(data) } });
+      if (this.dedicated) await this.revisions?.markPendingFromLive(row.productId, tx as unknown as LibraryPrisma.TransactionClient, this.actor(ctx?.userId, ctx?.userName));
       return row;
     });
 
+    if (!this.dedicated) await this.revisions?.markPendingFromLive(updated.productId);
     // Historial inmutable (checklist 22): el log de update incluye oldValues completos
     // (value/currency/validFrom/validUntil anteriores) y newValues completos resultantes
     // con origin 'manual'. Nunca se borran ni editan los logs existentes.
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: 'update',
       entity: 'Price',
@@ -608,15 +694,10 @@ this.validateCurrency(dto.currency);
   }
 
   async removePrice(id: string, ctx?: AccessContext) {
-    const price = await this.prisma.price.findUnique({ where: { id } });
+    const price = await this.db.price.findUnique({ where: { id } });
     if (!price) throw new NotFoundException('Precio no encontrado');
 
-    // ACL: eliminar precio exige `edit_prices` sobre la Lista del producto dueño.
-    if (ctx) {
-      await this.acl.assertProductAccess(price.productId, ctx, 'edit_prices');
-    }
-
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx?.userId,
       action: 'delete',
       entity: 'Price',
@@ -630,14 +711,17 @@ this.validateCurrency(dto.currency);
       },
     });
 
-    const owner = await this.prisma.product.findUnique({ where: { id: price.productId }, select: { id: true, sku: true } });
-    const tariff = await this.prisma.priceList.findUnique({ where: { id: price.priceListId }, select: { code: true } });
-    await this.prisma.$transaction(async (tx) => {
+    const owner = await this.db.product.findUnique({ where: { id: price.productId }, select: { id: true, sku: true } });
+    const tariff = await this.db.priceList.findUnique({ where: { id: price.priceListId }, select: { code: true } });
+    await this.write(async (tx) => {
       await tx.price.delete({ where: { id } });
       if (owner) {
         await this.recordPriceChange(tx, owner, tariff?.code ?? price.priceListId, price.value, null, id, ctx);
       }
+      await this.libraryEvent(tx, { actor: this.actor(ctx?.userId, ctx?.userName), action: 'PRICE_DELETED_MANUAL', entityType: 'Price', entityId: id, summary: { productId: price.productId, priceListId: price.priceListId } });
+      if (this.dedicated) await this.revisions?.markPendingFromLive(price.productId, tx as unknown as LibraryPrisma.TransactionClient, this.actor(ctx?.userId, ctx?.userName));
     });
+    if (!this.dedicated) await this.revisions?.markPendingFromLive(price.productId);
     return { message: 'Precio eliminado exitosamente' };
   }
 

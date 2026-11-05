@@ -35,6 +35,8 @@ describe('ProductRevisionsService — borradores versionados', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      // Published-isolation: the snapshot also freezes the live subcategory (raw read, legacy mode).
+      $queryRaw: jest.fn().mockResolvedValue([{ subcategoryId: 'sub-1' }]),
       $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     };
     prisma.product.findUnique.mockResolvedValue({ id: 'p-1', listaId: 'L1', sku: 'SKU-1' });
@@ -78,6 +80,14 @@ describe('ProductRevisionsService — borradores versionados', () => {
       }),
     );
     expect(result.version).toBe(1);
+  });
+
+  it('guardar borrador descarta un marcador de versión de snapshot enviado por el cliente', async () => {
+    prisma.productRevision.findFirst.mockResolvedValue(null);
+    prisma.productRevision.create.mockResolvedValue({ id: 'rev-x', productId: 'p-1', status: 'SIN_REVISAR', version: 1, content: {}, notes: null });
+    await service.saveDraft('p-1', { content: { name: 'x', sheetSnapshotVersion: 99 } }, ctx);
+    const data = prisma.productRevision.create.mock.calls.at(-1)[0].data;
+    expect((data.content as Record<string, unknown>).sheetSnapshotVersion).not.toBe(99);
   });
 
   it('reeditar actualiza el borrador y sube la versión sin tocar la PUBLICADA', async () => {
@@ -142,12 +152,24 @@ describe('ProductRevisionsService — borradores versionados', () => {
     );
   });
 
-  it('ACL: la escritura del borrador exige acceso de edición al producto', async () => {
+  it('la escritura del borrador exige la concesion global products:write y no consulta el ACL de Lista', async () => {
     prisma.productRevision.findFirst.mockResolvedValue(null);
     prisma.productRevision.findMany.mockResolvedValue([]);
     prisma.productRevision.create.mockResolvedValue({ id: 'r1', version: 1 });
     await service.saveDraft('p-1', { content: {} }, ctx);
-    expect(acl.assertProductAccess).toHaveBeenCalledWith('p-1', ctx, 'edit_products');
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
+
+    const readOnly = new ProductRevisionsService(prisma, acl as any, {
+      grantsForUser: jest.fn().mockResolvedValue([{ sourceId: 's-r', actionId: 'products:read', scope: 'global' }]),
+    } as any);
+    await expect(readOnly.saveDraft('p-1', { content: {} }, ctx)).rejects.toThrow(/Sin permiso products:write/);
+    const listScoped = new ProductRevisionsService(prisma, acl as any, {
+      grantsForUser: jest.fn().mockResolvedValue([
+        { sourceId: 's-r', actionId: 'products:read', scope: 'global' },
+        { sourceId: 's-w', actionId: 'products:write', scope: 'list' },
+      ]),
+    } as any);
+    await expect(listScoped.saveDraft('p-1', { content: {} }, ctx)).rejects.toThrow(/Sin permiso products:write/);
   });
 });
 
@@ -160,6 +182,8 @@ describe('ProductRevisionsService.markPendingFromLive (rutas legacy)', () => {
           id: 'p-1', sku: 'SKU-V', name: 'Vivo', description: 'd', technicalSpecs: null, documents: null,
           catalogName: 'CatV', catalogModel: null, catalogBrand: null,
           categoryId: 'c1', brandId: 'b1', listaId: 'L1', updatedAt: new Date('2026-10-16T00:00:00Z'),
+          catalogHighlights: ['H'], catalogBadges: ['B'], catalogFeatures: [], catalogImageUrl: null, catalogImageAlt: null,
+          catalogSpecGroups: [{ key: 'g', title: 'G', items: [{ label: 'a', value: '1' }] }],
         }),
       },
       productRevision: {
@@ -171,6 +195,7 @@ describe('ProductRevisionsService.markPendingFromLive (rutas legacy)', () => {
       },
       // CAT-04 (D2): buildMediaSnapshot foto imágenes y recursos vivos.
       productImage: { findMany: jest.fn().mockResolvedValue([{ id: 'i1', url: '/api/files/i1', alt: null, isPrimary: true, type: 'PRINCIPAL', sortOrder: 0 }]) },
+      $queryRaw: jest.fn().mockResolvedValue([{ subcategoryId: 'sub-1' }]),
       productCatalogResource: { findMany: jest.fn().mockResolvedValue([{ id: 'r1', kind: 'DATASHEET', title: 'DS', language: 'es', url: '/api/files/r1', fileName: null, version: null, region: null, requiresLicense: false, position: 0 }]) },
     } as any;
     const service = new ProductRevisionsService(prisma, { assertProductAccess: jest.fn() } as any);
@@ -182,10 +207,18 @@ describe('ProductRevisionsService.markPendingFromLive (rutas legacy)', () => {
     );
     const created = prisma.productRevision.create.mock.calls[0][0].data;
     expect(created.content).toMatchObject({ name: 'Vivo', sku: 'SKU-V', catalogName: 'CatV' });
+    // Published-isolation: identity used by public search/filters/facets/slug is frozen too.
+    expect(created.content).toMatchObject({ categoryId: 'c1', brandId: 'b1', subcategoryId: 'sub-1' });
+    expect(created.content).toHaveProperty('catalogSlug');
     // CAT-04 (D2): el snapshot legacy también foto los medios vivos.
     expect(created.content).toMatchObject({
       images: [{ id: 'i1', url: '/api/files/i1' }],
       catalogResources: [{ id: 'r1', url: '/api/files/r1' }],
+    });
+    // Published isolation: the detailed sheet is frozen in the snapshot too.
+    expect(created.content).toMatchObject({
+      catalogHighlights: ['H'], catalogBadges: ['B'], catalogFeatures: [], catalogImageUrl: null,
+      catalogSpecGroups: [{ key: 'g', title: 'G', items: [{ label: 'a', value: '1' }] }],
     });
     expect(String(created.notes)).toContain('legacy');
     // jamás escribe sobre revisiones existentes

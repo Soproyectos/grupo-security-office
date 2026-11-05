@@ -3,16 +3,12 @@
  * (contrato CAT-02 §3/§5; ficha acceptance: «Backfill preserva IDs/datos/medios;
  * recuperación probada.»)
  *
- * RED observado: este spec se escribe ANTES de la implementación — `./product-revisions.backfill`
- * no existe todavía y debe fallar por módulo ausente.
- *
- * Corre contra PostgreSQL REAL en la BD desechable `grupo_security_tanda_t12`
- * con `DATABASE_URL` INLINE y guard `current_database()` (incidente registrado:
- * un e2e anterior escribió fixtures en Neon producción por omitir el guard).
+ * Runs against a guarded clone of the existing local synthetic PostgreSQL fixture.
+ * Prepare and run with npm run test:catalog:regression; no Docker reset or migration occurs.
  */
-import { execSync } from 'child_process';
+import { localCatalogTestUrl, assertLocalCatalogDatabase } from '../../__test__/local-catalog-postgres';
 
-// Sujeto bajo prueba (RED: módulo inexistente todavía).
+// Existing implementation, exercised only against the guarded test clone.
 import {
   runProductRevisionBackfill,
   recoverProductRevisionBackfill,
@@ -20,49 +16,31 @@ import {
 
 jest.setTimeout(120_000);
 
-const DATABASE_URL =
-  'postgresql://postgres:tanda-test-2026@localhost:54331/grupo_security_tanda_t12?schema=public';
-const EXPECTED_DB = 'grupo_security_tanda_t12';
+const DATABASE_URL = localCatalogTestUrl('backfill');
 
-function psql(sql: string): string {
-  return execSync(
-    `docker exec gs-tanda-db psql -U postgres -d ${EXPECTED_DB} -t -A -c ${JSON.stringify(sql)}`,
-    { encoding: 'utf8' },
-  ).trim();
+async function psql(sql: string): Promise<string> {
+  const rows = await prismaQuery(sql);
+  return rows.map((row: Record<string, unknown>) => Object.values(row).join('|')).join('\n');
 }
+let prismaQuery: (sql: string) => Promise<Array<Record<string, unknown>>>;
 
 describe('CAT-02 backend-esquema — backfill y recuperación de revisiones', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let prisma: any;
   let dbGuardOk = false;
   const fixtures: { productId?: string; brandId?: string; categoryId?: string; listaId?: string } = {};
 
   beforeAll(async () => {
-    // BD desechable: recrear SIEMPRE (cada corrida parte limpia; nunca tocar otra BD).
-    execSync(
-      `docker exec gs-tanda-db psql -U postgres -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${EXPECTED_DB}'" 2>/dev/null || true`,
-      { stdio: 'ignore' },
-    );
-    execSync(
-      `docker exec gs-tanda-db psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS ${EXPECTED_DB}"`,
-      { stdio: 'ignore' },
-    );
-    execSync(`docker exec gs-tanda-db psql -U postgres -d postgres -c "CREATE DATABASE ${EXPECTED_DB}"`, { stdio: 'ignore' });
-    execSync('npx prisma migrate deploy --schema prisma/schema.prisma', {
-      stdio: 'ignore',
-      env: { ...process.env, DATABASE_URL },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PrismaClient } = require('@prisma/client');
     prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows = (await (prisma as any).$queryRawUnsafe('SELECT current_database() AS db')) as Array<{ db: string }>;
-    dbGuardOk = rows[0]?.db === EXPECTED_DB;
-    if (!dbGuardOk) throw new Error(`GUARD: la BD es ${rows[0]?.db}, se aborta (nunca escribir en otra)`);
+    await prisma.$connect();
+    await assertLocalCatalogDatabase(prisma, DATABASE_URL);
+    dbGuardOk = true;
+    prismaQuery = (sql) => prisma.$queryRawUnsafe(sql);
   });
 
   afterAll(async () => {
     if (!prisma) return;
+    if (!dbGuardOk) { await prisma.$disconnect(); return; }
     // Limpieza en orden de FKs (no toca productos reales: solo cat02fix*).
     await prisma.$executeRawUnsafe(`UPDATE "products" SET "publicRevisionId" = NULL WHERE "publicRevisionId" IS NOT NULL`).catch(() => 0);
     await prisma.productImage.deleteMany({ where: { productId: { startsWith: 'cat02fix' } } });
@@ -148,13 +126,13 @@ describe('CAT-02 backend-esquema — backfill y recuperación de revisiones', ()
   }
 
   it('estructura desplegada: product_revisions existe y product.publicRevisionId también', async () => {
-    const cols = psql(
+    const cols = await psql(
       `SELECT column_name FROM information_schema.columns WHERE table_name='product_revisions' ORDER BY column_name`,
     );
     expect(cols).toContain('content');
     expect(cols).toContain('version');
     expect(cols).toContain('status');
-    const productCol = psql(
+    const productCol = await psql(
       `SELECT column_name FROM information_schema.columns WHERE table_name='products' AND column_name='publicRevisionId'`,
     );
     expect(productCol).toBe('publicRevisionId');

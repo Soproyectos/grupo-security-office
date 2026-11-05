@@ -3,12 +3,14 @@ import { ListaActionGuard } from './lista-action.guard';
 import { ListasService } from './listas.service';
 import { ListasController } from './listas.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { BibliotecaPrismaModule } from '../../prisma/biblioteca-prisma.module';
+import { LibraryAuditModule } from '../library-audit/library-audit.module';
 import { AclModule } from '../../common/acl/acl.module';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   controllers: [ListasController],
-  imports: [PrismaModule, AclModule, AuditModule],
+  imports: [PrismaModule, BibliotecaPrismaModule, LibraryAuditModule, AclModule, AuditModule],
   providers: [ListasService, ListaActionGuard],
   exports: [ListasService],
 })

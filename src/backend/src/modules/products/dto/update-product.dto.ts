@@ -25,12 +25,17 @@ export class UpdateProductDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  categoryId?: string;
+  categoryId?: string | null;
+
+  @ApiPropertyOptional({ description: 'Library subcategory. When sent, categoryId must match its derived category (CLASSIFICATION_CONFLICT otherwise).' })
+  @IsString()
+  @IsOptional()
+  subcategoryId?: string | null;
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  brandId?: string;
+  brandId?: string | null;
 
   @ApiPropertyOptional({ example: 'lista-uuid-here', description: 'Lista comercial a la que se reasigna el producto.' })
   @IsString()

@@ -1,5 +1,6 @@
-import { IsString, IsBoolean, IsOptional } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsEnum, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ProductImageType } from '@prisma/client';
 
 export class UpdateProductImageDto {
   @ApiPropertyOptional({ example: 'Cámara IP 4MP vista frontal' })
@@ -11,4 +12,9 @@ export class UpdateProductImageDto {
   @IsBoolean()
   @IsOptional()
   isPrimary?: boolean;
+
+  @ApiPropertyOptional({ enum: ProductImageType, example: ProductImageType.COMPLEMENTARIA })
+  @IsEnum(ProductImageType)
+  @ValidateIf((_object, value) => value !== undefined)
+  type?: ProductImageType;
 }

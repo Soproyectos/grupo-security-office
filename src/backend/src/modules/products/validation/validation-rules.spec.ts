@@ -30,16 +30,20 @@ const input = (over: Partial<ProductValidationInput> = {}): ProductValidationInp
   },
   lista: null,
   prices: [],
-  expectsPublication: false,
   stockZero: false,
   ...over,
 })
 
 const codesOf = (issues: ValidationIssue[]) => issues.map((i) => i.code)
 
-describe('runValidation — reglas v1 (cat05-r1)', () => {
-  it('producto sano en borrador: sin errores y LISTA_PARA_PUBLICAR', () => {
-    const r = runValidation(input())
+describe('runValidation — reglas de publicación', () => {
+  it.each([{ brandName: 'Dahua Technology' }, { catalogBrand: 'IMOU' }])('bloquea la marca excluida (%j)', (brand) => {
+    const result = runValidation(input({ ...brand, prices: [{ valueOk: true, expired: false }] }))
+    expect(result.status).toBe('CON_PROBLEMAS')
+    expect(codesOf(result.issues)).toContain('WEB_BRAND_EXCLUDED')
+  })
+  it('producto DRAFT con precio vigente: sin errores y LISTA_PARA_PUBLICAR', () => {
+    const r = runValidation(input({ prices: [{ valueOk: true, expired: false }] }))
     expect(r.rulesVersion).toBe(RULES_VERSION)
     expect(r.status).toBe('LISTA_PARA_PUBLICAR')
     expect(r.issues.filter((i) => i.severity === 'error')).toEqual([])
@@ -83,7 +87,8 @@ describe('runValidation — reglas v1 (cat05-r1)', () => {
     const datasheet = r.issues.find((i) => i.code === 'docs.datasheet_missing')
     expect(datasheet).toBeDefined()
     expect(datasheet?.severity).toBe('warning')
-    expect(r.status).toBe('LISTA_PARA_PUBLICAR')
+    expect(r.status).toBe('CON_PROBLEMAS')
+    expect(codesOf(r.issues)).toContain('offer.price_valid')
   })
 
   it('CLAMP duro: una regla de categoría que intente volver error el PDF se degrada a warning', () => {
@@ -98,35 +103,47 @@ describe('runValidation — reglas v1 (cat05-r1)', () => {
     }
   })
 
+  it('DRAFT listo para publicar: la ausencia de precio es bloqueante aunque falte el PDF', () => {
+    const r = runValidation(input({ resources: [], lista: null, prices: [] }))
+    expect(codesOf(r.issues)).toContain('offer.price_valid')
+    expect(r.status).toBe('CON_PROBLEMAS')
+    expect(r.issues.find((i) => i.code === 'docs.datasheet_missing')?.severity).toBe('warning')
+  })
+
   it('oferta publicada: sin Lista no es error; sin precio válido sí → CON_PROBLEMAS', () => {
-    const r = runValidation(input({ expectsPublication: true, lista: null, prices: [] }))
+    const r = runValidation(input({ lista: null, prices: [] }))
     expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
     expect(codesOf(r.issues)).toContain('offer.price_valid')
     expect(r.status).toBe('CON_PROBLEMAS')
-    const bad = runValidation(input({ expectsPublication: true, lista: { isActive: false, archived: false, pendingDeletion: false, expired: false }, prices: [{ valueOk: true, expired: true }] }))
-    expect(codesOf(bad.issues)).toContain('offer.lista_valid')
-    expect(codesOf(bad.issues)).toContain('offer.price_valid')
+  })
+
+  it('un precio vigente del producto basta aunque no tenga Lista o su Lista esté inactiva', () => {
+    const r = runValidation(input({ lista: { isActive: false, archived: true, pendingDeletion: true, expired: true }, prices: [{ valueOk: true, expired: false }] }))
+    expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
+    expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
   })
 
   it('oferta OK sin Lista: un precio válido basta para publicar', () => {
-    const r = runValidation(input({ expectsPublication: true, lista: null, prices: [{ valueOk: true, expired: false }] }))
+    const r = runValidation(input({ lista: null, prices: [{ valueOk: true, expired: false }] }))
     expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
   })
 
   it('oferta OK: lista activa y precio vigente → sin errores de oferta', () => {
-    const r = runValidation(input({ expectsPublication: true, lista: { isActive: true, archived: false, pendingDeletion: false, expired: false }, prices: [{ valueOk: true, expired: false }] }))
+    const r = runValidation(input({ lista: { isActive: true, archived: false, pendingDeletion: false, expired: false }, prices: [{ valueOk: true, expired: false }] }))
     expect(r.issues.filter((i) => i.code.startsWith('offer.') && i.severity === 'error')).toEqual([])
-    expect(r.status).toBe('LISTA_PARA_PUBLICAR')
+    expect(codesOf(r.issues)).not.toContain('offer.lista_valid')
   })
 
-  it('en borrador, lista inválida es warning (no bloquea editar en privado)', () => {
-    const r = runValidation(input({ lista: { isActive: false, archived: true, pendingDeletion: false, expired: false } }))
-    expect(r.issues.find((i) => i.code === 'offer.lista_valid')?.severity).toBe('warning')
-    expect(r.status).toBe('LISTA_PARA_PUBLICAR')
+  it('precio vencido o importe no válido bloquea; los datos de Lista no generan incidencia', () => {
+    const expired = runValidation(input({ lista: { isActive: false, archived: true, pendingDeletion: false, expired: true }, prices: [{ valueOk: true, expired: true }] }))
+    const invalid = runValidation(input({ prices: [{ valueOk: false, expired: false }] }))
+    expect(codesOf(expired.issues)).toContain('offer.price_valid')
+    expect(codesOf(invalid.issues)).toContain('offer.price_valid')
+    expect(codesOf(expired.issues)).not.toContain('offer.lista_valid')
   })
 
   it('stock cero = info que no bloquea (política pendiente) y el hook de categoría vacío no añade nada', () => {
-    const r = runValidation(input({ stockZero: true }))
+    const r = runValidation(input({ stockZero: true, prices: [{ valueOk: true, expired: false }] }))
     const stock = r.issues.find((i) => i.code === 'stock.zero_info')
     expect(stock?.severity).toBe('info')
     expect(r.status).toBe('LISTA_PARA_PUBLICAR')
@@ -149,7 +166,7 @@ describe('isStaleReport (V2: editar/reglas invalidan el resultado)', () => {
     expect(isStaleReport({ rulesVersion: null, revisionId: 'rev-1' }, cur)).toBe(true)
   })
   it('rulesVersion distinta → obsoleto (cambiar una regla marca pendientes)', () => {
-    expect(isStaleReport({ rulesVersion: 'cat05-r0', revisionId: 'rev-1' }, cur)).toBe(true)
+    expect(isStaleReport({ rulesVersion: 'cat05-r1', revisionId: 'rev-1' }, cur)).toBe(true)
   })
   it('revisión de trabajo distinta (editar) o ausente → obsoleto', () => {
     expect(isStaleReport({ rulesVersion: RULES_VERSION, revisionId: 'rev-2' }, cur)).toBe(true)

@@ -16,6 +16,8 @@ import { fakePriceFindMany, FakePriceRow } from '../../__test__/helpers/fake-pri
 import { PublicCatalogService } from './public-catalog.service';
 import { StorefrontService } from '../storefront/storefront.service';
 import { PublicPricingService } from './public-pricing.service';
+import { Prisma as LibraryPrisma } from '../../../prisma/biblioteca/generated/client';
+import { publicCatalogVisibility } from './public-catalog-visibility';
 import { PublicProductsController } from './public-products.controller';
 import { PublicProductSearchDto } from './dto/public-product-search.dto';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
@@ -29,6 +31,8 @@ const mockProducts = [
   {
     id: 'prod-1',
     sku: 'DS-2CD2143G2',
+    lifecycleStatus: 'PUBLISHED',
+    publicRevisionId: null,
     name: 'Cámara Domo 4K',
     category: { name: 'Cámaras IP', slug: 'camaras-ip' },
     brand: { name: 'Hikvision' },
@@ -37,6 +41,8 @@ const mockProducts = [
   {
     id: 'prod-2',
     sku: 'ACC-BIO-01',
+    lifecycleStatus: 'PUBLISHED',
+    publicRevisionId: null,
     name: 'Lector biométrico',
     category: { name: 'Control de Acceso', slug: 'control-de-acceso' },
     brand: { name: 'ZKTeco' },
@@ -59,6 +65,8 @@ describe('PublicCatalogService.search', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     mockPrisma.product.count.mockResolvedValue(0);
+    // Text search runs on the published snapshot (raw SQL): the fake matches every product by id.
+    (mockPrisma as any).$queryRaw = jest.fn().mockResolvedValue(mockProducts.map((p) => ({ id: p.id })));
     build();
   });
 
@@ -75,6 +83,7 @@ describe('PublicCatalogService.search', () => {
           id: 'prod-1',
           sku: 'DS-2CD2143G2',
           name: 'Cámara Domo 4K',
+          isInformational: false,
           imageUrl: '/api/files/img-1',
           categoryName: 'Cámaras IP',
           categorySlug: 'camaras-ip',
@@ -85,6 +94,7 @@ describe('PublicCatalogService.search', () => {
           id: 'prod-2',
           sku: 'ACC-BIO-01',
           name: 'Lector biométrico',
+          isInformational: false,
           imageUrl: null,
           categoryName: 'Control de Acceso',
           categorySlug: 'control-de-acceso',
@@ -101,14 +111,13 @@ describe('PublicCatalogService.search', () => {
 
     await service.search({ q: '  domo  ', limit: 10 });
 
+    // The trimmed term travels as a bound SQL parameter (name and SKU matched on the snapshot).
+    const sql = (mockPrisma as any).$queryRaw.mock.calls[0][0];
+    expect(sql.values).toEqual(['domo', 'domo']);
     expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          lifecycleStatus: 'PUBLISHED', catalogPublished: true,
-          OR: [
-            { name: { contains: 'domo', mode: 'insensitive' } },
-            { sku: { contains: 'domo', mode: 'insensitive' } },
-          ],
+          AND: [publicCatalogVisibility(LibraryPrisma.JsonNull), { id: { in: ['prod-1', 'prod-2'] } }],
         },
         take: 10,
       }),
@@ -122,7 +131,7 @@ describe('PublicCatalogService.search', () => {
 
     expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { lifecycleStatus: 'PUBLISHED', catalogPublished: true },
+        where: { AND: [publicCatalogVisibility(LibraryPrisma.JsonNull)] },
         take: 24,
       }),
     );
@@ -204,15 +213,15 @@ describe('PublicCatalogService.search', () => {
 
     expect(result.data[0].price).toEqual({ value: 2450000, currency: 'COP' });
     expect(Object.keys(result.data[0]).sort()).toEqual([
-      'brandName', 'categoryName', 'categorySlug', 'id', 'imageUrl', 'name', 'price', 'sku',
+      'brandName', 'categoryName', 'categorySlug', 'id', 'imageUrl', 'isInformational', 'name', 'price', 'sku',
     ]);
     const serialized = JSON.stringify(result);
     for (const forbidden of ['extraAttributes', 'COSTO', 'PLATINO', 'INSTALADOR', 'TIENDA', 'DPP_', 'SIN_IVA', 'lista']) {
       expect(serialized).not.toContain(forbidden);
     }
-    // Y la consulta nunca pide esos campos.
+    // Y la consulta nunca pide esos campos (brandId/categoryId solo resuelven la marca y categoría publicadas).
     const select = mockPrisma.product.findMany.mock.calls[0][0].select;
-    expect(Object.keys(select).sort()).toEqual(['brand', 'category', 'id', 'images', 'name', 'sku']);
+    expect(Object.keys(select).sort()).toEqual(['brand', 'brandId', 'category', 'categoryId', 'id', 'images', 'lifecycleStatus', 'name', 'publicRevisionId', 'sku']);
   });
 });
 

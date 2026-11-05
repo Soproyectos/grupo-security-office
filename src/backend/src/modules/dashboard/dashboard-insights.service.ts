@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import { currentMonthRangeBogota } from '../../common/date/month-range-bogota';
 
 export interface CatalogInsights {
@@ -54,7 +56,13 @@ export interface CategorySales {
  */
 @Injectable()
 export class DashboardInsightsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService,
+    /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+  ) {}
+
+  /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService }
 
   private startOfToday(): Date {
     const now = new Date();
@@ -64,13 +72,13 @@ export class DashboardInsightsService {
   async getCatalogInsights(take = 6): Promise<CatalogInsights> {
     const [products, published, pendingPublication, categories, updatedToday, missingImages, latest] =
       await Promise.all([
-        this.prisma.product.count(),
-        this.prisma.product.count({ where: { lifecycleStatus: 'PUBLISHED' } }),
-        this.prisma.product.count({ where: { lifecycleStatus: 'READY' } }),
-        this.prisma.category.count(),
-        this.prisma.product.count({ where: { updatedAt: { gte: this.startOfToday() } } }),
-        this.prisma.product.count({ where: { images: { none: {} } } }),
-        this.prisma.product.findMany({
+        this.db.product.count(),
+        this.db.product.count({ where: { lifecycleStatus: 'PUBLISHED' } }),
+        this.db.product.count({ where: { lifecycleStatus: 'READY' } }),
+        this.db.category.count(),
+        this.db.product.count({ where: { updatedAt: { gte: this.startOfToday() } } }),
+        this.db.product.count({ where: { images: { none: {} } } }),
+        this.db.product.findMany({
           take,
           orderBy: { updatedAt: 'desc' },
           select: {
@@ -210,14 +218,22 @@ export class DashboardInsightsService {
         lineTotal: true,
         quantity: true,
         currency: true,
-        product: { select: { category: { select: { name: true } } } },
+        productId: true,
       },
     });
+    // Categoría del producto: está en la biblioteca, se resuelve por id sin relación entre bases.
+    const productIds = [...new Set(items.map((i) => i.productId).filter((id): id is string => !!id))];
+    const categoryOf = new Map(
+      (productIds.length
+        ? await this.db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, category: { select: { name: true } } } })
+        : []
+      ).map((p) => [p.id, p.category?.name]),
+    );
 
     const totals = new Map<string, { amount: number; units: number; currency: string }>();
 
     for (const item of items) {
-      const category = item.product?.category?.name ?? 'Sin categoría';
+      const category = (item.productId ? categoryOf.get(item.productId) : undefined) ?? 'Sin categoría';
       const current = totals.get(category) ?? { amount: 0, units: 0, currency: item.currency };
 
       current.amount += Number(item.lineTotal);

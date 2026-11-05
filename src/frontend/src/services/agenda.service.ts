@@ -116,12 +116,15 @@ export type AgendaErrorCode =
 export class AgendaServiceError extends Error {
   readonly code: AgendaErrorCode
   readonly status: number
+  /** Stable code sent by the server (e.g. `ACTIVITY_ALREADY_COMPLETED`), when present. */
+  readonly serverCode?: string
 
-  constructor(code: AgendaErrorCode, message: string, status: number) {
+  constructor(code: AgendaErrorCode, message: string, status: number, serverCode?: string) {
     super(message)
     this.name = 'AgendaServiceError'
     this.code = code
     this.status = status
+    this.serverCode = serverCode
   }
 }
 
@@ -142,6 +145,26 @@ function statusOf(error: unknown): number | undefined {
 function serverMessageOf(error: unknown): string | undefined {
   const message = (error as { response?: { data?: { message?: unknown } } } | null)?.response?.data?.message
   return typeof message === 'string' && message.trim() ? message : undefined
+}
+
+function serverCodeOf(error: unknown): string | undefined {
+  const code = (error as { response?: { data?: { code?: unknown } } } | null)?.response?.data?.code
+  return typeof code === 'string' && code.trim() ? code : undefined
+}
+
+/**
+ * Plain-language messages for the stable server codes (agenda-equipos
+ * contract). They win over the status fallback and over the server text so
+ * the person always reads the same sentence, e.g. on a completed activity.
+ */
+export const AGENDA_SERVER_CODE_MESSAGES: Record<string, string> = {
+  ASSIGNEE_NOT_ACTIVE: 'La persona elegida no existe o ya no está activa. Elige a otra persona de tu equipo.',
+  ACTIVITY_ALREADY_COMPLETED: 'La actividad ya fue completada y no se puede modificar.',
+  TEAM_DIRECTORY_FORBIDDEN: 'No tienes permiso para ver a tu equipo.',
+}
+
+export function isAgendaActivityCompletedError(error: unknown): boolean {
+  return error instanceof AgendaServiceError && error.serverCode === 'ACTIVITY_ALREADY_COMPLETED'
 }
 
 function codeFor(status: number): AgendaErrorCode {
@@ -181,7 +204,13 @@ function toAgendaError(
   if (error instanceof AgendaServiceError) return error
   const status = statusOf(error)
   if (status === undefined) return error
-  return new AgendaServiceError(codeFor(status), serverMessageOf(error) ?? statusFallback[status] ?? fallback, status)
+  const serverCode = serverCodeOf(error)
+  const message =
+    (serverCode ? AGENDA_SERVER_CODE_MESSAGES[serverCode] : undefined) ??
+    serverMessageOf(error) ??
+    statusFallback[status] ??
+    fallback
+  return new AgendaServiceError(codeFor(status), message, status, serverCode)
 }
 
 /** Avisos propios de los vínculos (400/403/404/409 de `/links`). */
@@ -247,14 +276,41 @@ export function mergeAgendaActivities(
   return [...refreshed, ...localOnly]
 }
 
-export async function fetchAgendaActivities(): Promise<AgendaActivity[]> {
+/** Activities plus the cap notice the server sends in response headers. */
+export interface AgendaActivitiesPage {
+  rows: AgendaActivity[]
+  /** `X-Total-Truncated: true` — more activities exist than the server cap. */
+  truncated: boolean
+  /** `X-Activities-Limit`; null when the header is absent or not a number. */
+  limit: number | null
+}
+
+function headerOf(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined
+  const getter = (headers as { get?: unknown }).get
+  const fromGetter = typeof getter === 'function' ? (getter as (n: string) => unknown).call(headers, name) : undefined
+  const value = fromGetter ?? (headers as Record<string, unknown>)[name]
+  return typeof value === 'string' ? value : undefined
+}
+
+export async function fetchAgendaActivitiesPage(): Promise<AgendaActivitiesPage> {
   try {
     const response = await api.get('/team-workflow/activities')
     const rows = unwrapBody(response.data)
-    return dedupeAgendaActivities(Array.isArray(rows) ? rows : [])
+    const limit = Number(headerOf(response.headers, 'x-activities-limit'))
+    return {
+      rows: dedupeAgendaActivities(Array.isArray(rows) ? rows : []),
+      truncated: headerOf(response.headers, 'x-total-truncated')?.trim().toLowerCase() === 'true',
+      limit: Number.isFinite(limit) && limit > 0 ? limit : null,
+    }
   } catch (error) {
     throw toAgendaError(error)
   }
+}
+
+/** Rows only: the shape every other consumer and the shared cache use. */
+export async function fetchAgendaActivities(): Promise<AgendaActivity[]> {
+  return (await fetchAgendaActivitiesPage()).rows
 }
 
 /** Directorio de vendedores: solo lo pide la query del equipo (`enabled`). */

@@ -49,6 +49,7 @@ function build(grants?: { grantsForUser: jest.Mock }, revisions?: { markPendingF
       update: jest.fn().mockResolvedValue({}),
     },
   };
+  Object.assign(prisma, { stock: { findUnique: jest.fn().mockResolvedValue(null) }, $transaction: jest.fn(async (work) => work(prisma)) });
   const acl = { assertProductAccess: jest.fn().mockResolvedValue({ listaId: null }) };
   const service = new ProductValidationService(
     prisma as never,
@@ -86,15 +87,63 @@ describe('ProductValidationService.validateOne', () => {
     );
   });
 
-  it('producto sano (borrador, sin oferta pública): LISTA_PARA_PUBLICAR con el aviso del PDF si falta', async () => {
+  it('DRAFT listo sin precio bloquea por precio y conserva el aviso PDF', async () => {
     const { service, prisma } = build();
     prisma.product.findUnique.mockResolvedValue(productRow({ resources: undefined, catalogResources: [] }));
 
     const report = await service.validateOne('p-1', ctx);
 
-    expect(report.status).toBe('LISTA_PARA_PUBLICAR');
+    expect(report.status).toBe('CON_PROBLEMAS');
+    expect(report.issues.find((i) => i.code === 'offer.price_valid')?.severity).toBe('error');
     const datasheet = report.issues.find((i) => i.code === 'docs.datasheet_missing');
     expect(datasheet?.severity).toBe('warning'); // PDF ausente: aviso, nunca bloqueo
+    expect(prisma.price.findMany.mock.calls[0][0].where).not.toHaveProperty('listaId');
+    expect(prisma.lista.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('ensambla cualquier tarifa vigente del producto sin filtrar por Lista y excluye la expiración exacta', async () => {
+    const { service, prisma } = build();
+    const now = new Date('2026-10-26T12:00:00.000Z');
+    jest.useFakeTimers().setSystemTime(now);
+    try {
+      prisma.product.findUnique.mockResolvedValue(productRow({ listaId: 'lista-inactiva' }));
+      prisma.price.findMany.mockResolvedValue([{ value: 42, validFrom: null, validUntil: null }]);
+
+      const report = await service.validateOne('p-1', ctx);
+
+      expect(report.status).toBe('LISTA_PARA_PUBLICAR');
+      const where = prisma.price.findMany.mock.calls[0][0].where;
+      expect(where).toEqual({
+        productId: 'p-1',
+        AND: [
+          { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+          { OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
+        ],
+      });
+      expect(where).not.toHaveProperty('listaId');
+      expect(prisma.lista.findUnique).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['futura', new Date('2026-10-26T12:00:00.001Z'), null],
+    ['vencida', null, new Date('2026-10-26T11:59:59.999Z')],
+    ['expirada exactamente ahora', null, new Date('2026-10-26T12:00:00.000Z')],
+  ])('precio %s no permite dejar la revisión lista', async (_label, validFrom, validUntil) => {
+    const { service, prisma } = build();
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-26T12:00:00.000Z'));
+    try {
+      prisma.price.findMany.mockResolvedValue([{ value: 42, validFrom, validUntil }]);
+
+      const report = await service.validateOne('p-1', ctx);
+
+      expect(report.status).toBe('CON_PROBLEMAS');
+      expect(report.issues.find((i) => i.code === 'offer.price_valid')?.severity).toBe('error');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('con concesiones sin products:validate → 403 y cero escrituras (D5)', async () => {
@@ -122,7 +171,7 @@ describe('ProductValidationService.validateOne', () => {
 
     const report = await service.validateOne('p-1', ctx);
 
-    expect(revisions.markPendingFromLive).toHaveBeenCalledWith('p-1');
+    expect(revisions.markPendingFromLive).toHaveBeenCalledWith('p-1', prisma);
     expect(report.revisionId).toBe('rev-new');
   });
 
@@ -131,7 +180,7 @@ describe('ProductValidationService.validateOne', () => {
     prisma.product.findUnique.mockResolvedValue(productRow());
     await expect(service.validateOne('p-1', ctx)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
-    await expect(service.validateOne('p-1', { userId: 'u-1', roles: ['Super Admin'] })).resolves.toMatchObject({ status: 'LISTA_PARA_PUBLICAR' });
+    await expect(service.validateOne('p-1', { userId: 'u-1', roles: ['Super Admin'] })).resolves.toMatchObject({ status: 'CON_PROBLEMAS' });
   });
 
   it('ENMIENDA: revocar la ultima concesion con el mismo JWT deniega la siguiente llamada', async () => {
@@ -197,7 +246,7 @@ describe('ProductValidationService.reportOf (V2: obsoleto tras editar)', () => {
   it('rulesVersion antigua cuenta como obsoleto (cambiar una regla marca pendientes)', async () => {
     const { service, prisma } = build();
     prisma.productRevision.findFirst
-      .mockResolvedValueOnce({ id: 'rev-1', status: 'LISTA_PARA_PUBLICAR', rulesVersion: 'cat05-r0', issues: [], validatedAt: new Date() })
+      .mockResolvedValueOnce({ id: 'rev-1', status: 'LISTA_PARA_PUBLICAR', rulesVersion: 'cat05-r1', issues: [], validatedAt: new Date() })
       .mockResolvedValueOnce({ id: 'rev-1' });
     expect((await service.reportOf('p-1', ctx))?.stale).toBe(true);
   });
@@ -213,6 +262,7 @@ describe('ProductValidationService.validateBatch', () => {
       if (lookups[where.id] === 1) return where.id === 'B' ? null : { id: where.id, listaId: null }; // B: out of scope, nothing revealed
       return where.id === 'C' ? null : productRow(); // C: in scope but assembly fails
     });
+    prisma.price.findMany.mockResolvedValue([{ value: 42, validFrom: null, validUntil: null }]);
     prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-x' });
 
     const r = await service.validateBatch(['A', 'B', 'C'], ctx);

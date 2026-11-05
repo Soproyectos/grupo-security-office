@@ -245,3 +245,22 @@
 .animate-slide-in {
   animation: slide-in 300ms ease-out;
 }
+/* Side drawer (components/ui/Drawer.tsx): slides in from the right, still when motion is reduced. */
+.drawer-panel {
+  animation: slide-in 250ms ease-out;
+}
+/* Drawer aside: from 1024 px up, the area left of the 560 px panel, over the dimmed page. */
+@media (min-width: 1024px) {
+  .drawer-aside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 560px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-panel {
+    animation: none;
+  }
+}

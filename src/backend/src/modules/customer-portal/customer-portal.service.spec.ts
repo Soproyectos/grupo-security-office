@@ -9,9 +9,11 @@ const prisma: any = {
   portalTier: {findUnique:jest.fn(),findFirst:jest.fn(),create:jest.fn(),update:jest.fn()},
   portalSession: { create: jest.fn(), updateMany: jest.fn() },
   portalPriceListMapping: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
+  brand: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
   price: { findMany: jest.fn(), findFirst: jest.fn() },
-  priceList: { findUnique: jest.fn() },
+  // La tarifa vive en la biblioteca y se resuelve por id (sin relación entre bases).
+  priceList: { findUnique: jest.fn(), findMany: jest.fn(async ({ where }: any) => where.id.in.map((id: string) => ({ id, isActive: true, name: id, code: id, currency: 'COP' }))) },
   customer: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
 };
 const jwt: any = { sign: jest.fn(() => 'portal-token') };

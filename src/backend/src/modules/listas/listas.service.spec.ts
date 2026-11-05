@@ -34,13 +34,20 @@ function grant(userId: string, actionId: string, scopeKind: 'list' | 'global' = 
   accessGrants[userId] ??= [];
   accessGrants[userId].push({ sourceId: `${userId}-${actionId}`, actionId, scopeKind, resourceId });
 }
+function grantLibrary(userId: string, actionId: string) {
+  grant(userId, actionId, 'global', null);
+}
 function configureAccessGrants() {
   for (const id of Object.keys(accessGrants)) accessGrants[id] = [];
   grant(VIEWER.userId, 'listas:read');
-  for (const actionId of ['listas:read', 'listas:update', 'listas:delete', 'products:read', 'products:write', 'listas:unlink']) grant(EDITER.userId, actionId);
-  for (const actionId of ['listas:read', 'prices:read', 'prices:apply', 'products:read']) grant(EDIT_PRICES.userId, actionId);
-  for (const actionId of ['listas:read', 'prices:read', 'products:read']) grant(VIEW_PRICES.userId, actionId);
-  for (const actionId of ['listas:read', 'listas:update', 'listas:archive', 'listas:delete', 'listas:duplicate', 'products:read']) grant(MANAGER.userId, actionId);
+  for (const actionId of ['listas:read', 'listas:update', 'listas:delete', 'listas:unlink']) grant(EDITER.userId, actionId);
+  for (const actionId of ['products:read', 'products:write']) grantLibrary(EDITER.userId, actionId);
+  for (const actionId of ['listas:read']) grant(EDIT_PRICES.userId, actionId);
+  for (const actionId of ['prices:read', 'prices:apply', 'products:read']) grantLibrary(EDIT_PRICES.userId, actionId);
+  grant(VIEW_PRICES.userId, 'listas:read');
+  for (const actionId of ['prices:read', 'products:read']) grantLibrary(VIEW_PRICES.userId, actionId);
+  for (const actionId of ['listas:read', 'listas:update', 'listas:archive', 'listas:delete', 'listas:duplicate']) grant(MANAGER.userId, actionId);
+  grantLibrary(MANAGER.userId, 'products:read');
   for (const actionId of ['listas:read', 'assignments:manage']) grant(MANAGE_ACCESS.userId, actionId);
 }
 

@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { BibliotecaPrismaModule } from '../../prisma/biblioteca-prisma.module';
+import { LibraryAuditModule } from '../library-audit/library-audit.module';
 import { AclModule } from '../../common/acl/acl.module';
 import { ProductsModule } from '../products/products.module';
 import { CatalogJobsService } from './catalog-jobs.service';
@@ -13,7 +15,7 @@ import { CatalogJobsController, CatalogJobsHistoryController } from './catalog-j
  * Usa el motor CAT-05 vía ProductsModule (exporta ProductValidationService).
  */
 @Module({
-  imports: [PrismaModule, AclModule, ProductsModule],
+  imports: [PrismaModule, BibliotecaPrismaModule, LibraryAuditModule, AclModule, ProductsModule],
   providers: [CatalogJobsService],
   controllers: [CatalogJobsController, CatalogJobsHistoryController],
   exports: [CatalogJobsService],

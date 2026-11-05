@@ -22,7 +22,9 @@ import {
   createAgendaActivity,
   dedupeAgendaActivities,
   fetchAgendaActivities,
+  fetchAgendaActivitiesPage,
   fetchAgendaSellers,
+  isAgendaActivityCompletedError,
   isAgendaConflict,
   isUuid,
   mergeAgendaActivities,
@@ -770,5 +772,106 @@ describe('removeAgendaLinkInCache (baja de enlaces contra la caché compartida)'
     expect(error).toMatchObject({ code: 'not-found' })
     expect(agendaErrorMessage(error)).toBe('Enlace no encontrado')
     expect(client.getQueryData(key)).toEqual(antes)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// agenda-equipos-y-permisos: aviso de tope y códigos estables del servidor
+// ---------------------------------------------------------------------------
+
+describe('fetchAgendaActivitiesPage (aviso de tope)', () => {
+  it('lee X-Total-Truncated y X-Activities-Limit y conserva las filas', async () => {
+    get.mockResolvedValue({
+      data: [activity({ id: 'a1' })],
+      headers: { 'x-total-truncated': 'true', 'x-activities-limit': '1000' },
+    })
+
+    const page = await fetchAgendaActivitiesPage()
+
+    expect(page.rows.map(r => r.id)).toEqual(['a1'])
+    expect(page.truncated).toBe(true)
+    expect(page.limit).toBe(1000)
+  })
+
+  it('lee los encabezados de un AxiosHeaders con get()', async () => {
+    const map = new Map([['x-total-truncated', 'true'], ['x-activities-limit', '1000']])
+    get.mockResolvedValue({ data: [], headers: { get: (name: string) => map.get(name) } })
+
+    const page = await fetchAgendaActivitiesPage()
+
+    expect(page.truncated).toBe(true)
+    expect(page.limit).toBe(1000)
+  })
+
+  it('false o sin encabezados no avisa', async () => {
+    get.mockResolvedValueOnce({ data: [], headers: { 'x-total-truncated': 'false' } })
+    expect((await fetchAgendaActivitiesPage()).truncated).toBe(false)
+
+    get.mockResolvedValueOnce({ data: [] })
+    const page = await fetchAgendaActivitiesPage()
+    expect(page.truncated).toBe(false)
+    expect(page.limit).toBeNull()
+  })
+
+  it('fetchAgendaActivities sigue devolviendo solo el arreglo', async () => {
+    get.mockResolvedValue({ data: [activity({ id: 'a1' })], headers: { 'x-total-truncated': 'true' } })
+
+    const rows = await fetchAgendaActivities()
+
+    expect(Array.isArray(rows)).toBe(true)
+    expect(rows).toHaveLength(1)
+  })
+})
+
+describe('códigos estables del servidor', () => {
+  function codedError(status: number, code: string, message = 'texto del servidor') {
+    return Object.assign(new Error(`Request failed ${status}`), { response: { status, data: { code, message } } })
+  }
+
+  it('ASSIGNEE_NOT_ACTIVE llega como aviso en español al crear', async () => {
+    post.mockRejectedValue(codedError(400, 'ASSIGNEE_NOT_ACTIVE'))
+
+    const error = await createAgendaActivity({ title: 'x', kind: 'CALL', assigneeId: 'p', startsAt: '2026-10-16T14:00:00.000Z' }).catch(e => e)
+
+    expect(error).toBeInstanceOf(AgendaServiceError)
+    expect(error.serverCode).toBe('ASSIGNEE_NOT_ACTIVE')
+    expect(agendaErrorMessage(error)).toContain('ya no está activa')
+  })
+
+  it('ACTIVITY_ALREADY_COMPLETED al reasignar es conflicto con mensaje claro', async () => {
+    patch.mockRejectedValue(codedError(409, 'ACTIVITY_ALREADY_COMPLETED'))
+
+    const error = await assignAgendaActivity('a1', 'p').catch(e => e)
+
+    expect(isAgendaConflict(error)).toBe(true)
+    expect(isAgendaActivityCompletedError(error)).toBe(true)
+    expect(agendaErrorMessage(error)).toBe('La actividad ya fue completada y no se puede modificar.')
+  })
+
+  it('en un enlace, el 409 de actividad completada no se confunde con «ya enlazado»', async () => {
+    post.mockRejectedValue(codedError(409, 'ACTIVITY_ALREADY_COMPLETED', ''))
+
+    const error = await addAgendaLink('a1', { targetType: 'PRODUCT', targetId: '6f1c2d3e-0000-4000-8000-000000000001' }).catch(e => e)
+
+    expect(agendaErrorMessage(error)).not.toContain('ya está enlazado')
+    expect(isAgendaActivityCompletedError(error)).toBe(true)
+  })
+
+  it('un 409 de enlace repetido sin código conserva su aviso propio', async () => {
+    post.mockRejectedValue(httpError(409))
+
+    const error = await addAgendaLink('a1', { targetType: 'PRODUCT', targetId: '6f1c2d3e-0000-4000-8000-000000000001' }).catch(e => e)
+
+    expect(agendaErrorMessage(error)).toContain('ya está enlazado')
+    expect(isAgendaActivityCompletedError(error)).toBe(false)
+  })
+
+  it('completar dos veces (409) conserva el aviso y marca el error como completada', async () => {
+    patch.mockRejectedValue(codedError(409, 'ACTIVITY_ALREADY_COMPLETED', 'La actividad ya fue completada'))
+
+    const error = await completeAgendaActivity('a1').catch(e => e)
+
+    expect(isAgendaActivityCompletedError(error)).toBe(true)
+    expect(isAgendaConflict(error)).toBe(true)
   })
 })

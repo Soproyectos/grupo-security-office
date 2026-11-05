@@ -11,6 +11,10 @@ import { AccountLockoutService } from '../../common/security/account-lockout.ser
 import { MfaService } from '../../common/security/mfa.service';
 import { SessionService } from '../../common/security/session.service';
 import { UserPermissionsService } from '../../common/security/user-permissions.service';
+import { ACCESS_CATALOG } from '../../common/security/access-catalog';
+import { resolveAccess } from '../../common/security/data-scope';
+
+const isLibraryPermission = (permission: string) => /^(products|prices|providers):/.test(permission);
 
 /**
  * Mensaje único para credenciales incorrectas, usuario inexistente y cuenta
@@ -64,12 +68,9 @@ export class AuthService {
   }
 
   /**
-   * Permisos efectivos = union(permisos de todos sus roles) + concesiones
-   * individuales (fase 5). Al ser un Set, un usuario multi-rol no acumula
-   * duplicados y la suma es idempotente.
-   *
-   * Las revocaciones (`effect: 'REVOKE'`) existen en el modelo pero no se
-   * aplican todavía: hoy el rol es un piso garantizado y sólo se suma.
+   * Los permisos operativos conservan su unión de roles y concesiones.
+   * Biblioteca usa únicamente concesiones globales vigentes y sus dependencias;
+   * un cargo nunca recupera una concesión retirada. Super Admin es la excepción.
    */
   private async buildIdentity(user: {
     id: string;
@@ -82,13 +83,32 @@ export class AuthService {
     );
 
     const granted = await this.userPermissions.effectivePermissionsFor(user.id);
+    const superAdmin = user.roles.some((entry) => entry.role.name === 'Super Admin');
+    const rows = superAdmin ? [] : (await this.prisma.accessGrant.findMany({
+      where: { source: { userId: user.id }, scopeKind: 'global' },
+      select: { sourceId: true, actionId: true },
+    })) ?? [];
+    const libraryGrants = rows.filter((row) => isLibraryPermission(row.actionId))
+      .map((row) => ({ sourceId: row.sourceId, actionId: row.actionId, scope: 'global' as const }));
+    const identity = {
+      userId: user.id, verified: true, active: true, sessionValid: true,
+      sessionUserId: user.id, superAdmin,
+    };
+    const libraryPermissions = ACCESS_CATALOG
+      .filter((action) => action.enabled && isLibraryPermission(action.id)
+        && resolveAccess({ identity, actionId: action.id, grants: libraryGrants }).allowed)
+      .map((action) => action.id);
 
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       roles: user.roles.map((ur) => ur.role.name),
-      permissions: [...new Set([...fromRoles, ...granted])],
+      permissions: [...new Set([
+        ...[...fromRoles, ...granted].filter((permission) => !isLibraryPermission(permission)
+          && !permission.startsWith('listas:') && permission !== 'assignments:manage'),
+        ...libraryPermissions,
+      ])],
     };
   }
 

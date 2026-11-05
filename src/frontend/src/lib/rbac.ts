@@ -8,7 +8,16 @@ export function hasRole(role: string): boolean {
 
 export function hasPermission(permission: string): boolean {
   const user = useAuthStore.getState().user
+  if (/^(products|prices|providers):/.test(permission) && user?.roles?.includes(ROLES.SUPER_ADMIN)) return true
   return user?.permissions?.includes(permission) ?? false
+}
+
+/** React views subscribe to permission changes instead of reading a stale render. */
+export function useHasPermission(permission: string): boolean {
+  return useAuthStore((state) => Boolean(
+    (/^(products|prices|providers):/.test(permission) && state.user?.roles?.includes(ROLES.SUPER_ADMIN)) ||
+    state.user?.permissions?.includes(permission),
+  ))
 }
 
 export function hasAnyRole(roles: string[]): boolean {
@@ -17,8 +26,7 @@ export function hasAnyRole(roles: string[]): boolean {
 }
 
 export function hasAnyPermission(permissions: string[]): boolean {
-  const user = useAuthStore.getState().user
-  return permissions.some((p) => user?.permissions?.includes(p)) ?? false
+  return permissions.some((permission) => hasPermission(permission))
 }
 
 // --- Listas: visibilidad basada en rol (el nivel granular view/edit/manage

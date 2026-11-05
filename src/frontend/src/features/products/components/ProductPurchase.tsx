@@ -1,6 +1,6 @@
-import { SALES_PHONE_HREF } from '../../storefront/constants/contact';
 import { formatCop } from '../../storefront/utils/formatCop';
 import { quoteUrl } from '../lib/quote';
+import { previewField } from '../preview/preview-fields';
 import { cx, ui } from '../styles';
 import type { ProductDetail } from '../types';
 import { ChatIcon } from './icons';
@@ -11,7 +11,7 @@ const TRUST_ITEMS = ['Distribuidor autorizado', 'Garantía de fábrica', 'Envío
 export function ProductPriceBlock({ price, isInformational = false }: { price: ProductDetail['price']; isInformational?: boolean }) {
   if (price === null) {
     return (
-      <div>
+      <div {...previewField('price')}>
         <p className="text-2xl font-bold text-neutral-950">
           {isInformational ? 'Ficha informativa' : 'Precio a consultar'}
         </p>
@@ -22,7 +22,7 @@ export function ProductPriceBlock({ price, isInformational = false }: { price: P
     );
   }
   return (
-    <div>
+    <div {...previewField('price')}>
       <p className="text-4xl font-bold leading-tight tabular-nums text-neutral-950">{formatCop(price.value)}</p>
       <p className="text-sm text-neutral-500">IVA incluido</p>
     </div>
@@ -43,9 +43,6 @@ export function ProductCtas({ product }: { product: ProductDetail }) {
           Cotizar por WhatsApp
         </a>
       )}
-      <a href={SALES_PHONE_HREF} className={cx(ui.btnOutline, 'sm:min-w-32')}>
-        Llamar
-      </a>
     </div>
   );
 }
@@ -77,7 +74,7 @@ export function ProductTrustStrip() {
 /** Fixed bottom bar of small screens, so price and quote CTA stay reachable. */
 export function ProductMobileBar({ product }: { product: ProductDetail }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-neutral-200 bg-white px-4 py-3 lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-neutral-200 bg-white px-4 py-3 lg:hidden" {...previewField('price')}>
       <div className="min-w-0 flex-1">
         {product.price !== null ? (
           <>

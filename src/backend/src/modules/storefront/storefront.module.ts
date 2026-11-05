@@ -1,3 +1,4 @@
+import { BibliotecaPrismaModule } from "../../prisma/biblioteca-prisma.module";
 import { Module } from "@nestjs/common";
 import {
   StorefrontController,
@@ -9,6 +10,7 @@ import { StorefrontMailService } from "./storefront-mail.service";
 import { CustomerSessionGuard } from "./customer-session.guard";
 
 @Module({
+  imports: [BibliotecaPrismaModule],
   controllers: [
     StorefrontController,
     CustomerAccessController,

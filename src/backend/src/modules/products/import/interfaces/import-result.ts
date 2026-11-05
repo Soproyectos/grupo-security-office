@@ -111,6 +111,14 @@ export interface ImportExecutionResult {
     error: string;
   }>;
 
+  /** Categorías/marcas desconocidas: no se creó nada; esos productos quedan por clasificar. */
+  needsConfirmation?: Array<{
+    rowIndex: number;
+    sku: string;
+    code: 'CATEGORY_NEEDS_CONFIRMATION' | 'BRAND_NEEDS_CONFIRMATION';
+    label: string;
+  }>;
+
   /** Duración total en ms */
   durationMs: number;
 

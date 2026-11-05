@@ -28,7 +28,7 @@ export interface ActionDefinition {
 }
 
 /** Versión del catálogo con la que se resuelve y con la que se asigna (§4). */
-export const ACCESS_CATALOG_VERSION = 'panels-20261019-3';
+export const ACCESS_CATALOG_VERSION = 'panels-20261104-1';
 
 const ACTION_ID_PATTERN = /^[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9-]*$/;
 
@@ -41,7 +41,7 @@ export function isActionIdFormat(id: string): boolean {
 const COMMERCIAL_SCOPES: readonly AccessScope[] = ['own', 'team', 'global'];
 /** Agenda: `own` (backend-propias) + `team` (backend-equipo, §4-§5). */
 const AGENDA_SCOPES: readonly AccessScope[] = ['own', 'team'];
-const CATALOG_SCOPES: readonly AccessScope[] = ['list', 'product', 'global'];
+const CATALOG_SCOPES: readonly AccessScope[] = ['global'];
 const LISTA_SCOPES: readonly AccessScope[] = ['list', 'global'];
 
 function action(
@@ -108,10 +108,20 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   action('commercialSettings:edit', 'Editar parámetros comerciales', 'Modificar parámetros del área comercial.', COMMERCIAL_SCOPES, [], false),
 
   // — IDs anclados reales de S3 (BASE-02 §3; @Permissions + seed) —
-  action('products:read', 'Consultar productos', 'Ver productos sin precios implícitos.', CATALOG_SCOPES),
+  action('products:read', 'Consultar productos', 'Consultar Biblioteca con precios y características.', CATALOG_SCOPES),
   action('products:write', 'Editar productos', 'Crear o editar contenido de producto en el alcance.', CATALOG_SCOPES, ['products:read']),
   action('products:delete', 'Eliminar producto', 'Borrar producto físico dentro del alcance.', CATALOG_SCOPES, ['products:read']),
-  action('products:publish', 'Publicar producto', 'Ejecutar la transición de publicación.', CATALOG_SCOPES, ['products:read']),
+  action('products:publish', 'Publicar producto', 'Ejecutar la transición de publicación. Complemento de la pestaña Fichas: requiere poder editar.', CATALOG_SCOPES, ['products:read', 'products:write']),
+  // Aprobar una fila del molde de datos clave de una subcategoría es una decisión editorial aparte:
+  // exige poder editar, pero editar no basta. El aprobador queda registrado desde la sesión.
+  action('products:approveSpecs', 'Aprobar datos clave', 'Aprobar filas del molde de datos clave de una subcategoría. Complemento de Fichas: requiere poder editar.', CATALOG_SCOPES, ['products:read', 'products:write']),
+  // Pestaña Importaciones: ver el historial y bajar la plantilla es distinto de cargar datos.
+  action('imports:read', 'Consultar importaciones', 'Ver el historial y los resultados de las importaciones y descargar la plantilla.', CATALOG_SCOPES, ['products:read']),
+  action('imports:run', 'Importar datos', 'Subir, validar, previsualizar y aplicar importaciones. Requiere poder editar fichas.', CATALOG_SCOPES, ['imports:read', 'products:write']),
+  // Pestaña Catálogos maestros: categorías, subcategorías, marcas, aranceles, diccionario de
+  // atributos y moldes. Aprobar moldes sigue siendo `products:approveSpecs`, nunca implícito aquí.
+  action('masters:read', 'Consultar catálogos maestros', 'Listar, buscar y ver el uso de los catálogos maestros.', CATALOG_SCOPES, ['products:read']),
+  action('masters:write', 'Editar catálogos maestros', 'Crear, editar, activar, desactivar y eliminar elementos de los catálogos maestros.', CATALOG_SCOPES, ['masters:read']),
   // CAT-03 (D2): las notas internas de la ficha NO se publican ni salen en la
   // exportación ordinaria; leerlas/editarlas exige esta acción. No habilita por
   // sí sola editar el resto de la ficha (`products:write`).
@@ -137,16 +147,16 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   action('listas:publish', 'Publicar lista', 'Publicar productos elegibles de una Lista.', LISTA_SCOPES),
   // IMP-01 integrado 2026-10-16 (LEEME): preview de precios de Compras.
   // Sin asignación en ningún paquete todavía (misma decisión F1 que quotes:discount).
-  action('prices:read', 'Consultar precios', 'Ver precios de las Listas autorizadas.', LISTA_SCOPES, ['listas:read']),
-  action('prices:preview', 'Revisar archivo de precios', 'Comparar una plantilla .xlsx con los precios vigentes SIN aplicar cambios.', LISTA_SCOPES, ['prices:read', 'listas:read']),
+  action('prices:read', 'Consultar precios', 'Consultar precios de Biblioteca.', CATALOG_SCOPES),
+  action('prices:preview', 'Revisar archivo de precios', 'Comparar una plantilla .xlsx con los precios vigentes SIN aplicar cambios.', CATALOG_SCOPES, ['prices:read']),
   // IMP-04: guardar la revisión comercial preparada (NO aplica). Permiso propio
   // separado de `prices:preview`; `prices:apply` (IMP-05) será otra acción
   // separada, no se inventa aquí.
-  action('prices:save', 'Guardar revisión de precios', 'Guardar una revisión de precios preparada SIN aplicar cambios.', LISTA_SCOPES, ['prices:preview']),
+  action('prices:save', 'Guardar revisión de precios', 'Guardar una revisión de precios preparada SIN aplicar cambios.', CATALOG_SCOPES, ['prices:preview']),
   // IMP-05: aplicar es un permiso SEPARADO de preparar (diseño §35). NO depende
   // de `prices:save` para que quien aprueba y no prepara pueda terminar el
   // trabajo que otro dejó listo. `prices:read` es la base de consulta.
-  action('prices:apply', 'Aplicar precios de una revisión', 'Aplicar los precios de una revisión confirmada (solo precios, sin identidad).', LISTA_SCOPES, ['prices:read']),
+  action('prices:apply', 'Aplicar precios de una revisión', 'Aplicar los precios de una revisión confirmada (solo precios, sin identidad).', CATALOG_SCOPES, ['prices:read']),
   // IMP-07B (07B): perfiles de proveedor reutilizables. Globales (el formato de
   // un proveedor se reutiliza entre listas); `providers:write` NO habilita por
   // sí solo previsualizar/guardar/aplicar, que conservan sus propias acciones.
@@ -157,7 +167,19 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   action('listas:link', 'Vincular producto a lista', 'Vincular un producto sin Lista a una Lista autorizada.', LISTA_SCOPES, ['listas:read'], false),
   action('listas:unlink', 'Desvincular producto de lista', 'Retirar un producto de su Lista conservando ficha, medios y precios.', LISTA_SCOPES, ['listas:read']),
   action('assignments:manage', 'Administrar asignaciones', 'Gestionar niveles de acceso por Lista.', LISTA_SCOPES),
+  // «Mi resumen»: estadísticas de Biblioteca por pestaña. Permiso EXTRA sobre el
+  // acceso de la pestaña; apagado por defecto (ningún paquete lo incluye).
+  action('libraryStats:products', 'Estadísticas de Productos', 'Ver en «Mi resumen» las cifras de la pestaña Productos.', CATALOG_SCOPES, ['products:read']),
+  action('libraryStats:update', 'Estadísticas de Fichas', 'Ver en «Mi resumen» las cifras de la pestaña Fichas.', CATALOG_SCOPES, ['products:write']),
+  action('libraryStats:publication', 'Estadísticas de Publicar en tienda', 'Ver en «Mi resumen» las cifras de Publicar en tienda.', CATALOG_SCOPES, ['products:publish']),
   action('users:read', 'Consultar usuarios', 'Ver cuentas internas y sus datos de panel.', ['team', 'global']),
+  // Panel «Marketing y mercadeo → Banners» (banner del título y ventana emergente de la tienda).
+  // Se conceden por los paquetes `marketing-*` (panel asignable). Preparar y editar no publican.
+  action('marketing:read', 'Ver campañas', 'Ver las campañas de la tienda (banner del título y ventana emergente) con su borrador y su estado.', CATALOG_SCOPES),
+  action('marketing:create', 'Crear campaña', 'Preparar una campaña nueva como borrador, sin que se vea todavía en la tienda.', CATALOG_SCOPES, ['marketing:read']),
+  action('marketing:edit', 'Editar campaña', 'Cambiar el nombre, el enlace, las fechas y las imágenes de una campaña. Los cambios no se ven en la tienda hasta publicarla.', CATALOG_SCOPES, ['marketing:read']),
+  action('marketing:publish', 'Publicar y retirar campañas', 'Hacer que una campaña se vea en la tienda o quitarla de allí.', CATALOG_SCOPES, ['marketing:read']),
+  action('marketing:delete', 'Eliminar campaña', 'Borrar una campaña que ya no está publicada.', CATALOG_SCOPES, ['marketing:read']),
 ]);
 
 const CATALOG_BY_ID: ReadonlyMap<string, ActionDefinition> = (() => {
@@ -176,6 +198,12 @@ const CATALOG_BY_ID: ReadonlyMap<string, ActionDefinition> = (() => {
 
 export function getActionDefinition(id: string): ActionDefinition | undefined {
   return CATALOG_BY_ID.get(id);
+}
+
+/** Historical permissions remain resolvable, but cannot be assigned again. */
+export function isAssignableAction(id: string): boolean {
+  return !id.startsWith('listas:') && id !== 'assignments:manage'
+    && getActionDefinition(id)?.enabled === true;
 }
 
 /**
@@ -198,6 +226,13 @@ export interface PackageTemplate {
   readonly name: string;
   readonly catalogVersion: string;
   readonly selections: readonly AssignmentSelection[];
+  readonly assignable?: boolean;
+  /**
+   * Acciones de las que dependen las selecciones del paquete y que deben llegar
+   * de OTRA fuente vigente (complemento). Se exigen al asignar
+   * (assertDependencies), no dentro del propio paquete.
+   */
+  readonly externalDependencies?: readonly string[];
 }
 
 function selection(actionId: string, scope: AccessScope): AssignmentSelection {
@@ -208,11 +243,15 @@ function packageTemplate(
   id: string,
   name: string,
   selections: readonly AssignmentSelection[],
+  assignable = true,
+  externalDependencies: readonly string[] = [],
 ): PackageTemplate {
   return Object.freeze({
     id,
     name,
     catalogVersion: ACCESS_CATALOG_VERSION,
+    assignable,
+    externalDependencies: Object.freeze([...externalDependencies]),
     selections: Object.freeze([...selections]),
   });
 }
@@ -234,7 +273,74 @@ function packageTemplate(
  *   assertDependencies BASE-02 §5.3 las exigiría igualmente).
  */
 export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
-  packageTemplate('gestion-listas-precios', 'Gestión de listas y precios', [
+  // Biblioteca = 3 pestañas independientes = 3 paquetes seleccionables (global),
+  // por separado o juntos. Sin Listas: todo permiso sale de la asignación del
+  // panel. Otorgar el panel por defecto equivale a «Productos» (solo consulta).
+  packageTemplate('biblioteca-consulta', 'Productos', [
+    selection('products:read', 'global'),
+    selection('prices:read', 'global'),
+  ]),
+  // Pestaña Fichas: crear y editar fichas, borrar, validar y notas internas.
+  // `prices:read` permite ver (solo lectura) la sección de precios del editor.
+  packageTemplate('biblioteca-fichas', 'Fichas', [
+    selection('products:read', 'global'),
+    selection('products:write', 'global'),
+    selection('products:delete', 'global'),
+    selection('products:validate', 'global'),
+    selection('products:notes', 'global'),
+    selection('prices:read', 'global'),
+  ]),
+  // Pestaña Precios: revisar archivos de precios, guardar/aplicar revisiones y
+  // perfiles de proveedor. No concede edición de fichas.
+  packageTemplate('biblioteca-precios', 'Precios', [
+    selection('products:read', 'global'),
+    selection('prices:read', 'global'),
+    selection('prices:preview', 'global'),
+    selection('prices:save', 'global'),
+    selection('prices:apply', 'global'),
+    selection('providers:read', 'global'),
+    selection('providers:write', 'global'),
+  ]),
+  // Complemento de Fichas: no concede edición; `products:write` debe venir del
+  // paquete Fichas (assertDependencies lo exige al asignar).
+  packageTemplate('biblioteca-publicacion', 'Publicar en tienda', [
+    selection('products:read', 'global'),
+    selection('prices:read', 'global'),
+    selection('products:validate', 'global'),
+    selection('products:publish', 'global'),
+  ], true, ['products:write']),
+  // Pestaña Importaciones: complemento de Fichas, `products:write` debe venir de ese
+  // paquete (assertDependencies lo exige al asignar). No se concede nada por defecto.
+  packageTemplate('biblioteca-importaciones', 'Importaciones', [
+    selection('products:read', 'global'),
+    selection('imports:read', 'global'),
+    selection('imports:run', 'global'),
+  ], true, ['products:write']),
+  // Pestaña Catálogos maestros. Aprobar moldes (`products:approveSpecs`) NO va aquí:
+  // se marca aparte en la selección de Biblioteca.
+  packageTemplate('biblioteca-maestros', 'Catálogos maestros', [
+    selection('products:read', 'global'),
+    selection('masters:read', 'global'),
+    selection('masters:write', 'global'),
+  ]),
+  // Antes «Actualización» (fichas + precios juntos). Ya no se puede asignar:
+  // se conserva para que quien lo tiene siga viéndolo y pueda retirarlo.
+  packageTemplate('biblioteca-actualizacion', 'Actualización (anterior)', [
+    selection('products:read', 'global'),
+    selection('products:write', 'global'),
+    selection('products:delete', 'global'),
+    selection('products:validate', 'global'),
+    selection('products:notes', 'global'),
+    selection('prices:read', 'global'),
+    selection('prices:preview', 'global'),
+    selection('prices:save', 'global'),
+    selection('prices:apply', 'global'),
+    selection('providers:read', 'global'),
+    selection('providers:write', 'global'),
+  ], false),
+  // Paquetes anteriores: se conservan para que las asignaciones existentes
+  // sigan visibles y retirables.
+  packageTemplate('gestion-listas-precios', 'Listas y precios (anterior)', [
     selection('listas:read', 'global'),
     selection('listas:create', 'global'),
     selection('listas:update', 'global'),
@@ -245,18 +351,17 @@ export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
     selection('prices:apply', 'global'),
     selection('providers:read', 'global'),
     selection('providers:write', 'global'),
-  ]),
-  packageTemplate('biblioteca-productos', 'Biblioteca de productos', [
+  ], false),
+  packageTemplate('biblioteca-productos', 'Biblioteca de productos (anterior)', [
     selection('products:read', 'global'),
     selection('products:write', 'global'),
     selection('products:validate', 'global'),
-  ]),
-  packageTemplate('publicacion-catalogo', 'Publicación del catálogo', [
+  ], false),
+  packageTemplate('publicacion-catalogo', 'Publicación del catálogo (anterior)', [
     selection('products:read', 'global'),
     selection('products:validate', 'global'),
     selection('products:publish', 'global'),
-    selection('listas:read', 'global'),
-  ]),
+  ], false, ['products:write']),
   packageTemplate('vendedor', 'Vendedor', [
     // Mis clientes y prospectos
     selection('customers:read', 'own'),
@@ -267,9 +372,7 @@ export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
     selection('quotes:create', 'own'),
     selection('quotes:edit', 'own'),
     selection('quotes:status', 'own'),
-    // Consulta del catálogo
-    selection('products:read', 'global'),
-    selection('listas:read', 'global'),
+    // Biblioteca se asigna por separado mediante sus propios paquetes.
     // Mi agenda
     selection('activities:read', 'own'),
     selection('activities:create', 'own'),
@@ -291,6 +394,15 @@ export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
     // Metas del equipo
     selection('targets:read', 'team'),
   ]),
+  // Paquete de jefe de equipo: solo agenda. Sirve para cualquier rol interno
+  // (no depende del rol) porque el alcance `team` sale de la jerarquía
+  // `supervisorId`, no del nombre del rol. Distinto de `supervisor-comercial`,
+  // que además abre clientes, cotizaciones y metas del equipo.
+  packageTemplate('jefe-de-equipo', 'Jefe de equipo', [
+    selection('activities:read', 'team'),
+    selection('activities:assign', 'team'),
+    selection('activities:complete', 'team'),
+  ]),
   packageTemplate('gestion-comercial', 'Gestión comercial', [
     // Cartera (depende de customers:read)
     selection('customers:read', 'team'),
@@ -304,6 +416,23 @@ export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
     selection('commercialPromotions:edit', 'team'),
     selection('commercialPromotions:publish', 'team'),
     selection('commercialPromotions:withdraw', 'team'),
+  ]),
+  // Panel «Marketing y mercadeo» (pestaña Banners). Tres paquetes que se pueden
+  // combinar: cada uno es su propia fuente y todos incluyen `marketing:read`,
+  // que es la acción que abre el panel. Preparar no publica; publicar y retirar
+  // es un paquete aparte para poder separar quien diseña de quien aprueba.
+  packageTemplate('marketing-consulta', 'Ver banners y pop-ups', [
+    selection('marketing:read', 'global'),
+  ]),
+  packageTemplate('marketing-edicion', 'Preparar banners y pop-ups', [
+    selection('marketing:read', 'global'),
+    selection('marketing:create', 'global'),
+    selection('marketing:edit', 'global'),
+    selection('marketing:delete', 'global'),
+  ]),
+  packageTemplate('marketing-publicacion', 'Publicar y retirar banners', [
+    selection('marketing:read', 'global'),
+    selection('marketing:publish', 'global'),
   ]),
 ]);
 
@@ -324,7 +453,7 @@ for (const pkg of PACKAGE_TEMPLATES) {
       );
     }
     for (const dependency of definition.dependencies) {
-      if (!granted.has(dependency)) {
+      if (!granted.has(dependency) && !pkg.externalDependencies?.includes(dependency)) {
         throw new Error(
           `Package ${pkg.id} is not self-contained: ${item.actionId} requires ${dependency}`,
         );

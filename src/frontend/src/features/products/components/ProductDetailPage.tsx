@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { DownloadHandler, ProductDetail } from '../types';
 import { ui } from '../styles';
+import { previewField } from '../preview/preview-fields';
 import { ProductBreadcrumb, ProductHero } from './ProductHero';
 import { ProductSubnav, type SubnavSection } from './ProductSubnav';
 import { ProductSpecs } from './ProductSpecs';
@@ -55,7 +56,7 @@ export function ProductDetailPage({
       )}
 
       {product.specGroups.length > 0 && (
-        <section id="especificaciones" style={sectionStyle} className="bg-neutral-50/60 py-14 sm:py-20">
+        <section id="especificaciones" style={sectionStyle} className="bg-neutral-50/60 py-14 sm:py-20" {...previewField('specs')}>
           <div className={ui.container}>
             <h2 className={`${ui.sectionTitle} mb-10`}>Especificaciones</h2>
             <ProductSpecs
@@ -68,7 +69,7 @@ export function ProductDetailPage({
       )}
 
       {sections.some((s) => s.id === 'recursos') && (
-        <section id="recursos" style={sectionStyle} className="py-14 sm:py-20">
+        <section id="recursos" style={sectionStyle} className="py-14 sm:py-20" {...previewField('resources')}>
           <div className={ui.container}>
             <h2 className={`${ui.sectionTitle} mb-10`}>Recursos</h2>
             <ProductResources

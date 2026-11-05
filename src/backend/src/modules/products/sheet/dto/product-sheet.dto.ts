@@ -238,16 +238,6 @@ export class UpdateProductSheetDto {
   manufacturerRefs?: string[];
 
   @ApiPropertyOptional({
-    nullable: true,
-    description:
-      'CAT-03 (H1): notas INTERNAS de la ficha. No se publican ni salen en la exportación ordinaria. Sin la acción `products:notes` se conservan y no se devuelven; omitirlas también las conserva; solo `null` explícito (con la acción) las borra.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(4000)
-  internalNotes?: string | null;
-
-  @ApiPropertyOptional({
     description:
       'CAT-03 (H2): versión de la ficha que el cliente vio (OCC). Si no coincide con la vigente → 409 sin escribir.',
   })
@@ -255,6 +245,13 @@ export class UpdateProductSheetDto {
   @IsInt()
   @Min(0)
   expectedVersion?: number;
+
+  @ApiPropertyOptional({
+    description: 'Library subcategory of the product. When sent, it is the classification truth and the product categoryId is derived from it.',
+  })
+  @IsOptional()
+  @IsString()
+  subcategoryId?: string;
 
   @ApiProperty({ type: [SheetSpecGroupDto] })
   @IsArray()
@@ -274,14 +271,12 @@ export class UpdateProductSheetDto {
 /** Read model: the editable sheet plus read-only product context. */
 export interface ProductSheetView
   extends Required<
-    Omit<UpdateProductSheetDto, 'features' | 'specGroups' | 'resources' | 'expectedVersion' | 'internalNotes'>
+    Omit<UpdateProductSheetDto, 'features' | 'specGroups' | 'resources' | 'expectedVersion' | 'subcategoryId'>
   > {
   productId: string;
   sku: string;
   productName: string;
-  /** Notas internas (CAT-03 H1): `null` cuando el actor no tiene `products:notes`. */
-  internalNotes: string | null;
-  /** CAT-03 frontend-tecnicos: el actor puede ver/editar las notas internas. */
+  /** The actor may open the internal-notes list (`GET /api/products/:id/internal-notes`). */
   canSeeInternalNotes: boolean;
   /** Versión vigente de la ficha (CAT-03 H2): envíala como `expectedVersion`. */
   version: number;
@@ -298,4 +293,8 @@ export interface ProductSheetView
     requiresLicense: boolean;
   }[];
   updatedAt: Date;
+  /** Classification context (read only): set by GET/PUT, absent from audit snapshots. */
+  subcategoryId?: string | null;
+  subcategory?: { id: string; name: string; slug: string } | null;
+  classificationStatus?: 'complete' | 'incomplete';
 }

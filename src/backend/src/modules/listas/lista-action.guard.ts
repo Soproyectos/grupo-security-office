@@ -1,12 +1,21 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { concessionCanAction } from '../../common/security/d5-action';
 
 /** Cada ruta de Listas exige la acción vigente sobre la Lista concreta. */
 @Injectable()
 export class ListaActionGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService, private readonly grants: AccessAssignmentsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly grants: AccessAssignmentsService,
+    /** Las Listas viven en la biblioteca: la guarda no puede comprobarlas en la base operativa. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+  ) {}
+
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -29,7 +38,7 @@ export class ListaActionGuard implements CanActivate {
     if (!action) throw new ForbiddenException('Acción administrativa no configurada');
     const listaId = request.params?.id;
     const resource = listaId ? { id: listaId, kind: 'lista' as const, listId: listaId } : undefined;
-    if (listaId && !(await this.prisma.lista.findUnique({ where: { id: listaId }, select: { id: true } }))) {
+    if (listaId && !(await this.db.lista.findUnique({ where: { id: listaId }, select: { id: true } }))) {
       throw new NotFoundException('Lista no encontrada');
     }
     if (!(await concessionCanAction(this.grants, action, ctx, resource)).allowed) {

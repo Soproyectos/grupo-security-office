@@ -15,6 +15,8 @@ export interface ProductStock {
   updatedAt: string
 }
 
+export type ProductImageType = 'PORTADA' | 'LOGO' | 'PRINCIPAL' | 'COMPLEMENTARIA' | 'EXTRA'
+
 export interface AuditLog {
   id: string
   userId: string | null
@@ -197,4 +199,17 @@ export const markProductImagePrimary = async (imageId: string) => {
 export const updateProductImageAlt = async (imageId: string, alt: string) => {
   const res = await api.patch(`/products/images/${imageId}`, { alt })
   return res.data
+}
+
+/** Actualiza la clasificación de una imagen y verifica que el servidor la haya persistido. */
+export const updateProductImageType = async (
+  imageId: string,
+  type: ProductImageType,
+): Promise<ProductImage> => {
+  const res = await api.patch(`/products/images/${imageId}`, { type })
+  const image = res.data as ProductImage
+  if (image?.type !== type) {
+    throw new Error('El servidor no confirmó el tipo de imagen solicitado. Vuelve a intentarlo.')
+  }
+  return image
 }

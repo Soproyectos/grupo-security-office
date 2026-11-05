@@ -26,18 +26,31 @@ describe('selector de asignado al crear', () => {
     const html = render(false)
 
     expect(html).not.toContain('<select')
-    expect(html).not.toContain('Vendedor')
-    expect(html).not.toContain('Selecciona un vendedor')
+    expect(html).not.toContain('Asignar a')
+    expect(html).not.toContain('Selecciona una persona')
   })
 
   it('quien puede equipo ve el directorio completo de vendedores', () => {
     const html = render(true)
 
-    expect(html).toContain('Vendedor')
-    expect(html).toContain('Selecciona un vendedor')
+    expect(html).toContain('Asignar a')
+    expect(html).toContain('Selecciona una persona')
     expect(html).toContain('Ana Vendedora')
     expect(html).toContain('Luis Vendedor')
     expect(html).toContain('required')
+  })
+
+  it('lista a todo el equipo, sin filtrar por cargo ni decir «vendedor»', () => {
+    const team: AgendaPerson[] = [
+      { id: 'p-1', name: 'Marta Operadora' },
+      { id: 'p-2', name: 'Raúl Consulta' },
+      { id: 'p-3', name: 'Elena Admin Comercial' },
+    ]
+    const html = render(true, '', team)
+
+    for (const person of team) expect(html).toContain(person.name)
+    expect(html).not.toContain('Selecciona un vendedor')
+    expect(html).not.toMatch(/>Vendedor</)
   })
 
   it('conserva el vendedor elegido para no perder la selección al reenviar', () => {
@@ -47,7 +60,7 @@ describe('selector de asignado al crear', () => {
   it('con permiso pero sin directorio cargado no ofrece una lista vacía', () => {
     const html = render(true, '', [])
 
-    expect(html).toContain('Selecciona un vendedor')
+    expect(html).toContain('Selecciona una persona')
     expect(html).not.toContain('Ana Vendedora')
   })
 })

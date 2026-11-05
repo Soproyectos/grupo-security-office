@@ -125,8 +125,8 @@ describe('QuotesService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           unitPrice: 1000,
-          product: { connect: { id: 'p1' } },
-          price: { connect: { id: 'price-1' } },
+          productId: 'p1',
+          priceId: 'price-1',
           quantity: 10,
           lineTotal: 10000,
         }),
@@ -505,7 +505,7 @@ describe('QuotesService', () => {
       await service.create({ customerId: 'mine', listaId: 'lista-1' }, seller);
       expect(acl.assertListaAccess).toHaveBeenCalledWith('lista-1', seller, 'view_prices');
       expect(prisma.quote.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ owner: { connect: { id: seller.userId } } }),
+        data: expect.objectContaining({ ownerId: seller.userId, listaId: 'lista-1', customerId: 'mine' }),
       }));
     });
   });

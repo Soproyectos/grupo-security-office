@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -13,7 +13,15 @@ export class WorkflowController {
  // vuelven a consultar en el servicio en cada petición (incluida la agenda).
  private ctx(user:any) {return {userId:user.sub??user.id,roles:user.roles??[],jti:user.jti};}
  @Get('sellers') sellers(@CurrentUser() u:any) {return this.service.sellers(this.ctx(u));}
- @Get('activities') activities(@CurrentUser() u:any) {return this.service.activities(this.ctx(u));}
+ // Contrato compatible: el cuerpo sigue siendo el arreglo de actividades. Si se
+ // alcanzó el tope se avisa con encabezados (ver docs/handoffs/2026-10-28-agenda-equipos.md).
+ @Get('activities') async activities(@CurrentUser() u:any,@Res({passthrough:true}) res:any) {
+  const page=await this.service.activitiesPage(this.ctx(u));
+  res.setHeader('X-Total-Truncated',page.truncated?'true':'false');
+  res.setHeader('X-Activities-Limit',String(page.limit));
+  res.setHeader('Access-Control-Expose-Headers','X-Total-Truncated, X-Activities-Limit');
+  return page.items;
+ }
  @Post('activities') create(@CurrentUser() u:any,@Body() dto:ActivityDto) {return this.service.createActivity(this.ctx(u),dto);}
  @Patch('activities/:id/complete') complete(@CurrentUser() u:any,@Param('id') id:string) {return this.service.complete(this.ctx(u),id);}
  @Patch('activities/:id/assign') assign(@CurrentUser() u:any,@Param('id') id:string,@Body() dto:AssignDto) {return this.service.assign(this.ctx(u),id,dto);}

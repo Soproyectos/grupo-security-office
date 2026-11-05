@@ -1,0 +1,9 @@
+# T04/T05 — Desarrollo y conexiones aisladas
+
+Mandato de continuidad del usuario, sin producción/datos reales/commit/push/despliegue. T03 cerrada con todas sus pruebas. Se añadieron Compose/ejemplo independientes en deploy/dev, BibliotecaPrismaModule/Service y configuración, dos specs, registro en AppModule y generación del cliente en build/package scripts. PrismaService, CA/TLS operativo, esquema operativo, lockfile, CI y T00 permanecen intactos.
+
+Validación local: 35/35 pruebas, tsc, nest build y lint dirigidos sin errores; YAML/guardas estáticas conformes. Bash/Node syntax checks pasan con herramientas instaladas. Sin instalaciones. Ensayo por script/paquete allowlist y hashes: dos PG18 tmpfs y un ejecutor Node ya disponible, 3 CPU/3 GiB, red interna, sin puertos/montajes productivos. Compose config, generación Prisma6.19.3 en Linux, selección legacy/dedicado y separación de filas, rechazo de otra identidad, lifecycle y todas las tablas vacías pasaron; salida 0. Versión servidor: PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit.
+
+Trap y cierre independiente por IDs confirmaron eliminación de tres contenedores/red/env propios. Evidencia sintética se conserva en /home/dev/gs-test-library-runtime.oroPK0. No se inició la API de la imagen ni se accedió a producción. [Resultados y límites](../biblioteca-dominio/evidencia/t04-t05-conexiones-intento-1/resultado-ejecucion.json). El servidor operativo de compatibilidad solo tiene las 23 tablas usadas en esta prueba; no demuestra todavía usuarios/ACL/web completos.
+
+Siguiente: T07 eventos propios y luego primera adaptación T06 categorías, manteniendo contratos y legacy. D1/D3/D4/D5/D7 siguen pendientes; no se inventan reglas de negocio. Reversión local: retirar solo archivos nuevos y cambios puntuales de imports/scripts; no tocar T00 ni revertir trabajo previo. No hay recursos remotos activos que revertir.

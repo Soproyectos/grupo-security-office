@@ -19,6 +19,8 @@ interface ProductTableRowProps {
   onAccess?: (product: Product) => void
   /** En modo read-only, callback para navegar al detalle de solo lectura. */
   onOpen?: (id: string) => void
+  /** Cuando se pasa, muestra "Editar ficha" aun en modo read-only (el padre decide con products:write). */
+  onEditSheet?: (id: string) => void
   /** Cuando es true, oculta todos los controles de mutación (catálogo global read-only). */
   readOnly?: boolean
 }
@@ -34,6 +36,7 @@ export function ProductTableRow({
   onMoveCategory,
   onAccess,
   onOpen,
+  onEditSheet,
   readOnly = false,
 }: ProductTableRowProps) {
   return (
@@ -106,6 +109,15 @@ export function ProductTableRow({
               className="px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg-subtle)] rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
             >
               Ver
+            </button>
+          )}
+          {onEditSheet && (
+            <button
+              type="button"
+              onClick={() => onEditSheet(product.id)}
+              className="px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] border border-[var(--color-border)] hover:bg-[var(--color-primary-bg-subtle)] rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+            >
+              Editar ficha
             </button>
           )}
           {!readOnly && hasPermission('products:write') && onMoveCategory && (

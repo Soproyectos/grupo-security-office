@@ -7,14 +7,18 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { BibliotecaPrismaModule } from './prisma/biblioteca-prisma.module';
+import { LibraryReviewModule } from './modules/library-review/library-review.module';
 import { SecurityModule } from './common/security/security.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { ProductsModule } from './modules/products/products.module';
+import { LibrarySpecsModule } from './modules/library-specs/library-specs.module';
 import { CatalogJobsModule } from './modules/catalog-jobs/catalog-jobs.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { BrandsModule } from './modules/brands/brands.module';
+import { SubcategoriesModule } from './modules/subcategories/subcategories.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
 import { PricesModule } from './modules/prices/prices.module';
 import { ListasModule } from './modules/listas/listas.module';
@@ -31,6 +35,7 @@ import { SalesOrdersModule } from './modules/commercial/sales-orders/sales-order
 import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-targets.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MarketingCampaignsModule } from './modules/marketing-campaigns/marketing-campaigns.module';
 
 @Module({
   imports: [
@@ -53,16 +58,20 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
       }),
     }),
     PrismaModule,
+    BibliotecaPrismaModule,
+    LibraryReviewModule,
     HierarchyModule,
     SecurityModule,
     AuthModule,
     UsersModule,
     RolesModule,
     ProductsModule,
+    LibrarySpecsModule,
     // CAT-07: trabajador común en PostgreSQL (sin broker); registra su @Cron.
     CatalogJobsModule,
     CategoriesModule,
     BrandsModule,
+    SubcategoriesModule,
     AssignmentsModule,
     PricesModule,
     ListasModule,
@@ -80,6 +89,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     WorkflowModule,
     CustomerPortalModule,
     StorefrontModule,
+    MarketingCampaignsModule,
   ],
   providers: [
     {

@@ -1,13 +1,18 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../products/product-library';
 import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
+import { BASE_ACCESS_ROLES, baseGrantsForRoles } from '../../common/security/base-access';
 import { resolveAccess } from '../../common/security/data-scope';
 import type { AccessIdentity, ScopedGrant } from '../../common/security/data-scope';
 import { ActivityDto, AssignDto, ConvertDto, LinkDto, RequestDto, ReviewDto } from './workflow.dto';
 type Context = {userId:string;roles:string[];jti?:string};
 type AccessState = { identity: AccessIdentity; grants: ScopedGrant[]; teamOwnerIds: string[] };
 const people = {id:true,name:true};
+/** Hard cap of `GET /activities`. When it is reached the response says so (see `activitiesPage`). */
+export const ACTIVITIES_LIMIT = 1000;
 
 /** Acción de catálogo con la que se decide si el detalle de un recurso
  *  enlazado se REVELA al leer la actividad (contrato §6.3). Sólo acciones que
@@ -36,7 +41,13 @@ const isUniqueViolation = (error:unknown):boolean =>
 
 @Injectable()
 export class WorkflowService {
- constructor(private prisma:PrismaService,private hierarchy:HierarchyService,private grants:AccessAssignmentsService) {}
+ constructor(private prisma:PrismaService,private hierarchy:HierarchyService,private grants:AccessAssignmentsService,
+    /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+  ) {}
+
+  /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService }
  private admin(ctx:Context) { return ctx.roles.includes('Super Admin'); }
  /** Identidad para `resolveAccess`. `verified`/`active`/`sessionValid` no son
   *  una autoafirmación: la cadena de guard ya los atestiguó EN ESTA petición
@@ -46,7 +57,7 @@ export class WorkflowService {
   *  los roles del JWT, el mismo criterio que ya usa `admin()` aquí abajo. */
  private async accessState(ctx:Context):Promise<AccessState> {
   const teamOwnerIds=this.admin(ctx)?[]:[...new Set([ctx.userId,...await this.hierarchy.getSubordinateIds(ctx.userId,{includeSelf:true})])];
-  const grants=await this.grants.grantsForUser(ctx.userId);
+  const grants=[...await this.grants.grantsForUser(ctx.userId),...baseGrantsForRoles(ctx.roles)];
   return {
    identity:{userId:ctx.userId,...(ctx.jti?{jti:ctx.jti}:{}),verified:true,active:true,sessionValid:true,sessionUserId:ctx.userId,superAdmin:this.admin(ctx),teamOwnerIds},
    grants,
@@ -72,25 +83,55 @@ export class WorkflowService {
   const candidates=state.teamOwnerIds;
   return candidates.filter(ownerId=>this.decision(state,actionId,ownerId).allowed);
  }
+ /** Directorio para el selector «Asignar a» y para la vista de equipo.
+  *  Devuelve solo `{id,name}` de personas ACTIVAS:
+  *  - Super Admin: todo el personal interno activo.
+  *  - Con `activities:assign`: su equipo (subordinados directos e indirectos) y él mismo, sin filtrar por rol.
+  *  - Solo con lectura de equipo (`activities:read` sobre alguien más): la misma lista de su equipo, solo para
+  *    lectura (la vista de equipo no recibe 403). Asignar sigue exigiendo `activities:assign` en create/assign.
+  *  - Solo agenda propia: 403 (el directorio no revela a nadie). */
  async sellers(ctx:Context) {
   const state=await this.accessState(ctx);
-  // El directorio solo existe para asignar a equipo; un grant de lectura propia
-  // no revela nombres de subordinados ni convierte el selector en un bypass.
-  await this.requireAction(ctx,'activities:assign',undefined,state);
-  const ids=await this.visibleOwnerIds(ctx,state,'activities:assign');
-  return this.prisma.user.findMany({where:{isActive:true,id:ids?{in:ids}:undefined,roles:{some:{role:{name:'Vendedor'}}}},select:people,orderBy:{name:'asc'}});
+  if(this.admin(ctx)) {
+   return this.prisma.user.findMany({where:{isActive:true,roles:{some:{role:{name:{in:[...BASE_ACCESS_ROLES]}}}}},select:people,orderBy:{name:'asc'}});
+  }
+  // Un grant de lectura/creación propia no revela nombres: hace falta alcance de equipo.
+  const hasTeamGrant=state.grants.some(g=>(g.actionId==='activities:read'||g.actionId==='activities:assign')&&g.scope!=='own');
+  if(!hasTeamGrant) throw new ForbiddenException({code:'TEAM_DIRECTORY_FORBIDDEN',message:'No tienes permiso para ver a tu equipo.'});
+  const assignable=await this.visibleOwnerIds(ctx,state,'activities:assign');
+  const readable=await this.visibleOwnerIds(ctx,state,'activities:read');
+  const ids=[...new Set([...(assignable??[]),...(readable??[])])];
+  return this.prisma.user.findMany({where:{isActive:true,id:{in:ids}},select:people,orderBy:{name:'asc'}});
  }
  async activities(ctx:Context) {
+  return (await this.activitiesPage(ctx)).items;
+ }
+ /** Igual que `activities`, pero además dice si se alcanzó el tope de
+  *  {@link ACTIVITIES_LIMIT} (se piden limit+1 filas para saberlo sin contar).
+  *  Orden: `startsAt` ascendente, así que al truncar faltan las MÁS recientes. */
+ async activitiesPage(ctx:Context):Promise<{items:any[];truncated:boolean;limit:number}> {
   const state=await this.requireAction(ctx,'activities:read');
   const ids=await this.visibleOwnerIds(ctx,state,'activities:read');
-  if(ids && ids.length===0) return [];
-  const rows=await this.prisma.teamActivity.findMany({where:{assigneeId:ids?{in:ids}:undefined},include:{assignee:{select:people},creator:{select:people},updatedBy:{select:people},events:{orderBy:{at:'asc'}},links:{orderBy:{createdAt:'asc'}}},orderBy:{startsAt:'asc'},take:1000});
-  return this.revealLinks(rows,state);
+  if(ids && ids.length===0) return {items:[],truncated:false,limit:ACTIVITIES_LIMIT};
+  const rows=await this.prisma.teamActivity.findMany({where:{assigneeId:ids?{in:ids}:undefined},include:{assignee:{select:people},creator:{select:people},updatedBy:{select:people},events:{orderBy:{at:'asc'}},links:{orderBy:{createdAt:'asc'}}},orderBy:{startsAt:'asc'},take:ACTIVITIES_LIMIT+1});
+  const truncated=rows.length>ACTIVITIES_LIMIT;
+  const items=await this.revealLinks(truncated?rows.slice(0,ACTIVITIES_LIMIT):rows,state);
+  return {items,truncated,limit:ACTIVITIES_LIMIT};
+ }
+ /** El asignado debe existir y estar activo (no revela cuál de las dos cosas falla). */
+ private async requireActiveAssignee(assigneeId:string) {
+  const found=await this.prisma.user.findMany({where:{id:{in:[assigneeId]},isActive:true},select:{id:true}});
+  if(!found.length) throw new BadRequestException({code:'ASSIGNEE_NOT_ACTIVE',message:'La persona elegida no existe o ya no está activa.'});
+ }
+ /** Una actividad completada queda bloqueada: no se reasigna ni se le cambian enlaces. */
+ private requireOpen(activity:{status?:string}) {
+  if(activity.status==='COMPLETED') throw new ConflictException({code:'ACTIVITY_ALREADY_COMPLETED',message:'La actividad ya fue completada y no se puede modificar.'});
  }
  async createActivity(ctx:Context,dto:ActivityDto) {
   const state=await this.accessState(ctx);
   await this.requireTeamMember(ctx,dto.assigneeId,state);
   await this.requireAction(ctx,dto.assigneeId===ctx.userId?'activities:create':'activities:assign',dto.assigneeId,state);
+  await this.requireActiveAssignee(dto.assigneeId);
   return this.prisma.teamActivity.create({data:{...dto,startsAt:new Date(dto.startsAt),creatorId:ctx.userId,events:{create:{actorId:ctx.userId,type:'CREATE'}}}});
  }
  async complete(ctx:Context,id:string) {
@@ -106,7 +147,7 @@ export class WorkflowService {
    if(updated.count) await tx.teamActivityEvent.create({data:{activityId:id,actorId:ctx.userId,type:'COMPLETE'}});
    return updated;
   });
-  if(!result.count) throw new ConflictException('La actividad ya fue completada');
+  if(!result.count) throw new ConflictException({code:'ACTIVITY_ALREADY_COMPLETED',message:'La actividad ya fue completada'});
   return {ok:true};
  }
  /** Reasignar (caso 6.2): la actividad debe estar en el conjunto del actor
@@ -121,12 +162,19 @@ export class WorkflowService {
   await this.requireTeamMember(ctx,dto.assigneeId,state);
   await this.requireAction(ctx,'activities:assign',activity.assigneeId,state);
   await this.requireAction(ctx,'activities:assign',dto.assigneeId,state);
+  this.requireOpen(activity);
+  await this.requireActiveAssignee(dto.assigneeId);
   const result=await this.prisma.$transaction(async tx=>{
-   const updated= await tx.teamActivity.updateMany({where:{id},data:{assigneeId:dto.assigneeId,updatedById:ctx.userId}});
+   const updated= await tx.teamActivity.updateMany({where:{id,status:'PENDING'},data:{assigneeId:dto.assigneeId,updatedById:ctx.userId}});
    if(updated.count) await tx.teamActivityEvent.create({data:{activityId:id,actorId:ctx.userId,type:'ASSIGN'}});
    return updated;
   });
-  if(!result.count) throw new NotFoundException('Actividad no encontrada');
+  if(!result.count) {
+   // Perdió una carrera: se completó (o se borró) entre la lectura y la escritura.
+   const current=await this.prisma.teamActivity.findUnique({where:{id}});
+   if(!current) throw new NotFoundException('Actividad no encontrada');
+   this.requireOpen(current);
+  }
   return {ok:true};
  }
  // ── BASE-03 backend-vinculos · A: enlaces con revocación de detalle ──────
@@ -134,9 +182,9 @@ export class WorkflowService {
   *  No es un chequeo de acceso: la fila se guarda aunque el recurso no exista
   *  y el label jamás se devuelve sin `revealed:true`. */
  private async snapshotLabel(dto:LinkDto):Promise<string|null> {
-  if(dto.targetType==='PRODUCT') return (await this.prisma.product.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
-  if(dto.targetType==='LISTA') return (await this.prisma.lista.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
-  if(dto.targetType==='PRICE_LIST') return (await this.prisma.priceList.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
+  if(dto.targetType==='PRODUCT') return (await this.db.product.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
+  if(dto.targetType==='LISTA') return (await this.db.lista.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
+  if(dto.targetType==='PRICE_LIST') return (await this.db.priceList.findUnique({where:{id:dto.targetId},select:{name:true}}))?.name ?? null;
   return null;
  }
  /** Añade un enlace actividad → recurso.
@@ -153,6 +201,7 @@ export class WorkflowService {
   const state=await this.accessState(ctx);
   await this.requireTeamMember(ctx,activity.assigneeId,state,true);
   await this.requireAction(ctx,activity.assigneeId===ctx.userId?'activities:create':'activities:assign',activity.assigneeId,state);
+  this.requireOpen(activity);
   const label=await this.snapshotLabel(dto);
   try {
    const link=await this.prisma.teamActivityLink.create({data:{activityId,targetType:dto.targetType,targetId:dto.targetId,label}});
@@ -170,6 +219,7 @@ export class WorkflowService {
   const state=await this.accessState(ctx);
   await this.requireTeamMember(ctx,activity.assigneeId,state,true);
   await this.requireAction(ctx,activity.assigneeId===ctx.userId?'activities:create':'activities:assign',activity.assigneeId,state);
+  this.requireOpen(activity);
   const removed=await this.prisma.teamActivityLink.deleteMany({where:{id:linkId,activityId}});
   if(!removed.count) throw new NotFoundException('Enlace no encontrado');
   return {ok:true};
@@ -179,10 +229,10 @@ export class WorkflowService {
   const idsOf=(type:string)=>[...new Set(links.filter(link=>link.targetType===type).map(link=>link.targetId))];
   const productIds=idsOf('PRODUCT'),listaIds=idsOf('LISTA'),listIds=idsOf('PRICE_LIST'),importIds=idsOf('IMPORT_SESSION');
   const [products,listaRows,lists,imports]=await Promise.all([
-   productIds.length?this.prisma.product.findMany({where:{id:{in:productIds}},select:{id:true,name:true,sku:true,listaId:true,publishStatus:true}}):Promise.resolve([]),
-   listaIds.length?this.prisma.lista.findMany({where:{id:{in:listaIds}},select:{id:true,name:true,code:true,isActive:true,currency:true}}):Promise.resolve([]),
-   listIds.length?this.prisma.priceList.findMany({where:{id:{in:listIds}},select:{id:true,name:true,code:true,isActive:true,currency:true}}):Promise.resolve([]),
-   importIds.length?this.prisma.importSession.findMany({where:{id:{in:importIds}},select:{id:true,userId:true,createdAt:true}}):Promise.resolve([]),
+   productIds.length?this.db.product.findMany({where:{id:{in:productIds}},select:{id:true,name:true,sku:true,listaId:true,publishStatus:true}}):Promise.resolve([]),
+   listaIds.length?this.db.lista.findMany({where:{id:{in:listaIds}},select:{id:true,name:true,code:true,isActive:true,currency:true}}):Promise.resolve([]),
+   listIds.length?this.db.priceList.findMany({where:{id:{in:listIds}},select:{id:true,name:true,code:true,isActive:true,currency:true}}):Promise.resolve([]),
+   importIds.length?this.db.importSession.findMany({where:{id:{in:importIds}},select:{id:true,userId:true,createdAt:true}}):Promise.resolve([]),
   ]);
   const map=new Map<string,any>();
   for(const row of products) map.set(`PRODUCT:${row.id}`,row);
@@ -262,7 +312,7 @@ export class WorkflowService {
   const state=await this.accessState(ctx);
   await this.requireAction(ctx,'activities:create',assigneeId,state);
   if(assigneeId!==ctx.userId) await this.requireAction(ctx,'activities:assign',assigneeId,state);
-  const product=await this.prisma.product.findUnique({where:{id:dto.productId},select:{id:true,name:true}});
+  const product=await this.db.product.findUnique({where:{id:dto.productId},select:{id:true,name:true}});
   if(!product) throw new NotFoundException('Producto no encontrado');
   // Idempotencia por CLAVE producto+regla+revisión (deduplicación D6).
   const dedupKey=conversionKey(dto.productId,dto.ruleKey,dto.revisionKey);

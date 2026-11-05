@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequireGrant } from '../../../common/security/require-grant';
 import { AccessContext } from '../../../common/acl/acl.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -30,7 +30,6 @@ export class BatchValidationDto {
 @ApiBearerAuth()
 @Controller('api/products')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Super Admin', 'Supervisor', 'Admin Comercial', 'Operador', 'Consulta')
 export class ProductValidationController {
   constructor(
     private readonly validation: ProductValidationService,
@@ -42,6 +41,7 @@ export class ProductValidationController {
   }
 
   @Post('validation/batch')
+  @RequireGrant('products:validate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Validar una selección de productos (respecta alcance; tope 200)' })
   @ApiResponse({ status: 200, description: 'Resumen examinados/válidos/con errores/omitidos/fallidos' })
@@ -52,6 +52,7 @@ export class ProductValidationController {
   }
 
   @Post(':id/validation')
+  @RequireGrant('products:validate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Validar el producto y persistir el informe en su revisión de trabajo' })
   @ApiResponse({ status: 200, description: '{ status, issues, rulesVersion, at, revisionId }' })
@@ -62,6 +63,7 @@ export class ProductValidationController {
   }
 
   @Get(':id/validation')
+  @RequireGrant('products:validate')
   @ApiOperation({ summary: 'Último informe de validación con bandera de obsoleto (editar invalida)' })
   @ApiResponse({ status: 200, description: 'Informe o null si nunca se validó' })
   @ApiResponse({ status: 403, description: 'Sin products:validate o ACL' })
@@ -76,6 +78,7 @@ export class ProductValidationController {
    * historial (404/403 según la capa heredada).
    */
   @Get(':id/publication-history')
+  @RequireGrant('products:read')
   @ApiOperation({ summary: 'Historial de publicación/programación del producto' })
   @ApiResponse({ status: 200, description: 'Eventos (≤200, más recientes primero)' })
   @ApiResponse({ status: 404, description: 'Producto no encontrado/oculto' })

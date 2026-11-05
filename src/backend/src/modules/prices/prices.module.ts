@@ -6,13 +6,15 @@ import { PriceImportService } from './import/price-import.service';
 import { PriceImportResolutionController } from './import/price-import-resolution.controller';
 import { PriceImportResolutionService } from './import/price-import-resolution.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { BibliotecaPrismaModule } from '../../prisma/biblioteca-prisma.module';
+import { LibraryAuditModule } from '../library-audit/library-audit.module';
 import { AclModule } from '../../common/acl/acl.module';
 import { AuditModule } from '../audit/audit.module';
 import { PriceActionGuard } from './price-action.guard';
 import { ProductsModule } from '../products/products.module';
 
 @Module({
-  imports: [PrismaModule, AclModule, AuditModule, ProductsModule],
+  imports: [PrismaModule, BibliotecaPrismaModule, LibraryAuditModule, AclModule, AuditModule, ProductsModule],
   controllers: [PricesController, PriceImportController, PriceImportResolutionController],
   providers: [PricesService, PriceImportService, PriceImportResolutionService, PriceActionGuard],
   exports: [PricesService],

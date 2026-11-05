@@ -105,6 +105,17 @@ function build(opts: {
 }
 
 describe('CAT-06 P1/P2: publicar pinea la revisión exacta y re-valida con el motor', () => {
+  it.each([{ brand: { name: 'DA-HUA Technology' } }, { catalogBrand: 'Imou' }])(
+    'rechaza marcas excluidas antes de validar o escribir (%j)', async (identity) => {
+      const { service, tx, validation } = build({ product: identity })
+
+      await expect(service.transition('p-1', { event: 'PUBLISH' }, ctxAdmin))
+        .rejects.toMatchObject({ response: { code: 'WEB_BRAND_EXCLUDED' } })
+      expect(validation.runFresh).not.toHaveBeenCalled()
+      expect(tx.product.update).not.toHaveBeenCalled()
+    },
+  )
+
   it('PUBLISH válido: UNA transacción marca la revisión PUBLICADA y pinea publicRevisionId', async () => {
     const { service, prisma, tx, validation, events } = build()
     prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-9' })
@@ -181,7 +192,7 @@ describe('CAT-06 P1/P2: publicar pinea la revisión exacta y re-valida con el mo
     const report = await service.processScheduledPublishes()
 
     expect(report.publishOk).toBe(1)
-    expect(prisma.productRevision.findUnique).toHaveBeenCalledWith({ where: { id: 'rev-frozen' }, select: { id: true, productId: true } })
+    expect(prisma.productRevision.findUnique).toHaveBeenCalledWith({ where: { id: 'rev-frozen' }, select: { id: true, productId: true, content: true } })
     expect(tx.productRevision.update).toHaveBeenCalledWith({ where: { id: 'rev-frozen' }, data: expect.objectContaining({ status: 'PUBLICADA' }) })
     expect(tx.product.update.mock.calls[0][0].data).toMatchObject({ publicRevisionId: 'rev-frozen', scheduledRevisionId: null })
     // el disparo se registra como SCHEDULE_PUBLISHED con actor null (scheduler)

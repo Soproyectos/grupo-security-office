@@ -1,0 +1,1904 @@
+{
+  "version": 1,
+  "scope": "Synthetic isolated baseline T03 + D1 UploadedFile; no actor transformations, real data or production connection",
+  "tables": [
+    {
+      "name": "listas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "isActive",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "archivedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "createdById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "updatedById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "defaultVisibility",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "responsibleId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "validFrom",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "validUntil",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "codigo",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "deletionStatus",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "deletionRequestedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "deletionPurgeAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "deletionReason",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "deletionRequestedById",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "listas_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "products",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "categoryId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "brandId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "technicalSpecs",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "isActive",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "isVisible",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "extraAttributes",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "listaId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "publishAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "publishStatus",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "publishedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "publishedById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "unpublishAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "unpublishReason",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "documents",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "lifecycleStatus",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "nameSource",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "nameLockedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "lastSeenAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "catalogAvailableModels",
+          "type": "text[]",
+          "notNull": false
+        },
+        {
+          "name": "catalogBadges",
+          "type": "text[]",
+          "notNull": false
+        },
+        {
+          "name": "catalogBrand",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogBreadcrumb",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "catalogFeatures",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "catalogFirmwareNote",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogHighlights",
+          "type": "text[]",
+          "notNull": false
+        },
+        {
+          "name": "catalogImageAlt",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogImageUrl",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogModel",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogName",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogPublished",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "catalogSlug",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogSpecsDisclaimer",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogInternalNotes",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "catalogManufacturerRefs",
+          "type": "text[]",
+          "notNull": true
+        },
+        {
+          "name": "sheetVersion",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "catalogStatus",
+          "type": "\"ProductCatalogStatus\"",
+          "notNull": false
+        },
+        {
+          "name": "publicRevisionId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "scheduledRevisionId",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "products_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_catalog_spec_groups",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_catalog_spec_groups_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_catalog_spec_items",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "groupId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "value",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_catalog_spec_items_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_catalog_resources",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "\"ProductResourceKind\"",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "language",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "url",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "fileName",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "version",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "requiresLicense",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_catalog_resources_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "categories",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "parentId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "sortOrder",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "isActive",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "iconUrl",
+          "type": "character varying(500)",
+          "notNull": false
+        },
+        {
+          "name": "imageUrl",
+          "type": "character varying(500)",
+          "notNull": false
+        },
+        {
+          "name": "isFeatured",
+          "type": "boolean",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "categories_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "brands",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "logo",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "website",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "isActive",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "brands_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_revisions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "createdById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "\"RevisionStatus\"",
+          "notNull": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "content",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "publishedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "validatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "rulesVersion",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "issues",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_revisions_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "publication_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "revisionId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "result",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "actorId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "issues",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "publication_events_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "catalog_jobs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "actorId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "scope",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "progressDone",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "progressTotal",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "checkpoint",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "attempt",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "maxAttempts",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "leaseUntil",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "retryKey",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "resultSummary",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "cancelRequested",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "startedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "finishedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "catalog_jobs_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "export_bundles",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "jobId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "actorId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "bundleBytes",
+          "type": "bytea",
+          "notNull": true
+        },
+        {
+          "name": "sizeBytes",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "sha256",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "manifestJson",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "expiresAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "export_bundles_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "catalog_job_units",
+      "columns": [
+        {
+          "name": "jobId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "unitId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "attempts",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "catalog_job_units_pkey",
+        "columns": [
+          "jobId",
+          "unitId"
+        ]
+      }
+    },
+    {
+      "name": "price_import_revisions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "listaId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "createdById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "fileName",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "fileHash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "fileSize",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "storagePath",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "idempotencyKey",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "\"PriceImportRevisionStatus\"",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "taxIncluded",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "rounding",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "policyVersion",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "parserVersion",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "trailerVersion",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "tariffs",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "summary",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "appliedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "appliedById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "appliedResult",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "price_import_revisions_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "price_import_revision_rows",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "revisionId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "rowNumber",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "issues",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "listaId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "resolution",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "resolvedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "resolvedById",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "price_import_revision_rows_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "price_import_revision_prices",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "revisionId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "rowNumber",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "tariffCode",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "priceListId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "receivedValue",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "roundedValue",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "previousValue",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "difference",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "wasRounded",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "change",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "changePercent",
+          "type": "numeric(9,2)",
+          "notNull": false
+        },
+        {
+          "name": "largeChange",
+          "type": "boolean",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "price_import_revision_prices_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_changes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "field",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "oldValue",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "newValue",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "sourceRef",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "actorId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "batchId",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_changes_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "product_images",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "url",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "alt",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "isPrimary",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "sortOrder",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "type",
+          "type": "\"ProductImageType\"",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "product_images_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "price_lists",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "isActive",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "validFrom",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "validUntil",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "price_lists_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "prices",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "priceListId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "value",
+          "type": "numeric(12,2)",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "validFrom",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "validUntil",
+          "type": "timestamp(3) without time zone",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "listaId",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "prices_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "import_mappings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "mappings",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "isDefault",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "import_mappings_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "provider_profiles",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "providerName",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "sheet",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "headerRow",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "thousandsSeparator",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "decimalSeparator",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "tariffs",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "expectedColumns",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "createdById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "updatedById",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "provider_profiles_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "provider_equivalences",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "providerProfileId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "externalRef",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "productId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "provider_equivalences_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "import_sessions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        }
+      ],
+      "primaryKey": {
+        "name": "import_sessions_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "uploaded_files",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "mimeType",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "data",
+          "type": "bytea",
+          "notNull": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp(3) without time zone",
+          "notNull": true
+        },
+        {
+          "name": "sizeBytes",
+          "type": "integer",
+          "notNull": false
+        },
+        {
+          "name": "sha256",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "detectedKind",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "originalName",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "visibility",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "ownerProductId",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "primaryKey": {
+        "name": "uploaded_files_pkey",
+        "columns": [
+          "id"
+        ]
+      }
+    }
+  ],
+  "foreignKeys": [
+    {
+      "table": "products",
+      "name": "products_brandId_fkey",
+      "column": "brandId",
+      "target": "brands",
+      "targetColumn": "id",
+      "deleteAction": "r",
+      "updateAction": "c"
+    },
+    {
+      "table": "products",
+      "name": "products_categoryId_fkey",
+      "column": "categoryId",
+      "target": "categories",
+      "targetColumn": "id",
+      "deleteAction": "r",
+      "updateAction": "c"
+    },
+    {
+      "table": "products",
+      "name": "products_listaId_fkey",
+      "column": "listaId",
+      "target": "listas",
+      "targetColumn": "id",
+      "deleteAction": "n",
+      "updateAction": "c"
+    },
+    {
+      "table": "products",
+      "name": "products_publicRevisionId_fkey",
+      "column": "publicRevisionId",
+      "target": "product_revisions",
+      "targetColumn": "id",
+      "deleteAction": "n",
+      "updateAction": "c"
+    },
+    {
+      "table": "product_catalog_spec_groups",
+      "name": "product_catalog_spec_groups_productId_fkey",
+      "column": "productId",
+      "target": "products",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "product_catalog_spec_items",
+      "name": "product_catalog_spec_items_groupId_fkey",
+      "column": "groupId",
+      "target": "product_catalog_spec_groups",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "product_catalog_resources",
+      "name": "product_catalog_resources_productId_fkey",
+      "column": "productId",
+      "target": "products",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "categories",
+      "name": "categories_parentId_fkey",
+      "column": "parentId",
+      "target": "categories",
+      "targetColumn": "id",
+      "deleteAction": "n",
+      "updateAction": "c"
+    },
+    {
+      "table": "product_revisions",
+      "name": "product_revisions_productId_fkey",
+      "column": "productId",
+      "target": "products",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "export_bundles",
+      "name": "export_bundles_jobId_fkey",
+      "column": "jobId",
+      "target": "catalog_jobs",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "catalog_job_units",
+      "name": "catalog_job_units_jobId_fkey",
+      "column": "jobId",
+      "target": "catalog_jobs",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "price_import_revisions",
+      "name": "price_import_revisions_listaId_fkey",
+      "column": "listaId",
+      "target": "listas",
+      "targetColumn": "id",
+      "deleteAction": "n",
+      "updateAction": "c"
+    },
+    {
+      "table": "price_import_revision_rows",
+      "name": "price_import_revision_rows_revisionId_fkey",
+      "column": "revisionId",
+      "target": "price_import_revisions",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "price_import_revision_prices",
+      "name": "price_import_revision_prices_revisionId_fkey",
+      "column": "revisionId",
+      "target": "price_import_revisions",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    },
+    {
+      "table": "product_images",
+      "name": "product_images_productId_fkey",
+      "column": "productId",
+      "target": "products",
+      "targetColumn": "id",
+      "deleteAction": "r",
+      "updateAction": "c"
+    },
+    {
+      "table": "prices",
+      "name": "prices_listaId_fkey",
+      "column": "listaId",
+      "target": "listas",
+      "targetColumn": "id",
+      "deleteAction": "n",
+      "updateAction": "c"
+    },
+    {
+      "table": "prices",
+      "name": "prices_priceListId_fkey",
+      "column": "priceListId",
+      "target": "price_lists",
+      "targetColumn": "id",
+      "deleteAction": "r",
+      "updateAction": "c"
+    },
+    {
+      "table": "prices",
+      "name": "prices_productId_fkey",
+      "column": "productId",
+      "target": "products",
+      "targetColumn": "id",
+      "deleteAction": "r",
+      "updateAction": "c"
+    },
+    {
+      "table": "provider_equivalences",
+      "name": "provider_equivalences_providerProfileId_fkey",
+      "column": "providerProfileId",
+      "target": "provider_profiles",
+      "targetColumn": "id",
+      "deleteAction": "c",
+      "updateAction": "c"
+    }
+  ],
+  "cycleFields": {
+    "categories": "parentId",
+    "products": "publicRevisionId"
+  },
+  "libraryExtras": [
+    "library_audit_events",
+    "product_gaps",
+    "field_evidence",
+    "supplier_costs"
+  ]
+}

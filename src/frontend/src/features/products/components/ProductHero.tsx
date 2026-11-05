@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toSentenceCase } from '../../storefront/utils/toSentenceCase';
 import { productImageSrc } from '../lib/image-src';
+import { previewField } from '../preview/preview-fields';
 import type { DownloadHandler, ProductDetail } from '../types';
 import { cx } from '../styles';
 import { ChevronRightIcon, DownloadIcon, FeatureGlyph, HomeIcon } from './icons';
@@ -18,7 +19,7 @@ interface ProductHeroProps {
  */
 export function ProductBreadcrumb({ items }: { items: ProductDetail['breadcrumb'] }) {
   return (
-    <nav aria-label="Ruta de navegación" className="py-4">
+    <nav aria-label="Ruta de navegación" className="py-4" {...previewField('category')}>
       <ol className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
         <li>
           <Link to="/tienda" className="inline-flex items-center hover:text-red-600" aria-label="Inicio">
@@ -44,7 +45,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
   const current = images[selected] ?? images[0];
 
   return (
-    <figure className="flex flex-col gap-3">
+    <figure className="flex flex-col gap-3" {...previewField('images')}>
       <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-neutral-50 to-neutral-100 p-8">
         {current && !failed.has(current.src) ? (
           <img
@@ -111,32 +112,33 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
       <div className="flex flex-col gap-5 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold tracking-wide text-neutral-950">SKU: {product.model}</span>
+            <span className="text-sm font-bold tracking-wide text-neutral-950" {...previewField('sku')}>SKU: {product.model}</span>
             {product.badges.map((badge) => (
               <span
                 key={badge}
+                {...previewField('badges')}
                 className="rounded-sm bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
               >
                 {badge}
               </span>
             ))}
             {product.status === 'discontinued' && (
-              <span className="rounded-sm bg-neutral-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+              <span className="rounded-sm bg-neutral-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neutral-600" {...previewField('status')}>
                 Descontinuado
               </span>
             )}
           </div>
 
-          <h1 className="mt-3 text-2xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-3xl">
+          <h1 className="mt-3 text-2xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-3xl" {...previewField('name')}>
             {product.name}
           </h1>
-          {product.brand && <p className="mt-1 text-sm text-neutral-500">Marca: {product.brand}</p>}
+          {product.brand && <p className="mt-1 text-sm text-neutral-500" {...previewField('brand')}>Marca: {product.brand}</p>}
         </div>
 
         <ProductPriceBlock price={product.price} isInformational={product.isInformational} />
 
         {product.highlights.length > 0 ? (
-          <ul className="space-y-2.5">
+          <ul className="space-y-2.5" {...previewField('highlights')}>
             {product.highlights.map((text) => (
               <li key={text} className="flex gap-3 text-[15px] leading-relaxed text-neutral-700">
                 <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-600" aria-hidden="true" />
@@ -146,7 +148,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
           </ul>
         ) : (
           description && (
-            <p className="whitespace-pre-line text-[15px] leading-relaxed text-neutral-700">
+            <p className="whitespace-pre-line text-[15px] leading-relaxed text-neutral-700" {...previewField('description')}>
               {toSentenceCase(description, { keep: product.brand ? [product.brand] : [] })}
             </p>
           )
@@ -157,6 +159,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
         {datasheet && (
           <a
             href={datasheet.url}
+            {...previewField('resources')}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm font-semibold text-red-600 hover:text-red-700"
@@ -179,7 +182,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
 
       <div className="flex flex-col gap-5 lg:col-start-1 lg:row-start-2">
         {product.features.length > 0 && (
-          <ul className="flex flex-wrap gap-2" aria-label="Tecnologías destacadas">
+          <ul className="flex flex-wrap gap-2" aria-label="Tecnologías destacadas" {...previewField('features')}>
             {product.features.map((f) => (
               <li
                 key={f.id}

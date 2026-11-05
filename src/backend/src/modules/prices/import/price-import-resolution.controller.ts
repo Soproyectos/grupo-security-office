@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagg
 import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Min, ValidateIf, ValidateNested } from 'class-validator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { RequireGrant } from '../../../common/security/require-grant';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { MAX_RESOLUTION_ITEMS, PriceImportResolutionService, type ResolutionItem } from './price-import-resolution.service';
 
@@ -24,14 +25,14 @@ export class ResolutionItemDto {
   name?: string;
 
   @ApiProperty({ required: false })
-  @ValidateIf((o: ResolutionItemDto) => o.action === 'CREATE')
+  @ValidateIf((o: ResolutionItemDto) => o.action === 'CREATE' && o.brandId !== undefined && o.brandId !== null)
   @IsUUID()
-  brandId?: string;
+  brandId?: string | null;
 
   @ApiProperty({ required: false })
-  @ValidateIf((o: ResolutionItemDto) => o.action === 'CREATE')
+  @ValidateIf((o: ResolutionItemDto) => o.action === 'CREATE' && o.categoryId !== undefined && o.categoryId !== null)
   @IsUUID()
-  categoryId?: string;
+  categoryId?: string | null;
 }
 
 export class ResolveUnknownReferencesDto {
@@ -55,9 +56,9 @@ export class UnknownReferencesQueryDto {
 }
 
 /**
- * Resolution of unknown SKUs of an applied price revision. Authentication only here
- * (no class-level @Roles, like customers and quotes): every decision is taken by the
- * service from the caller's current grants.
+ * Resolution of unknown SKUs of an applied price revision. Every handler needs the global `prices:read` panel
+ * grant (deny by default); creating drafts additionally needs `products:write` + `prices:apply`, decided by the
+ * service from the caller's current grants. No role and no lista grants anything.
  */
 @ApiTags('Prices - Referencias desconocidas')
 @ApiBearerAuth()
@@ -67,14 +68,16 @@ export class PriceImportResolutionController {
   constructor(private readonly service: PriceImportResolutionService) {}
 
   @Get(':id/unknown-references')
+  @RequireGrant('prices:read')
   @ApiOperation({ summary: 'Referencias desconocidas pendientes de una revisión, con precios recibidos y si puedes crearlas.' })
-  list(@Param('id') id: string, @Query() query: UnknownReferencesQueryDto, @CurrentUser() user: { sub: string; roles: string[] }) {
-    return this.service.listUnknownReferences(id, { userId: user.sub, roles: user.roles }, Number(query.page) || 1, Number(query.pageSize) || 100);
+  list(@Param('id') id: string, @Query() query: UnknownReferencesQueryDto, @CurrentUser() user: { sub: string; name?: string; roles: string[] }) {
+    return this.service.listUnknownReferences(id, { userId: user.sub, userName: user.name, roles: user.roles }, Number(query.page) || 1, Number(query.pageSize) || 100);
   }
 
   @Post(':id/unknown-references/resolve')
+  @RequireGrant('prices:read')
   @ApiOperation({ summary: 'Crear borradores ocultos (CREATE) u omitir (SKIP) referencias desconocidas; resultado parcial por fila.' })
-  resolve(@Param('id') id: string, @Body() dto: ResolveUnknownReferencesDto, @CurrentUser() user: { sub: string; roles: string[] }) {
-    return this.service.resolve(id, dto.items as ResolutionItem[], { userId: user.sub, roles: user.roles });
+  resolve(@Param('id') id: string, @Body() dto: ResolveUnknownReferencesDto, @CurrentUser() user: { sub: string; name?: string; roles: string[] }) {
+    return this.service.resolve(id, dto.items as ResolutionItem[], { userId: user.sub, userName: user.name, roles: user.roles });
   }
 }

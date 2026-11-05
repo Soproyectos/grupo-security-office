@@ -2,6 +2,8 @@
 
 Antes de actuar, leer `AGENTS.md` en la raíz del repositorio y aplicar sus restricciones. En caso de conflicto, prevalece `AGENTS.md`. En particular, el commit automático por tarea del protocolo ODD **no está autorizado**: todo commit, push, despliegue, migración o cambio en servicios o contenedores requiere aprobación explícita del usuario.
 
+Cambios web: antes de editar `src/frontend/`, cargar la skill `gs-disenador-web`; antes de editar `src/backend/` o `prisma/`, cargar `gs-funcionalidad-web`. Si un diseño necesita backend, se coordinan con un reporte de traspaso en `docs/handoffs/`.
+
 <!-- gentle-ai:persona -->
 ## Rules
 

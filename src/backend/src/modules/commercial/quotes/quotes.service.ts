@@ -4,9 +4,12 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { Prisma, Quote, QuoteItem } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { HierarchyService } from '../../../common/hierarchy/hierarchy.service';
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
@@ -76,7 +79,12 @@ export class QuotesService {
     private hierarchy: HierarchyService,
     private audit: AuditService,
     private grants: AccessAssignmentsService,
+    /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
+
+  /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService }
 
   /**
    * Condición de visibilidad derivada del grant quotes:read.
@@ -167,8 +175,6 @@ export class QuotesService {
       include: {
         items: { orderBy: { position: 'asc' } },
         customer: { select: { id: true, code: true, name: true, status: true } },
-        lista: { select: { id: true, code: true, name: true, currency: true } },
-        priceList: { select: { id: true, code: true, name: true, currency: true } },
         owner: { select: { id: true, name: true, email: true } },
       },
     });
@@ -180,7 +186,14 @@ export class QuotesService {
       throw new NotFoundException('Cotización no encontrada');
     }
 
-    return this.effectiveStatus(quote);
+    // Lista y tarifa viven en la biblioteca: se resuelven por id, sin relación entre bases.
+    const [lista, priceList] = await Promise.all([
+      this.db.lista.findUnique({ where: { id: quote.listaId }, select: { id: true, code: true, name: true, currency: true } }),
+      quote.priceListId
+        ? this.db.priceList.findUnique({ where: { id: quote.priceListId }, select: { id: true, code: true, name: true, currency: true } })
+        : Promise.resolve(null),
+    ]);
+    return this.effectiveStatus({ ...quote, lista, priceList });
   }
 
   async create(dto: CreateQuoteDto, ctx: QuotesAccessContext) {
@@ -200,12 +213,11 @@ export class QuotesService {
     const quote = await this.prisma.quote.create({
       data: {
         code: await this.generateCode(),
-        customer: { connect: { id: dto.customerId } },
-        lista: { connect: { id: dto.listaId } },
-        priceList: dto.priceListId
-          ? { connect: { id: dto.priceListId } }
-          : undefined,
-        owner: { connect: { id: ctx.userId } },
+        // Ids escalares: Lista y tarifa pertenecen a la biblioteca (sin relación entre bases).
+        customerId: dto.customerId,
+        listaId: dto.listaId,
+        priceListId: dto.priceListId ?? null,
+        ownerId: ctx.userId,
         taxRate: dto.taxRate !== undefined ? Number(dto.taxRate) : 19,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
         notes: dto.notes ?? null,
@@ -257,7 +269,7 @@ export class QuotesService {
     }
 
     const now = new Date();
-    const prices = await this.prisma.price.findMany({
+    const prices = await this.db.price.findMany({
       where: { productId: dto.productId, priceListId: quote.priceListId },
     });
     const vigente = prices
@@ -269,7 +281,7 @@ export class QuotesService {
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
 
     if (!vigente) {
-      const product = await this.prisma.product.findUnique({
+      const product = await this.db.product.findUnique({
         where: { id: dto.productId },
         select: { sku: true },
       });
@@ -278,7 +290,7 @@ export class QuotesService {
       );
     }
 
-    const product = await this.prisma.product.findUnique({
+    const product = await this.db.product.findUnique({
       where: { id: dto.productId },
     });
 
@@ -289,9 +301,9 @@ export class QuotesService {
 
     const item = await this.prisma.quoteItem.create({
       data: {
-        quote: { connect: { id: quoteId } },
-        product: { connect: { id: dto.productId } },
-        price: { connect: { id: vigente.id } },
+        quoteId,
+        productId: dto.productId,
+        priceId: vigente.id,
         position: await this.nextPosition(quoteId),
         sku: product!.sku,
         name: product!.name,

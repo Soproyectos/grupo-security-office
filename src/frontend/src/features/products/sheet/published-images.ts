@@ -5,7 +5,7 @@
  * redacta el aviso, sin inventar reglas.
  */
 export interface PublishedImageRef {
-  src: string
+  url: string
   alt: string
 }
 
@@ -22,7 +22,7 @@ const norm = (urls: string[]): string[] => urls.map((u) => u.trim()).filter(Bool
 export function publishedImagesNotice(liveUrls: string[], published: PublishedImageRef[] | null): ImagesNotice {
   if (published === null) return { state: 'sin_publicar', message: null, added: 0, removed: 0 }
   const live = norm(liveUrls)
-  const pub = norm(published.map((p) => p.src))
+  const pub = norm(published.map((p) => p.url))
   const added = live.filter((u) => !pub.includes(u)).length
   const removed = pub.filter((u) => !live.includes(u)).length
   if (added === 0 && removed === 0) return { state: 'igual', message: null, added, removed }

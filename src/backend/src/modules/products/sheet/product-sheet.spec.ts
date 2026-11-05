@@ -282,7 +282,7 @@ describe('ProductSheetService.get', () => {
 
     const sheet = await service.get(PRODUCT_ID, ctx);
 
-    expect(acl.assertProductAccess).toHaveBeenCalledWith(PRODUCT_ID, ctx, 'view');
+    expect(acl.assertProductAccess).not.toHaveBeenCalled(); // Biblioteca decide solo por la concesion global
     expect(sheet).toMatchObject({
       productId: PRODUCT_ID,
       productName: 'DVR curado',
@@ -370,16 +370,18 @@ describe('ProductSheetService.update', () => {
     expect(tx.productCatalogResource.createMany).not.toHaveBeenCalled();
   });
 
-  it('enforces edit_products on the product and surfaces the ACL denial without writing', async () => {
-    const { service, prisma, acl, audit } = build();
+  it('requires the global products:write grant and never consults the product/lista ACL', async () => {
+    const readOnly = build(grantsOf(['products:read']));
+    readOnly.prisma.product.findUnique.mockResolvedValue(productRow());
+    await expect(readOnly.service.update(PRODUCT_ID, baseInput(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(readOnly.prisma.$transaction).not.toHaveBeenCalled();
+    expect(readOnly.audit.log).not.toHaveBeenCalled();
+
+    const { service, prisma, acl } = build();
     prisma.product.findUnique.mockResolvedValue(productRow());
     acl.assertProductAccess.mockRejectedValue(new ForbiddenException('Acceso restringido'));
-
-    await expect(service.update(PRODUCT_ID, baseInput(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
-
-    expect(acl.assertProductAccess).toHaveBeenCalledWith(PRODUCT_ID, ctx, 'edit_products');
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(audit.log).not.toHaveBeenCalled();
+    await expect(service.update(PRODUCT_ID, baseInput(), ctx)).resolves.toBeDefined();
+    expect(acl.assertProductAccess).not.toHaveBeenCalled();
   });
 
   it('409s when another product already uses the slug (and writes nothing)', async () => {
@@ -494,26 +496,27 @@ describe('CAT-03 · control de concurrencia de la ficha (H2, OCC)', () => {
 });
 
 describe('CAT-03 · notas internas (H1), identificadores (H4) y acciones (H3)', () => {
-  it('get devuelve la versión vigente; las notas solo con products:notes', async () => {
-    const row = productRow({ sheetVersion: 4, catalogInternalNotes: 'Privada', catalogManufacturerRefs: ['PN-9'] });
+  it('get devuelve la versión vigente; canSeeInternalNotes depende de products:notes y el texto ya no viaja en la ficha', async () => {
+    const row = productRow({ sheetVersion: 4, catalogInternalNotes: 'Privada (columna obsoleta)', catalogManufacturerRefs: ['PN-9'] });
 
     const legacy = build(); // sin concesiones → capa ACL/rol (D5)
     legacy.prisma.product.findUnique.mockResolvedValue(row);
     const legacyView = await legacy.service.get(PRODUCT_ID, ctx);
-    expect(legacyView).toMatchObject({ version: 4, internalNotes: 'Privada', manufacturerRefs: ['PN-9'], canSeeInternalNotes: true });
+    expect(legacyView).toMatchObject({ version: 4, manufacturerRefs: ['PN-9'], canSeeInternalNotes: true });
 
     const allowed = build(grantsOf(['products:read', 'products:notes']));
     allowed.prisma.product.findUnique.mockResolvedValue(row);
     const allowedView = await allowed.service.get(PRODUCT_ID, ctx);
-    expect(allowedView.internalNotes).toBe('Privada');
     expect(allowedView.canSeeInternalNotes).toBe(true);
+    // Las notas viven en /internal-notes: la ficha ya no devuelve el texto único, con o sin permiso.
+    expect(allowedView).not.toHaveProperty('internalNotes');
+    expect(JSON.stringify(allowedView)).not.toContain('Privada');
 
     const denied = build(grantsOf(['products:read']));
     denied.prisma.product.findUnique.mockResolvedValue(row);
     const deniedView = await denied.service.get(PRODUCT_ID, ctx);
-    expect(deniedView.internalNotes).toBeNull();
-    // La UI honesta: el flag dice que NO puede ver/editar notas (aunque no
-    // existieran — null por sí solo no distingue).
+    expect(deniedView).not.toHaveProperty('internalNotes');
+    // La UI honesta: el flag dice que NO puede ver/editar notas.
     expect(deniedView.canSeeInternalNotes).toBe(false);
     expect(deniedView.version).toBe(4);
     expect(deniedView.manufacturerRefs).toEqual(['PN-9']);
@@ -526,14 +529,14 @@ describe('CAT-03 · notas internas (H1), identificadores (H4) y acciones (H3)', 
     await expect(service.update(PRODUCT_ID, baseInput(), ctx)).rejects.toBeInstanceOf(ForbiddenException);
     const sa = { userId: 'u-1', roles: ['Super Admin'] };
     const view = await service.get(PRODUCT_ID, sa);
-    expect(view.internalNotes).toBe(productRow().catalogInternalNotes);
+    expect(view.canSeeInternalNotes).toBe(true);
   });
 
   it('ENMIENDA: retirar la ultima concesion (misma identidad) deniega la siguiente peticion', async () => {
     const g = grantsOf(['products:read', 'products:write', 'products:notes']);
     const { service, prisma, tx } = build(g);
     prisma.product.findUnique.mockResolvedValue(productRow());
-    await service.update(PRODUCT_ID, baseInput({ internalNotes: 'ok' }), ctx);
+    await service.update(PRODUCT_ID, baseInput(), ctx);
     expect(tx.product.update).toHaveBeenCalled();
     g.grantsForUser.mockResolvedValue([]); // revocacion total; mismo JWT
     tx.product.update.mockClear();
@@ -546,54 +549,30 @@ describe('CAT-03 · notas internas (H1), identificadores (H4) y acciones (H3)', 
     prisma.product.findUnique.mockResolvedValue(productRow());
 
     // Excepcion EXPLICITA de Super Admin (unica via sin concesiones).
-    await service.update(PRODUCT_ID, baseInput({ internalNotes: '  Nota interna  ' }), { userId: 'u-1', roles: ['Super Admin'] });
+    await service.update(PRODUCT_ID, baseInput(), { userId: 'u-1', roles: ['Super Admin'] });
 
-    expect(tx.product.update.mock.calls[0][0].data.catalogInternalNotes).toBe('Nota interna');
+    expect(tx.product.update).toHaveBeenCalledTimes(1);
   });
 
-  it('con concesiones pero sin products:notes conserva las notas y no las devuelve (ni en auditoría)', async () => {
-    const { service, prisma, tx, audit } = build(grantsOf(['products:read', 'products:write']));
+  it('el PUT de la ficha nunca lee ni escribe la columna obsoleta catalogInternalNotes (ni la audita)', async () => {
+    const { service, prisma, tx, audit } = build(grantsOf(['products:read', 'products:write', 'products:notes']));
     prisma.product.findUnique.mockResolvedValue(productRow({ catalogInternalNotes: 'Secreta vigente' }));
 
-    const view = await service.update(PRODUCT_ID, baseInput({ internalNotes: 'Intento de cambio' }), ctx);
+    const view = await service.update(PRODUCT_ID, baseInput(), ctx);
 
-    expect(tx.product.update.mock.calls[0][0].data.catalogInternalNotes).toBe('Secreta vigente');
-    expect(view.internalNotes).toBeNull();
+    expect(tx.product.update.mock.calls[0][0].data).not.toHaveProperty('catalogInternalNotes');
+    expect(view).not.toHaveProperty('internalNotes');
     const entry = audit.log.mock.calls[0][0];
-    expect(entry.newValues.internalNotes).toBeNull();
-    expect(entry.oldValues.internalNotes).toBeNull();
+    expect(JSON.stringify(entry)).not.toContain('Secreta');
+    expect(entry.newValues).not.toHaveProperty('internalNotes');
+    expect(entry.oldValues).not.toHaveProperty('internalNotes');
   });
 
-  it('con products:notes escribe y devuelve las notas', async () => {
-    const { service, prisma, tx } = build(grantsOf(['products:read', 'products:write', 'products:notes']));
-    prisma.product
-      .findUnique
-      .mockResolvedValueOnce(productRow())
-      .mockResolvedValueOnce(productRow())
-      .mockResolvedValueOnce(productRow({ catalogInternalNotes: 'Nota interna' }));
-
-    const view = await service.update(PRODUCT_ID, baseInput({ internalNotes: 'Nota interna' }), ctx);
-
-    expect(tx.product.update.mock.calls[0][0].data.catalogInternalNotes).toBe('Nota interna');
-    expect(view.internalNotes).toBe('Nota interna');
-  });
-
-  it('con products:notes, omitir el campo CONSERVA las notas vigentes (omitir ≠ borrar)', async () => {
-    const { service, prisma, tx } = build(grantsOf(['products:read', 'products:write', 'products:notes']));
-    prisma.product.findUnique.mockResolvedValue(productRow({ catalogInternalNotes: 'Vigente' }));
-
-    await service.update(PRODUCT_ID, baseInput(), ctx);
-
-    expect(tx.product.update.mock.calls[0][0].data.catalogInternalNotes).toBe('Vigente');
-  });
-
-  it('con products:notes, null explícito SÍ borra las notas', async () => {
-    const { service, prisma, tx } = build(grantsOf(['products:read', 'products:write', 'products:notes']));
-    prisma.product.findUnique.mockResolvedValue(productRow({ catalogInternalNotes: 'Vigente' }));
-
-    await service.update(PRODUCT_ID, baseInput({ internalNotes: null }), ctx);
-
-    expect(tx.product.update.mock.calls[0][0].data.catalogInternalNotes).toBeNull();
+  it('el contrato de la ficha rechaza internalNotes (el texto único ya no se acepta)', async () => {
+    const body = { ...baseInput(), internalNotes: 'texto viejo' };
+    const dto = plainToInstance(UpdateProductSheetDto, body);
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+    expect(errors.some((e) => e.property === 'internalNotes')).toBe(true);
   });
 
   it('CAT-03 H5: guardar la ficha marca revisión pendiente (mecanismo CAT-02, regla 5)', async () => {

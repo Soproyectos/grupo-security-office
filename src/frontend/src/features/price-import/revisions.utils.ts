@@ -3,22 +3,22 @@
  * y ayudantes de presentación puros, separados del componente para poder probarlos
  * sin DOM y mantener el lint sin avisos (patrón de `preview.utils.ts`).
  */
-import { canManageListas, hasPermission } from '../../lib/rbac'
+import { hasPermission } from '../../lib/rbac'
 import type { PriceImportRevisionApplyResult, PriceImportRevisionHeader } from '../../services/price-import.service'
 
-/** Revisar el historial exige `prices:read`; `canManageListas()` conserva la capa legada (transición D5). */
+/** Revisar el historial exige `prices:read`. Solo cuenta el permiso asignado, nunca el cargo. */
 export function canReadRevisions(): boolean {
-  return hasPermission('prices:read') || canManageListas()
+  return hasPermission('prices:read')
 }
 
 /** Guardar/descartar una revisión exige `prices:save` (depende de `prices:preview`). */
 export function canSaveRevisions(): boolean {
-  return hasPermission('prices:save') || canManageListas()
+  return hasPermission('prices:save')
 }
 
 /** Aplicar una revisión exige `prices:apply`: acción SEPARADA de guardar. */
 export function canApplyRevisions(): boolean {
-  return hasPermission('prices:apply') || canManageListas()
+  return hasPermission('prices:apply')
 }
 
 export const STATUS_LABEL: Record<PriceImportRevisionHeader['status'], string> = {

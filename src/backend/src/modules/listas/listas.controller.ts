@@ -34,7 +34,7 @@ export class ListasController {
   constructor(private readonly listasService: ListasService) {}
 
   private ctx(user: any): AccessContext {
-    return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [] };
+    return { userId: user?.sub ?? user?.id, userName: user?.name, roles: user?.roles ?? [] };
   }
 
   @Get()

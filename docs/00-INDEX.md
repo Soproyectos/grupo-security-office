@@ -24,6 +24,8 @@
 - [ADR: Biblioteca de Vitrina — separar la identidad del producto del precio](./adr/ADR-002-biblioteca-vitrina.md)
 - [ADR: cada producto pertenece como máximo a una lista](./adr/ADR-20261014-producto-una-sola-lista.md)
 
+- [ADR: biblioteca en un PostgreSQL dedicado (propuesta, 2026-10-22)](./adr/ADR-20261022-biblioteca-postgresql-dedicado.md) — índice y estado de la obra en [`biblioteca-dominio/`](./biblioteca-dominio/README.md)
+
 `docs/adr/` es la única ubicación para registrar nuevas decisiones de arquitectura.
 
 ## Operación

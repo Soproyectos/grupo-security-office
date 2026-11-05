@@ -65,10 +65,10 @@ describe('IMP-07B frontend — permisos', () => {
     expect(canEditProviderProfiles()).toBe(true)
   })
 
-  it('la capa legada `canManageListas` habilita la gestión', () => {
+  it('el cargo (`canManageListas`) ya no habilita la gestión: solo cuentan providers:read y providers:write', () => {
     vi.mocked(canManageListas).mockReturnValue(true)
-    expect(canManageProviderProfiles()).toBe(true)
-    expect(canEditProviderProfiles()).toBe(true)
+    expect(canManageProviderProfiles()).toBe(false)
+    expect(canEditProviderProfiles()).toBe(false)
   })
 })
 

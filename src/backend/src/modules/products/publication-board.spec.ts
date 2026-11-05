@@ -1,6 +1,7 @@
 /**
- * CAT-06 (P4) — bandeja: vistas por estado, alcance por Lista (mismo criterio
- * ACL del catálogo), búsqueda, paginación e historial por producto.
+ * CAT-06 (P4) — bandeja: vistas por estado, búsqueda, paginación e historial por producto.
+ * Sin Listas: la concesión global products:read (exigida por el controlador) ve todos los productos;
+ * el servicio no filtra por Lista ni consulta el ACL de Lista.
  */
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PublicationBoardService } from './validation/publication-board.service';
@@ -22,7 +23,7 @@ function build(opts: { listaIds?: string[] | null } = {}) {
     },
     productRevision: {
       findMany: jest.fn().mockResolvedValue([
-        { id: 'rev-9', productId: 'p-1', status: 'LISTA_PARA_PUBLICAR', rulesVersion: 'cat05-r1', validatedAt: new Date('2026-10-17T10:00:00Z'), issues: [{ severity: 'warning', code: 'docs.datasheet_missing' }, { severity: 'error', code: 'media.primary_image' }], version: 3 },
+        { id: 'rev-9', productId: 'p-1', status: 'LISTA_PARA_PUBLICAR', rulesVersion: 'cat05-r2', validatedAt: new Date('2026-10-17T10:00:00Z'), issues: [{ severity: 'warning', code: 'docs.datasheet_missing' }, { severity: 'error', code: 'media.primary_image' }], version: 3 },
       ]),
     },
     publicationEvent: {
@@ -52,7 +53,7 @@ describe('PublicationBoardService', () => {
   it('publicados: filtra PUBLISHED con publicRevisionId y enriquece con la revisión de trabajo', async () => {
     const { service, prisma, acl } = build()
     const r = await service.board('publicados', ctx)
-    expect(acl.getAllowedListaIds).toHaveBeenCalledWith('u-1', ['Super Admin'], 'view')
+    expect(acl.getAllowedListaIds).not.toHaveBeenCalled()
     const where = prisma.product.findMany.mock.calls[0][0].where
     expect(where.lifecycleStatus).toBe('PUBLISHED')
     expect(where.publicRevisionId).toEqual({ not: null })
@@ -80,34 +81,35 @@ describe('PublicationBoardService', () => {
     expect(item.workingRevision).toBeNull()
   })
 
-  it('problemas: busca por revisión CON_PROBLEMAS dentro del alcance', async () => {
+  it('problemas: busca por revisión CON_PROBLEMAS en todos los productos (un lector global, sin filtro por Lista)', async () => {
     const { service, prisma, acl } = build({ listaIds: ['L-a'] })
-    acl.isListasAdmin.mockReturnValue(false)
     await service.board('problemas', { userId: 'v-1', roles: ['Vendedor'] })
     const where = prisma.product.findMany.mock.calls[0][0].where
-    expect(where.listaId).toEqual({ in: ['L-a'] })
+    expect(where).not.toHaveProperty('listaId')
     expect(where.revisions).toEqual({ some: { status: 'CON_PROBLEMAS' } })
+    expect(acl.getAllowedListaIds).not.toHaveBeenCalled()
   })
 
-  it('historial: eventos recientes con total; no-admin solo ve productos de sus listas', async () => {
+  it('historial: eventos recientes con total de todos los productos (sin acotar por Lista, sin consultar productos)', async () => {
     const { service, prisma, acl } = build({ listaIds: [] })
-    acl.isListasAdmin.mockReturnValue(false)
     const r = await service.board('historial', { userId: 'v-1', roles: ['Vendedor'] })
     expect(r.total).toBe(2)
-    // sin listas visibles → no consulta eventos de productos ajenos
     const where = prisma.publicationEvent.findMany.mock.calls[0][0].where
-    expect(where.productId).toEqual({ in: [] })
+    expect(where).toEqual({})
+    expect(prisma.product.findMany).not.toHaveBeenCalled()
+    expect(acl.getAllowedListaIds).not.toHaveBeenCalled()
   })
 
-  it('productHistory: exige ACL de lectura del producto y delega', async () => {
-    const { service, acl } = build()
-    await service.productHistory('p-1', ctx)
-    expect(acl.assertProductAccess).toHaveBeenCalledWith('p-1', ctx, 'view')
+  it('productHistory: delega sin ACL de Lista (la concesión products:read la exige el controlador)', async () => {
+    const { service, acl, prisma } = build()
+    const rows = await service.productHistory('p-1', ctx)
+    expect(rows).toHaveLength(1)
+    expect(acl.assertProductAccess).not.toHaveBeenCalled()
+    expect(prisma.publicationEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { productId: 'p-1' } }))
   })
 
-  it('productHistory: lo que el ACL niega, la bandeja no lo revela (404 del legado)', async () => {
-    const { service, acl } = build()
-    acl.assertProductAccess.mockRejectedValue(new ForbiddenException())
-    await expect(service.productHistory('p-x', { userId: 'v-1', roles: ['Vendedor'] })).rejects.toBeInstanceOf(ForbiddenException)
+  it('productHistory: sin identidad se niega', async () => {
+    const { service } = build()
+    await expect(service.productHistory('p-x', { userId: undefined, roles: [] } as never)).rejects.toBeInstanceOf(ForbiddenException)
   })
 })

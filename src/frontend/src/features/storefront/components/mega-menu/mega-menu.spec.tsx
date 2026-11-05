@@ -497,12 +497,17 @@ describe('cajón móvil', () => {
 })
 
 describe('integración con el disparador del header', () => {
-  it('el botón Categorías arranca cerrado y anuncia la región que controla', () => {
+  it('el disparador del header arranca cerrado y anuncia la región que controla', () => {
     const markup = renderToStaticMarkup(
-      createElement(MemoryRouter, null, createElement(CategoryMenuContainer)),
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(CategoryMenuContainer, { triggerClassName: 'nav-item', triggerContent: 'Catálogo' }),
+      ),
     )
 
-    expect(markup).toContain('Categorías')
+    expect(markup).toContain('class="nav-item"')
+    expect(markup).toContain('Catálogo')
     expect(markup).toContain('aria-expanded="false"')
     expect(markup).toContain('aria-controls="category-mega-menu"')
     // Closed: the region and the backdrop are not in the DOM yet.

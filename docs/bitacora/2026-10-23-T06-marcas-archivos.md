@@ -1,0 +1,11 @@
+# T06 — Marcas y archivos, desarrollo
+
+D1 confirmada: UploadedFile de productos/marcas a biblioteca, Stock operativo; D7 almacenamiento/retención final permanece abierta. Nueva migración equivalente a la tabla vigente: diez columnas, PK, dos índices; historia origen 20260908201231 y metadatos/índices 20261017160000, sin retirada posterior. Se conserva BYTEA/URLs/visibilidad actuales y no se mueven datos reales.
+
+Marcas por cliente seleccionado, actor/evento atómico, logo dedicado dentro de la misma transacción que bytes y auditoría. Archivos rechaza transacción ajena o expirada en dedicado, falla ante error inesperado y conserva referencias de otras marcas/imagen de catálogo además de imágenes/recursos/documentos/revisiones. Lecturas de sesión/User operativas, ACL seleccionado; no se cambia autenticación ni caché pública/privada. Legacy conserva llamadas y comportamiento anteriores.
+
+Local: 70 casos en seis suites, tipos/lint/build pasan. Ensayo 1: estructura UploadedFile aprobada en ambos servidores (28/24 tablas), bytes/metadata/propiedad, logos compartidos y rollback de archivo/logo ante fallo de auditoría pasan. Falló el fixture histórico por omitir id y status obligatorios sin default; se añadieron únicamente id sintético y SIN_REVISAR. No cambia esquema ni restricciones. Evidencia y limpieza por IDs preservadas; ensayo repetible bajo mandato.
+
+Pendiente: repetición completa y casos finales. ProductosService/ProductSheet/Validation/paquetes aún tienen escritores/lectores operativos por adaptar: en dedicado una tx no registrada se rechaza, no se escribe como fallback en operativo. Esto no prueba todavía la app completa. T00 intacto, sin instalaciones/lockfile/commit/push/despliegue.
+
+Ensayo 2 completo con salida 0. Únicos miembros de paquete cambiados: probar-archivos.js (id/status sintéticos obligatorios) y SHA256SUMS; ejecutor, DDL y código de aplicación idénticos. Estructura física y todos los casos pendientes, retención histórica, congelación con lecturas y fixtures vacíos 28/24 pasan. Tres contenedores/red/env propios ausentes por IDs. [Resultado/manifiesto](../biblioteca-dominio/evidencia/t06-marcas-archivos-intento-2/resultado-ejecucion.json). Se conserva intento 1 completo.

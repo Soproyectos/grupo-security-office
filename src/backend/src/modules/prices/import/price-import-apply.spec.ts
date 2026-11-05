@@ -15,6 +15,7 @@ const LISTA_A = '00000000-0000-4000-8000-0000000000a1';
 const LISTA_B = '00000000-0000-4000-8000-0000000000b2';
 const ctx: AccessContext = { userId: 'fixture-actor', roles: ['Admin Comercial'] };
 const storageDir = path.join(os.tmpdir(), 'gs-b2-apply-test-storage');
+// `listas:read` is only here because the (unchanged) action catalog lists it as a dependency of `prices:read`.
 const ALL = ['prices:save', 'prices:preview', 'prices:read', 'prices:apply', 'listas:read'];
 
 function file(rows: unknown[][]): Express.Multer.File {
@@ -61,8 +62,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
     fake = createPriceImportFake(seed());
     acl = { assertListaAccess: jest.fn().mockResolvedValue(undefined), isListasAdmin: jest.fn().mockReturnValue(false) };
     grants = createGrantsProvider();
-    grants.grantOnLista(LISTA_A, ...ALL);
-    grants.grantOnLista(LISTA_B, ...ALL);
+    grants.grant(...ALL);
     service = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, grants as any);
   });
 
@@ -82,9 +82,11 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       const result = await service.applyRevision(id, ctx);
       expect(result).toMatchObject({ revisionId: id, status: 'APLICADA', alreadyApplied: false, appliedRows: 2, appliedPrices: 2, tariffs: ['DPP_ORO_IVA'], unchangedPrices: 0, rejectedRows: 0, largeChangesConfirmed: false });
       expect(result.perLista).toEqual(expect.arrayContaining([
-        { listaId: LISTA_A, code: 'LA', name: 'Lista Alfa', rows: 1, prices: 1 },
-        { listaId: LISTA_B, code: 'LB', name: 'Lista Beta', rows: 1, prices: 1 },
+        { listaId: LISTA_A, rows: 1, prices: 1 },
+        { listaId: LISTA_B, rows: 1, prices: 1 },
       ]));
+      expect(fake.prisma.lista.findMany).not.toHaveBeenCalled();
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
       expect(String(priceOf('product-a')!.value)).toBe('101');
       expect(priceOf('product-a')!.listaId).toBe(LISTA_A);
       expect(String(priceOf('product-b')!.value)).toBe('600');
@@ -148,7 +150,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
   });
 
   describe('filas rechazadas', () => {
-    const mixed = () => save([['SKU-A', 100], ['NO-SUCH', 5], ['SKU-FREE', 7]]);
+    const mixed = () => save([['SKU-A', 100], ['NO-SUCH', 5], ['NO-SUCH-2', 7]]);
 
     it('sin confirmación: 409 REJECTED_ROWS_UNACKNOWLEDGED con el número y una lista compacta, sin escribir nada', async () => {
       const id = await mixed();
@@ -156,7 +158,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       expect(body(error).code).toBe('REJECTED_ROWS_UNACKNOWLEDGED');
       expect(body(error).details).toMatchObject({ count: 2, rows: [
         { rowNumber: 3, sku: 'NO-SUCH', code: 'UNKNOWN_REFERENCE' },
-        { rowNumber: 4, sku: 'SKU-FREE', code: 'LISTA_FORBIDDEN' },
+        { rowNumber: 4, sku: 'NO-SUCH-2', code: 'UNKNOWN_REFERENCE' },
       ] });
       expect(String(priceOf('product-a')!.value)).toBe('90');
       expect(fake.state.revisions[0].status).toBe('GUARDADA');
@@ -184,16 +186,13 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       await expect(service.applyRevision(id, ctx, { acknowledgeRejectedRows: 0 })).resolves.toMatchObject({ appliedPrices: 1 });
     });
 
-    it('las filas rechazadas de listas que no se pueden ver no se enumeran para quien no las subió', async () => {
-      const id = await save([['SKU-A', 100], ['SKU-B', 700]]);
-      // Make row 3 look like a LISTA_FORBIDDEN row of lista B for this revision.
-      Object.assign(fake.state.revisionRows[1], { status: 'error', issues: [{ code: 'LISTA_FORBIDDEN' }] });
-      const onlyA = createGrantsProvider();
-      onlyA.grantOnLista(LISTA_A, ...ALL);
-      const other = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, onlyA as any);
-      const error = await rejects(other.applyRevision(id, { userId: 'fixture-other', roles: ['Admin Comercial'] }));
-      expect(body(error).details).toMatchObject({ count: 1, rows: [], hiddenRows: 1 });
-      expect(JSON.stringify(body(error))).not.toContain('SKU-B');
+    it('quien aplica con la concesión global ve todas las filas rechazadas, también las subidas por otra persona (nada oculto por Lista)', async () => {
+      const id = await save([['SKU-A', 100], ['NO-SUCH', 5]]);
+      const otherGrants = createGrantsProvider();
+      otherGrants.grant(...ALL);
+      const other = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, otherGrants as any);
+      const error = await rejects(other.applyRevision(id, { userId: 'fixture-other', roles: ['Vendedor'] }));
+      expect(body(error).details).toMatchObject({ count: 1, rows: [{ rowNumber: 3, sku: 'NO-SUCH', code: 'UNKNOWN_REFERENCE' }], hiddenRows: 0 });
     });
   });
 
@@ -272,39 +271,41 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
     });
   });
 
-  describe('permisos por lista', () => {
-    it('sin prices:apply sobre una de las listas: 409 LISTA_ACCESS_CHANGED para toda la aplicación', async () => {
+  describe('permisos globales del panel (sin Listas ni cargos)', () => {
+    it('una concesión ligada a una lista ya no sirve para aplicar: 403 y no se escribe nada', async () => {
       const id = await save([['SKU-A', 100], ['SKU-B', 600]]);
-      grants.revoke('prices:apply');
-      grants.grantOnLista(LISTA_A, 'prices:apply');
-      const error = await rejects(service.applyRevision(id, ctx));
-      expect(body(error)).toMatchObject({ code: 'REVISION_CONFLICT', details: { reason: 'LISTA_ACCESS_CHANGED' } });
-      expect(JSON.stringify(body(error))).not.toMatch(/Lista Beta|LB|product-b/);
+      grants.grants.splice(0, grants.grants.length);
+      grants.grantOnLista(LISTA_A, ...ALL);
+      grants.grantOnLista(LISTA_B, ...ALL);
+      fake.prisma.$transaction.mockClear();
+      await expect(service.applyRevision(id, ctx)).rejects.toThrow(ForbiddenException);
+      expect(fake.prisma.$transaction).not.toHaveBeenCalled();
       expect(String(priceOf('product-a')!.value)).toBe('90');
       expect(fake.state.revisions[0].status).toBe('GUARDADA');
     });
 
-    it('revocar prices:read de una lista tras revisar también cancela la aplicación', async () => {
+    it('revocar prices:read tras revisar también impide aplicar (403)', async () => {
       const id = await save([['SKU-A', 100], ['SKU-B', 600]]);
       grants.revoke('prices:read');
-      grants.grantOnLista(LISTA_A, 'prices:read');
-      // The general gate needs prices:read somewhere (kept on A); lista B no longer satisfies prices:apply's dependency.
-      const error = await rejects(service.applyRevision(id, ctx));
-      expect(body(error).details.reason).toBe('LISTA_ACCESS_CHANGED');
+      await expect(service.applyRevision(id, ctx)).rejects.toThrow(ForbiddenException);
+      expect(fake.state.revisions[0].status).toBe('GUARDADA');
     });
 
-    it('productos sin lista: exigen prices:apply y products:write con alcance global', async () => {
-      const globalGrants = createGrantsProvider();
-      globalGrants.grant('prices:save', 'prices:preview', 'prices:read', 'prices:apply', 'listas:read');
-      const withGlobal = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, globalGrants as any);
-      const id = (await withGlobal.saveRevision(file([['SKU-FREE', 60]]), 'key-free-0001', ctx)).id;
-      const error = await rejects(withGlobal.applyRevision(id, ctx));
-      expect(body(error).details.reason).toBe('LISTA_ACCESS_CHANGED');
-      globalGrants.grant('products:read', 'products:write');
-      const result = await withGlobal.applyRevision(id, ctx);
+    it('productos sin lista: bastan prices:apply y prices:read globales (ya no se exige products:write)', async () => {
+      const id = await save([['SKU-FREE', 60]]);
+      const result = await service.applyRevision(id, ctx);
       expect(result).toMatchObject({ appliedPrices: 1, perLista: [{ listaId: null, rows: 1, prices: 1 }] });
       expect(fake.state.prices.find((p) => p.productId === 'product-free')).toMatchObject({ listaId: null });
       expect(String(fake.state.prices.find((p) => p.productId === 'product-free')!.value)).toBe('60');
+    });
+
+    it('un Vendedor con las concesiones globales aplica (el cargo no cuenta); Admin Comercial y Supervisor sin concesiones, 403', async () => {
+      const id = await save([['SKU-A', 100]]);
+      const none = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, createGrantsProvider() as any);
+      for (const role of ['Admin Comercial', 'Supervisor']) {
+        await expect(none.applyRevision(id, { userId: 'u-none', roles: [role] })).rejects.toThrow(ForbiddenException);
+      }
+      await expect(service.applyRevision(id, { userId: 'u-vend', roles: ['Vendedor'] })).resolves.toMatchObject({ appliedPrices: 1 });
     });
 
     it('sin concesión prices:apply deniega (403) aunque la revisión siga GUARDADA', async () => {
@@ -316,7 +317,7 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       expect(fake.prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('un Super Admin aplica en cualquier lista sin concesiones', async () => {
+    it('un Super Admin aplica en cualquier producto sin concesiones', async () => {
       const id = await save([['SKU-B', 600]]);
       grants.grants.splice(0, grants.grants.length);
       const admin = { userId: 'fixture-admin', roles: ['Super Admin'] };
@@ -337,16 +338,22 @@ describe('IMP-05 — aplicar una revisión de listas mixtas (atómico)', () => {
       expect(fake.state.productChanges).toHaveLength(1);
     });
 
-    it('el reintento de quien no ve una lista recibe el resultado sin su nombre ni su cuenta', async () => {
+    it('el reintento con la concesión global recibe el resultado completo, sin nombres de lista', async () => {
+      const id = await save([['SKU-A', 100], ['SKU-B', 600]]);
+      await service.applyRevision(id, ctx);
+      const replay = await service.applyRevision(id, { userId: 'fixture-other', roles: ['Vendedor'] });
+      expect(replay.alreadyApplied).toBe(true);
+      expect(replay.perLista!.map((l) => l.listaId).sort()).toEqual([LISTA_A, LISTA_B]);
+      expect(JSON.stringify(replay)).not.toMatch(/Lista Beta|Lista Alfa/);
+    });
+
+    it('el reintento de quien solo tiene concesiones de una lista es 403 (no se devuelve el resultado)', async () => {
       const id = await save([['SKU-A', 100], ['SKU-B', 600]]);
       await service.applyRevision(id, ctx);
       const onlyA = createGrantsProvider();
       onlyA.grantOnLista(LISTA_A, ...ALL);
       const other = new PriceImportService(fake.prisma as PrismaService, acl as AclService, fake.audit as unknown as AuditService, onlyA as any);
-      const replay = await other.applyRevision(id, { userId: 'fixture-other', roles: ['Admin Comercial'] });
-      expect(replay.alreadyApplied).toBe(true);
-      expect(replay.perLista!.map((l) => l.listaId)).toEqual([LISTA_A]);
-      expect(JSON.stringify(replay)).not.toMatch(/Lista Beta/);
+      await expect(other.applyRevision(id, { userId: 'fixture-other', roles: ['Admin Comercial'] })).rejects.toThrow(ForbiddenException);
     });
 
     it('dos aplicaciones simultáneas escriben una sola vez y la segunda recibe el resultado guardado', async () => {

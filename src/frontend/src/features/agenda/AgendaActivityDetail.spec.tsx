@@ -272,3 +272,29 @@ describe('vínculos de la actividad (BASE-03 frontend-vinculos)', () => {
 function occurrences(text: string, needle: string) {
   return text.split(needle).length - 1
 }
+
+describe('actividad completada bloqueada', () => {
+  it('no ofrece reasignar aunque quien mira pueda asignar', () => {
+    const html = renderDetail({ activity: completada, canAssign: true, people })
+
+    expect(html).not.toContain('aria-label="Reasignar actividad"')
+    expect(html).not.toContain('Reasignar a')
+    expect(html).toContain('ya está completada y no se puede modificar')
+  })
+
+  it('no ofrece gestionar enlaces aunque quien mira pueda gestionarlos', () => {
+    const html = renderDetail({ activity: completada, canManageLinks: true })
+
+    expect(html).not.toContain('Añadir enlace')
+    expect(html).toContain('ya está completada y no se puede modificar')
+  })
+
+  it('la pendiente conserva Reasignar y no muestra el aviso de bloqueo', () => {
+    const html = renderDetail({ canAssign: true, people })
+
+    expect(html).toContain('aria-label="Reasignar actividad"')
+    expect(html).toContain('Reasignar a')
+    expect(html).toContain('Selecciona una persona')
+    expect(html).not.toContain('no se puede modificar')
+  })
+})

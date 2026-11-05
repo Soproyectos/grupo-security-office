@@ -25,15 +25,14 @@ import {
 } from '@nestjs/swagger';
 import { ImportService } from './import.service';
 import { PreviewImportDto, ExecuteImportDto } from './dto/preview-import.dto';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { ALL_ROLES } from '../../../common/rbac/roles.constants';
+import { RequireGrant } from '../../../common/security/require-grant';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../../common/guards/roles.guard';
 
 @ApiTags('Products - Importación')
 @ApiBearerAuth()
+// Solo concesiones del panel (globales) vía @RequireGrant en cada handler; ningún cargo concede nada.
 @Controller('api/products/import')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class ImportController {
   constructor(private readonly importService: ImportService) {}
 
@@ -51,7 +50,7 @@ export class ImportController {
    * Retorna: headers detectados, mapeos sugeridos, validación de filas.
    */
   @Post('preview')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Vista previa de importación (dry-run)' })
   @ApiConsumes('multipart/form-data')
@@ -107,7 +106,7 @@ export class ImportController {
    * el resultado final.
    */
   @Post('execute')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @HttpCode(201)
   @ApiOperation({ summary: 'Iniciar ejecución de importación (arranca en segundo plano)' })
   @ApiResponse({ status: 201, description: 'Importación iniciada. Sondear /progress/:importId para el resultado.' })
@@ -142,7 +141,7 @@ export class ImportController {
    * su propia importación.
    */
   @Get('progress/:importId')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @SkipThrottle()
   @ApiOperation({ summary: 'Consultar progreso de importación' })
   @ApiResponse({ status: 200, description: 'Progreso de la importación' })
@@ -155,13 +154,13 @@ export class ImportController {
   /**
    * Precio vigente por SKU para el wizard de importación (comparación
    * "precio actual vs nuevo"). Se resuelve por SKU exacto (case-insensitive)
-   * dentro de la lista destino (listaId opcional). Accesible a los 5 roles:
-   * la lectura de precio por SKU no exige ACL por lista — el usuario ya tiene
-   * acceso al módulo de importación. El interceptor global envuelve en `{ data }`.
+   * dentro de la lista destino (listaId opcional). Exige las concesiones
+   * globales products:write (módulo de importación) y prices:read; ningún cargo
+   * ni Lista concede la lectura. El interceptor global envuelve en `{ data }`.
    * Se declara ANTES de cualquier ruta con segmento dinámico.
    */
   @Get('current-price')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:write', 'prices:read')
   @ApiOperation({ summary: 'Precio vigente por SKU (wizard de importación)' })
   @ApiQuery({ name: 'sku', required: true, description: 'SKU exacto (case-insensitive)' })
   @ApiQuery({ name: 'listaId', required: false, description: 'Lista destino de la importación' })
@@ -184,7 +183,7 @@ export class ImportController {
    * cascada) y tumban el paso siguiente de la importación.
    */
   @Post('current-prices')
-  @Roles(...ALL_ROLES)
+  @RequireGrant('products:write', 'prices:read')
   @HttpCode(200)
   @ApiOperation({ summary: 'Precio vigente por SKU, en lote (wizard de importación)' })
   @ApiResponse({
@@ -198,14 +197,14 @@ export class ImportController {
   }
 
   @Get('mappings')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @ApiOperation({ summary: 'Listar presets de mapping del usuario' })
   async listPresets(@Req() req: any) {
     return this.importService.listPresets(this.userId(req));
   }
 
   @Post('mappings')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @HttpCode(201)
   @ApiOperation({ summary: 'Guardar preset de mapping' })
   async savePreset(
@@ -221,7 +220,7 @@ export class ImportController {
   }
 
   @Delete('mappings/:id')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:write')
   @HttpCode(204)
   @ApiOperation({ summary: 'Eliminar preset de mapping' })
   async deletePreset(

@@ -152,6 +152,50 @@ export class HierarchyService {
     );
   }
 
+  /**
+   * Scope + anti-cycle check for changing `userId`'s supervisor, from the
+   * point of view of the person doing it.
+   * - Super Admin: anyone, any supervisor (anti-cycle still applies).
+   * - Everybody else: only people already in their own branch (direct or
+   *   indirect subordinates), and only towards themselves or someone else in
+   *   their branch. They can never touch themselves or their own superiors,
+   *   and cannot detach someone from the branch (supervisorId null).
+   */
+  async assertActorCanSetSupervisor(
+    ctx: AccessContext,
+    userId: string,
+    supervisorId: string | null,
+  ): Promise<void> {
+    if (!ctx.roles?.includes('Super Admin')) {
+      if (userId === ctx.userId) {
+        throw new ForbiddenException({
+          code: 'SUPERVISOR_SELF_CHANGE',
+          message: 'No puedes cambiar tu propio jefe.',
+        });
+      }
+      const branch = await this.getSubordinateIds(ctx.userId);
+      if (!branch.includes(userId)) {
+        throw new ForbiddenException({
+          code: 'SUPERVISOR_TARGET_OUT_OF_BRANCH',
+          message: 'Solo puedes cambiar el jefe de personas que ya están en tu equipo.',
+        });
+      }
+      if (supervisorId === null) {
+        throw new ForbiddenException({
+          code: 'SUPERVISOR_REMOVAL_NOT_ALLOWED',
+          message: 'No puedes dejar a una persona sin jefe. Elige otra persona de tu equipo o a ti mismo.',
+        });
+      }
+      if (supervisorId !== ctx.userId && !branch.includes(supervisorId)) {
+        throw new ForbiddenException({
+          code: 'SUPERVISOR_DESTINATION_OUT_OF_BRANCH',
+          message: 'El nuevo jefe debe ser tú o alguien de tu equipo.',
+        });
+      }
+    }
+    await this.assertCanSetSupervisor(userId, supervisorId);
+  }
+
   // Check if assigning supervisorId to userId would create a cycle
   async assertCanSetSupervisor(
     userId: string,
@@ -169,7 +213,10 @@ export class HierarchyService {
     // If userId is in the ancestors of supervisorId, it would create a cycle
     if (allAncestors.includes(userId)) {
       throw new ConflictException(
-        'Asignar este supervisor crearía un ciclo en la jerarquía',
+        {
+          code: 'SUPERVISOR_CYCLE',
+          message: 'Ese cambio dejaría a alguien como jefe de su propio jefe. Elige otra persona.',
+        },
       );
     }
   }

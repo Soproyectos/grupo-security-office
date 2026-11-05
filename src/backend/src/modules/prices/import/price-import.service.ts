@@ -1,18 +1,22 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { AclService, AccessContext } from '../../../common/acl/acl.service';
 import { AccessAssignmentsService } from '../../../common/security/access-assignments.service';
+import { hasGlobalGrant } from '../../../common/security/require-grant';
 import { resolveAccess } from '../../../common/security/data-scope';
 import type { AccessIdentity } from '../../../common/security/data-scope';
 import { COP_POLICY_VERSION, normalizeCopPrice } from '../../../common/money/cop-policy';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../../prisma/biblioteca-prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { LibraryAuditService, type LibraryActor, type LibraryEvent } from '../../library-audit/library-audit.service';
+import { directLegacyProductLibrary } from '../../products/product-library';
 import { findProductMatchesBySkus, normalizeSku } from '../../products/helpers/sku-identity';
 import { diffFields, newBatchId, PRICE_FIELD_PREFIX, ProductChangeService, type ProductChangeInput } from '../../products/product-change.service';
 import { PriceImportAccess, isSuperAdmin, type ProductRef } from './price-import-authz';
 import { clampChangePercentForStorage, measurePriceChange } from './price-import-change';
-import { buildOfficialPriceTemplate, buildPriceTemplate, readPriceTemplate, type TemplateReferenceInput } from './price-template';
+import { buildOfficialPriceTemplate, buildPriceTemplate, buildSinglePriceTemplate, readPriceTemplate, type PriceTemplateReadOptions, type TemplateReferenceInput } from './price-template';
 import {
   profileMatchesHeaders,
   profileStructureChanged,
@@ -25,17 +29,24 @@ import {
   type RecognitionView,
   type ResolvedReference,
 } from './provider-profile';
-import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, resolveLargeChangeThresholdPct, PRICE_IMPORT_TARIFFS, PRICE_IMPORT_TRAILER_VERSION, PRICE_IMPORT_APPLY_CODES, PriceImportApplyOptions, PriceImportApplyPerLista, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportTariff } from './price-import.types';
+import { MAX_PRICE_IMPORT_ROWS, PRICE_IMPORT_INCIDENCE_CODES, PRICE_IMPORT_PARSER_VERSION, resolveLargeChangeThresholdPct, PRICE_IMPORT_TRAILER_VERSION, PRICE_IMPORT_APPLY_CODES, PriceImportApplyOptions, PriceImportApplyPerLista, PriceImportIssue, PriceImportListaSummary, PriceImportPreview, PriceImportRevisionApplyConflict, PriceImportRevisionApplyResult, PriceImportRevisionDetail, PriceImportRevisionHeader, PriceImportRevisionPage, PriceImportRevisionTariff, PriceImportRow, type PriceImportSinglePrice, type PriceImportTariff, type PriceImportTariffRef } from './price-import.types';
+import { orderTariffs } from './price-tariffs';
 import { deletePriceImportFile, priceImportFileExists, readPriceImportFile, storePriceImportFile } from './price-import-storage';
 
 /** Tarifa configurada resuelta al revisar (se captura como versión en la revisión). */
 interface ConfiguredTariff {
   id: string;
   code: string;
+  name: string;
   isActive: boolean;
   currency: string;
   validFrom: Date | null;
   validUntil: Date | null;
+}
+
+/** Same criteria as TARIFF_UNAVAILABLE: active, COP and open validity. */
+function isTariffAvailable(t: ConfiguredTariff, now: Date): boolean {
+  return t.isActive && t.currency === 'COP' && !(t.validFrom && t.validFrom > now) && !(t.validUntil && t.validUntil <= now);
 }
 
 const APPLY_MAX_ATTEMPTS = 3;
@@ -50,6 +61,17 @@ const UNLISTED_SENTINEL = 'unlisted-products';
 /** Internal per-row snapshot persisted with a revision; never returned for rows of inaccessible listas. */
 interface RowSnapshot { productId: string; listaId: string | null }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Hash that identifies an upload (idempotency of saves, audit events, name of the stored original).
+ * A normal file keeps the sha256 of its bytes. A single-price file is expanded to a chosen set of tariffs, so
+ * the same bytes with another selection are a different revision: the sorted selection is folded into the hash.
+ */
+export function computeImportFileHash(buffer: Buffer, singlePrice: PriceImportSinglePrice | null): string {
+  const raw = createHash('sha256').update(buffer).digest('hex');
+  if (!singlePrice) return raw;
+  return createHash('sha256').update(`${raw}|single:${[...singlePrice.tariffs].sort().join(',')}`).digest('hex');
+}
 
 /**
  * IMP-07B (07B) — fila de perfil con sus equivalencias opcionales. Estructural:
@@ -86,8 +108,50 @@ export class PriceImportService {
     @Optional() private grants?: AccessAssignmentsService,
     /** Per-product history writer (Nest injects the shared one; specs may omit it). */
     @Optional() changes?: ProductChangeService,
+    /**
+     * Biblioteca (23 modelos): productos, listas, tarifas, precios, revisiones y perfiles de proveedor.
+     * Con 5 argumentos o menos (specs legados) usa la fachada legacy sobre el mismo PrismaService;
+     * un proveedor dedicado ausente falla cerrado (ver directLegacyProductLibrary).
+     */
+    @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    @Inject(LibraryAuditService) private readonly libraryAudit: LibraryAuditService = new LibraryAuditService(library),
   ) {
-    this.changes = changes ?? new ProductChangeService(prisma, acl, grants);
+    this.changes = changes ?? new ProductChangeService(prisma, acl, grants, library);
+  }
+
+  /** Cliente de biblioteca: el operativo en modo legacy, el dedicado verificado en modo dedicado. */
+  /** Contrato compartido de los 23 modelos: el cliente generado de biblioteca se usa con los tipos operativos (como ProductsService). */
+  private get db(): PrismaService { return this.library.client as unknown as PrismaService; }
+
+  private write<T>(
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { maxWait?: number; timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel },
+  ): Promise<T> {
+    return this.library.writeTransaction((tx) => work(tx as unknown as Prisma.TransactionClient), options);
+  }
+  private get dedicated(): boolean { return this.library.config.mode === 'dedicated'; }
+
+  /** Auditoría histórica (legacy). En modo dedicado los eventos van a biblioteca; AuditLog no se toca. */
+  private async legacyAudit(entry: Parameters<AuditService['log']>[0]): Promise<void> {
+    if (!this.dedicated) await this.audit.log(entry);
+  }
+
+  /** Evento de biblioteca dentro de la transacción del dato (solo modo dedicado). */
+  private async libraryEvent(tx: Prisma.TransactionClient, event: LibraryEvent): Promise<void> {
+    if (this.dedicated) await this.libraryAudit.append(tx as unknown as Parameters<LibraryAuditService['append']>[0], event);
+  }
+
+  /**
+   * Eventos de solo lectura (vista previa, plantilla, exportación): se registran en biblioteca salvo que las
+   * escrituras estén congeladas, porque estas operaciones deben seguir disponibles en la congelación.
+   */
+  private async libraryReadEvent(event: LibraryEvent): Promise<void> {
+    if (!this.dedicated || this.library.config.writesFrozen) return;
+    await this.library.writeTransaction((tx) => this.libraryAudit.append(tx, event));
+  }
+
+  private actorOf(ctx: AccessContext): LibraryActor {
+    return { id: ctx.userId ?? null, name: ctx.userName ?? null };
   }
 
   /**
@@ -102,6 +166,15 @@ export class PriceImportService {
    * `resolveAccess`. Un usuario legado sin concesiones vigentes queda denegado
    * aquí; no se hereda autorización desde el hecho de faltar el servicio.
    */
+  /**
+   * Biblioteca authorizes ONLY by panel grants with GLOBAL scope: a grant tied to a lista or to one product
+   * never opens these flows. Roles never grant anything (Super Admin keeps its explicit exception).
+   */
+  private async globalGrantRows(ctx: AccessContext) {
+    if (!ctx.userId) return [];
+    return ((await this.grants?.grantsForUser(ctx.userId)) ?? []).filter((row) => row.scope === 'global');
+  }
+
   private async assertActions(ctx: AccessContext, actionIds: readonly string[], deniedMessage: string): Promise<void> {
     if (!ctx.userId) {
       throw new ForbiddenException(deniedMessage);
@@ -112,7 +185,7 @@ export class PriceImportService {
       if (ctx.roles.includes('Super Admin')) return;
       throw new ForbiddenException(deniedMessage);
     }
-    const rows = await this.grants.grantsForUser(ctx.userId);
+    const rows = await this.globalGrantRows(ctx);
     const identity: AccessIdentity = {
       userId: ctx.userId,
       verified: true,
@@ -130,19 +203,24 @@ export class PriceImportService {
   }
 
   private assertPreviewActions(ctx: AccessContext): Promise<void> {
-    return this.assertActions(ctx, ['prices:preview', 'prices:read', 'listas:read'], 'No tienes asignada la revisión de archivos de precios.');
+    return this.assertActions(ctx, ['prices:preview', 'prices:read'], 'No tienes asignada la revisión de archivos de precios.');
   }
 
   private assertSaveActions(ctx: AccessContext): Promise<void> {
-    return this.assertActions(ctx, ['prices:save', 'prices:preview', 'prices:read', 'listas:read'], 'No tienes asignado el guardado de revisiones de precios.');
+    return this.assertActions(ctx, ['prices:save', 'prices:preview', 'prices:read'], 'No tienes asignado el guardado de revisiones de precios.');
   }
 
   private assertReviewReadActions(ctx: AccessContext): Promise<void> {
-    return this.assertActions(ctx, ['prices:read', 'listas:read'], 'No tienes asignada la consulta de revisiones de precios.');
+    return this.assertActions(ctx, ['prices:read'], 'No tienes asignada la consulta de revisiones de precios.');
+  }
+
+  /** Discarding a pending revision only needs the save permission (and the read it depends on). */
+  private assertDiscardActions(ctx: AccessContext): Promise<void> {
+    return this.assertActions(ctx, ['prices:save', 'prices:read'], 'No tienes asignado el descarte de revisiones de precios.');
   }
 
   private assertApplyActions(ctx: AccessContext): Promise<void> {
-    return this.assertActions(ctx, ['prices:apply', 'prices:read', 'listas:read'], 'No tienes asignada la aplicación de precios.');
+    return this.assertActions(ctx, ['prices:apply', 'prices:read'], 'No tienes asignada la aplicación de precios.');
   }
 
   /**
@@ -165,19 +243,22 @@ export class PriceImportService {
     actionIds: readonly string[],
     unlistedActionIds: readonly string[] = actionIds,
   ): Promise<PriceImportAccess> {
-    const rows = !ctx.userId || isSuperAdmin(ctx) ? [] : (await this.grants?.grantsForUser(ctx.userId)) ?? [];
+    const rows = !ctx.userId || isSuperAdmin(ctx) ? [] : await this.globalGrantRows(ctx);
     return new PriceImportAccess(rows, ctx, actionIds, unlistedActionIds);
   }
 
   /** Preview HTTP: recalcula y emite el evento resumido (separado del historial). */
-  async preview(file: Express.Multer.File | undefined, ctx: AccessContext): Promise<PriceImportPreview> {
+  async preview(file: Express.Multer.File | undefined, ctx: AccessContext, options: PriceTemplateReadOptions = {}): Promise<PriceImportPreview> {
     await this.assertPreviewActions(ctx);
-    const { result, tariffs } = await this.computePreview(file, ctx);
-    const fileHash = createHash('sha256').update((file as Express.Multer.File).buffer).digest('hex');
-    await this.audit.log({
+    const { result, tariffs, fileHash } = await this.computePreview(file, ctx, options);
+    await this.legacyAudit({
       userId: ctx.userId, action: 'price-import-preview', entity: 'Price', entityId: fileHash,
       newValues: { fileHash, summary: result.summary, tariffs, rounding: result.rounding },
       result: result.issues.length ? 'WARNING' : 'SUCCESS',
+    });
+    await this.libraryReadEvent({
+      actor: this.actorOf(ctx), action: 'PRICE_IMPORT_PREVIEW', entityType: 'PriceImportPreview', entityId: fileHash,
+      summary: { fileHash, rows: result.summary.rows, validRows: result.summary.validRows, errorRows: result.summary.errorRows, prices: result.summary.prices },
     });
     return result;
   }
@@ -194,15 +275,18 @@ export class PriceImportService {
   private async computePreview(
     file: Express.Multer.File | undefined,
     ctx: AccessContext,
-  ): Promise<{ result: PriceImportPreview; tariffs: PriceImportTariff[]; configured: Map<string, ConfiguredTariff>; snapshots: Map<number, RowSnapshot> }> {
+    options: PriceTemplateReadOptions = {},
+  ): Promise<{ result: PriceImportPreview; tariffs: PriceImportTariff[]; configured: Map<string, ConfiguredTariff>; snapshots: Map<number, RowSnapshot>; fileHash: string }> {
     if (!file?.buffer || !/\.xlsx$/i.test(file.originalname)) throw new BadRequestException('Selecciona la plantilla de Excel guardada como .xlsx.');
 
-    const { tariffs, rows, ignoredColumns } = readPriceTemplate(file.buffer);
+    // Tariffs are data: the headers are matched against the tariffs defined in Biblioteca (by name or code).
     const now = new Date();
-    const priceLists = await this.prisma.priceList.findMany({
-      where: { code: { in: tariffs } },
-      select: { id: true, code: true, isActive: true, currency: true, validFrom: true, validUntil: true },
-    });
+    const { all: allTariffs, available } = await this.loadTariffs(now);
+    // A single-price file arrives already expanded to the selected tariffs: from here on its rows are normal rows.
+    const { tariffs, rows, ignoredColumns, singlePrice } = readPriceTemplate(file.buffer, allTariffs, { ...options, availableTariffs: available });
+    const singlePriceInfo: PriceImportSinglePrice | null = singlePrice ? { tariffs: [...tariffs] } : null;
+    const fileHash = computeImportFileHash(file.buffer, singlePriceInfo);
+    const priceLists = allTariffs.filter((p) => tariffs.includes(p.code));
     const configured = new Map<string, ConfiguredTariff>(priceLists.map((p) => [p.code, p]));
     const issues: PriceImportIssue[] = ignoredColumns.map((column) => ({
       row: null, column, code: 'IGNORED_COLUMN',
@@ -221,31 +305,21 @@ export class PriceImportService {
 
     // Normalized global match (same expression as the unique index): case and spaces never matter.
     const skus = [...new Set(rows.filter((r) => !r.issues.some((i) => i.column === 'REFERENCIA')).map((r) => r.sku))];
-    const matches = skus.length ? await findProductMatchesBySkus(this.prisma, skus, { id: true, sku: true, listaId: true }) : new Map();
+    const matches = skus.length ? await findProductMatchesBySkus(this.db, skus, { id: true, sku: true, listaId: true }) : new Map();
     const single: ProductRef[] = [...matches.values()].filter((c) => c.length === 1).map((c) => c[0] as ProductRef);
     const access = await this.loadAccess(ctx, ['prices:read']);
     const allowedIds = access.allowedProductIds(single);
     const authorized = single.filter((p) => allowedIds.has(p.id));
-    // The lista permits prices:read. The only product-level rule that overrides it is an explicit restriction.
-    const restrictions = authorized.length && !this.acl.isListasAdmin(ctx.roles)
+    // The panel grant permits prices:read. The only product-level rule that overrides it is an explicit restriction
+    // (a role never exempts anyone from it; Super Admin keeps its explicit exception).
+    const restrictions = authorized.length && !isSuperAdmin(ctx)
       ? await this.prisma.assignment.findMany({ where: {
         userId: ctx.userId, resourceType: 'PRODUCT', resourceId: { in: authorized.map((p) => p.id) }, isActive: false,
       }, select: { resourceId: true } }) : [];
     const restricted = new Set(restrictions.map((a: { resourceId: string }) => a.resourceId));
-    const listaIds = [...new Set(authorized.map((p) => p.listaId).filter((id): id is string => !!id))];
-    const listas = listaIds.length ? await this.prisma.lista.findMany({
-      where: { id: { in: listaIds } },
-      select: { id: true, code: true, name: true, isActive: true, archivedAt: true, deletionStatus: true, currency: true },
-    }) : [];
-    const listaById = new Map(listas.map((l) => [l.id, l]));
-    const listaUsable = (listaId: string | null) => {
-      if (!listaId) return true;
-      const lista = listaById.get(listaId);
-      return !!lista && lista.isActive && !lista.archivedAt && !lista.deletionStatus && lista.currency === 'COP';
-    };
-    const usable = authorized.filter((p) => !restricted.has(p.id) && listaUsable(p.listaId));
-    const usableIds = new Set(usable.map((p) => p.id));
-    const storedPrices = usable.length ? await this.prisma.price.findMany({
+    // Listas no longer gate prices: a product's old lista (if any) is neither read nor checked here.
+    const usable = authorized.filter((p) => !restricted.has(p.id));
+    const storedPrices = usable.length ? await this.db.price.findMany({
       where: { productId: { in: usable.map((p) => p.id) }, priceListId: { in: priceLists.filter((p) => !unavailable.has(p.code)).map((p) => p.id) } },
       select: { productId: true, priceListId: true, listaId: true, value: true, currency: true },
     }) : [];
@@ -280,10 +354,6 @@ export class PriceImportService {
           snapshots.set(row.row, { productId: candidates[0].id, listaId: candidates[0].listaId });
           row.issues.push({ row: row.row, column: 'REFERENCIA', code: 'REFERENCE_UNAVAILABLE',
             message: 'Esta referencia no está disponible para ti. Revisa su asignación; no se creará ni moverá ningún producto.' });
-        } else if (!usableIds.has(candidates[0].id)) {
-          snapshots.set(row.row, { productId: candidates[0].id, listaId: candidates[0].listaId });
-          row.issues.push({ row: row.row, column: 'REFERENCIA', code: PRICE_IMPORT_INCIDENCE_CODES.LISTA_UNAVAILABLE,
-            message: 'La lista de esta referencia no está activa o disponible para revisar precios en pesos colombianos.' });
         } else {
           product = candidates[0];
           row.productId = product.id;
@@ -322,8 +392,7 @@ export class PriceImportService {
     const perLista = new Map<string, PriceImportListaSummary>();
     for (const row of valid) {
       if (!row.listaId) continue;
-      const lista = listaById.get(row.listaId);
-      const entry = perLista.get(row.listaId) ?? { listaId: row.listaId, code: lista?.code, name: lista?.name, rows: 0, prices: 0 };
+      const entry = perLista.get(row.listaId) ?? { listaId: row.listaId, rows: 0, prices: 0 };
       entry.rows += 1;
       entry.prices += row.prices.length;
       perLista.set(row.listaId, entry);
@@ -344,9 +413,10 @@ export class PriceImportService {
         rowsInInaccessibleListas: inaccessible,
         largeChangePrices: prices.filter((p) => p.largeChange).length,
         largeChangeThresholdPct: thresholdPct,
-      }, issues: [...issues, ...rows.flatMap((r) => r.issues)], rows,
+      }, issues: [...issues, ...rows.flatMap((r) => r.issues)], rows, singlePrice: singlePriceInfo,
+      availableTariffs: available.map(({ code, name }) => ({ code, name })),
     };
-    return { result, tariffs, configured, snapshots };
+    return { result, tariffs, configured, snapshots, fileHash };
   }
 
   // ————————————————————————————————————————————————————————————————
@@ -426,6 +496,7 @@ export class PriceImportService {
     file: Express.Multer.File | undefined,
     idempotencyKey: string | undefined,
     ctx: AccessContext,
+    options: PriceTemplateReadOptions = {},
   ): Promise<PriceImportRevisionHeader> {
     await this.assertSaveActions(ctx);
     if (!idempotencyKey || typeof idempotencyKey !== 'string' || idempotencyKey.trim().length < 8) {
@@ -436,10 +507,11 @@ export class PriceImportService {
     }
     const key = idempotencyKey.trim();
     // Recalcula en servidor: nunca se confía en filas/precios del navegador.
-    const { result, tariffs, configured, snapshots } = await this.computePreview(file, ctx);
-    const fileHash = createHash('sha256').update(file.buffer).digest('hex');
+    // A single-price file is re-expanded here with the selection sent with the save; the hash includes it, so the same
+    // bytes with another selection never match an earlier revision (the idempotency check compares fileHash).
+    const { result, tariffs, configured, snapshots, fileHash } = await this.computePreview(file, ctx, options);
 
-    const existing = await this.prisma.priceImportRevision.findUnique({ where: { idempotencyKey: key } });
+    const existing = await this.db.priceImportRevision.findUnique({ where: { idempotencyKey: key } });
     if (existing) {
       if (existing.fileHash === fileHash && existing.createdById === (ctx.userId ?? null)) {
         const access = await this.loadAccess(ctx, ['prices:read']);
@@ -460,7 +532,7 @@ export class PriceImportService {
 
     await storePriceImportFile(fileHash, file.buffer);
     try {
-      const created = await this.prisma.$transaction(async (tx) => {
+      const created = await this.write(async (tx) => {
         const revision = await tx.priceImportRevision.create({
           data: {
             listaId: null,
@@ -477,7 +549,7 @@ export class PriceImportService {
             parserVersion: PRICE_IMPORT_PARSER_VERSION,
             trailerVersion: PRICE_IMPORT_TRAILER_VERSION,
             tariffs: tariffSnapshot as unknown as Prisma.InputJsonValue,
-            summary: result.summary as unknown as Prisma.InputJsonValue,
+            summary: (result.singlePrice ? { ...result.summary, singlePrice: result.singlePrice } : result.summary) as unknown as Prisma.InputJsonValue,
           },
         });
         if (result.rows.length) {
@@ -515,9 +587,13 @@ export class PriceImportService {
         if (priceRows.length) {
           await tx.priceImportRevisionPrice.createMany({ data: priceRows });
         }
+        await this.libraryEvent(tx, {
+          actor: this.actorOf(ctx), action: 'PRICE_IMPORT_SAVED', entityType: 'PriceImportRevision', entityId: revision.id,
+          summary: { revisionId: revision.id, fileHash, rows: result.summary.rows, validRows: result.summary.validRows, errorRows: result.summary.errorRows, prices: result.summary.prices, policyVersion: COP_POLICY_VERSION },
+        });
         return revision;
       });
-      await this.audit.log({
+      await this.legacyAudit({
         userId: ctx.userId,
         action: 'price-import-revision-save',
         entity: 'Price',
@@ -534,19 +610,17 @@ export class PriceImportService {
   }
 
   /**
-   * Revisions that have rows in `listaId` (join on the row snapshot) plus legacy
-   * ones created for that single lista. The caller needs prices:read on `listaId`;
-   * the other listas of a mixed revision are folded into a counter in each header.
+   * Price revisions, newest first. Needs only `prices:read` (global): no lista is involved. An optional
+   * legacy `listaId` filter narrows the list but never widens or checks access.
    */
-  async listRevisions(listaId: string, page: number, pageSize: number, ctx: AccessContext): Promise<PriceImportRevisionPage> {
+  async listRevisions(listaId: string | undefined, page: number, pageSize: number, ctx: AccessContext): Promise<PriceImportRevisionPage> {
     await this.assertReviewReadActions(ctx);
-    await this.acl.assertListaAccess(listaId, ctx, 'view_prices');
     const take = this.clampSize(pageSize, REVISION_PAGE_SIZE);
     const currentPage = this.clampPage(page);
-    const where = { OR: [{ listaId }, { rows: { some: { listaId } } }] };
+    const where = listaId ? { OR: [{ listaId }, { rows: { some: { listaId } } }] } : {};
     const [items, total] = await Promise.all([
-      this.prisma.priceImportRevision.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (currentPage - 1) * take, take }),
-      this.prisma.priceImportRevision.count({ where }),
+      this.db.priceImportRevision.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (currentPage - 1) * take, take }),
+      this.db.priceImportRevision.count({ where }),
     ]);
     const access = await this.loadAccess(ctx, ['prices:read']);
     const withFile = await Promise.all(items.map(async (r) => this.toRevisionHeader(r, await priceImportFileExists(r.fileHash), access)));
@@ -569,15 +643,13 @@ export class PriceImportService {
 
   async getRevision(id: string, page: number, pageSize: number, ctx: AccessContext): Promise<PriceImportRevisionDetail> {
     await this.assertReviewReadActions(ctx);
-    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    const revision = await this.db.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
-    // Legacy revision of one lista: the original lista-level gate still applies.
-    if (revision.listaId) await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
     const access = await this.loadAccess(ctx, ['prices:read']);
     const take = this.clampSize(pageSize, REVISION_ROWS_PAGE_SIZE);
     const currentPage = this.clampPage(page);
 
-    const allRows = await this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' } });
+    const allRows = await this.db.priceImportRevisionRow.findMany({ where: { revisionId: id }, orderBy: { rowNumber: 'asc' } });
     const visible = allRows.filter((r) => this.canSeeRow(r, revision.listaId, access));
     const hidden = allRows.length - visible.length;
     if (hidden > 0 && visible.length === 0 && revision.createdById !== (ctx.userId ?? null)) {
@@ -585,7 +657,7 @@ export class PriceImportService {
     }
     const pageRows = visible.slice((currentPage - 1) * take, currentPage * take);
     const visibleNumbers = new Set(visible.map((r) => r.rowNumber));
-    const prices = (await this.prisma.priceImportRevisionPrice.findMany({ where: { revisionId: id } })).filter((p) => visibleNumbers.has(p.rowNumber));
+    const prices = (await this.db.priceImportRevisionPrice.findMany({ where: { revisionId: id } })).filter((p) => visibleNumbers.has(p.rowNumber));
     const byRow = new Map<string, typeof prices>();
     for (const price of prices) {
       const key = `${price.rowNumber}:${price.sku}`;
@@ -626,11 +698,6 @@ export class PriceImportService {
       entry.prices += prices.filter((p) => p.rowNumber === r.rowNumber).length;
       perLista.set(owner.listaId, entry);
     }
-    const listas = perLista.size ? await this.prisma.lista.findMany({ where: { id: { in: [...perLista.keys()] } }, select: { id: true, code: true, name: true } }) : [];
-    for (const lista of listas) {
-      const entry = perLista.get(lista.id);
-      if (entry) { entry.code = lista.code; entry.name = lista.name; }
-    }
     return {
       ...this.toRevisionHeader(revision, await priceImportFileExists(revision.fileHash), access),
       rows: view, byLista: [...perLista.values()], rowsInInaccessibleListas: hidden,
@@ -639,30 +706,26 @@ export class PriceImportService {
   }
 
   /**
-   * Gate for the original file and for discarding: a legacy revision keeps its lista
-   * check; a mixed one needs prices:read on EVERY lista it touches, unless the caller
-   * is the person who uploaded it (it is their own file).
+   * Gate for the original file and for discarding, after the panel grant: the caller needs the price read
+   * over every row of the revision (a global grant covers all), unless they uploaded it (their own file).
+   * No lista check is made.
    */
   private async assertWholeRevisionAccess(revision: { id: string; listaId: string | null; createdById: string | null }, ctx: AccessContext): Promise<void> {
-    if (revision.listaId) {
-      await this.acl.assertListaAccess(revision.listaId, ctx, 'view_prices');
-      return;
-    }
     if (revision.createdById && revision.createdById === ctx.userId) return;
     const access = await this.loadAccess(ctx, ['prices:read']);
-    const rows = await this.prisma.priceImportRevisionRow.findMany({ where: { revisionId: revision.id } });
-    if (rows.some((r) => !this.canSeeRow(r, null, access))) {
+    const rows = await this.db.priceImportRevisionRow.findMany({ where: { revisionId: revision.id } });
+    if (rows.some((r) => !this.canSeeRow(r, revision.listaId, access))) {
       throw new ForbiddenException('Sin permiso sobre las listas de esta revisión.');
     }
   }
 
   /**
-   * Revision gate for the unknown-SKU resolution endpoints: `prices:read` + `listas:read`, then the
-   * same whole-revision rule as the original file (creator, or `prices:read` on every lista it touches).
+   * Revision gate for the unknown-SKU resolution endpoints: global `prices:read`, then the
+   * same whole-revision rule as the original file (creator, or the price read over every row).
    */
   async loadRevisionForResolution(id: string, ctx: AccessContext) {
     await this.assertReviewReadActions(ctx);
-    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    const revision = await this.db.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
     await this.assertWholeRevisionAccess(revision, ctx);
     return revision;
@@ -676,7 +739,7 @@ export class PriceImportService {
 
   async getRevisionFile(id: string, ctx: AccessContext): Promise<{ buffer: Buffer; fileName: string }> {
     await this.assertReviewReadActions(ctx);
-    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    const revision = await this.db.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
     await this.assertWholeRevisionAccess(revision, ctx);
     const buffer = await readPriceImportFile(revision.fileHash);
@@ -685,16 +748,23 @@ export class PriceImportService {
   }
 
   async discardRevision(id: string, ctx: AccessContext): Promise<PriceImportRevisionHeader> {
-    await this.assertSaveActions(ctx);
-    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    await this.assertDiscardActions(ctx);
+    const revision = await this.db.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
     await this.assertWholeRevisionAccess(revision, ctx);
     if (revision.status !== 'GUARDADA') {
       throw new ConflictException('Solo se puede descartar una revisión que sigue pendiente de aplicar.');
     }
-    const updated = await this.prisma.priceImportRevision.update({ where: { id }, data: { status: 'DESCARTADA' } });
+    const updated = await this.write(async (tx) => {
+      const row = await tx.priceImportRevision.update({ where: { id }, data: { status: 'DESCARTADA' } });
+      await this.libraryEvent(tx, {
+        actor: this.actorOf(ctx), action: 'PRICE_IMPORT_DISCARDED', entityType: 'PriceImportRevision', entityId: id,
+        summary: { revisionId: id, previousStatus: revision.status },
+      });
+      return row;
+    });
     await deletePriceImportFile(revision.fileHash).catch(() => undefined);
-    await this.audit.log({
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'price-import-revision-discard',
       entity: 'Price',
@@ -708,9 +778,11 @@ export class PriceImportService {
 
   /** Prisma serialization failure (P2034), also surfaced as a raw-query failure with SQLSTATE 40001. */
   private isSerializationFailure(error: unknown): boolean {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-    if (error.code === 'P2034') return true;
-    return error.code === 'P2010' && /40001|could not serialize/i.test(`${error.message} ${JSON.stringify(error.meta ?? {})}`);
+    // Duck typing: el cliente dedicado trae su propio runtime y `instanceof` no cruza entre clientes generados.
+    const e = error as { name?: unknown; code?: unknown; message?: unknown; meta?: unknown } | null;
+    if (!e || typeof e !== 'object' || e.name !== 'PrismaClientKnownRequestError' || typeof e.code !== 'string') return false;
+    if (e.code === 'P2034') return true;
+    return e.code === 'P2010' && /40001|could not serialize/i.test(`${String(e.message)} ${JSON.stringify(e.meta ?? {})}`);
   }
 
   /** Result of an already applied revision, with lista names the caller cannot read removed. */
@@ -738,7 +810,7 @@ export class PriceImportService {
    */
   async applyRevision(id: string, ctx: AccessContext, options: PriceImportApplyOptions = {}): Promise<PriceImportRevisionApplyResult> {
     await this.assertApplyActions(ctx);
-    const revision = await this.prisma.priceImportRevision.findUnique({ where: { id } });
+    const revision = await this.db.priceImportRevision.findUnique({ where: { id } });
     if (!revision) throw new NotFoundException('Revisión de precios no encontrada.');
     if (revision.status === 'APLICADA') return this.replayApplied(revision, ctx);
     if (revision.status !== 'GUARDADA') {
@@ -768,7 +840,7 @@ export class PriceImportService {
   ): Promise<{ replayed: true; revision: { id: string; appliedAt: Date | null; appliedResult: Prisma.JsonValue | null } } | { replayed: false; result: PriceImportRevisionApplyResult }> {
     const id = revision.id;
     const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
+    return this.write(async (tx) => {
       // Claim first: a concurrent apply either waits and replays the stored result or fails serialization and retries.
       const claim = await tx.priceImportRevision.updateMany({
         where: { id, status: 'GUARDADA' },
@@ -800,8 +872,8 @@ export class PriceImportService {
         return candidates.length === 1 ? { productId: candidates[0].id, listaId: revision.listaId } : null;
       };
 
-      // 1. Permission on EVERY lista (or global scope for products without lista) that will be written.
-      const access = await this.loadAccess(ctx, ['prices:apply'], ['prices:apply', 'products:write']);
+      // 1. The global panel grant (prices:apply) must still hold for every product that will be written.
+      const access = await this.loadAccess(ctx, ['prices:apply']);
       const owners = new Map<string, { productId: string; listaId: string | null } | null>();
       for (const t of targets) owners.set(`${t.rowNumber}:${t.sku}`, ownerOf(t.rowNumber, t.sku));
       for (const owner of owners.values()) {
@@ -861,6 +933,7 @@ export class PriceImportService {
       const productIds = [...new Set([...owners.values()].filter((o): o is { productId: string; listaId: string | null } => !!o).map((o) => o.productId))].sort();
       const locked = productIds.length
         ? await tx.$queryRaw<Array<{ id: string; sku: string; listaId: string | null }>>(
+          // Sql object (not a tagged template): the same form the SKU helper already uses against both clients.
           Prisma.sql`SELECT id, sku, "listaId" FROM products WHERE id = ANY(${productIds}::text[]) ORDER BY id FOR UPDATE`)
         : [];
       const lockedById = new Map(locked.map((p) => [p.id, p]));
@@ -932,11 +1005,8 @@ export class PriceImportService {
         group.prices += 1;
         groups.set(p.listaId, group);
       }
-      const listaIds = [...groups.keys()].filter((k): k is string => !!k);
-      const listas = listaIds.length ? await tx.lista.findMany({ where: { id: { in: listaIds } }, select: { id: true, code: true, name: true } }) : [];
-      const listaById = new Map(listas.map((l) => [l.id, l]));
       const perLista: PriceImportApplyPerLista[] = [...groups.entries()].map(([listaId, g]) => ({
-        listaId, code: listaId ? listaById.get(listaId)?.code : undefined, name: listaId ? listaById.get(listaId)?.name : undefined, rows: g.rows.size, prices: g.prices,
+        listaId, rows: g.rows.size, prices: g.prices,
       }));
       const result: PriceImportRevisionApplyResult = {
         revisionId: id,
@@ -953,45 +1023,47 @@ export class PriceImportService {
         batchId,
       };
       await tx.priceImportRevision.update({ where: { id }, data: { appliedResult: result as unknown as Prisma.InputJsonValue } });
-      await this.audit.logTx(tx, {
-        userId: ctx.userId,
-        action: 'price-import-apply',
-        entity: 'Price',
-        entityId: id,
-        newValues: {
-          revisionId: id, appliedRows: result.appliedRows, appliedPrices: result.appliedPrices, unchangedPrices, tariffs: result.tariffs,
-          rejectedRows: rejected.length, largeChangesConfirmed: result.largeChangesConfirmed,
-          perLista: perLista.map((l) => ({ listaId: l.listaId, rows: l.rows, prices: l.prices })), batchId,
-        },
-        result: 'SUCCESS',
-      });
+      if (this.dedicated) {
+        await this.libraryEvent(tx, {
+          actor: this.actorOf(ctx), action: 'PRICE_IMPORT_APPLIED', entityType: 'PriceImportRevision', entityId: id,
+          summary: {
+            revisionId: id, appliedRows: result.appliedRows, appliedPrices: result.appliedPrices, unchangedPrices, tariffs: result.tariffs,
+            rejectedRows: rejected.length, largeChangesConfirmed: result.largeChangesConfirmed,
+            perLista: perLista.map((l) => ({ listaId: l.listaId, rows: l.rows, prices: l.prices })), batchId,
+          },
+        });
+      } else {
+        await this.audit.logTx(tx as unknown as Parameters<AuditService['logTx']>[0], {
+          userId: ctx.userId,
+          action: 'price-import-apply',
+          entity: 'Price',
+          entityId: id,
+          newValues: {
+            revisionId: id, appliedRows: result.appliedRows, appliedPrices: result.appliedPrices, unchangedPrices, tariffs: result.tariffs,
+            rejectedRows: rejected.length, largeChangesConfirmed: result.largeChangesConfirmed,
+            perLista: perLista.map((l) => ({ listaId: l.listaId, rows: l.rows, prices: l.prices })), batchId,
+          },
+          result: 'SUCCESS',
+        });
+      }
       return { replayed: false as const, result };
     }, APPLY_TX_OPTIONS);
   }
 
-  /** ¿Concede `actionId` el usuario según sus grants vigentes? (legados sin grants → true, transición D5). */
-  private async concede(actionId: string, ctx: AccessContext): Promise<boolean> {
-    if (!ctx.userId) return false;
-    const rows = (await this.grants?.grantsForUser(ctx.userId)) ?? [];
-    if (rows.length === 0) return true; // transición D5: capa rol del controller
-    const identity: AccessIdentity = {
-      userId: ctx.userId,
-      verified: true,
-      active: true,
-      sessionValid: true,
-      sessionUserId: ctx.userId,
-      superAdmin: ctx.roles.includes('Super Admin'),
-    };
-    return resolveAccess({ identity, actionId, grants: rows }).allowed;
+  /**
+   * Does the caller hold `actionId` as a GLOBAL panel grant? Strict model: no grants means no access (the old
+   * "zero grant rows => allowed" transition is gone); Super Admin keeps its explicit exception.
+   */
+  private concede(actionId: string, ctx: AccessContext): Promise<boolean> {
+    return hasGlobalGrant(this.grants, actionId, ctx);
   }
 
   /**
-   * IMP-02 §3 — descarga de plantilla (archivo NUEVO, jamás el del usuario).
-   * mode=vacias: solo encabezados. mode=referencias: SKUs de ESA lista; los
-   * precios actuales se incluyen SOLO con la concesión `prices:read` (P1).
+   * IMP-02 §3 — descarga de plantilla (archivo NUEVO, jamás el del usuario). No depende de ninguna Lista.
+   * mode=vacias: solo encabezados (prices:preview). mode=referencias: SKUs del catálogo con los precios
+   * vigentes de las tarifas pedidas (prices:read).
    */
   async downloadTemplate(
-    listaId: string,
     mode: 'vacias' | 'referencias',
     tariffsInput: string[] | undefined,
     ctx: AccessContext,
@@ -999,147 +1071,144 @@ export class PriceImportService {
     if (mode !== 'vacias' && mode !== 'referencias') {
       throw new BadRequestException('mode debe ser "vacias" o "referencias".');
     }
-    const tariffs = this.normalizeTariffs(tariffsInput);
+    const tariffRefs = await this.normalizeTariffs(tariffsInput);
+    const tariffs = tariffRefs.map((t) => t.code);
 
     // §3: vacía exige prices:preview; con referencias exige prices:read.
     const requiredAction = mode === 'vacias' ? 'prices:preview' : 'prices:read';
     if (!(await this.concede(requiredAction, ctx))) {
       throw new ForbiddenException(`Sin permiso ${requiredAction}`);
     }
-    const lista = await this.requireLista(listaId, ctx);
 
-    const references = mode === 'referencias' ? await this.collectListaReferences(listaId, tariffs, ctx) : [];
-    const buffer = buildPriceTemplate({ mode, tariffs, references });
+    const references = mode === 'referencias' ? await this.collectReferences(tariffs) : [];
+    const buffer = buildPriceTemplate({ mode, tariffs: tariffRefs, references });
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `plantilla-precios-${lista.code}-${stamp}.xlsx`;
-    await this.audit.log({
+    const fileName = `plantilla-precios-${stamp}.xlsx`;
+    const templateHash = createHash('sha256').update(buffer).digest('hex');
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'price-template-download',
-      entity: 'LISTA',
-      entityId: listaId,
+      entity: 'PRICE_TEMPLATE',
+      entityId: mode,
       newValues: {
         mode,
         tariffs,
-        fileHash: createHash('sha256').update(buffer).digest('hex'),
+        fileHash: templateHash,
       },
       result: 'SUCCESS',
     });
+    await this.libraryReadEvent({ actor: this.actorOf(ctx), action: 'PRICE_TEMPLATE_DOWNLOADED', entityType: 'PriceTemplate', entityId: mode, summary: { mode, tariffs, fileHash: templateHash } });
     return { buffer, fileName };
   }
 
   /**
-   * Official empty template (sheet PLANTILLA, "(CON IVA)" headers). Needs no lista and
-   * exposes no data, so it only requires `prices:preview`, like the empty per-lista template.
+   * Official empty template (sheet PLANTILLA, "(CON IVA)" headers). Exposes no data, so it only requires
+   * `prices:preview` (global), like the empty template.
+   * `singlePrice` serves the variant for suppliers without tariff tiers (one "PRECIO UNICO (CON IVA)" column),
+   * with exactly the same permission.
    */
-  async downloadOfficialTemplate(ctx: AccessContext): Promise<{ buffer: Buffer; fileName: string }> {
+  async downloadOfficialTemplate(ctx: AccessContext, options: { singlePrice?: boolean } = {}): Promise<{ buffer: Buffer; fileName: string }> {
     if (!(await this.concede('prices:preview', ctx))) {
       throw new ForbiddenException('Sin permiso prices:preview');
     }
-    const buffer = buildOfficialPriceTemplate();
+    const single = options.singlePrice === true;
+    const mode = single ? 'oficial-precio-unico' : 'oficial';
+    let buffer: Buffer;
+    if (single) buffer = buildSinglePriceTemplate();
+    else {
+      const { available } = await this.loadTariffs();
+      if (!available.length) throw new BadRequestException('No hay tarifas activas en COP para generar la plantilla. Revisa las tarifas en Biblioteca.');
+      buffer = buildOfficialPriceTemplate(available.map(({ code, name }) => ({ code, name })));
+    }
     const stamp = new Date().toISOString().slice(0, 10);
-    await this.audit.log({
+    const officialHash = createHash('sha256').update(buffer).digest('hex');
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'price-template-download',
       entity: 'PRICE_TEMPLATE',
       entityId: 'official',
-      newValues: { mode: 'oficial', fileHash: createHash('sha256').update(buffer).digest('hex') },
+      newValues: { mode, fileHash: officialHash },
       result: 'SUCCESS',
     });
-    return { buffer, fileName: `plantilla-precios-grupo-security-${stamp}.xlsx` };
+    await this.libraryReadEvent({ actor: this.actorOf(ctx), action: 'PRICE_TEMPLATE_DOWNLOADED', entityType: 'PriceTemplate', entityId: 'official', summary: { mode, fileHash: officialHash } });
+    return { buffer, fileName: `${single ? 'plantilla-precio-unico' : 'plantilla-precios'}-grupo-security-${stamp}.xlsx` };
   }
 
   /**
-   * IMP-07 §3 (07A) — Exportación de la lista. Archivo NUEVO con las referencias
-   * de ESA lista y los precios VIGENTES de las tarifas autorizadas. Exige
-   * `prices:read` y `assertListaAccess`; no cambia precios ni identidad.
+   * IMP-07 §3 (07A) — Exportación del catálogo. Archivo NUEVO con las referencias y los precios VIGENTES de
+   * las tarifas pedidas. Exige `prices:read` (global); no depende de ninguna Lista y no cambia precios ni identidad.
    */
-  async exportListaPrices(
-    listaId: string,
+  async exportPrices(
     tariffsInput: string[] | undefined,
     ctx: AccessContext,
   ): Promise<{ buffer: Buffer; fileName: string }> {
-    const tariffs = this.normalizeTariffs(tariffsInput);
+    const tariffRefs = await this.normalizeTariffs(tariffsInput);
+    const tariffs = tariffRefs.map((t) => t.code);
     if (!(await this.concede('prices:read', ctx))) {
       throw new ForbiddenException('Sin permiso prices:read');
     }
-    const lista = await this.requireLista(listaId, ctx);
-    const references = await this.collectListaReferences(listaId, tariffs, ctx);
-    const buffer = buildPriceTemplate({ mode: 'referencias', tariffs, references });
+    const references = await this.collectReferences(tariffs);
+    const buffer = buildPriceTemplate({ mode: 'referencias', tariffs: tariffRefs, references });
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `lista-${lista.code}-${stamp}.xlsx`;
-    await this.audit.log({
+    const fileName = `precios-${stamp}.xlsx`;
+    const exportHash = createHash('sha256').update(buffer).digest('hex');
+    await this.legacyAudit({
       userId: ctx.userId,
       action: 'price-list-export',
-      entity: 'LISTA',
-      entityId: listaId,
+      entity: 'PRICE_EXPORT',
+      entityId: 'catalog',
       newValues: {
         tariffs,
-        fileHash: createHash('sha256').update(buffer).digest('hex'),
+        fileHash: exportHash,
       },
       result: 'SUCCESS',
     });
+    await this.libraryReadEvent({ actor: this.actorOf(ctx), action: 'PRICE_LIST_EXPORTED', entityType: 'PriceExport', entityId: 'catalog', summary: { tariffs, fileHash: exportHash } });
     return { buffer, fileName };
   }
 
-  /** Normaliza y valida las tarifas solicitadas (orden canónico, sin repetidas). */
-  private normalizeTariffs(tariffsInput: string[] | undefined): PriceImportTariff[] {
-    const requested = (tariffsInput ?? [...PRICE_IMPORT_TARIFFS])
+  /** Tarifas de Biblioteca (todas y las disponibles para importar), en orden estable. */
+  private async loadTariffs(now: Date = new Date()): Promise<{ all: ConfiguredTariff[]; available: ConfiguredTariff[] }> {
+    const rows = await this.db.priceList.findMany({
+      select: { id: true, code: true, name: true, isActive: true, currency: true, validFrom: true, validUntil: true },
+      orderBy: { name: 'asc' },
+    });
+    const all = orderTariffs(rows as ConfiguredTariff[]);
+    return { all, available: all.filter((t) => isTariffAvailable(t, now)) };
+  }
+
+  /** Valida las tarifas solicitadas (códigos) contra las disponibles; sin repetidas, en orden estable. */
+  private async normalizeTariffs(tariffsInput: string[] | undefined): Promise<PriceImportTariffRef[]> {
+    const { available } = await this.loadTariffs();
+    const codes = available.map((t) => t.code);
+    const requested = (tariffsInput ?? codes)
       .map((t) => t.trim())
       .filter((t) => t !== '');
-    const invalid = requested.filter((t) => !(PRICE_IMPORT_TARIFFS as readonly string[]).includes(t));
+    const invalid = requested.filter((t) => !codes.includes(t));
     if (invalid.length > 0) {
       throw new BadRequestException(`Tarifa no reconocida: ${invalid.join(', ')}.`);
     }
-    const tariffs: PriceImportTariff[] = PRICE_IMPORT_TARIFFS.filter((code) => requested.includes(code));
+    const tariffs = available.filter((t) => requested.includes(t.code)).map(({ code, name }) => ({ code, name }));
     if (tariffs.length === 0) throw new BadRequestException('Selecciona al menos una tarifa válida.');
     return tariffs;
   }
 
-  /** Lista autorizada para operar precios, o 404/403. Compartido por plantilla y exportación. */
-  private async requireLista(listaId: string, ctx: AccessContext) {
-    const lista = await this.prisma.lista.findUnique({
-      where: { id: listaId },
-      select: { id: true, code: true, isActive: true, archivedAt: true, deletionStatus: true, currency: true },
-    });
-    if (!lista) throw new NotFoundException('Lista no encontrada.');
-    await this.acl.assertListaAccess(listaId, ctx, 'view_prices');
-    return lista;
-  }
-
   /**
-   * Referencias (SKU + precios vigentes por tarifa) de ESA lista. P1 estricto:
-   * los precios se incluyen SOLO con la concesión `prices:read` vigente; sin
-   * ella se exportan/plantillan los SKUs sin valores.
+   * Referencias (SKU + precios vigentes por tarifa) del catálogo, hasta el tope de filas. Solo se llama desde
+   * flujos que ya exigieron `prices:read` global, por eso los precios siempre se incluyen.
    */
-  private async collectListaReferences(
-    listaId: string,
-    tariffs: PriceImportTariff[],
-    ctx: AccessContext,
-  ): Promise<TemplateReferenceInput[]> {
-    const products = await this.prisma.product.findMany({
-      where: { listaId },
+  private async collectReferences(tariffs: PriceImportTariff[]): Promise<TemplateReferenceInput[]> {
+    const products = await this.db.product.findMany({
       select: { id: true, sku: true },
       orderBy: { sku: 'asc' },
       take: MAX_PRICE_IMPORT_ROWS,
     });
-    const references = products.map((p) => ({ sku: p.sku }));
-    const withPrices = (await this.grants?.grantsForUser(ctx.userId)) ?? [];
-    const identity: AccessIdentity = {
-      userId: ctx.userId,
-      verified: true,
-      active: true,
-      sessionValid: true,
-      sessionUserId: ctx.userId,
-      superAdmin: ctx.roles.includes('Super Admin'),
-    };
-    const maySeePrices = withPrices.length > 0 &&
-      resolveAccess({ identity, actionId: 'prices:read', grants: withPrices }).allowed;
-    if (!maySeePrices || products.length === 0) return references;
-    const priceLists = await this.prisma.priceList.findMany({
+    if (products.length === 0) return [];
+    const priceLists = await this.db.priceList.findMany({
       where: { code: { in: tariffs }, isActive: true, currency: 'COP' },
       select: { id: true, code: true },
     });
-    const stored = priceLists.length ? await this.prisma.price.findMany({
+    const stored = priceLists.length ? await this.db.price.findMany({
       where: { productId: { in: products.map((p) => p.id) }, priceListId: { in: priceLists.map((l) => l.id) } },
       select: { productId: true, priceListId: true, value: true },
     }) : [];
@@ -1183,42 +1252,50 @@ export class PriceImportService {
     };
   }
 
-  private validateProfileInput(input: ProviderProfileInput): NormalizedProviderProfile {
-    const validation = validateProviderProfile(input);
+  private async validateProfileInput(input: ProviderProfileInput): Promise<NormalizedProviderProfile> {
+    const validation = validateProviderProfile(input, await this.knownTariffCodes());
     if (validation.errors.length > 0) throw new BadRequestException(validation.errors.join(' '));
     return validation.value as NormalizedProviderProfile;
   }
 
+  private async knownTariffCodes(): Promise<string[]> {
+    return (await this.loadTariffs()).all.map((t) => t.code);
+  }
+
   async listProviderProfiles(ctx: AccessContext): Promise<ProviderProfileView[]> {
     await this.assertProviderRead(ctx);
-    const rows = await this.prisma.providerProfile.findMany({ include: { equivalences: true }, orderBy: { providerName: 'asc' } });
+    const rows = await this.db.providerProfile.findMany({ include: { equivalences: true }, orderBy: { providerName: 'asc' } });
     return rows.map((r) => this.toProfileView(r));
   }
 
   async getProviderProfile(id: string, ctx: AccessContext): Promise<ProviderProfileView> {
     await this.assertProviderRead(ctx);
-    const profile = await this.prisma.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
+    const profile = await this.db.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
     if (!profile) throw new NotFoundException('Perfil de proveedor no encontrado.');
     return this.toProfileView(profile);
   }
 
   async createProviderProfile(input: ProviderProfileInput, ctx: AccessContext): Promise<ProviderProfileView> {
     await this.assertProviderWrite(ctx);
-    const value = this.validateProfileInput(input);
-    const existing = await this.prisma.providerProfile.findUnique({ where: { providerName: value.providerName } });
+    const value = await this.validateProfileInput(input);
+    const existing = await this.db.providerProfile.findUnique({ where: { providerName: value.providerName } });
     if (existing) throw new ConflictException('Ya existe un perfil para ese proveedor; edítalo en lugar de crear otro.');
-    const profile = await this.prisma.providerProfile.create({
-      data: { ...value, createdById: ctx.userId, updatedById: ctx.userId },
-      include: { equivalences: true },
+    const profile = await this.write(async (tx) => {
+      const created = await tx.providerProfile.create({
+        data: { ...value, createdById: ctx.userId, updatedById: ctx.userId },
+        include: { equivalences: true },
+      });
+      await this.libraryEvent(tx, { actor: this.actorOf(ctx), action: 'PROVIDER_PROFILE_CREATED', entityType: 'ProviderProfile', entityId: created.id, summary: { providerName: created.providerName, version: created.version } });
+      return created;
     });
-    await this.audit.log({ userId: ctx.userId, action: 'provider-profile-create', entity: 'PROVIDER_PROFILE', entityId: profile.id, newValues: { providerName: profile.providerName, version: profile.version }, result: 'SUCCESS' });
+    await this.legacyAudit({ userId: ctx.userId, action: 'provider-profile-create', entity: 'PROVIDER_PROFILE', entityId: profile.id, newValues: { providerName: profile.providerName, version: profile.version }, result: 'SUCCESS' });
     return this.toProfileView(profile);
   }
 
   async updateProviderProfile(id: string, input: ProviderProfileInput, ctx: AccessContext): Promise<ProviderProfileView> {
     await this.assertProviderWrite(ctx);
-    const value = this.validateProfileInput(input);
-    const current = await this.prisma.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
+    const value = await this.validateProfileInput(input);
+    const current = await this.db.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
     if (!current) throw new NotFoundException('Perfil de proveedor no encontrado.');
     const currentNormalized: NormalizedProviderProfile = {
       providerName: current.providerName,
@@ -1230,32 +1307,40 @@ export class PriceImportService {
       tariffs: (current.tariffs as PriceImportTariff[]),
       expectedColumns: (current.expectedColumns as string[]),
     };
-    const structureChanged = profileStructureChanged(currentNormalized, value);
+    const structureChanged = profileStructureChanged(currentNormalized, value, await this.knownTariffCodes());
     if (value.providerName !== current.providerName) {
-      const clash = await this.prisma.providerProfile.findUnique({ where: { providerName: value.providerName } });
+      const clash = await this.db.providerProfile.findUnique({ where: { providerName: value.providerName } });
       if (clash) throw new ConflictException('Ya existe un perfil para ese proveedor.');
     }
-    const profile = await this.prisma.providerProfile.update({
-      where: { id },
-      data: { ...value, version: structureChanged ? current.version + 1 : current.version, updatedById: ctx.userId },
-      include: { equivalences: true },
+    const profile = await this.write(async (tx) => {
+      const updated = await tx.providerProfile.update({
+        where: { id },
+        data: { ...value, version: structureChanged ? current.version + 1 : current.version, updatedById: ctx.userId },
+        include: { equivalences: true },
+      });
+      await this.libraryEvent(tx, { actor: this.actorOf(ctx), action: 'PROVIDER_PROFILE_UPDATED', entityType: 'ProviderProfile', entityId: id, summary: { providerName: updated.providerName, version: updated.version, structureChanged } });
+      return updated;
     });
-    await this.audit.log({ userId: ctx.userId, action: 'provider-profile-update', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { providerName: profile.providerName, version: profile.version, structureChanged }, result: 'SUCCESS' });
+    await this.legacyAudit({ userId: ctx.userId, action: 'provider-profile-update', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { providerName: profile.providerName, version: profile.version, structureChanged }, result: 'SUCCESS' });
     return this.toProfileView(profile);
   }
 
   async deleteProviderProfile(id: string, ctx: AccessContext): Promise<{ id: string; deleted: true }> {
     await this.assertProviderWrite(ctx);
-    const current = await this.prisma.providerProfile.findUnique({ where: { id } });
+    const current = await this.db.providerProfile.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Perfil de proveedor no encontrado.');
-    await this.prisma.providerProfile.delete({ where: { id } });
-    await this.audit.log({ userId: ctx.userId, action: 'provider-profile-delete', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { providerName: current.providerName }, result: 'SUCCESS' });
+    await this.write(async (tx) => {
+      await tx.providerProfile.delete({ where: { id } });
+      await this.libraryEvent(tx, { actor: this.actorOf(ctx), action: 'PROVIDER_PROFILE_DELETED', entityType: 'ProviderProfile', entityId: id, summary: { providerName: current.providerName } });
+    });
+    await this.legacyAudit({ userId: ctx.userId, action: 'provider-profile-delete', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { providerName: current.providerName }, result: 'SUCCESS' });
     return { id, deleted: true };
   }
 
   private normalizeEquivalences(equivalences: EquivalenceInput[]): EquivalenceInput[] {
     if (!Array.isArray(equivalences)) throw new BadRequestException('Las equivalencias deben ser una lista.');
     const seen = new Set<string>();
+    const seenNormalized = new Set<string>();
     const out: EquivalenceInput[] = [];
     for (const eq of equivalences) {
       const externalRef = typeof eq?.externalRef === 'string' ? eq.externalRef.trim() : '';
@@ -1264,6 +1349,9 @@ export class PriceImportService {
       if (externalRef.length > 200) throw new BadRequestException('Una referencia externa supera 200 caracteres.');
       if (!UUID_RE.test(productId)) throw new BadRequestException(`Producto inválido en la equivalencia "${externalRef}".`);
       if (seen.has(externalRef)) throw new BadRequestException(`Referencia externa repetida: ${externalRef}.`);
+      // La base dedicada garantiza una referencia normalizada por proveedor: se rechaza aquí con un mensaje claro.
+      if (seenNormalized.has(normalizeSku(externalRef))) throw new BadRequestException(`Referencia externa repetida (se normaliza igual): ${externalRef}.`);
+      seenNormalized.add(normalizeSku(externalRef));
       seen.add(externalRef);
       out.push({ externalRef, productId });
     }
@@ -1272,24 +1360,26 @@ export class PriceImportService {
 
   async setProviderEquivalences(id: string, equivalences: EquivalenceInput[], ctx: AccessContext): Promise<ProviderProfileView> {
     await this.assertProviderWrite(ctx);
-    const profile = await this.prisma.providerProfile.findUnique({ where: { id } });
+    const profile = await this.db.providerProfile.findUnique({ where: { id } });
     if (!profile) throw new NotFoundException('Perfil de proveedor no encontrado.');
     const cleaned = this.normalizeEquivalences(equivalences);
     const productIds = [...new Set(cleaned.map((e) => e.productId))];
     const found = productIds.length
-      ? await this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true } })
+      ? await this.db.product.findMany({ where: { id: { in: productIds } }, select: { id: true } })
       : [];
     const foundIds = new Set(found.map((p) => p.id));
     const missing = productIds.filter((pid) => !foundIds.has(pid));
     if (missing.length > 0) throw new BadRequestException(`Producto no encontrado: ${missing.join(', ')}.`);
-    await this.prisma.$transaction([
-      this.prisma.providerEquivalence.deleteMany({ where: { providerProfileId: id } }),
-      ...cleaned.map((e) =>
-        this.prisma.providerEquivalence.create({ data: { providerProfileId: id, externalRef: e.externalRef, productId: e.productId } }),
-      ),
-    ]);
-    await this.audit.log({ userId: ctx.userId, action: 'provider-profile-equivalences', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { count: cleaned.length }, result: 'SUCCESS' });
-    const updated = await this.prisma.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
+    await this.write(async (tx) => {
+      await tx.providerEquivalence.deleteMany({ where: { providerProfileId: id } });
+      for (const e of cleaned) {
+        // normalized_ref solo existe en la base dedicada (en legacy la tabla operativa conserva su forma original).
+        await tx.providerEquivalence.create({ data: { providerProfileId: id, externalRef: e.externalRef, productId: e.productId, ...(this.dedicated ? { normalizedRef: normalizeSku(e.externalRef) } : {}) } });
+      }
+      await this.libraryEvent(tx, { actor: this.actorOf(ctx), action: 'PROVIDER_PROFILE_EQUIVALENCES_SET', entityType: 'ProviderProfile', entityId: id, summary: { count: cleaned.length } });
+    });
+    await this.legacyAudit({ userId: ctx.userId, action: 'provider-profile-equivalences', entity: 'PROVIDER_PROFILE', entityId: id, newValues: { count: cleaned.length }, result: 'SUCCESS' });
+    const updated = await this.db.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
     return this.toProfileView(updated as ProviderProfileRow);
   }
 
@@ -1303,7 +1393,7 @@ export class PriceImportService {
     const providerName = typeof input?.providerName === 'string' ? input.providerName.trim() : '';
     if (!providerName) throw new BadRequestException('Indica el proveedor.');
     const headers = Array.isArray(input?.headers) ? input.headers.filter((h) => typeof h === 'string') : [];
-    const profile = await this.prisma.providerProfile.findUnique({ where: { providerName } });
+    const profile = await this.db.providerProfile.findUnique({ where: { providerName } });
     if (!profile) {
       return { found: false, profileId: null, providerName, version: null, matches: false, requiresReview: true, expectedColumns: [] };
     }
@@ -1315,7 +1405,7 @@ export class PriceImportService {
   /** Resuelve referencias externas contra las equivalencias del perfil (sin equivalencia → pendiente). */
   async resolveProviderReferences(id: string, references: string[], ctx: AccessContext): Promise<{ profileId: string; resolution: ResolvedReference[] }> {
     await this.assertProviderRead(ctx);
-    const profile = await this.prisma.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
+    const profile = await this.db.providerProfile.findUnique({ where: { id }, include: { equivalences: true } });
     if (!profile) throw new NotFoundException('Perfil de proveedor no encontrado.');
     const refs = Array.isArray(references) ? references.filter((r) => typeof r === 'string') : [];
     const equivalences = profile.equivalences.map((e) => ({ externalRef: e.externalRef, productId: e.productId }));

@@ -4,16 +4,20 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
+  buildPublishSteps,
   describeBoardItem,
   describePublicationEvent,
   offeredAction,
   publicationBlockLines,
   viewBadge,
   type BoardItem,
+  type PublishStepContext,
 } from './publication-model'
+import type { ValidationIssueView } from '../catalog-validation/validation-model'
 import { fetchBoard, fetchPublicationHistory } from './publication-api'
 import api from '../../services/api'
 import { createElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PublicationBoardPanel } from './PublicationBoardPanel'
 import { ProductPublicationPanel } from './ProductPublicationPanel'
@@ -110,7 +114,7 @@ describe('describePublicationEvent', () => {
 describe('paneles (render de servidor)', () => {
   it('la bandeja pinta vistas, aviso de congelado y vacío honesto', () => {
     const html = renderToStaticMarkup(
-      createElement(PublicationBoardPanel, {
+      createElement(MemoryRouter, null, createElement(PublicationBoardPanel, {
         view: 'pendientes',
         items: [item()],
         total: 1,
@@ -121,23 +125,30 @@ describe('paneles (render de servidor)', () => {
         onSearch: () => undefined,
         onView: () => undefined,
         onPage: () => undefined,
-      }),
+      })),
     )
     expect(html).toContain('Pendientes')
     expect(html).toContain('revisión congelada')
     expect(html).toContain('Cámara Domo')
+    expect(html).toContain('SKU-1')
     expect(html).toContain('Validada sin errores')
+    expect(html).toContain('Revisar y publicar')
+    expect(html).toContain('href="/catalog-management/publication/products/p-1"')
+    expect(html).toContain('Buscar producto')
+    expect(html).toContain('aria-label="Buscar SKU o nombre"')
   })
 
   it('la bandeja vacía no inventa filas y el error se muestra', () => {
     const empty = renderToStaticMarkup(
       createElement(PublicationBoardPanel, { view: 'historial', items: [], total: 0, page: 0, busy: false, error: null, search: '', onSearch: () => undefined, onView: () => undefined, onPage: () => undefined }),
     )
-    expect(empty).toContain('Nada en esta vista')
+    expect(empty).toContain('No hay productos en esta vista')
+    expect(empty).not.toContain('data-testid="board-item-')
     const err = renderToStaticMarkup(
       createElement(PublicationBoardPanel, { view: 'pendientes', items: [], total: 0, page: 0, busy: false, error: 'No se pudo cargar', search: '', onSearch: () => undefined, onView: () => undefined, onPage: () => undefined }),
     )
     expect(err).toContain('No se pudo cargar')
+    expect(err).not.toContain('data-testid="board-empty"')
   })
 
   it('el historial del producto lista eventos o dice que no hay (sin inventar)', () => {
@@ -166,5 +177,103 @@ describe('publication-api', () => {
     vi.mocked(api.get).mockResolvedValue({ data: null })
     expect(await fetchPublicationHistory('p-1')).toEqual([])
     expect(api.get).toHaveBeenCalledWith('/products/p-1/publication-history')
+  })
+})
+
+describe('buildPublishSteps (pasos para publicar)', () => {
+  const ready: PublishStepContext = { check: 'current', unsavedChanges: false, pricesPending: false }
+  const issue = (over: Partial<ValidationIssueView> & Pick<ValidationIssueView, 'code' | 'severity' | 'section'>): ValidationIssueView => ({
+    field: undefined, message: 'Mensaje del servidor.', fix: 'Corrígelo.', ...over,
+  })
+  const name = issue({ code: 'base.name_useful', severity: 'error', section: 'identidad', field: 'name' })
+  const brand = issue({ code: 'base.brand_present', severity: 'error', section: 'identidad', field: 'brand' })
+  const category = issue({ code: 'base.category_valid', severity: 'error', section: 'identidad', field: 'categoryId' })
+  const image = issue({ code: 'media.primary_image', severity: 'error', section: 'multimedia', field: 'images' })
+  const price = issue({ code: 'offer.price_valid', severity: 'error', section: 'oferta', field: 'prices' })
+  const datasheet = issue({ code: 'docs.datasheet_missing', severity: 'warning', section: 'documentos', field: 'resources' })
+  const stock = issue({ code: 'stock.zero_info', severity: 'info', section: 'oferta', field: 'stock' })
+  const externalImage = issue({ code: 'media.external_unverified', severity: 'warning', section: 'multimedia', field: 'images' })
+  const statuses = (steps: ReturnType<typeof buildPublishSteps>) => steps.map((step) => step.status)
+
+  it('todos listos: pasos 1 a 3 completos y el paso 4 activo sin faltas', () => {
+    const steps = buildPublishSteps([], ready)
+    expect(statuses(steps)).toEqual(['done', 'done', 'done', 'active'])
+    expect(steps.map((step) => step.number)).toEqual([1, 2, 3, 4])
+    expect(steps[3]?.missing).toEqual([])
+    expect(steps[3]?.notices).toEqual([])
+  })
+
+  it('falta la marca: el paso 1 queda activo con la frase simple y el resto bloqueado', () => {
+    const steps = buildPublishSteps([brand], ready)
+    expect(statuses(steps)).toEqual(['active', 'blocked', 'blocked', 'blocked'])
+    expect(steps[0]?.missing).toEqual([{ text: 'Falta elegir la marca.', fixSection: 'datos-generales' }])
+  })
+
+  it('falta el precio: el paso 3 queda activo y apunta a Precios', () => {
+    const steps = buildPublishSteps([price], ready)
+    expect(statuses(steps)).toEqual(['done', 'done', 'active', 'blocked'])
+    expect(steps[2]?.missing).toEqual([{ text: 'Falta un precio vigente y positivo.', fixSection: 'precios' }])
+  })
+
+  it('falta la imagen principal: el paso 2 queda activo y apunta a Imágenes', () => {
+    const steps = buildPublishSteps([image], ready)
+    expect(statuses(steps)).toEqual(['done', 'active', 'blocked', 'blocked'])
+    expect(steps[1]?.missing).toEqual([{ text: 'Falta una imagen principal.', fixSection: 'imagenes' }])
+  })
+
+  it('varios faltantes: solo el primero queda abierto con todas sus faltas', () => {
+    const steps = buildPublishSteps([name, category, brand, price], ready)
+    expect(statuses(steps)).toEqual(['active', 'blocked', 'blocked', 'blocked'])
+    expect(steps[0]?.missing.map((item) => item.text)).toEqual([
+      'Falta escribir un nombre útil.',
+      'Falta elegir una categoría activa.',
+      'Falta elegir la marca.',
+    ])
+    expect(steps[2]?.missing).toHaveLength(1)
+  })
+
+  it('avisos no bloqueantes no bloquean: el paso 4 queda activo y los muestra', () => {
+    const steps = buildPublishSteps([datasheet, stock, externalImage], ready)
+    expect(statuses(steps)).toEqual(['done', 'done', 'done', 'active'])
+    expect(steps[3]?.missing).toEqual([])
+    expect(steps[3]?.notices).toEqual([
+      'Falta la ficha técnica en PDF.',
+      'No hay stock: la tienda mostrará «Agotado».',
+      'Una imagen usa un enlace externo que no se puede verificar.',
+    ])
+  })
+
+  it('un archivo propio inexistente bloquea el paso 4 con el enlace a Recursos', () => {
+    const file = issue({ code: 'media.file_exists', severity: 'error', section: 'documentos', field: 'resources' })
+    const steps = buildPublishSteps([file], ready)
+    expect(statuses(steps)).toEqual(['done', 'done', 'done', 'active'])
+    expect(steps[3]?.missing).toEqual([
+      { text: 'Un archivo no está en el almacén o no es del tipo esperado. Vuelve a subirlo o corrige su dirección.', fixSection: 'recursos' },
+    ])
+  })
+
+  it('sin revisión vigente: el paso 1 pide comprobar y el resto queda bloqueado', () => {
+    for (const check of ['none', 'unavailable', 'stale'] as const) {
+      const steps = buildPublishSteps([brand], { ...ready, check })
+      expect(statuses(steps)).toEqual(['active', 'blocked', 'blocked', 'blocked'])
+      expect(steps[0]?.missing[0]?.fixSection).toBeNull()
+    }
+    expect(buildPublishSteps([], { ...ready, check: 'none' })[0]?.missing[0]?.text).toContain('Validar ficha')
+  })
+
+  it('cambios sin guardar y precios en curso bloquean el paso 4', () => {
+    const unsaved = buildPublishSteps([], { ...ready, unsavedChanges: true })
+    expect(statuses(unsaved)).toEqual(['done', 'done', 'done', 'active'])
+    expect(unsaved[3]?.missing.map((item) => item.text)).toEqual(['Hay cambios sin guardar en la ficha.'])
+
+    const pricing = buildPublishSteps([], { ...ready, pricesPending: true })
+    expect(pricing[3]?.missing.map((item) => item.text)).toEqual(['Hay un cambio de precios en curso.'])
+  })
+
+  it('un código bloqueante desconocido no se oculta: cae en el paso 4 con el mensaje del servidor', () => {
+    const unknown = issue({ code: 'attrs.warranty', severity: 'error', section: 'atributos', field: 'extraAttributes', message: 'Falta la garantía.' })
+    const steps = buildPublishSteps([unknown], ready)
+    expect(statuses(steps)).toEqual(['done', 'done', 'done', 'active'])
+    expect(steps[3]?.missing).toEqual([{ text: 'Falta la garantía.', fixSection: 'descripcion' }])
   })
 })

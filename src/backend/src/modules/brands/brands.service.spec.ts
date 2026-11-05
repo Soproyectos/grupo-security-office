@@ -9,7 +9,8 @@ jest.mock('../../prisma/prisma.service', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { BrandsService } from './brands.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
+import { LibraryAuditService } from '../library-audit/library-audit.service';
 import { FilesService } from '../files/files.service';
 
 const mockFiles = {
@@ -48,11 +49,14 @@ describe('BrandsService', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockPrisma.brand.findMany.mockResolvedValue([]);
+    mockPrisma.product.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BrandsService,
-        { provide: PrismaService, useValue: mockPrisma },
+        { provide: BibliotecaPrismaService, useValue: { client: mockPrisma, config: { mode: 'legacy' }, assertWritesAllowed: jest.fn(), writeTransaction: (work: any) => work(mockPrisma) } },
+        { provide: LibraryAuditService, useValue: { append: jest.fn() } },
         { provide: FilesService, useValue: mockFiles },
       ],
     }).compile();
@@ -238,6 +242,45 @@ describe('BrandsService', () => {
       mockPrisma.brand.findUnique.mockResolvedValue(null);
 
       await expect(service.uploadLogo('no-existe', validFile)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('reglas de catálogo maestro', () => {
+    it('rechaza crear una marca con nombre equivalente (mayúsculas y tildes) y devuelve la existente', async () => {
+      mockPrisma.brand.findUnique.mockResolvedValue(null);
+      mockPrisma.brand.findMany.mockResolvedValue([{ id: 'b9', name: 'Ubiquiti Réd' }]);
+
+      const err = await service.create({ name: 'ubiquiti red', slug: 'ubiquiti-red-2' } as any).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse()).toMatchObject({ code: 'NAME_DUPLICATED', existing: { id: 'b9' } });
+      expect(mockPrisma.brand.create).not.toHaveBeenCalled();
+    });
+
+    it('renombrar una marca no choca consigo misma', async () => {
+      mockPrisma.brand.findUnique.mockResolvedValueOnce(mockBrand).mockResolvedValue(null);
+      mockPrisma.brand.findMany.mockResolvedValue([{ id: 'brand-1', name: 'Hikvision' }]);
+      mockPrisma.brand.update.mockResolvedValue({ ...mockBrand, name: 'HIKVISION' });
+
+      await service.update('brand-1', { name: 'HIKVISION' } as any);
+
+      expect(mockPrisma.brand.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'brand-1' } }));
+    });
+
+    it('usage informa los productos y bloquea el borrado', async () => {
+      mockPrisma.brand.findUnique.mockResolvedValue(mockBrand);
+      mockPrisma.product.count.mockResolvedValue(4);
+
+      const usage = await service.usage('brand-1');
+
+      expect(usage).toMatchObject({ canDelete: false, counts: { products: 4 } });
+      expect(usage.reasons[0].code).toBe('HAS_PRODUCTS');
+    });
+
+    it('usage de una marca sin uso permite eliminar', async () => {
+      mockPrisma.brand.findUnique.mockResolvedValue(mockBrand);
+
+      expect((await service.usage('brand-1')).canDelete).toBe(true);
     });
   });
 });

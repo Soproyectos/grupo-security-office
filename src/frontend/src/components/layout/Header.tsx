@@ -1,9 +1,11 @@
+import { workspaceForRoles } from '../../lib/workspace'
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
-import { canAdministerAccess, hasAssignedAction, useOwnUserAccess, usePanelAccess } from '../../features/users/access'
+import { canAdministerAccess, hasAssignedAction, isCatalogPath, useOwnUserAccess, usePanelAccess } from '../../features/users/access'
+import { hasMarketingAction, MARKETING_PANEL_LABEL, MARKETING_PATH } from '../../features/marketing/marketing-access'
 import {
   fetchNotifications,
   fetchUnreadCount,
@@ -35,6 +37,8 @@ export default function Header() {
   const catalog = usePanelAccess('catalog')
   const { access, status } = useOwnUserAccess()
   const allowed = (action: string) => hasAssignedAction({ roles: user?.roles, grants: access?.grants, status }, [action])
+  const marketingRead = hasMarketingAction({ roles: user?.roles, grants: access?.grants, packages: access?.packages, status }, 'read')
+  const isSeller = workspaceForRoles(user?.roles ?? []) === 'sales'
   const isSuperAdmin = canAdministerAccess(user?.roles)
 
   // Notificaciones: fetch automático + refetch al abrir dropdown
@@ -153,7 +157,7 @@ export default function Header() {
   return (
     <header className="bg-[var(--color-bg-card)] shadow-sm sticky top-0 z-50 border-b border-[var(--color-border)] transition-all duration-300 ease-out">
       {/* Nivel 1 - Identidad + búsqueda + acciones */}
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="max-w-[1600px] mx-auto px-5">
         <div className="flex flex-wrap items-center justify-between min-h-[48px] lg:min-h-[56px] h-auto py-2 gap-3">
           {/* Izquierda: Isotipo + nombre */}
           <div className="flex-shrink-0">
@@ -170,7 +174,7 @@ export default function Header() {
           </div>
 
           {/* Centro: Buscador global */}
-          {allowed('products:read') && <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
+          {catalog.tabs.some((tab) => tab.to === '/commercial/products') && <form onSubmit={handleSearch} className="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-md min-w-0">
             <div className="relative">
               <input
                 type="text"
@@ -397,14 +401,14 @@ export default function Header() {
 
       {/* Nivel 2 - Navegación principal */}
       <nav ref={navRef} className="relative bg-[var(--color-bg-primary)] border-t border-[var(--color-border)]">
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="max-w-[1600px] mx-auto px-5">
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin py-2">
             <div className="flex-shrink-0">
               <NavItem to="/" label="Mi resumen" />
             </div>
             <div className="flex-shrink-0"><NavItem to="/agenda" label="Agenda y tareas" /></div>
-            {catalog.tabs[0] && <div className="flex-shrink-0"><NavItem to={catalog.tabs[0]?.to ?? '/commercial/lists'} label="Catálogo y precios" /></div>}
-            {commercial.tabs[0] && <div className="relative flex-shrink-0">
+            {catalog.tabs[0] && <div className="flex-shrink-0"><NavItem to={catalog.tabs[0].to} label="Biblioteca" active={isCatalogPath(location.pathname)} /></div>}
+            {!isSeller && commercial.tabs[0] && <div className="relative flex-shrink-0">
               <div ref={commercialButtonRef} className="flex items-center">
                 <NavLink
                   to={commercial.tabs[0]?.to ?? '/commercial/customers'}
@@ -443,13 +447,18 @@ export default function Header() {
                 </button>
               </div>
             </div>}
-            {isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /><NavItem to="/users/access" label="Asignar paneles" /></div>}
-            {allowed('users:read') && (
+            {!isSeller && isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /><NavItem to="/users/access" label="Asignar paneles" /></div>}
+            {!isSeller && marketingRead && (
+              <div className="flex-shrink-0">
+                <NavItem to={MARKETING_PATH} label={MARKETING_PANEL_LABEL} active={location.pathname.startsWith('/marketing')} />
+              </div>
+            )}
+            {!isSeller && allowed('users:read') && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
               </div>
             )}
-            {allowed('audit:read') && (
+            {!isSeller && allowed('audit:read') && (
               <div className="flex-shrink-0">
                 <NavItem to="/audit" label="Auditoría" />
               </div>
@@ -457,7 +466,7 @@ export default function Header() {
           </div>
         </div>
 
-        {commercialOpen && commercial.hasAnyPanel && (
+        {!isSeller && commercialOpen && commercial.hasAnyPanel && (
           <div
             ref={commercialMenuRef}
             id="comercial-menu"
@@ -491,15 +500,15 @@ export default function Header() {
   )
 }
 
-function NavItem({ to, label }: { to: string; label: string }) {
+function NavItem({ to, label, active }: { to: string; label: string; active?: boolean }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `px-3 py-1.5 text-sm font-condensed font-semibold whitespace-nowrap transition-all tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] rounded ${
-          isActive
-            ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)]'
-            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
+        `inline-block px-3 py-1.5 text-sm font-condensed font-semibold whitespace-nowrap transition-all tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] rounded-t border-b-2 ${
+          (active ?? isActive)
+            ? 'text-[var(--color-primary)] border-[var(--color-primary)]'
+            : 'text-[var(--color-text-secondary)] border-transparent hover:text-[var(--color-primary)]'
         }`
       }
     >

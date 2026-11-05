@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ProductSheetEditor, SHEET_SECTIONS, type ProductSheetEditorProps } from './ProductSheetEditor'
 import { sheetFixture } from './fixtures'
@@ -43,7 +43,9 @@ describe('ProductSheetEditor (render)', () => {
     expect(html).toContain('value="Video"')
     expect(html).toContain('value="Canales"')
     expect(html).toContain('value="Resolución"')
-    expect(html).toContain('value="Red"')
+    // Only the selected group's rows are in the panel; the others show as tabs.
+    expect(html).toContain('id="spec-tab-')
+    expect(html).toContain('>Red<')
     // resources, both sections
     expect(html).toContain('value="Ficha técnica"')
     expect(html).toContain('value="Manual de usuario"')
@@ -57,8 +59,9 @@ describe('ProductSheetEditor (render)', () => {
 
   it('renders one editor block per spec group, spec row, document and firmware file', () => {
     const html = render()
-    expect(html.match(/data-testid="spec-group"/g)).toHaveLength(2)
-    expect(html.match(/data-testid="spec-item"/g)).toHaveLength(3)
+    expect(html.match(/role="tab"/g)).toHaveLength(2)
+    expect(html.match(/data-testid="spec-group"/g)).toHaveLength(1)
+    expect(html.match(/data-testid="spec-item"/g)).toHaveLength(2)
     expect(html.match(/data-testid="resource-documents"/g)).toHaveLength(2)
     expect(html.match(/data-testid="resource-firmware"/g)).toHaveLength(2)
     expect(html.match(/data-testid="feature-row"/g)).toHaveLength(2)
@@ -129,24 +132,12 @@ describe('ProductSheetEditor (render)', () => {
     expect(html).not.toContain('otro error')
   })
 
-  it('CAT-03 (frontend-tecnicos): las notas internas se pintan MARCADAS como privadas y separadas de las públicas', () => {
+  it('las notas internas ya no forman parte de la ficha pública (viven en su propia sección)', () => {
     const html = render()
-    expect(html).toContain('Notas internas (privadas)')
-    expect(html).toContain('Nunca se publican')
-    expect(html).toContain('Almacén Bodega 2')
-    // Separación explícita: las notas públicas van etiquetadas como públicas.
-    expect(html).toContain('Aviso de especificaciones (público)')
-    expect(html).toContain('Nota de firmware (pública)')
-  })
-
-  it('CAT-03 (frontend-tecnicos): sin permiso el campo no aparece y se avisa que se conservan', () => {
-    const html = render({
-      sheet: sheetFixture({ canSeeInternalNotes: false, internalNotes: null }),
-    })
-    expect(html).not.toContain('Notas internas (privadas)')
-    expect(html).not.toContain('Almacén Bodega 2')
-    expect(html).toContain('No tienes permiso para ver ni editar las notas internas')
-    expect(html).toContain('se conservan al guardar')
+    expect(html).not.toContain('Notas internas')
+    expect(html).not.toContain('data-testid="internal-notes"')
+    expect(html).toContain('Aviso al pie de la tabla')
+    expect(html).toContain('Nota sobre el firmware')
   })
 
   it('CAT-03 (frontend-tecnicos): Modelos es solo lista de modelos — sin precio/stock (no hay variantes nuevas)', () => {
@@ -176,6 +167,41 @@ describe('ProductSheetEditor (render)', () => {
     expect(publicada).not.toContain('la tienda sigue mostrando la última versión publicada')
   })
 
+  it('dentro del editor de producto no repite lo que ya hacen otras secciones', () => {
+    const html = render({
+      embedded: true,
+      lifecycleStatus: 'DRAFT',
+      validation: { status: 'REVISION_PENDIENTE', label: 'revisión pendiente', pending: true },
+    })
+    // Publicar (requisitos y estado) y el índice del editor ya lo dicen.
+    expect(html).not.toContain('aún no está publicado en la tienda')
+    expect(html).not.toContain('Estado de validación:')
+    expect(html).not.toContain('la tienda sigue mostrando la última versión publicada')
+    expect(html).not.toContain('Ver ficha pública')
+    // El encabezado propio no se repite: lo pone la sección del editor.
+    expect(html).not.toContain('<h2')
+    // Imágenes ya cubre las fotos: la imagen de la ficha solo aparece si ya tenía un valor.
+    // Los avisos al cliente viven dentro de Especificaciones y Recursos, no en una sección aparte.
+    expect(html).not.toContain('Avisos al cliente')
+    expect(html).not.toContain('id="ficha-notas"')
+    // Sin tarjetas dentro de la tarjeta de la sección.
+    expect(html).not.toContain('rounded-xl p-5')
+    expect(html).toContain('Permitir abrir la ficha por su dirección (slug)')
+    expect(html).not.toContain('Publicar en la tienda se hace')
+    expect(html).toContain('Marca en la tienda')
+    expect(html).toContain('Referencia (modelo)')
+    expect(html).not.toContain('Marca (ficha)')
+    // Sin cambios y sin errores no hay barra de guardado.
+    expect(html).not.toContain('Guardar ficha pública')
+  })
+
+  it('dentro del editor de producto conserva la imagen de la ficha cuando ya tiene valor', () => {
+    const html = render({ embedded: true, sheet: sheetFixture({ imageUrl: 'https://cdn.example.invalid/ficha.jpg' }) })
+    expect(html).toContain('Imagen de la ficha')
+    expect(html).toContain('Vacío = se usan las fotos de la sección Imágenes')
+    expect(html).toContain('value="https://cdn.example.invalid/ficha.jpg"')
+  })
+
   it('CAT-04 (frontend-documentos): aviso de descarga autorizada, hint de subida de firmware y PDF opcional', () => {
     const html = render({
       onUploadAsset: async () => ({ url: '/api/files/x' }),
@@ -192,8 +218,8 @@ describe('ProductSheetEditor (render)', () => {
     expect(html).toContain('inventario de formatos')
     expect(html).toContain('Subir archivo…')
     // La subida solo aparece en documentos, nunca en la sección firmware.
-    const fwStart = html.indexOf('Firmware y notas de versión')
-    const fwSection = html.slice(fwStart, html.indexOf('id="ficha-notas"'))
+    const fwStart = html.indexOf('>Firmware</h4>')
+    const fwSection = html.slice(fwStart)
     expect(fwSection).not.toContain('Subir archivo…')
   })
 
@@ -201,13 +227,13 @@ describe('ProductSheetEditor (render)', () => {
     const html = render()
     expect(html).not.toContain('Subir archivo…')
     // La subida de firmware sigue sin ofrecerse para nadie (E1).
-    const fwStart = html.indexOf('Firmware y notas de versión')
+    const fwStart = html.indexOf('>Firmware</h4>')
     expect(html.slice(fwStart)).toContain('inventario de formatos')
   })
 
   it('CAT-03 (regla 2): Destacados son beneficios — sin campos de tienda ni precio/stock', () => {
     const html = render()
-    expect(html).toContain('Puntos fuertes o beneficios del producto')
+    expect(html).toContain('Puntos fuertes del producto')
     expect(html).toContain('No fijan precio ni stock')
     // La sección de destacados no contiene campos editables de tienda
     // (ni inputs numéricos de precio/stock, ni labels de esos campos):
@@ -240,8 +266,115 @@ describe('ProductSheetEditor (render)', () => {
         firmwareNote: null,
       }),
     })
-    expect(html).toContain('Sin grupos todavía.')
+    expect(html).toContain('Agrega el primer grupo')
+    expect(html).not.toContain('role="tabpanel"')
     expect(html).toContain('Sin elementos todavía.')
     expect(html).not.toContain('data-testid="spec-group"')
+  })
+
+  describe('campos del encabezado sin plegar', () => {
+    it('muestra imagen, dirección e identificadores siempre visibles; la marca va plegada cuando está vacía', () => {
+      const empty = render({
+        embedded: true,
+        sheet: sheetFixture({ brand: null, imageUrl: null, imageAlt: null, slug: null, published: false, manufacturerRefs: [] }),
+      })
+      expect(empty.match(/<details/g)).toHaveLength(1)
+      expect(empty).toContain('Usar otra marca en la tienda')
+      expect(empty).not.toMatch(/<details[^>]*open=""/)
+      for (const text of [
+        'Marca en la tienda',
+        'Imagen de la ficha',
+        'Texto alternativo de la imagen',
+        'Slug',
+        'Permitir abrir la ficha por su dirección (slug)',
+        'Identificadores del fabricante',
+      ]) {
+        expect(empty).toContain(text)
+      }
+      expect(empty).not.toContain('Cambiar marca o imagen solo en la tienda')
+      expect(empty).not.toContain('Dirección web e identificadores')
+    })
+  })
+
+  describe('especificaciones en maestro-detalle', () => {
+    it('lista los grupos y pinta solo el panel del primero por defecto', () => {
+      const html = render()
+      expect(html).toContain('role="tablist"')
+      expect(html.match(/role="tab"/g)).toHaveLength(2)
+      expect(html.match(/role="tabpanel"/g)).toHaveLength(1)
+      expect(html).toContain('aria-selected="true"')
+      expect(html).toContain('aria-label="Título del grupo 1"')
+      expect(html).not.toContain('aria-label="Título del grupo 2"')
+      expect(html).toContain('2 filas')
+      expect(html).toContain('1 fila')
+    })
+
+    it('sin grupos muestra un estado vacío que guía y deja agregar el primero', () => {
+      const html = render({ sheet: sheetFixture({ specGroups: [] }) })
+      expect(html).toContain('Agrega el primer grupo')
+      expect(html).toContain('Agregar grupo')
+      expect(html).not.toContain('role="tab"')
+    })
+  })
+
+  describe('embedded con renderSection', () => {
+    const renderSection = ({ id, title, hint, children }: { id: string; title: string; hint?: string; children: ReactNode }) =>
+      createElement('section', { id: `seccion-ficha-${id}`, 'data-testid': 'host-section' }, createElement('h3', null, title), hint ? createElement('p', null, hint) : null, children)
+
+    it('delega cada bloque a la página: una ancla y un título por sección, sin h3 propios', () => {
+      const html = render({ embedded: true, renderSection })
+      expect(html.match(/data-testid="host-section"/g)).toHaveLength(SHEET_SECTIONS.length)
+      for (const [id, title] of [
+        ['identidad', 'Encabezado'],
+        ['destacados', 'Destacados'],
+        ['caracteristicas', 'Características'],
+        ['modelos', 'Modelos disponibles'],
+        ['especificaciones', 'Especificaciones'],
+        ['documentos', 'Recursos'],
+      ]) {
+        expect(html.match(new RegExp(`id="seccion-ficha-${id}"`, 'g'))).toHaveLength(1)
+        expect(html.match(new RegExp(`<h3>${title}</h3>`, 'g'))).toHaveLength(1)
+      }
+      expect(html).not.toContain('<h3 id="ficha-')
+      expect(html).not.toContain('id="ficha-identidad"')
+      expect(html).not.toContain('seccion-ficha-notas')
+      expect(html.match(/<form/g)).toHaveLength(1)
+    })
+
+    it('sigue el orden de la tienda y reparte los avisos dentro de Especificaciones y Recursos', () => {
+      const html = render({ embedded: true, renderSection })
+      expect(SHEET_SECTIONS.map((s) => s.id)).toEqual(['identidad', 'destacados', 'caracteristicas', 'modelos', 'especificaciones', 'documentos'])
+      const at = (id: string) => html.indexOf(`id="seccion-ficha-${id}"`)
+      const order = SHEET_SECTIONS.map((s) => at(s.id))
+      expect([...order].sort((a, b) => a - b)).toEqual(order)
+      const specs = html.slice(at('especificaciones'), at('documentos'))
+      expect(specs).toContain('Pruebas en entorno controlado.')
+      expect(specs).toContain('Se muestra al pie de la tabla de especificaciones.')
+      expect(specs).not.toContain('Actualiza al firmware más reciente.')
+      const resources = html.slice(at('documentos'))
+      expect(resources).toContain('Actualiza al firmware más reciente.')
+      expect(resources).toContain('>Documentos técnicos</h4>')
+      expect(resources).toContain('>Firmware</h4>')
+    })
+
+    it('muestra una sola barra de guardado pegajosa con un error, y ninguna sin cambios', () => {
+      const withError = render({ embedded: true, renderSection, saveError: 'Fallo de prueba' })
+      expect(withError.match(/Guardar ficha pública/g)).toHaveLength(1)
+      expect(withError).toContain('biblioteca-editor__savebar')
+      expect(withError).toContain('Fallo de prueba')
+      expect(render({ embedded: true, renderSection })).not.toContain('Guardar ficha pública')
+      expect(render({ embedded: true, renderSection, saveError: 'Fallo de prueba', saveBarVisible: false })).not.toContain('Guardar ficha pública')
+    })
+
+    it('conserva el aviso de conflicto 409 y la recarga dentro de la barra', () => {
+      const html = render({
+        embedded: true,
+        renderSection,
+        onReload: () => undefined,
+        conflict: { code: 'sheet-version-conflict', currentVersion: 3, currentUpdatedAt: null } as never,
+      })
+      expect(html).toContain('Descartar cambios y recargar')
+      expect(html.match(/Guardar ficha pública/g)).toHaveLength(1)
+    })
   })
 })

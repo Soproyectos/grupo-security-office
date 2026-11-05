@@ -52,6 +52,11 @@ export type SearchFilterBarProps = {
   sidebarContent?: ReactNode
   /** Secciones de filtros para el sidebar, con ID, label y contenido explícito. */
   sidebarSections?: SidebarFilterSection[]
+  /**
+   * Controles de la derecha de la barra (conteo, vista, paginación). Si se pasa, las etiquetas de filtros activos
+   * se muestran en la misma fila que el botón «Filtros» en lugar de una fila aparte.
+   */
+  toolbarEnd?: ReactNode
 }
 
 const SIDEBAR_ACCORDIONS = [
@@ -143,6 +148,7 @@ export function SearchFilterBar({
   content,
   sidebarContent,
   sidebarSections,
+  toolbarEnd,
 }: SearchFilterBarProps) {
   const [isDesktop, setIsDesktop] = useState(viewportIsDesktop)
   const [isOpen, setIsOpen] = useState(() => layout === 'sidebar' && viewportIsDesktop())
@@ -286,6 +292,40 @@ export function SearchFilterBar({
 
   const isSidebar = layout === 'sidebar'
 
+  const chipsBlock = activeFilterChips.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Filtros activos"
+        >
+          {activeFilterChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-primary)]/20 bg-[var(--color-primary-bg-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary)]"
+            >
+              <span>{chip.label}</span>
+
+              <button
+                type="button"
+                onClick={chip.onRemove}
+                className="rounded-sm p-0.5 text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                aria-label={`Quitar filtro ${chip.label}`}
+              >
+                <CloseIcon />
+              </button>
+            </span>
+          ))}
+
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            className="rounded-md px-2 py-1 text-xs font-medium text-neutral-500 underline underline-offset-2 transition-colors hover:text-[var(--color-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      )
+
   return (
     <section
       className={isSidebar ? 'space-y-3' : 'relative space-y-3'}
@@ -293,10 +333,10 @@ export function SearchFilterBar({
     >
       <div
         ref={containerRef}
-        className="flex flex-col gap-3 sm:flex-row sm:items-center"
+        className={toolbarEnd ? 'flex flex-wrap items-center gap-2' : 'flex flex-col gap-3 sm:flex-row sm:items-center'}
       >
         {search && (
-          <div className="relative min-w-0 flex-1">
+          <div className={toolbarEnd ? 'relative min-w-[220px] max-w-md flex-1' : 'relative min-w-0 flex-1'}>
             <span
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
               aria-hidden="true"
@@ -339,6 +379,8 @@ export function SearchFilterBar({
             </Button>
           </span>
         )}
+        {toolbarEnd && chipsBlock}
+        {toolbarEnd && <div className="ml-auto flex flex-wrap items-center gap-3">{toolbarEnd}</div>}
       </div>
 
       {isSidebar && !isDesktop && sectionsToRender && sectionsToRender.length > 0 && (
@@ -367,7 +409,7 @@ export function SearchFilterBar({
             <button
               type="button"
               onClick={handleClearFilters}
-              className="shrink-0 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-500 underline underline-offset-2 transition-colors hover:text-[var(--color-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+              className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-neutral-500 underline underline-offset-2 transition-colors hover:text-[var(--color-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
             >
               Limpiar
             </button>
@@ -375,39 +417,7 @@ export function SearchFilterBar({
         </div>
       )}
 
-      {activeFilterChips.length > 0 && (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label="Filtros activos"
-        >
-          {activeFilterChips.map((chip) => (
-            <span
-              key={chip.id}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-primary)]/20 bg-[var(--color-primary-bg-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary)]"
-            >
-              <span>{chip.label}</span>
-
-              <button
-                type="button"
-                onClick={chip.onRemove}
-                className="rounded-sm p-0.5 text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
-                aria-label={`Quitar filtro ${chip.label}`}
-              >
-                <CloseIcon />
-              </button>
-            </span>
-          ))}
-
-          <button
-            type="button"
-            onClick={handleClearFilters}
-            className="rounded-md px-2 py-1 text-xs font-medium text-neutral-500 underline underline-offset-2 transition-colors hover:text-[var(--color-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
-          >
-            Limpiar filtros
-          </button>
-        </div>
-      )}
+      {!toolbarEnd && chipsBlock}
 
       {isSidebar ? (
         // ---------- Modo sidebar: catálogo de dos columnas ----------
@@ -436,7 +446,7 @@ export function SearchFilterBar({
                     type="button"
                     onClick={handleClearFilters}
                     disabled={clearFiltersDisabled || activeFilterCount === 0}
-                    className="rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                    className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
                   >
                     Limpiar
                   </button>
@@ -493,7 +503,7 @@ export function SearchFilterBar({
                       type="button"
                       onClick={handleClearFilters}
                       disabled={clearFiltersDisabled || activeFilterCount === 0}
-                      className="rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                      className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
                     >
                       Limpiar
                     </button>
