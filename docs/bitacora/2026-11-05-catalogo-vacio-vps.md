@@ -1,0 +1,19 @@
+# Preparación de catálogo vacío en VPS
+
+Fecha: 05/11/2026. Rama: `release/web-20261105`. Estado: preparación local, no corte productivo.
+
+Revisión nativa del candidato de doce archivos: usuario eligió `declined`; elección registrada para `sha256:55b317824e9fef7f61ef67e4afe9d440c09cd2487cf293939eea3b22295df7b8`. No se creó recibo ni se desactivaron revisiones futuras. Evaluación posterior no concluyente conserva riesgo alto. Verificación ordinaria independiente del ejecutor: guardas de lectura/transacción/errores y taxonomía comprobadas estáticamente. Su supuesto bloqueo por CAT-DEFAULT se refuta con `20260815172048_eliminar_catalog`, que elimina catalogs después de sembrarla. Copiar todos los roles/configuración es intencional; se verificaron seis en origen y deberán recontarse antes del corte. No hubo prueba de PostgreSQL real.
+
+El usuario confirmó el objetivo de nueve categorías, 66 subcategorías, catálogo vacío y Super Admin. Dio el destino SSH y pidió buscar su clave en las carpetas SSH. Se encontró el alias existente `vps`; no se leyó contenido de claves ni se cambiaron credenciales.
+
+El inventario autorizado se ejecutó con SELECT en transacción de solo lectura y ROLLBACK: 89 categorías con 29 nodos de tercer nivel, 5.056 productos, 2.335 precios y cuatro usuarios. Hay un único Super Admin activo, sin supervisor, con MFA; solo se emitieron agregados y booleanos de autenticación. El intento de migración de subcategorías permanece fallido; no se aplicó ningún `migrate resolve`.
+
+Se localizaron las 9/66 en la hoja `Categorias` del maestro revisado. Se prepararon `scripts/extract-library-taxonomy.cjs`, su prueba y `src/backend/prisma/seed-data/library-taxonomy-9-66.json`; no se copiaron hojas Productos/Resumen ni precios. Comprobaciones: `node --check` en ambos scripts y `node --test scripts/extract-library-taxonomy.test.cjs`, cinco de cinco. El padre repitió esas comprobaciones y cotejó el SHA del manifiesto. Revisión independiente acotada: sin hallazgos accionables.
+
+Se actualizaron el índice de Biblioteca, la tarea de despliegue y el traspaso del bloqueo; el [plan nuevo](../handoffs/2026-11-05-catalogo-vacio-vps.md) describe una base completa nueva en el mismo servidor, sin cambiar al diseño dedicado. La base actual quedaría archivada; solo una base serviría a NestJS en modo legacy.
+
+El ejecutor `src/backend/prisma/prepare-empty-catalog.cjs` no crea bases ni cambia servicios; necesita candidata vacía ya migrada, `--apply` y confirmación del nombre en el entorno. Copia solo autenticación/configuración autorizada en memoria y el manifiesto fijado por hash. Guardas: identidad de cada conexión, migraciones completas, destino vacío, exactamente un SA activo/sin supervisor y comparación de filas antes de COMMIT; errores genéricos sin datos. Sintaxis y seis pruebas dobles aprobadas; el padre repitió la orden conjunta con el extractor, once pruebas aprobadas. CI ejecutará esa misma suite sin DB. Se fijó LF para el manifiesto en `.gitattributes` para conservar su SHA en Windows/Linux. No hay prueba con PostgreSQL real de esta carga.
+
+No se creó ninguna base o contenedor, ni se escribieron datos, ejecutaron migraciones, reiniciaron servicios o desplegaron imágenes en esta preparación. No se ensayó este corte contra PostgreSQL. La página local 5173 no respondió durante la consulta; no hay una comparación visual nueva con ella. La web pública seguía disponible tras el CD fallido previo, con la versión anterior.
+
+Revertir la preparación local consiste en retirar únicamente sus archivos/diffs; los cinco borrados locales previos no pertenecen a esta tarea. La reversión del eventual corte productivo se detalla en el plan y requiere conservar base anterior, respaldos e imágenes anteriores. Ningún borrado de la base antigua queda autorizado por esta documentación.

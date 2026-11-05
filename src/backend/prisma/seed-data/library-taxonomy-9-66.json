@@ -1,0 +1,252 @@
+{
+  "source": {
+    "filename": "MAESTRO_REVISADO.xlsx",
+    "sheet": "Categorias",
+    "sha256": "2206f0e19f5bf6dbc5c042571b324ff50cc288da9910827c457a1b72c314ec61"
+  },
+  "categories": [
+    {
+      "name": "Alarmas",
+      "subcategories": [
+        {
+          "name": "Accesorios para alarmas"
+        },
+        {
+          "name": "Alarmas comunitarias"
+        },
+        {
+          "name": "Botones de pánico"
+        },
+        {
+          "name": "Comunicadores y módulos"
+        },
+        {
+          "name": "Detección de incendios"
+        },
+        {
+          "name": "Detectores y sensores"
+        },
+        {
+          "name": "Kits y paneles"
+        },
+        {
+          "name": "Sirenas y señalización"
+        },
+        {
+          "name": "Teclados y controles"
+        }
+      ]
+    },
+    {
+      "name": "Audio y perifoneo",
+      "subcategories": [
+        {
+          "name": "Accesorios de audio"
+        },
+        {
+          "name": "Altavoces y bocinas"
+        },
+        {
+          "name": "Amplificadores"
+        },
+        {
+          "name": "Equipos de perifoneo"
+        },
+        {
+          "name": "Micrófonos"
+        }
+      ]
+    },
+    {
+      "name": "Cableado",
+      "subcategories": [
+        {
+          "name": "Cable UTP y FTP"
+        },
+        {
+          "name": "Conectores y jacks"
+        },
+        {
+          "name": "Fibra óptica"
+        },
+        {
+          "name": "Herramientas y accesorios"
+        },
+        {
+          "name": "Patch cords y pigtails"
+        },
+        {
+          "name": "Patch panels y organizadores"
+        },
+        {
+          "name": "Racks y gabinetes"
+        }
+      ]
+    },
+    {
+      "name": "Casa inteligente",
+      "subcategories": [
+        {
+          "name": "Botones y módulos de automatización"
+        },
+        {
+          "name": "Hubs y controladores"
+        },
+        {
+          "name": "Iluminación inteligente"
+        },
+        {
+          "name": "Interruptores y enchufes inteligentes"
+        },
+        {
+          "name": "Kits y accesorios"
+        },
+        {
+          "name": "Sensores inteligentes"
+        }
+      ]
+    },
+    {
+      "name": "Control de acceso",
+      "subcategories": [
+        {
+          "name": "Accesorios de acceso"
+        },
+        {
+          "name": "Automatización de puertas y portones"
+        },
+        {
+          "name": "Botones de salida"
+        },
+        {
+          "name": "Cerraduras y cerrojos"
+        },
+        {
+          "name": "Control de asistencia"
+        },
+        {
+          "name": "Controladoras"
+        },
+        {
+          "name": "Electroimanes y cantoneras"
+        },
+        {
+          "name": "Lectores y terminales"
+        },
+        {
+          "name": "Tarjetas y llaveros"
+        },
+        {
+          "name": "Torniquetes y molinetes"
+        },
+        {
+          "name": "Videoporteros e intercomunicadores"
+        }
+      ]
+    },
+    {
+      "name": "Cámaras",
+      "subcategories": [
+        {
+          "name": "Almacenamiento para vigilancia"
+        },
+        {
+          "name": "Cámaras IP y Wi-Fi"
+        },
+        {
+          "name": "Cámaras analógicas"
+        },
+        {
+          "name": "Cámaras especiales y para vehículos"
+        },
+        {
+          "name": "Grabadores DVR y NVR"
+        },
+        {
+          "name": "Monitores para vigilancia"
+        },
+        {
+          "name": "Soportes y accesorios"
+        }
+      ]
+    },
+    {
+      "name": "Energía y electricidad",
+      "subcategories": [
+        {
+          "name": "Baterías"
+        },
+        {
+          "name": "Cable y canalización eléctrica"
+        },
+        {
+          "name": "Fuentes de alimentación"
+        },
+        {
+          "name": "Iluminación"
+        },
+        {
+          "name": "Reguladores y protectores"
+        },
+        {
+          "name": "Tableros y protecciones"
+        },
+        {
+          "name": "Tomas e interruptores"
+        },
+        {
+          "name": "UPS y respaldo"
+        }
+      ]
+    },
+    {
+      "name": "Parqueaderos",
+      "subcategories": [
+        {
+          "name": "Accesorios para parqueaderos"
+        },
+        {
+          "name": "Brazos y astas"
+        },
+        {
+          "name": "Lectores y credenciales vehiculares"
+        },
+        {
+          "name": "Reconocimiento de placas"
+        },
+        {
+          "name": "Sensores vehiculares"
+        },
+        {
+          "name": "Talanqueras y barreras"
+        }
+      ]
+    },
+    {
+      "name": "Redes y Wi-Fi",
+      "subcategories": [
+        {
+          "name": "Accesorios de red"
+        },
+        {
+          "name": "Conversores de medios y módulos SFP"
+        },
+        {
+          "name": "Puntos de acceso"
+        },
+        {
+          "name": "Radioenlaces y antenas"
+        },
+        {
+          "name": "Routers"
+        },
+        {
+          "name": "Sistemas Wi-Fi mesh"
+        },
+        {
+          "name": "Switches"
+        }
+      ]
+    }
+  ]
+}

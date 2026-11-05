@@ -79,4 +79,18 @@ El usuario confirmó el merge externo del PR #90. El CD construyó y publicó la
 
 El árbol de `origin/main` tras el merge es idéntico al de `31a8274`. Se sincroniza la ascendencia de la rama para que el PR #91 muestre solo el seguimiento y no vuelva a incluir la release original. La corrección de rollback ya revisada conserva su contenido. Los cinco borrados locales siguen fuera de los commits.
 
-Inventario propuesto, evidencia y recuperación sin editar migraciones históricas: [traspaso del bloqueo de categorías](../../docs/handoffs/2026-11-05-despliegue-bloqueado-categorias.md). No se ha elegido ni aplicado un mapeo de categorías productivas. El siguiente paso requiere autorización para el inventario de solo lectura; cualquier modificación de datos o `migrate resolve` requiere aprobación posterior del plan concreto.
+Inventario, evidencia y recuperación sin editar migraciones históricas: [traspaso del bloqueo de categorías](../../docs/handoffs/2026-11-05-despliegue-bloqueado-categorias.md).
+
+### Objetivo aclarado e inventario autorizado
+
+El usuario confirmó que no hay otra sesión editando; confirmó su merge del PR #90 y pidió **catálogo vacío, estructura y Super Admin**. Proporcionó el destino SSH y autorizó buscar la clave en las carpetas SSH. La configuración existente del alias `vps` permitió el acceso; no se leyó el contenido de la clave.
+
+- [x] Inventario productivo de solo lectura, con transacción READ ONLY y ROLLBACK: 89 categorías (37/23/29 por profundidad), cero ciclos, 5.056 productos, 2.335 precios, cuatro usuarios.
+- [x] Un Super Admin activo, sin supervisor, MFA habilitado, diez filas de códigos de respaldo; seis roles y 88 permisos de rol. Solo conteos/booleanos; sin datos de autenticación en la salida.
+- [x] Coincidencia de base entre API y respaldos; espacio suficiente para una candidata pequeña. No se modificaron servicios ni datos.
+- [x] Fuente de la estructura localizada: hoja `Categorias` de `BIBLIOTECA_MAESTRA_2026-10-29/REVISION_SEMANTICA/MAESTRO_REVISADO.xlsx`. Nueve categorías y 66 subcategorías; no usar el seed demo de seis raíces ni las hojas Productos/Resumen.
+- [x] Extractor y manifiesto local preparados: sintaxis correcta y cinco pruebas aprobadas; revisión independiente sin hallazgos accionables. SHA-256 del manifiesto: `04c69e3102f6459b2b1aa143fb2f6437db868c53e90917e47e30abba827d5cd5`.
+- [x] Ejecutor de transferencia acotado preparado, sin ejecución en DB: seis pruebas dobles aprobadas, sintaxis correcta. Once pruebas conjuntas repetidas por el padre; CI incluye la misma orden. El archivo previo se conserva, el origen solo recibe SELECT y la candidata debe estar vacía/migrada; no crea DB ni administra servicios.
+- [ ] Aprobar y ejecutar la [propuesta reversible](../../docs/handoffs/2026-11-05-catalogo-vacio-vps.md), con base anterior preservada, nueva base completa, migraciones históricas intactas, únicamente Super Admin/configuración y taxonomía, cero productos/precios. Ninguna operación productiva de ese plan se ha ejecutado.
+
+El PR #91 sigue en borrador; sus tres jobs CI están verdes en `42080648599`. La salvaguarda de rollback no elimina el bloqueo P3018 ni autoriza el corte. La vista local 5173 no respondió al comprobarla; no se declara equivalencia visual verificada con una demo en ejecución.
