@@ -23,9 +23,9 @@ Fuera (no se versiona; se añade a `.gitignore` solo lo pesado/generado): `docs/
 - [ ] D1 Arreglos para que el CI pase (lint servidor y pantalla; 17 errores `tsc`; prueba `product-detail.spec.tsx:125`; repetir build de pantalla).
 - [x] D2 Rama nueva `release/web-20261105`; exclusiones guardadas en `3d85280`.
 - [x] D3 Preservados los cuatro commits de Claude: `3d85280` (exclusiones), `a9e6ead` (esquema), `fc6476f` (backend), `bb6afde` (frontend). El cierre documental y de validación continúa con rutas explícitas; nunca `git add -A`.
-- [ ] D4 Integrar `origin/main` en la rama y resolver choques.
+- [x] D4 `origin/main` (`437ebc2`) integrado y cinco conflictos resueltos; commit de merge y cierre validado `6cecf64`.
 - [ ] D5 Repetir localmente lo que corre el CI (lint, `tsc`, build, pruebas) y dejarlo en verde.
-- [ ] D6 Revisión nativa por unidad de trabajo (receipt-driven development está activo): `gentle-ai review assess` por commit y seguir la salida.
+- [ ] D6 Revisión nativa pendiente: evaluación alta; START del candidato final no pudo iniciar por `lens_context_budget_exceeded` (718 archivos, 154.578 líneas). No se creó autoridad ni receipt. Las revisiones manuales acotadas no sustituyen ese control.
 - [ ] D7 Push de la rama y pull request a `main` con resumen, migraciones y riesgos. **Parar aquí.**
 - [ ] D8 Con el visto bueno del usuario: merge, seguir CI y CD, smoke test.
 - [ ] D9 Verificar `dev.gruposecurity.cloud/tienda` y registrar el resultado.
@@ -36,7 +36,7 @@ Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo 
 ## Continuación de Codex — 05/11/2026
 
 - Se continúa el trabajo existente. Aunque la ruta recibida fue `grupo-security-tienda-publica-0c2c95`, Git confirmó que la release y sus cuatro commits están en `validacion-biblioteca`. No se recreó ni se reescribió la rama.
-- `git fetch origin main` confirmó `437ebc2`. El merge quedó preparado con cinco conflictos resueltos: se conserva Biblioteca independiente de Listas, la búsqueda SQL parametrizada y la interfaz de la release. Las regresiones de `main` para publicación sin Lista se conservaron en las pruebas. Pendiente confirmar el commit de cierre del merge.
+- `git fetch origin main` confirmó `437ebc2`. El merge quedó guardado en `6cecf64` con cinco conflictos resueltos: se conserva Biblioteca independiente de Listas, la búsqueda SQL parametrizada y la interfaz de la release. Las regresiones de `main` para publicación sin Lista se conservaron en las pruebas.
 - Copia de validación: instantánea de archivos versionados de `bb6afde`, actualizada exclusivamente con las fuentes y pruebas seleccionadas de esta continuación. Usa las dependencias locales existentes mediante enlaces; **no equivale a un `npm ci` nuevo**. No contiene los archivos sin seguimiento excluidos ni configuraciones locales privadas.
 - Defecto de CI reproducido: `tsc --noEmit` falló en la instantánea por ausencia de `prisma/biblioteca/generated/client`. Tras `npm run db:generate:library`, salió 0. CI ahora genera ambos clientes antes del typecheck. No se ejecutó ninguna migración.
 - Precios: la batería completa original sin PostgreSQL reprodujo **39 fallos de 578 pruebas**. Las cinco suites afectadas tenían mocks de tarifas incompletos o expectativas de cinco tarifas fijas, cabeceras antiguas y una dependencia de `listas:read` que el controlador ya no exige. Se corrigieron solo pruebas, conservando los controles actuales, los casos 403 y la ausencia de escrituras de precios. Las **21 suites de precios quedaron 579/579**, incluida una regresión adicional de tarifa no disponible.
@@ -46,7 +46,7 @@ Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo 
 - T00: el parche SQL ya está en `fc6476f` con regresiones unitarias de entradas maliciosas. Esta continuación no representa una prueba PostgreSQL de ese parche.
 - Exclusiones conservadas: migración `20261104090000_remove_legacy_storefront_banners`, artefactos/evidencia generada, herramientas de laboratorio y componentes sin conexión a rutas. La excepción del importador conectado está explicada arriba. Los cinco borrados locales de manifiestos y scripts quedan sin incluir en el índice.
 - Se incluyen las dos skills `gs-*` junto con sus referencias y las instrucciones que las requieren. Es una excepción concreta a la exclusión general de instalaciones `.claude/`, coherente con el resumen de continuidad del usuario.
-- Revisión nativa: modo global `on` confirmado fuera del sandbox; evaluación preliminar del rango de Claude `cb230aa..bb6afde`: riesgo alto. Falta la revisión del candidato final; no hay aprobación ni receipt inventados. Engram no está expuesto en esta sesión: espejo pendiente.
+- Revisión nativa: modo global `on` confirmado fuera del sandbox. Candidato `origin/main..6cecf64`: evaluación alta; START no inició por límite de contexto (718 archivos, 154.578 líneas). El rechazo señala que repetir ese candidato no puede funcionar y que se necesitan candidatos menores; no se truncó evidencia ni se creó autoridad, aprobación o receipt. Se conserva la historia de Claude. Se prepara un PR **borrador** y revisiones manuales acotadas para disponer de CI Linux y evidencia revisable; falta decidir cómo satisfacer o declinar el control nativo antes del merge. Engram no está expuesto en esta sesión: espejo pendiente.
 - Reversión local: los commits iniciales se conservan; la continuación afecta el CI, cinco suites de precios, regresiones de validación y documentación. No revertir archivos ajenos ni los cinco borrados locales sin una decisión separada.
 
 ### Comandos de comprobación de esta continuación
