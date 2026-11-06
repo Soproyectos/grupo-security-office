@@ -6,4 +6,6 @@ Causa confirmada: Dockerfile copia `.env.production` y Vite incorporaba `https:/
 
 Cambio mínimo: `VITE_API_URL=/api`. El proxy existente del mismo dominio sirve la API y los archivos; Axios ya admite ruta relativa y cookies. No se altera CORS del backend, autenticación, permisos o esquema. Se corrige el comentario del cliente que asumía dos subdominios.
 
+Segunda causa confirmada del menú: `navigableRoots` ocultaba todas las raíces sin hijos. Conserva ahora el filtro anterior cuando hay familias con hijos, pero muestra las raíces recibidas cuando todas están vacías. Esto permite navegar por las nueve categorías sin productos, sin duplicar datos ni fabricar relaciones. Las 66 subcategorías permanecen en su tabla y en el contrato administrativo; el menú público actual no las expone. Convertirlas en enlaces requiere otro cambio coordinado de rutas/filtros por subcategoría y no se simula en esta incidencia. Suite focalizada del mega menú: 34 pruebas aprobadas; tipos frontend correctos.
+
 Validación pendiente de completar: CI y comprobación del menú y respuesta de autenticación desde el navegador después del nuevo despliegue. No usar credenciales reales en el chat ni afirmar login autenticado sin comprobarlo.
