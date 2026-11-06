@@ -20,15 +20,14 @@ export function productHref(id: string): string {
 /**
  * Roots the mega menu is able to present.
  *
- * `GET /api/public/categories/menu` also returns the flat categories imported
- * from the library (35 of them, `sortOrder` 0, no children). The Homecenter
- * layout is a sidebar of *families* next to an area of columns, so a root with
- * no children has nothing to show beside its name and only adds a scroll row
- * that can lead nowhere. Those categories stay reachable from the catalog link
- * at the bottom of the panel; the families with children are the menu.
+ * When the endpoint includes families with children, keep the sidebar focused
+ * on those families and leave any legacy flat roots out of the scroll list. If
+ * every root is empty (the current empty-catalog state), show the roots so the
+ * catalog navigation remains available while the catalog has no products.
  */
 export function navigableRoots(categories: MenuCategory[]): MenuCategory[] {
-  return categories.filter((root) => root.children.length > 0)
+  const families = categories.filter((root) => root.children.length > 0)
+  return families.length > 0 ? families : categories
 }
 
 /** Keeps the wanted root when it still exists, otherwise falls back to the first. */

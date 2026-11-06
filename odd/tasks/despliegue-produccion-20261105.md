@@ -1,6 +1,6 @@
 # Despliegue a producción: Biblioteca + tienda + Marketing + cuenta de clientes
 
-Estado (2026-11-05): en curso. Autorizado por el usuario: guardar (commits en rama nueva), abrir pull request y desplegar a `dev.gruposecurity.cloud` («junto, lo que hoy se levanta en el puerto 5175»). **El merge a `main` (que es lo que despliega) solo se hace con el visto bueno final del usuario tras ver el resumen.** Rige `AGENTS.md`.
+Estado (2026-11-05): completado con autorización explícita del usuario. PR #91 fusionado en `586bf19d`; CI `42103777933` y CD `42104034786` correctos. API/frontend saludables en ese tag. Activa: nueve categorías, 66 subcategorías, un Super Admin, seis roles, cero productos/precios; base anterior archivada/bloqueada. Las secciones iniciales conservan la línea base y el plan histórico; el resultado final prevalece. Rige `AGENTS.md`.
 
 ## Objetivo
 Llevar a producción lo que hoy corre en `http://localhost:5175` desde `C:\Users\sopor\grupo-security-office\.claude\worktrees\validacion-biblioteca` (rama `Esnaider/validacion-biblioteca`, sin commit), dejando fuera lo que no sirve para la web.
@@ -25,13 +25,13 @@ Fuera (no se versiona; se añade a `.gitignore` solo lo pesado/generado): `docs/
 - [x] D3 Preservados los cuatro commits de Claude: `3d85280` (exclusiones), `a9e6ead` (esquema), `fc6476f` (backend), `bb6afde` (frontend). El cierre documental y de validación continúa con rutas explícitas; nunca `git add -A`.
 - [x] D4 `origin/main` (`437ebc2`) integrado y cinco conflictos resueltos; commit de merge y cierre validado `6cecf64`.
 - [x] D5 Lint, tipos y pruebas locales aprobados en la instantánea; build backend aprobado. Build frontend verificado en CI Linux porque esbuild está bloqueado en este Windows. Se registra esa diferencia de entorno, sin declarar exitoso el build local de frontend.
-- [ ] D6 Revisión nativa del acumulado pendiente: START del rango de release hasta `31a8274` no pudo iniciar por `lens_context_budget_exceeded` (718 archivos, 154.578 líneas). Ese rango no obtuvo autoridad ni receipt; las revisiones manuales no lo sustituyen. La salvaguarda posterior sí obtuvo aprobación nativa acotada, documentada debajo.
+- [x] D6 Límite de revisión registrado: START del acumulado hasta `31a8274` no pudo iniciar por `lens_context_budget_exceeded` (718 archivos, 154.578 líneas), sin authority/receipt. La salvaguarda posterior obtuvo aprobación nativa acotada. El usuario eligió `declined` para la preparación de catálogo vacío y autorizó después el despliegue; no se atribuye aprobación nativa al conjunto ni se sustituyen sus recibos por revisiones ordinarias.
 - [x] D6a Salvaguarda de rollback implementada y verificada con nueve escenarios aislados; sintaxis Bash aprobada. Detiene el API antes de comprobar datos, solo permite rollback con resultado `f` y bloquea errores/incompatibilidad sin restaurar ni borrar datos. No se ejecutaron contenedores ni operaciones en VPS.
 - [x] D7 PR #90 publicado y fusionado por el usuario en `96670843` (05/11, 12:34 Bogotá), confirmado expresamente en el chat. Esta sesión no hizo ese merge. El CI y la construcción de ambas imágenes pasaron; la revisión nativa del acumulado no llegó a completarse.
-- [ ] D7a PR de seguimiento #91: salvaguarda de rollback y registro de recuperación; borrador pendiente de cierre de CI y de resolver el bloqueo de datos antes de reintentar deploy.
-- [ ] D8 CD `42076282618` falló en la migración de subcategorías, antes de reemplazar API/frontend; smoke omitido. Hace falta diagnóstico/mapeo y aprobación productiva antes de recuperar P3018 y reintentar.
-- [ ] D8a Inventario SQL de solo lectura y conteos agregados: consulta preparada, autorización y ejecución pendientes.
-- [ ] D9 Verificar `dev.gruposecurity.cloud/tienda` y registrar el resultado.
+- [x] D7a PR #91 fusionado con autorización del usuario en `586bf19d`, tras CI verde.
+- [x] D8 CD final `42104034786` correcto, API/frontend en `586bf19d` saludables. La base nueva aplicó 62 migraciones; el fallo histórico del primer CD permanece en la base archivada, sin `migrate resolve` ni edición de migraciones.
+- [x] D8a Inventario autorizado completado; estructura 9/66 extraída sin productos/precios, carga verificada y base anterior preservada.
+- [x] D9 Salud/tienda 200, catálogo público `data.total=0`, menú con nueve raíces; SQL confirma 66 subcategorías, un usuario activo Super Admin con MFA, seis roles, 88 permisos de rol, diez códigos MFA, cero productos/precios y cero migraciones fallidas. Imagen de portada y PDF Servicios HTTP 200. No se ejecutó una sesión visual autenticada del usuario.
 
 ## Reglas de ejecución
 Agentes baratos con instrucciones precisas; yo verifico cada resultado. Un solo escritor a la vez sobre el árbol. Sin `git add -A`, sin `--force`, sin tocar `main` ni la base de producción por mi cuenta. Plan de reversa: el despliegue solo repone las imágenes anteriores si puede detener el API candidato y comprueba que no hay fichas con marca/categoría nulas; si no puede garantizarlo, requiere intervención. Las migraciones solo avanzan y se conserva un `pg_dump` previo en el VPS.

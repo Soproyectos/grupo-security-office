@@ -1,6 +1,6 @@
 # Preparación de catálogo vacío en VPS
 
-Fecha: 05/11/2026. Rama: `release/web-20261105`. Estado: preparación local, no corte productivo.
+Fecha: 05/11/2026. Rama: `release/web-20261105`. Estado: completado con autorización del usuario. PR #91 fusionado, versión definitiva `586bf19d`, CI `42103777933` y CD `42104034786` correctos. API/frontend saludables y comprobaciones públicas/SQL repetidas después del CD; resultado 9/66/1/6/0/0, MFA preservado y base anterior archivada/bloqueada. Las entradas siguientes conservan los puntos de control de la preparación y del primer despliegue manual.
 
 Resultado posterior: corte confirmado el 05/11 a las 15:22 Bogotá y despliegue `96670843` terminado saludable a las 15:23. Activa: 9 categorías, 66 subcategorías, 1 Super Admin activo, 6 roles, 0 productos/precios. Autenticación copiada comparada exactamente antes del corte, sin imprimir datos. Base anterior archivada completa como `gs_archive_20261105_preempty`, conexiones bloqueadas. Salud/tienda 200, catálogo público `data.total=0`, menú `data.data.length=9`. Incidencias, respaldos finales y reversión: [resultado del plan](../handoffs/2026-11-05-catalogo-vacio-vps.md#resultado-productivo). La revisión autenticada visual del usuario sigue pendiente; no se pidió contraseña ni MFA por chat.
 

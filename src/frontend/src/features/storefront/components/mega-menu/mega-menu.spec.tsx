@@ -139,14 +139,21 @@ describe('menu-model', () => {
     expect(categoryHref('videovigilancia')).toBe('/catalogo/categoria/videovigilancia')
   })
 
-  /**
-   * The 41 roots the endpoint returns include 35 flat categories from the
-   * library import. A root without children has no columns to show, so it does
-   * not take a row of the sidebar.
-   */
-  it('deja como raíces navegables solo las que tienen subcategorías', () => {
+  it('mantiene solo las familias con hijas cuando la respuesta mezcla raíces planas', () => {
     expect(roots.map((root) => root.id)).toEqual(['r-vv', 'r-acceso'])
     expect(menu).toHaveLength(4)
+  })
+
+  it('muestra todas las raíces recibidas cuando ninguna tiene hijas', () => {
+    const emptyCatalogRoots = Array.from({ length: 9 }, (_, index) =>
+      node(`root-${index + 1}`, `Familia ${index + 1}`, `familia-${index + 1}`),
+    )
+
+    expect(navigableRoots(emptyCatalogRoots)).toEqual(emptyCatalogRoots)
+  })
+
+  it('devuelve una lista vacía si no hay raíces', () => {
+    expect(navigableRoots([])).toEqual([])
   })
 
   it('mantiene la raíz elegida si sigue existiendo y si no cae en la primera', () => {

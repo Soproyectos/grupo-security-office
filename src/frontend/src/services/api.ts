@@ -13,11 +13,10 @@ const api = axios.create({
 // Origen del backend (sin el sufijo /api), para resolver rutas relativas
 // devueltas por la API (ej. imágenes de producto, logos de marca:
 // /api/files/:id) en un `<img src>`. En dev, VITE_API_URL no está
-// definida y baseURL cae a '/api' relativo (proxy de Vite) — el origen
-// queda vacío y la ruta se usa tal cual. En producción, frontend y
-// backend viven en subdominios distintos (dev.* / api-dev.*), así que una
-// ruta relativa sin resolver apuntaría al origen equivocado (el propio
-// frontend, que nunca sirve esos archivos).
+// definida y baseURL cae a '/api' relativo (proxy de Vite). En el VPS,
+// producción también usa '/api' mediante el proxy del mismo dominio;
+// el origen queda vacío y la ruta se usa tal cual. Si otro despliegue
+// configura una API absoluta, se conserva su origen para esos archivos.
 const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '')
 
 /** Resuelve una ruta relativa devuelta por la API a una URL absoluta usable en <img src>. */
