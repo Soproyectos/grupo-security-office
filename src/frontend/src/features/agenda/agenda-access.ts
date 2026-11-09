@@ -4,7 +4,8 @@ import { AgendaServiceError, fetchAgendaSellers } from '../../services/agenda.se
  * Criterio «puede equipo» de la agenda (BASE-03 frontend-equipo; aceptación
  * «Solo Agenda propia no muestra equipo»).
  *
- * Las acciones vigentes deciden qué controles se muestran. Super Admin es la
+ * Las acciones vigentes (asignadas o derivadas de la jerarquía por el servidor)
+ * deciden qué controles se muestran. Super Admin es la
  * única excepción explícita. El servidor comprueba otra vez cada petición.
  */
 export interface AgendaAccess {

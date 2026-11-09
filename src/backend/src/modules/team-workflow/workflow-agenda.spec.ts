@@ -69,6 +69,7 @@ describe('BASE-03 backend-propias — agenda propia e historial', () => {
     };
     hierarchy = {
       getSubordinateIds: jest.fn().mockImplementation(async (id: string) => id === 'boss' ? ['subordinate'] : []),
+      getActiveInternalSubordinateIds: jest.fn().mockImplementation(async (id: string) => id === 'boss' ? ['subordinate'] : []),
     };
     service = new WorkflowService(prisma, hierarchy, grantsStub());
   });
@@ -96,9 +97,7 @@ describe('BASE-03 backend-propias — agenda propia e historial', () => {
 
       await service.activities(supervisor);
 
-      expect(hierarchy.getSubordinateIds).toHaveBeenCalledWith('boss', {
-        includeSelf: true,
-      });
+      expect(hierarchy.getActiveInternalSubordinateIds).toHaveBeenCalledWith('boss');
       // El alcance efectivo viene de la concesión de equipo intersectada con
       // la jerarquía vigente; el usuario propio también forma parte del conjunto.
       expect(prisma.teamActivity.findMany.mock.calls[0][0].where).toEqual({

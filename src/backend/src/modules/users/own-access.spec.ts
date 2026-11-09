@@ -12,7 +12,7 @@ describe('Own access assignments', () => {
     findOne = jest.fn().mockResolvedValue({ id: 'actor' });
     grantsForUser = jest.fn().mockResolvedValue([]);
     controller = new UsersController(
-      { findOne } as never, {} as never, {} as never, {} as never, {} as never,
+      { findOne } as never, { getActiveInternalSubordinateIds: jest.fn().mockResolvedValue([]) } as never, {} as never, {} as never, {} as never,
       { grantsForUser, sourcesFor: jest.fn().mockResolvedValue([]), accessVersionFor: jest.fn().mockResolvedValue(0) } as never,
       {} as never,
     );
@@ -23,6 +23,15 @@ describe('Own access assignments', () => {
     expect(result.userId).toBe('actor');
     expect(result.grants).toEqual([]);
     expect(grantsForUser).toHaveBeenCalledWith('actor');
+  });
+
+  it('exposes current hierarchy-derived grants only on own access', async () => {
+    (controller as any).hierarchyService.getActiveInternalSubordinateIds.mockResolvedValue(['report']);
+    const result = await controller.getUserAccess('actor', user('actor', ['Consulta']));
+    expect(result.grants.map((grant: any) => [grant.actionId, grant.scope])).toEqual([
+      ['activities:read', 'team'], ['activities:assign', 'team'],
+    ]);
+    expect(result.sources).toEqual([]);
   });
 
   it('does not reveal another user or query their assignments', async () => {

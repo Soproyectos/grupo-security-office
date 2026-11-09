@@ -28,7 +28,7 @@ describe('Agenda de equipos — backend', () => {
       teamActivityLink: { create: jest.fn(), deleteMany: jest.fn() },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
-    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(TEAM) };
+    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(TEAM), getActiveInternalSubordinateIds: jest.fn().mockResolvedValue(['ana', 'luis']) };
     grants = { grantsForUser: jest.fn().mockResolvedValue([]) };
     service = new WorkflowService(prisma, hierarchy, grants);
   });
@@ -62,12 +62,14 @@ describe('Agenda de equipos — backend', () => {
 
     it('jefe de equipo sin subordinados: recibe la lista con solo él, no 403', async () => {
       hierarchy.getSubordinateIds.mockResolvedValue(['boss']);
+      hierarchy.getActiveInternalSubordinateIds.mockResolvedValue([]);
       grants.grantsForUser.mockResolvedValue([grant('activities:read', 'team')]);
       await service.sellers(boss);
       expect(prisma.user.findMany.mock.calls[0][0].where.id.in).toEqual(['boss']);
     });
 
     it('solo agenda propia (nivel 0): 403 con código estable y no consulta personas', async () => {
+      hierarchy.getActiveInternalSubordinateIds.mockResolvedValue([]);
       await expect(service.sellers(boss)).rejects.toMatchObject({ response: { code: 'TEAM_DIRECTORY_FORBIDDEN' } });
       await expect(service.sellers(boss)).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.user.findMany).not.toHaveBeenCalled();

@@ -93,6 +93,7 @@ describe('BASE-03 backend-equipo — consulta y asignación de equipo', () => {
         .mockImplementation(async (id: string, opts?: { includeSelf?: boolean }) =>
           id === 'boss' ? (opts?.includeSelf ? [id, 'sellerA', 'sellerB'] : ['sellerA', 'sellerB']) : [id],
         ),
+      getActiveInternalSubordinateIds: jest.fn().mockImplementation(async (id: string) => id === 'boss' ? ['sellerA', 'sellerB'] : []),
     };
     service = new WorkflowService(prisma, hierarchy, grantsStub());
   });
@@ -351,9 +352,7 @@ describe('BASE-03 backend-equipo — consulta y asignación de equipo', () => {
     it('el conjunto de un supervisor incluye su propio ID además de los subordinados', async () => {
       await service.activities(boss);
 
-      expect(hierarchy.getSubordinateIds).toHaveBeenCalledWith('boss', {
-        includeSelf: true,
-      });
+      expect(hierarchy.getActiveInternalSubordinateIds).toHaveBeenCalledWith('boss');
       expect(prisma.teamActivity.findMany.mock.calls[0][0].where).toEqual({
         assigneeId: { in: ['boss', 'sellerA', 'sellerB'] },
       });

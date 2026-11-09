@@ -7,7 +7,7 @@ describe('Workflow authorization and decisions',()=>{
  let prisma:any,service:WorkflowService,hierarchy:any,grants:any;
  beforeEach(()=>{
   prisma={user:{findMany:jest.fn().mockResolvedValue([{id:'seller',name:'Seller'}])},teamActivity:{create:jest.fn(),findMany:jest.fn().mockResolvedValue([]),findUnique:jest.fn(),updateMany:jest.fn()},teamRequest:{findMany:jest.fn(),create:jest.fn(),updateMany:jest.fn().mockResolvedValue({count:1})}};
-  hierarchy={getSubordinateIds:jest.fn().mockResolvedValue(['seller'])};
+  hierarchy={getSubordinateIds:jest.fn().mockResolvedValue(['seller']),getActiveInternalSubordinateIds:jest.fn().mockResolvedValue(['seller'])};
   grants={grantsForUser:jest.fn().mockResolvedValue([
    ...['activities:read'].flatMap(actionId=>['own','team'].map(scope=>({sourceId:'fixture',actionId,scope}))),
    {sourceId:'fixture',actionId:'activities:create',scope:'own'},
@@ -22,7 +22,7 @@ describe('Workflow authorization and decisions',()=>{
  it('restricts supervisor discovery to current subordinates',async()=>{
   // includeSelf (BASE-03 backend-equipo): el Supervisor forma parte de su
   // propio equipo — sin él no ve ni completa SUS actividades.
-  await service.sellers(supervisor);expect(hierarchy.getSubordinateIds).toHaveBeenCalledWith('supervisor',{includeSelf:true});
+  await service.sellers(supervisor);expect(hierarchy.getActiveInternalSubordinateIds).toHaveBeenCalledWith('supervisor');
  });
  it('rejects assignment outside the authorized team',async()=>{
   await expect(service.createActivity(supervisor,{title:'Visit',kind:'VISIT',assigneeId:'outsider',startsAt:'2026-10-07T15:00:00Z'})).rejects.toThrow();
@@ -50,13 +50,14 @@ describe('Workflow authorization and decisions',()=>{
   await service.activities(seller);
   expect(prisma.teamActivity.findMany.mock.calls[0][0].where).toEqual({assigneeId:{in:['seller']}});
  });
- it('nivel 0: un rol interno sin grants no asigna ni ve el directorio del equipo',async()=>{
+ it('rol interno con subordinados activos puede asignar y ver el directorio del equipo sin grants persistidos',async()=>{
   grants.grantsForUser.mockResolvedValue([]);
-  await expect(service.sellers(supervisor)).rejects.toThrow(ForbiddenException);
-  await expect(service.createActivity(supervisor,{title:'Visit',kind:'VISIT',assigneeId:'seller',startsAt:'2026-10-07T15:00:00Z'})).rejects.toThrow(ForbiddenException);
-  expect(prisma.teamActivity.create).not.toHaveBeenCalled();
+  await service.sellers(supervisor);
+  await service.createActivity(supervisor,{title:'Visit',kind:'VISIT',assigneeId:'seller',startsAt:'2026-10-07T15:00:00Z'});
+  expect(prisma.teamActivity.create).toHaveBeenCalled();
  });
  it('un grant own de lectura no expande la consulta a subordinados',async()=>{
+  hierarchy.getActiveInternalSubordinateIds.mockResolvedValue([]);
   grants.grantsForUser.mockResolvedValue([{sourceId:'own-read',actionId:'activities:read',scope:'own'}]);
   await service.activities(supervisor);
   expect(prisma.teamActivity.findMany.mock.calls[0][0].where).toEqual({assigneeId:{in:['supervisor']}});

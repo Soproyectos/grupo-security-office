@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessContext } from '../acl/acl.service';
 import { TeamNode } from './types';
+import { BASE_ACCESS_ROLES } from '../security/base-access';
 
 @Injectable()
 export class HierarchyService {
@@ -40,6 +41,17 @@ export class HierarchyService {
     }
 
     return result.map((r) => r.id);
+  }
+
+  /** Subordinados actuales que pertenecen al personal interno activo. */
+  async getActiveInternalSubordinateIds(userId: string): Promise<string[]> {
+    const ids = await this.getSubordinateIds(userId);
+    if (!ids.length) return [];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids }, isActive: true, roles: { some: { role: { name: { in: [...BASE_ACCESS_ROLES] } } } } },
+      select: { id: true },
+    });
+    return users.map((user) => user.id);
   }
 
   // Get all ancestor IDs (superiors up the chain)

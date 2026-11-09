@@ -82,7 +82,7 @@ describe('BASE-03 backend-vinculos — conversión explícita de incidencias', (
 
   beforeEach(() => {
     prisma = buildPrisma();
-    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['boss']) };
+    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['boss']), getActiveInternalSubordinateIds: jest.fn().mockResolvedValue(['boss']) };
     service = new WorkflowService(prisma, hierarchy, grantsStub());
   });
 
@@ -297,7 +297,7 @@ const TANDA_T06_URL =
 
 describe('BASE-03 backend-vinculos — conversión con BD real (t06)', () => {
   const db = new PrismaClient({ datasources: { db: { url: TANDA_T06_URL } } });
-  const hierarchy = { getSubordinateIds: jest.fn(async (id: string) => [id]) } as any;
+  const hierarchy = { getSubordinateIds: jest.fn(async (id: string) => [id]), getActiveInternalSubordinateIds: jest.fn(async (id: string) => [id]) } as any;
   const grants = { grantsForUser: jest.fn(async () => []) } as any;
   const service = new WorkflowService(db as never, hierarchy, grants);
 
