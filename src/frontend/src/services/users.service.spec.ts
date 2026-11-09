@@ -3,6 +3,8 @@ import api from './api'
 import {
   applyUserPackage,
   fetchUserAccess,
+  fetchUsers,
+  fetchUsersPage,
   removeUserPackage,
   setUserAccessGrants,
   setUserLibrarySelection,
@@ -59,6 +61,19 @@ function httpError(status: number, data: unknown) {
 describe('users.service — concesiones por acción (COM-01)', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+  })
+
+  it('pagina usuarios con el filtro y conserva el total para continuar cargando', async () => {
+    const page = { data: [{ id: 'user-201', name: 'Persona de prueba' }], meta: { total: 201, skip: 200, take: 50 } }
+    vi.mocked(api.get).mockResolvedValue({ data: page })
+    expect(await fetchUsersPage(' Persona ', 50, 200)).toEqual(page)
+    expect(api.get).toHaveBeenCalledWith('/users?take=50&skip=200&search=Persona')
+  })
+
+  it('conserva el contrato del selector de usuarios que solo consume la lista', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: { data: [{ id: 'user-1' }], meta: { total: 1 } } })
+    expect(await fetchUsers()).toEqual([{ id: 'user-1' }])
+    expect(api.get).toHaveBeenCalledWith('/users?take=200')
   })
 
   it('fetchUserAccess devuelve el estado del servidor tal cual', async () => {

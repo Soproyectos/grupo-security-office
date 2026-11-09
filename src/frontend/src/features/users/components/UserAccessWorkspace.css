@@ -1,0 +1,475 @@
+.access-workspace-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.access-workspace-heading {
+  flex: none;
+  padding: 0.25rem 0 0.65rem;
+}
+
+.access-workspace-columns {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(12rem, 13.125rem) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.access-workspace-columns > div > .access-workspace-detail {
+  flex: 1;
+}
+
+.access-user-column,
+.access-user-list,
+.access-panel-layout,
+.access-workspace-detail,
+.access-sections {
+  min-height: 0;
+}
+
+.access-user-column {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-bg-card);
+}
+
+.access-user-column > header {
+  flex: none;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.65rem;
+}
+
+.access-user-list {
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.access-user-list::-webkit-scrollbar,
+.access-tree-content::-webkit-scrollbar,
+.access-workspace-detail::-webkit-scrollbar {
+  display: none;
+}
+
+.access-panel-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(13rem, 15.625rem) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.access-panel-nav {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-bg-card);
+  padding: 0.5rem;
+  scrollbar-width: none;
+}
+
+.access-column-title {
+  padding: 0.3rem 0.45rem;
+  font-family: 'Roboto Condensed', Roboto, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.access-panel-button {
+  display: flex;
+  min-height: 2.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.1rem;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.access-panel-button:hover,
+.access-panel-button[aria-pressed='true'] {
+  background: var(--color-primary-bg-subtle);
+}
+
+.access-panel-button[aria-pressed='true'] {
+  color: var(--color-primary);
+}
+
+.access-panel-button:focus-visible,
+.access-panel-nav summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.access-panel-summary,
+.access-role-note,
+.access-dirty-summary {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.access-role-note {
+  margin-top: auto;
+  padding: 0.6rem 0.45rem 0.2rem;
+}
+
+.access-workspace-detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.access-detail-heading {
+  display: flex;
+  min-height: 2.35rem;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.15rem 0.5rem;
+}
+
+.access-detail-heading h2 {
+  min-width: 0;
+  overflow: hidden;
+  font-family: 'Roboto Condensed', Roboto, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-dirty-summary {
+  flex: none;
+}
+
+.access-sections {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.access-panel-view {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.access-panel-hidden {
+  display: none;
+}
+
+.access-workspace-detail > .access-manual-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  flex: none;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  padding: 0.3rem 0;
+}
+
+.access-section > details {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.access-section summary,
+.access-tree-summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.access-section summary:hover,
+.access-tree-summary:hover {
+  background: var(--color-bg-surface-hover);
+}
+
+.access-section summary:focus-visible,
+.access-tree-summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.access-tree {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  overscroll-behavior-y: contain;
+}
+
+.access-tree-group {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  background: var(--color-bg-card);
+}
+
+.access-tree-group[open] {
+  display: flex;
+  min-height: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+}
+
+.access-tree-group > summary {
+  flex: none;
+  list-style: none;
+}
+
+.access-tree-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.access-tree-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  /* At a branch boundary, let the wheel continue through the tree. */
+  overscroll-behavior-y: auto;
+  scrollbar-width: none;
+}
+
+.access-tree-group[open] > .access-tree-content {
+  border-top: 1px solid var(--color-border);
+}
+
+.access-tree-group:not([open]) {
+  flex: 0 0 auto;
+}
+
+.access-package-panel {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  background: var(--color-bg-card);
+}
+
+.access-library-block {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.access-library-actions {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  flex: none;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  padding: 0.35rem 0;
+}
+
+@supports selector(details::details-content) {
+  .access-tree-group[open]::details-content {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+.access-workspace-detail :is(button, input, select, summary) {
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.access-workspace-detail :is(button, input, select):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .access-workspace-heading {
+    padding-bottom: 0.35rem;
+  }
+
+  .access-workspace-columns {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(7rem, 0.36fr) minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .access-user-column {
+    min-height: 0;
+  }
+
+  .access-user-column > header {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .access-user-list {
+    display: flex;
+    gap: 0.35rem;
+    overflow: auto;
+    padding: 0.3rem;
+  }
+
+  .access-user-list > li {
+    min-width: 9rem;
+    max-width: 12rem;
+    flex: 0 0 auto;
+  }
+
+  .access-panel-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .access-panel-nav {
+    min-height: 0;
+    flex-direction: row;
+    overflow: auto;
+    padding: 0.25rem;
+  }
+
+  .access-column-title,
+  .access-role-note {
+    display: none;
+  }
+
+  .access-panel-button {
+    min-width: 7rem;
+    min-height: 2.75rem;
+    flex: 1 0 auto;
+    padding: 0.3rem;
+    font-size: 0.8rem;
+  }
+
+  .access-panel-summary {
+    display: none;
+  }
+
+  .access-detail-heading {
+    min-height: 1.8rem;
+  }
+
+  .access-section > details > summary {
+    min-height: 2.35rem;
+  }
+
+  .access-panel-layout > .access-workspace-detail {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .access-workspace-detail :is(button, input, select, summary) {
+    transition: none;
+  }
+}
+/* The selected panel owns the available height; only branch contents scroll. */
+.access-panel-view:not(.access-panel-hidden),
+.access-section,
+.access-section-body,
+.access-library-container {
+  display:flex; flex:1 1 auto; flex-direction:column; min-height:0; overflow:hidden;
+}
+.access-sections {overflow:hidden}
+.access-section {border:1px solid var(--color-border);border-radius:.5rem;background:var(--color-bg-card)}
+.access-section-heading {display:flex;flex:none;align-items:center;gap:.75rem;padding:.45rem .65rem;border-bottom:1px solid var(--color-border)}
+.access-section-heading h3 {font-family:'Roboto Condensed',Roboto,sans-serif;font-weight:600;font-size:1rem}
+.access-section-heading span {font-size:.75rem;color:var(--color-text-secondary)}
+.access-section-body {padding:.4rem .6rem;gap:.35rem}
+.access-section-body>.access-tree {overflow:hidden}
+.access-library-block {flex:1 1 auto;overflow:hidden;gap:.25rem}
+.access-library-block>.access-tree {overflow:hidden}
+.access-library-block>div:first-child,
+.access-library-block>details,
+.access-library-actions,
+.access-library-container>details,
+.access-library-container>section:not(.access-library-block) {flex:none}
+.access-library-block>details[open],
+.access-library-container>details[open] {max-height:9rem;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
+.access-library-block p {font-size:.75rem}
+.access-tree-group {width:100%;min-height:2.25rem;border-width:0 0 1px;border-radius:0}
+.access-tree-group[open] {min-height:2.25rem}
+.access-tree-summary {min-height:2.25rem!important}
+.access-tree-summary::before {content:'';width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid currentColor;flex:none}
+.access-tree-group[open]>.access-tree-summary::before {transform:rotate(90deg)}
+.access-tree-content {padding:.2rem .25rem .35rem .65rem}
+.access-package-panel {flex:none;position:static}
+.access-package-panel[open]>div {max-height:10rem;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
+.access-manual-actions {flex:none}
+.access-workspace-detail {gap:.35rem}
+.access-workspace-detail>p {font-size:.75rem;margin:0}
+.access-panel-nav::-webkit-scrollbar,
+.access-sections::-webkit-scrollbar,
+.access-package-panel div::-webkit-scrollbar {display:none}
+@media(max-width:700px) {
+ .access-tree-summary {min-height:2.75rem!important}
+ .access-tree-group,.access-tree-group[open] {min-height:2.75rem}
+ .access-section-heading span {display:none}
+ .access-workspace-heading>p,.access-workspace-detail>p {display:none}
+}
+
+.access-library-container>.access-library-block {flex:1 1 auto}
+.access-library-block>div:first-child {display:none}
+.access-library-block>.access-tree {overflow:auto;scrollbar-width:none}
+.access-library-block>.access-tree::-webkit-scrollbar {display:none}
+.access-library-actions button {min-height:2rem}
+.access-library-container>.access-library-block {margin-top:0}
+@media(max-width:700px) {.access-library-actions button {min-height:2.75rem}}.access-workspace-columns>div>.access-workspace-detail>p {display:none}
+.access-section-heading {display:none}
+.access-sections>.access-panel-view {margin:0!important}
+.access-library-block>details>summary {min-height:1.75rem;padding:.2rem 0}
+.access-library-block>details {margin-top:.2rem}
+@media(max-width:700px) {.access-library-block>details>summary {min-height:2.75rem}}
+
+.access-mobile-user-button {display:none}
+@media(max-width:700px) {
+ .access-workspace-columns {position:relative;grid-template-rows:2.75rem minmax(0,1fr)}
+ .access-mobile-user-button {display:block;flex:none;min-height:2.75rem;width:100%;padding:.4rem .6rem;text-align:left;font-size:.8rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .access-user-column:not(.access-user-picker-open)>:not(.access-mobile-user-button) {display:none}
+ .access-user-column.access-user-picker-open {position:absolute;inset:0 0 auto;z-index:20;max-height:50dvh}
+ .access-user-picker-open .access-user-list {display:block}
+ .access-user-picker-open .access-user-list>li {max-width:none}
+ .access-library-container>section:not(.access-library-block)>div {flex-wrap:nowrap;align-items:center}
+ .access-library-container>section:not(.access-library-block) label {font-size:.75rem}
+ .access-library-container>section:not(.access-library-block) details {flex-shrink:0;max-width:6rem;font-size:.7rem}
+ .access-library-container>section:not(.access-library-block) details summary {min-height:2.75rem}
+}
+.access-section-body>.access-tree,
+.access-library-block>.access-tree {overflow:auto;scrollbar-width:none}
+.access-tree>.access-tree-group[open] {min-height:5.5rem;max-height:18rem;flex:0 0 auto}
+.access-tree-content {min-width:0}

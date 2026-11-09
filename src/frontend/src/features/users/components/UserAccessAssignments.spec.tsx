@@ -143,6 +143,14 @@ function render(client: QueryClient) {
   )
 }
 
+function renderWorkspace(client: QueryClient, roles: string[] = []) {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <UserAccessPanel user={TARGET} roles={roles} workspace />
+    </QueryClientProvider>,
+  )
+}
+
 function seeded(state: UserAccessState) {
   const client = new QueryClient()
   client.setQueryData(userAccessKey(TARGET.id), state)
@@ -181,6 +189,64 @@ beforeEach(() => {
 })
 
 describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', () => {
+  it('no presenta Marketing como habilitado con acciones sueltas sin paquete', () => {
+    const html = renderWorkspace(seeded(accessState({
+      packages: [],
+      sources: [{ id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }],
+      grants: [{ sourceId: 'manual-1', actionId: 'marketing:read', scope: 'global' }],
+      actions: [{ id: 'marketing:read', label: 'Consultar Marketing', purpose: 'Consultar contenido', enabled: true, allowedScopes: ['global'], dependencies: [] }],
+    })), ['Operador'])
+    expect(html).toContain('Marketing y mercadeo')
+    expect(html).toContain('No habilitado · revisa los paquetes')
+  })
+
+  it('activa el árbol del workspace y conserva montados los paneles ocultos', () => {
+    const html = renderWorkspace(seeded(accessState()), ['Super Admin'])
+
+    expect(html).toContain('aria-label="Paneles de acceso"')
+    expect(html).toContain('aria-pressed="true" class="access-panel-button"><span>Comercial</span>')
+    expect(html).toContain('class="access-tree-group"')
+    expect(html).toContain('class="access-panel-view access-panel-hidden"')
+    expect(html).toContain('aria-label="Panel Biblioteca"')
+    expect(html).toContain('Super Admin conserva acceso administrativo por su rol')
+    expect(html).toContain('Guardar Biblioteca')
+    expect(html).toContain('Guardar acciones individuales')
+  })
+
+  it('permite editar las acciones de Marketing directamente, conservando su alcance', () => {
+    const html = render(seeded(accessState({
+      sources: [{ id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }],
+      grants: [{ sourceId: 'manual-1', actionId: 'marketing:edit', scope: 'global' }],
+      actions: [{ id: 'marketing:edit', label: 'Editar contenido', purpose: 'Preparar piezas', enabled: true, allowedScopes: ['global'], dependencies: [] }],
+    })))
+    const marketing = sectionOf(html, 'Marketing y mercadeo')
+    expect(marketing).toContain('aria-label="Contenido"')
+    const checkbox = marketing.match(/<input[^>]*aria-label="Editar contenido"[^>]*>/)?.[0] ?? ''
+    expect(checkbox).toMatch(/\schecked(?:=|\s|\/?>)/)
+    expect(checkbox).not.toMatch(/\sdisabled(?:=|\s|\/?>)/)
+    expect(marketing).toContain('Alcance marketing:edit')
+    expect(marketing).toContain('Global')
+  })
+
+  it('impide sustituir varias fuentes manuales mediante una selección ambigua', () => {
+    const html = render(seeded(accessState({
+      sources: ['m1', 'm2'].map((id) => ({ id, kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null })),
+      grants: [{ sourceId: 'm1', actionId: 'customers:read', scope: 'own' }, { sourceId: 'm2', actionId: 'customers:read', scope: 'team' }],
+    })))
+    expect(html).toContain('Hay varias asignaciones manuales.')
+    const save = html.match(/<button[^>]*>Guardar acciones individuales<\/button>/)?.[0] ?? ''
+    expect(save).toMatch(/\sdisabled(?:=|\s|\/?>)/)
+  })
+
+  it('presenta los paneles y selecciones plegados y permite asignar paquetes sin abrir su detalle', () => {
+    const html = render(seeded(accessState()))
+    expect(html).not.toMatch(/<details[^>]*\bopen(?:=|\s|>)/)
+    const commercial = sectionOf(html, 'Comercial')
+    expect(commercial).toContain('1 de 3 paquetes asignados')
+    expect(commercial.indexOf('type="checkbox"')).toBeLessThan(commercial.indexOf('Ver 3 acciones de Vendedor'))
+    expect(html).toContain('0 acciones asignadas')
+  })
+
   it('agrupa los nueve paquetes por panel y muestra acciones y alcances del servidor', () => {
     const html = render(seeded(accessState()))
 
@@ -319,14 +385,14 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
         : { ...pkg, applied: false, sourceId: null }),
     })))
 
-    const nameAt = html.indexOf('Acceso anterior', html.indexOf('Accesos anteriores'))
+    const nameAt = html.indexOf('<label', html.indexOf('aria-label="Accesos anteriores"'))
     const block = html.slice(nameAt, html.indexOf('</details>', nameAt))
     const checkbox = block.match(/<input[^>]*>/)?.[0] ?? ''
 
     expect(block).not.toContain('Fuente: paquete')
     expect(block).toContain('Retirar acceso anterior')
     expect(checkbox).toMatch(/\bchecked\b/)
-    expect(checkbox).not.toMatch(/\bdisabled\b/)
+    expect(checkbox).not.toMatch(/\sdisabled(?:=|\s|\/?>)/)
   })
 
   it('oculta los paquetes anteriores que no están aplicados', () => {
@@ -426,10 +492,12 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(sectionOf(html, 'Accesos anteriores')).toContain('Acceso anterior')
   })
 
-  it('un catálogo sin paquetes no pinta secciones de paquete vacías', () => {
+  it('sin paquetes conserva las acciones disponibles y omite los bloques vacíos', () => {
     const html = render(seeded(accessState({ grants: [], sources: [], packages: [] })))
 
-    expect(html).not.toContain('aria-label="Comercial"')
+    expect(html).toContain('aria-label="Comercial"')
+    expect(html).toContain('aria-label="Clientes"')
+    expect(html).not.toContain('se aplican al marcar')
     expect(html).not.toContain('aria-label="Complemento de Fichas"')
     expect(html).not.toContain('aria-label="Accesos anteriores"')
   })
@@ -520,14 +588,15 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
       </QueryClientProvider>,
     )
 
-    expect(html).toContain('Asignación de paquetes de acceso')
+    expect(html).toContain('Accesos de usuarios')
     expect(html).toContain('Buscar usuario')
+    expect(html).toContain('Selecciona un usuario')
     expect(html).not.toContain('Paquete asignado')
   })
 
   it('con ?usuario= monta el panel de ese usuario y sus paquetes', () => {
     const client = new QueryClient()
-    client.setQueryData(['users', 'access-selector', ''], [
+    client.setQueryData(['users', 'access-directory', ''], { pageParams: [0], pages: [{ data: [
       {
         id: TARGET.id,
         name: TARGET.name,
@@ -538,7 +607,7 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
         supervisorId: null,
         roles: [],
       },
-    ])
+    ], meta: { total: 201, skip: 0, take: 50 } }] })
     client.setQueryData(userAccessKey(TARGET.id), accessState())
 
     const html = renderToStaticMarkup(
@@ -551,5 +620,18 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
 
     expect(html).toContain('Vendedor de prueba')
     expect(html).toContain('Paquete asignado')
+    expect(html).toContain('aria-current="true"')
+    expect(html).toContain('Cargar más usuarios')
+  })
+
+  it('sin permiso no muestra el editor aunque la URL indique un usuario', () => {
+    const session = { ...useAuthStore.getState(), user: { ...useAuthStore.getState().user!, roles: ['Consulta'] } }
+    useAuthStore.setState(session)
+    Object.assign(useAuthStore.getInitialState(), session)
+    const client = seeded(accessState())
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/users/access?usuario=user-1']}><UserAccessAssignments /></MemoryRouter></QueryClientProvider>)
+    expect(html).toContain('Sólo Super Admin')
+    expect(html).not.toContain('Paquete asignado')
+    expect(html).not.toContain('Buscar usuario')
   })
 })
