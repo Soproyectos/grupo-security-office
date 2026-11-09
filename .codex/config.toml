@@ -1,0 +1,19 @@
+[mcp_servers.agentation]
+command = "npx"
+args = [
+    "-y",
+    "agentation-mcp",
+    "server",
+    "--mcp-only",
+    "--http-url",
+    "http://srv-soporte.taila71364.ts.net:4747",
+]
+
+[mcp_servers.context7]
+command = "npx"
+args = [
+    "-y",
+    "--package=@upstash/context7-mcp@2.2.5",
+    "--",
+    "context7-mcp",
+]

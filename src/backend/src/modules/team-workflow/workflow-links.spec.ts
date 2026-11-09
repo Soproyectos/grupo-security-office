@@ -110,7 +110,7 @@ describe('BASE-03 backend-vinculos — enlaces y revocación de detalle', () => 
 
   beforeEach(() => {
     prisma = buildPrisma();
-    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['seller']) };
+    hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['seller']), getActiveInternalSubordinateIds: jest.fn().mockResolvedValue(['seller']) };
     grants = grantsService();
     service = new WorkflowService(prisma, hierarchy, grants);
   });
@@ -436,7 +436,7 @@ const TANDA_T06_URL =
 describe('BASE-03 backend-vinculos — aceptación con concesión real (t06)', () => {
   const db = new PrismaClient({ datasources: { db: { url: TANDA_T06_URL } } });
   const grants = new AccessAssignmentsService(db as never);
-  const hierarchy = { getSubordinateIds: jest.fn(async (id: string) => [id]) } as any;
+  const hierarchy = { getSubordinateIds: jest.fn(async (id: string) => [id]), getActiveInternalSubordinateIds: jest.fn(async (id: string) => [id]) } as any;
   const service = new WorkflowService(db as never, hierarchy, grants);
 
   const stamp = Date.now();

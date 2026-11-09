@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ficha de vitrina de un producto",
+  "type": "object",
+  "required": ["referencia", "slug", "estado", "nombre_vitrina", "categoria", "descripcion", "origen_lista", "fuentes_consultadas", "procesado_en"],
+  "additionalProperties": false,
+  "properties": {
+    "referencia": { "type": "string", "minLength": 1, "description": "La referencia del proveedor, exactamente como venia en la lista." },
+    "slug": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Nombre de archivo derivado de la referencia." },
+    "estado": { "enum": ["verificado", "parcial", "no_encontrado"] },
+    "nombre_vitrina": {
+      "allOf": [{ "$ref": "#/$defs/campo" }],
+      "description": "Titulo comercial de maximo 70 caracteres. Nunca contiene la referencia."
+    },
+    "marca": { "oneOf": [{ "$ref": "#/$defs/campo" }, { "type": "null" }] },
+    "categoria": { "$ref": "#/$defs/campo" },
+    "descripcion": { "$ref": "#/$defs/campo" },
+    "specs": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "required": ["nombre", "valor", "origen"],
+        "additionalProperties": false,
+        "properties": {
+          "nombre": { "type": "string" },
+          "valor": { "type": "string" },
+          "origen": { "enum": ["lista", "web", "inferido"] },
+          "fuente": { "type": "string", "format": "uri" },
+          "razon": { "type": "string" }
+        }
+      }
+    },
+    "imagen": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["url", "origen", "fuente"],
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string", "format": "uri" },
+            "origen": { "const": "web" },
+            "fuente": { "type": "string", "format": "uri", "description": "Pagina donde se encontro la imagen." }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "origen_lista": {
+      "type": "object",
+      "required": ["archivo", "hoja"],
+      "additionalProperties": false,
+      "properties": {
+        "archivo": { "type": "string" },
+        "hoja": { "type": "string" },
+        "seccion": { "type": ["string", "null"] }
+      }
+    },
+    "fuentes_consultadas": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" },
+      "description": "Solo URLs realmente abiertas con webfetch. Nunca resultados de busqueda no visitados."
+    },
+    "notas": { "type": "string" },
+    "procesado_en": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "campo": {
+      "type": "object",
+      "required": ["valor", "origen"],
+      "additionalProperties": false,
+      "properties": {
+        "valor": { "type": "string", "minLength": 1 },
+        "origen": { "enum": ["lista", "web", "inferido"] },
+        "fuente": { "type": "string", "format": "uri", "description": "Obligatorio cuando origen es 'web'." },
+        "razon": { "type": "string", "description": "Obligatorio cuando origen es 'inferido'." }
+      },
+      "allOf": [
+        { "if": { "properties": { "origen": { "const": "web" } } }, "then": { "required": ["valor", "origen", "fuente"] } },
+        { "if": { "properties": { "origen": { "const": "inferido" } } }, "then": { "required": ["valor", "origen", "razon"] } }
+      ]
+    }
+  }
+}

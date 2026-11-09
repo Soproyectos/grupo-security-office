@@ -4,7 +4,7 @@ import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service'
 import { directLegacyProductLibrary } from '../products/product-library';
 import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
-import { BASE_ACCESS_ROLES, baseGrantsForRoles } from '../../common/security/base-access';
+import { BASE_ACCESS_ROLES, baseGrantsForRoles, teamAgendaGrantsForRoles } from '../../common/security/base-access';
 import { resolveAccess } from '../../common/security/data-scope';
 import type { AccessIdentity, ScopedGrant } from '../../common/security/data-scope';
 import { ActivityDto, AssignDto, ConvertDto, LinkDto, RequestDto, ReviewDto } from './workflow.dto';
@@ -56,8 +56,9 @@ export class WorkflowService {
   *  que este método sólo se ejecuta con identidad válida. `superAdmin` sale de
   *  los roles del JWT, el mismo criterio que ya usa `admin()` aquí abajo. */
  private async accessState(ctx:Context):Promise<AccessState> {
-  const teamOwnerIds=this.admin(ctx)?[]:[...new Set([ctx.userId,...await this.hierarchy.getSubordinateIds(ctx.userId,{includeSelf:true})])];
-  const grants=[...await this.grants.grantsForUser(ctx.userId),...baseGrantsForRoles(ctx.roles)];
+  const subordinates=this.admin(ctx)?[]:await this.hierarchy.getActiveInternalSubordinateIds(ctx.userId);
+  const teamOwnerIds=this.admin(ctx)?[]:[...new Set([ctx.userId,...subordinates])];
+  const grants=[...await this.grants.grantsForUser(ctx.userId),...baseGrantsForRoles(ctx.roles),...teamAgendaGrantsForRoles(ctx.roles,subordinates.length>0)];
   return {
    identity:{userId:ctx.userId,...(ctx.jti?{jti:ctx.jti}:{}),verified:true,active:true,sessionValid:true,sessionUserId:ctx.userId,superAdmin:this.admin(ctx),teamOwnerIds},
    grants,

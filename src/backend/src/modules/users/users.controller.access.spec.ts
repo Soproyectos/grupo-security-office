@@ -51,6 +51,7 @@ const mockUsersService = {
 const mockHierarchyService = {
   assertCanSetSupervisor: jest.fn(),
   getTeamTree: jest.fn(),
+  getActiveInternalSubordinateIds: jest.fn().mockResolvedValue([]),
 };
 const mockAuditService = { log: jest.fn() };
 const mockUserPermissions = {

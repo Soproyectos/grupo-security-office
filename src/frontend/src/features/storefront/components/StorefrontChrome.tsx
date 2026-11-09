@@ -47,8 +47,8 @@ export default function StorefrontChrome({ children, home = false, search }: Sto
   const catalogActive = home || pathname.startsWith('/catalogo')
   return (
     <div className="min-h-screen bg-surface-50 text-ink-900">
-      <header className="relative border-b border-surface-200 bg-white px-4 lg:px-12">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 py-1.5 lg:min-h-[84px] lg:flex-nowrap lg:gap-x-7 lg:py-0">
+      <header className="relative border-b border-surface-200 bg-white">
+        <div className="mx-auto flex max-w-[105rem] flex-wrap items-center gap-x-4 py-1.5 lg:min-h-[84px] lg:flex-nowrap lg:gap-x-7 lg:py-0 px-5 sm:px-8 lg:px-12">
           <Link
             to="/tienda"
             className={`order-1 shrink-0 rounded-control ${FOCUS}`}

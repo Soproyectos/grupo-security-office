@@ -20,6 +20,7 @@ import { AccessAssignmentsService } from '../../common/security/access-assignmen
 import { LiveAdminIdentityService } from '../../common/security/live-admin-identity.service';
 import type { PassportSessionUser } from '../../common/security/live-admin-identity.service';
 import { ACCESS_CATALOG, ACCESS_CATALOG_VERSION, PACKAGE_TEMPLATES, isAssignableAction } from '../../common/security/access-catalog';
+import { teamAgendaGrantsForRoles } from '../../common/security/base-access';
 import { Observable, Subject, interval } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -300,12 +301,16 @@ export class UsersController {
       this.accessAssignments.sourcesFor(id),
       this.accessAssignments.accessVersionFor(id),
     ]);
+    const derivedTeamGrants = actor.userId === id
+      ? teamAgendaGrantsForRoles(actor.roles, (await this.hierarchyService.getActiveInternalSubordinateIds(id)).length > 0)
+      : [];
     return {
       userId: id,
       ...(actor.roles.includes('Super Admin') ? { actions: ACCESS_CATALOG.filter((action) => isAssignableAction(action.id)) } : {}),
       catalogVersion: ACCESS_CATALOG_VERSION,
       accessVersion,
-      grants,
+      grants: [...grants, ...derivedTeamGrants],
+      derivedGrants: derivedTeamGrants,
       sources,
       packages: PACKAGE_TEMPLATES.map((pkg) => {
         const applied = sources.find(

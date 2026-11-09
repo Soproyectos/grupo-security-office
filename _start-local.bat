@@ -23,21 +23,8 @@ if errorlevel 1 (
 )
 
 REM Validar estructura y dependencias ya instaladas.
-if not exist "%BACKEND_DIR%\package.json" (
-    echo ERROR: No se encuentra "%BACKEND_DIR%\package.json".
-    pause
-    exit /b 1
-)
-
 if not exist "%FRONTEND_DIR%\package.json" (
     echo ERROR: No se encuentra "%FRONTEND_DIR%\package.json".
-    pause
-    exit /b 1
-)
-
-if not exist "%BACKEND_DIR%\node_modules\" (
-    echo ERROR: Faltan dependencias del backend.
-    echo Ejecuta manualmente: cd /d "%BACKEND_DIR%" ^&^& npm install
     pause
     exit /b 1
 )
@@ -63,17 +50,19 @@ REM Nota: cada servicio se lanza via un .bat auxiliar (_run-*.bat) que hace su
 REM propio "cd /d" al directorio correcto. Pasar el comando completo (con cd,
 REM directorio y npm/npx) inline a "wt.exe ... cmd /k ..." rompe el parseo de
 REM argumentos de Windows Terminal cuando hay varias comillas anidadas.
-netstat -ano | findstr /R /C:":3000 .*LISTENING" >nul
+REM API/BD: copia DEMO en la VPS (gs-test-demo-*) por tunel SSH en localhost:8080.
+REM No se conecta a produccion (gs-db/gs-api). Ver _run-tunnel.bat.
+netstat -ano | findstr /R /C:":8080 .*LISTENING" >nul
 if errorlevel 1 (
-    echo Iniciando backend en puerto 3000...
+    echo Abriendo tunel SSH a la demo en puerto 8080...
     if "%USE_WT%"=="1" (
-        start "" wt.exe -w 0 nt --title "Backend" cmd /k "%REPO_ROOT%_run-backend.bat"
+        start "" wt.exe -w 0 nt --title "Tunel demo" cmd /k "%REPO_ROOT%_run-tunnel.bat"
         timeout /t 2 /nobreak >nul
     ) else (
-        start "Grupo Security - Backend" /D "%BACKEND_DIR%" cmd /k "npm run dev"
+        start "Grupo Security - Tunel demo" cmd /k "%REPO_ROOT%_run-tunnel.bat"
     )
 ) else (
-    echo El puerto 3000 ya esta en uso. No se inicia otro backend.
+    echo El puerto 8080 ya esta en uso. No se abre otro tunel.
 )
 
 netstat -ano | findstr /R /C:":5173 .*LISTENING" >nul
@@ -108,7 +97,7 @@ echo Esperando el backend...
 set "BACKEND_READY=0"
 
 for /L %%I in (1,1,45) do (
-    powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:3000/api/health' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 }; exit 1 } catch { exit 1 }" >nul 2>&1
+    powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:8080/api/health' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 }; exit 1 } catch { exit 1 }" >nul 2>&1
     if not errorlevel 1 (
         set "BACKEND_READY=1"
         goto :backend_ready
@@ -154,7 +143,7 @@ echo.
 echo ==========================================
 echo Entorno local iniciado.
 echo Frontend: http://localhost:5173/
-echo Health API: http://localhost:3000/api/health
+echo API demo (tunel): http://localhost:8080/api/health
 echo Agentation: boton flotante abajo a la derecha (servidor en :4747)
 if "%USE_WT%"=="1" (
     echo Backend, Frontend y Agentation corren como pestañas en una sola ventana de Windows Terminal.

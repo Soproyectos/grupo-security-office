@@ -11,18 +11,29 @@ export interface UserListItem {
   roles: { id: string; name: string }[]
 }
 
-interface UserListResponse {
+export interface UserListResponse {
   data: UserListItem[]
   meta?: { total: number; skip: number; take: number }
 }
 
 export const fetchUsers = async (search = '', take = 200): Promise<UserListItem[]> => {
+  const body = await fetchUsersPage(search, take)
+  return body.data
+}
+
+export const fetchUsersPage = async (search = '', take = 200, skip = 0): Promise<UserListResponse> => {
   const params = new URLSearchParams()
   params.set('take', String(take))
+  if (skip) params.set('skip', String(skip))
   if (search.trim()) params.set('search', search.trim())
   const res = await api.get(`/users?${params}`)
   const body = res.data as UserListResponse
-  return body.data ?? []
+  return { ...body, data: body.data ?? [] }
+}
+
+export const fetchUser = async (userId: string): Promise<UserListItem> => {
+  const res = await api.get(`/users/${encodeURIComponent(userId)}`)
+  return res.data as UserListItem
 }
 
 export const updateUserSupervisor = async (userId: string, supervisorId: string | null) => {

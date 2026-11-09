@@ -110,6 +110,22 @@ beforeEach(() => {
   login(['Vendedor'])
 })
 
+describe('calendario de solo lectura', () => {
+  it('conserva las fechas y el detalle sin ofrecer crear actividades', () => {
+    login([])
+    const html = render(seeded([row({ id: 'readonly-activity' })]), [
+      { sourceId: 'read-only', actionId: 'activities:read', scope: 'own' },
+    ])
+
+    expect(html).not.toContain('Crear actividad')
+    expect(rowsOf(html, 'Visita al proyecto Los Robles')).toBe(1)
+    const dateLabel = new Intl.DateTimeFormat('es-CO', {
+      day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota',
+    }).format(new Date(`${TODAY}T12:00:00Z`))
+    expect(html).toContain(`<span aria-label="${dateLabel}"`)
+  })
+})
+
 describe('ACEPTACIÓN — una fila por actividad tras crear/recargar', () => {
   it('muestra cada actividad una sola vez aunque el estado la tenga duplicada', () => {
     const client = seeded([row({ id: 'a1' }), { ...row({ id: 'a1' }) }, row({ id: 'a2', title: 'Llamada cliente ACME' })])
@@ -383,5 +399,28 @@ describe('equipo con permiso de asignar', () => {
     expect(html).toContain('Ana del Equipo')
     expect(html).toContain('Raúl Consulta')
     expect(html).not.toContain('Mis vendedores')
+  })
+})
+
+describe('agenda de responsables y roles internos', () => {
+  it.each(['Supervisor', 'Admin Comercial', 'Vendedor', 'Operador', 'Consulta'])('%s conserva agenda propia y recibe equipo desde la API', role => {
+    login([role])
+    const client = seededTeam([row({ id: 'own' }), teamRow({ id: 'team' })])
+    const own = render(client)
+    expect(own).toContain('<h1 class="sr-only">Mi agenda</h1>')
+    expect(own).toContain('Crear actividad')
+    expect(rowsOf(own, 'Tarea de Ana')).toBe(0)
+    expect(own).not.toContain('Agenda del equipo')
+
+    const derived: AccessGrant[] = [
+      { sourceId: 'derived:team-hierarchy', actionId: 'activities:read', scope: 'team' },
+      { sourceId: 'derived:team-hierarchy', actionId: 'activities:assign', scope: 'team' },
+    ]
+    captured.queries.length = 0
+    const team = render(client, derived, 'team')
+    expect(team).toContain('Agenda del equipo')
+    expect(team).toContain('Personas del equipo')
+    expect(rowsOf(team, 'Tarea de Ana')).toBe(1)
+    expect(captured.queries.find(q => q.key === 'workflow-sellers')?.enabled).toBe(true)
   })
 })
