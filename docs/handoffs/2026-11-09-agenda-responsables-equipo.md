@@ -27,3 +27,7 @@ Título visible retirado conservando h1 accesible. Validación inicial: 158 prue
 ### Activación QA — 10/11/2026
 
 Con autorización explícita del usuario, versión funcional `114e17d` desplegada en API y web QA. Builds limpios Docker de ambos componentes con salida 0; generación Prisma completa resuelve el bloqueo local de clientes generados. Servicios healthy, cero reinicios, proxy 200 y protección sin sesión 401. Prueba de servicios de solo lectura: 3 usuarios propios, 1 responsable con asignación y rechazo de destino fuera de su rama. No se crearon actividades reales ni se ejecutaron migraciones. Sin producción. Reversión conservada. Evidencia y límites: `docs/bitacora/2026-11-10-qa-accesos-agenda.md`.
+
+### Producción VPS — 10/11/2026
+
+El usuario aclaró que las actualizaciones VPS se refieren a producción y autorizó esta aplicación. Versión `114e17d4` desplegada en `gs-api`/`gs-frontend`, ambos healthy sin reinicios. HTTPS público `/`, `/agenda` y `/api/health` responden 200; usuarios sin sesión 401. Se recuperó una clave existente que autenticó el registro MFA, sin rotación ni cambios de datos; backup verificado, migraciones y contenedor DB sin cambios. Detalle y reversión: `docs/bitacora/2026-11-10-produccion-accesos-agenda.md`.

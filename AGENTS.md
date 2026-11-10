@@ -28,6 +28,8 @@ Código e identificadores en inglés; comunicación con el coordinador en españ
 
 ## Preferencias de trabajo
 
+- **Destino de las actualizaciones VPS:** cuando el usuario pida actualizar o desplegar en la VPS, interpretar el destino como producción. QA solo cuando lo indique expresamente. Esta convención define únicamente el destino; se mantienen la aprobación explícita por ocasión y los límites existentes sobre migraciones, credenciales y cambios de datos.
+
 - Responder siempre en español, de forma breve y clara.
 - Al guiar al usuario, dar un paso a la vez y esperar su respuesta.
 - Preferir `bat`, `rg`, `fd`, `sd` y `eza`; si no están disponibles, usar las herramientas estándar (`cat`, `grep`, `find`, `sed`, `ls`).
