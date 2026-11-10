@@ -2,7 +2,7 @@
 
 - Fecha: 2026-11-09
 - Pantalla: /agenda, calendario y tareas
-- Estado: respondido
+- Estado: integrado
 
 ## 1. Lo que pide el diseño
 El usuario solicita quitar el título visible y validar la agenda de todos los usuarios. Instrucción explícita: si una persona tiene usuarios a cargo, debe poder agendarles tareas.
@@ -23,3 +23,7 @@ Título visible retirado conservando h1 accesible. Validación inicial: 158 prue
 - Typecheck global backend no pasa: cliente Prisma de biblioteca generado ausente/desalineado y errores de tipos en otros módulos/adaptadores. No se ha declarado compilación de backend aprobada ni se ha corregido biblioteca dentro de esta tarea.
 - Usuario confirmó API de pruebas (QA). Activación QA pendiente: no se desplegó ni reinició ningún servicio. AGENTS.md exige aprobación explícita por cada despliegue/reinicio. La validación con cuentas reales y datos de QA queda pendiente de activar un backend compilado y autorizado.
 - Captura: C:/Users/sopor/.codex/visualizations/2026/11/07/01a1b68b-aa50-73a2-bea7-b7a0a010ffd4/agenda-sin-titulo-tareas.jpg
+
+### Activación QA — 10/11/2026
+
+Con autorización explícita del usuario, versión funcional `114e17d` desplegada en API y web QA. Builds limpios Docker de ambos componentes con salida 0; generación Prisma completa resuelve el bloqueo local de clientes generados. Servicios healthy, cero reinicios, proxy 200 y protección sin sesión 401. Prueba de servicios de solo lectura: 3 usuarios propios, 1 responsable con asignación y rechazo de destino fuera de su rama. No se crearon actividades reales ni se ejecutaron migraciones. Sin producción. Reversión conservada. Evidencia y límites: `docs/bitacora/2026-11-10-qa-accesos-agenda.md`.
