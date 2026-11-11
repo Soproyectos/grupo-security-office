@@ -47,6 +47,8 @@ import { normalizeText } from './import/helpers/text-normalizer';
 import { findProductBySku, normalizeSku } from './helpers/sku-identity';
 import { pickPrimaryImageByProduct, primaryImageInclude } from './helpers/primary-image';
 import { priceValidityWhere } from './validation/price-validity';
+import { slugifyKey } from './sheet/product-sheet.service';
+import { SHEET_SLUG_REGEX } from './sheet/dto/product-sheet.dto';
 import { ClassificationService } from './classification/classification.service';
 import type { ClassificationDb } from './classification/classification.types';
 
@@ -1289,6 +1291,7 @@ export class ProductsService {
           isActive: false,
           isVisible: false,
           publishStatus: 'borrador',
+          catalogPublished: false,
           publishAt: null,
           publishedAt: null,
           unpublishAt: null,
@@ -1300,6 +1303,7 @@ export class ProductsService {
           isActive: false,
           isVisible: false,
           publishStatus: 'archivado',
+          catalogPublished: false,
           publishAt: null,
           publishedAt: null,
           unpublishAt: null,
@@ -1586,15 +1590,22 @@ export class ProductsService {
     const eventSummary = { event, from: this.effectiveLifecycleStatus(product), pinnedRevisionId: pinnedId, previousPublicRevisionId } as LibraryPrisma.InputJsonObject;
     const updated = await this.writeTransaction(async (tx) => {
       if (event === 'PUBLISH') {
+        // Publishing makes the product visible in the storefront: complete the catalog
+        // fields first so the frozen revision snapshot already carries them.
+        const fill = await this.catalogPublishFill(tx, id);
         if (pinnedId) {
           await tx.productRevision.update({
             where: { id: pinnedId },
-            data: { status: 'PUBLICADA', publishedAt: new Date() },
+            data: {
+              status: 'PUBLICADA',
+              publishedAt: new Date(),
+              ...(await this.revisionContentWithCatalogFill(tx, pinnedId, fill)),
+            },
           });
         }
         const row = await tx.product.update({
           where: { id },
-          data: { ...data, publicRevisionId: pinnedId, scheduledRevisionId: null },
+          data: { ...data, ...fill, catalogPublished: true, publicRevisionId: pinnedId, scheduledRevisionId: null },
         });
         await this.recordProductChanges(tx, product, row as never, ProductsService.STATE_HISTORY_FIELDS, 'LIFECYCLE', ctx);
         await this.appendLibraryEvent(tx, `PRODUCT_${event}`, 'Product', id, eventSummary, ctx);
@@ -1627,6 +1638,62 @@ export class ProductsService {
 
     const allowed = ctx ? await this.allowedActions(updated, ctx) : undefined;
     return allowed ? { ...updated, allowedActions: allowed } : updated;
+  }
+
+  /**
+   * Fills the catalog fields the storefront needs when a product is published:
+   * a unique slug derived from the SKU and the primary image. Existing values are
+   * never overwritten; `catalogName` is left alone (the public name falls back to `name`).
+   */
+  private async catalogPublishFill(tx: Prisma.TransactionClient, productId: string) {
+    const row = await tx.product.findUnique({
+      where: { id: productId },
+      select: { sku: true, catalogSlug: true, catalogImageUrl: true, catalogImageAlt: true },
+    });
+    const fill: { catalogSlug?: string; catalogImageUrl?: string; catalogImageAlt?: string | null } = {};
+    if (!row) return fill;
+    if (!row.catalogSlug?.trim()) {
+      let base = slugifyKey(row.sku ?? '', 120);
+      if (!SHEET_SLUG_REGEX.test(base) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) base = 'producto';
+      let candidate = base;
+      for (let n = 2; await tx.product.findFirst({ where: { catalogSlug: candidate, NOT: { id: productId } }, select: { id: true } }); n++) {
+        candidate = `${base}-${n}`;
+      }
+      fill.catalogSlug = candidate;
+    }
+    if (!row.catalogImageUrl?.trim()) {
+      const image = await tx.productImage.findFirst({
+        where: { productId },
+        orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+        select: { url: true, alt: true },
+      });
+      if (image?.url) {
+        fill.catalogImageUrl = image.url;
+        if (!row.catalogImageAlt?.trim() && image.alt) fill.catalogImageAlt = image.alt;
+      }
+    }
+    return fill;
+  }
+
+  /** Revision `content` patch: blank snapshot values take the freshly filled catalog fields. */
+  private async revisionContentWithCatalogFill(
+    tx: Prisma.TransactionClient,
+    revisionId: string,
+    fill: { catalogSlug?: string; catalogImageUrl?: string; catalogImageAlt?: string | null },
+  ): Promise<{ content?: Prisma.InputJsonValue }> {
+    if (Object.keys(fill).length === 0) return {};
+    const rev = await tx.productRevision.findUnique({ where: { id: revisionId }, select: { content: true } });
+    const content = (rev?.content ?? {}) as Record<string, unknown>;
+    const patched: Record<string, unknown> = { ...content };
+    let changed = false;
+    for (const [key, value] of Object.entries(fill)) {
+      const current = patched[key];
+      if (value != null && (typeof current !== 'string' || !current.trim())) {
+        patched[key] = value;
+        changed = true;
+      }
+    }
+    return changed ? { content: patched as Prisma.InputJsonValue } : {};
   }
 
   /**

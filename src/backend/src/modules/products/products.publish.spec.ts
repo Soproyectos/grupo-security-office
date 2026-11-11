@@ -54,11 +54,21 @@ function build(opts: {
   validation?: { runFresh: jest.Mock };
   revisions?: { markPendingFromLive: jest.Mock };
   grants?: { grantsForUser: jest.Mock };
+  catalog?: { live?: Record<string, unknown>; takenSlugs?: string[]; image?: Record<string, unknown> | null; revisionContent?: Record<string, unknown> };
 } = {}) {
   const product = productRow(opts.product)
   const tx = {
-    productRevision: { update: jest.fn().mockResolvedValue({}) },
-    product: { update: jest.fn().mockResolvedValue(product) },
+    productRevision: {
+      update: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue({ content: opts.catalog?.revisionContent ?? {} }),
+    },
+    product: {
+      update: jest.fn().mockResolvedValue(product),
+      findUnique: jest.fn().mockResolvedValue({ sku: 'DS-PDSMK-S-WB', catalogSlug: null, catalogImageUrl: null, catalogImageAlt: null, ...opts.catalog?.live }),
+      findFirst: jest.fn(async (args: { where: { catalogSlug: string } }) =>
+        (opts.catalog?.takenSlugs ?? []).includes(args.where.catalogSlug) ? { id: 'other' } : null),
+    },
+    productImage: { findFirst: jest.fn().mockResolvedValue(opts.catalog?.image ?? null) },
     productChange: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
   const prisma = {
@@ -164,6 +174,59 @@ describe('CAT-06 P1/P2: publicar pinea la revisión exacta y re-valida con el mo
     await expect(service.transition('p-1', { event: 'PUBLISH' }, ctxComercial)).rejects.toBeInstanceOf(ForbiddenException)
     expect(validation.runFresh).not.toHaveBeenCalled()
     expect(prisma.product.update).not.toHaveBeenCalled()
+  })
+
+  describe('publicar deja el producto visible en la tienda', () => {
+    const publish = async (catalog: NonNullable<Parameters<typeof build>[0]>['catalog'] = {}) => {
+      const ctx = build({ catalog })
+      ctx.prisma.productRevision.findFirst.mockResolvedValue({ id: 'rev-9' })
+      await ctx.service.transition('p-1', { event: 'PUBLISH' }, ctxAdmin)
+      return ctx
+    }
+
+    it('genera slug desde el SKU, copia la imagen principal y fija catalogPublished', async () => {
+      const { tx } = await publish({ image: { url: '/api/files/img-1', alt: 'Frente' } })
+      expect(tx.product.update.mock.calls[0][0].data).toMatchObject({
+        catalogPublished: true,
+        catalogSlug: 'ds-pdsmk-s-wb',
+        catalogImageUrl: '/api/files/img-1',
+        catalogImageAlt: 'Frente',
+      })
+      expect(tx.product.update.mock.calls[0][0].data).not.toHaveProperty('catalogName')
+    })
+
+    it('el snapshot de la revisión incluye slug e imagen rellenados', async () => {
+      const { tx } = await publish({ image: { url: '/api/files/img-1', alt: null }, revisionContent: { catalogSlug: null, name: 'x' } })
+      const data = tx.productRevision.update.mock.calls[0][0].data
+      expect(data.status).toBe('PUBLICADA')
+      expect(data.content).toMatchObject({ name: 'x', catalogSlug: 'ds-pdsmk-s-wb', catalogImageUrl: '/api/files/img-1' })
+    })
+
+    it('si el slug choca añade sufijo numérico', async () => {
+      const { tx } = await publish({ takenSlugs: ['ds-pdsmk-s-wb', 'ds-pdsmk-s-wb-2'] })
+      expect(tx.product.update.mock.calls[0][0].data.catalogSlug).toBe('ds-pdsmk-s-wb-3')
+    })
+
+    it('respeta slug e imagen existentes y no toca el contenido de la revisión', async () => {
+      const { tx } = await publish({
+        live: { catalogSlug: 'mi-slug', catalogImageUrl: '/api/files/propia' },
+        image: { url: '/api/files/otra', alt: 'otra' },
+        revisionContent: { catalogSlug: 'mi-slug' },
+      })
+      const data = tx.product.update.mock.calls[0][0].data
+      expect(data.catalogPublished).toBe(true)
+      expect(data).not.toHaveProperty('catalogSlug')
+      expect(data).not.toHaveProperty('catalogImageUrl')
+      expect(tx.productRevision.update.mock.calls[0][0].data).not.toHaveProperty('content')
+    })
+
+    it('UNPUBLISH apaga catalogPublished sin borrar slug ni demás campos', async () => {
+      const { service, tx } = build({ product: { lifecycleStatus: 'PUBLISHED', publicRevisionId: 'rev-old', catalogPublished: true } })
+      await service.transition('p-1', { event: 'UNPUBLISH', reason: 'x' }, ctxAdmin)
+      const data = tx.product.update.mock.calls[0][0].data
+      expect(data.catalogPublished).toBe(false)
+      expect(data).not.toHaveProperty('catalogSlug')
+    })
   })
 
   it('UNPUBLISH despinea (T1): publicRevisionId := null; la revisión publicada queda como historia', async () => {
