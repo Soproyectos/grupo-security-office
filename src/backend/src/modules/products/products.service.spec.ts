@@ -872,15 +872,17 @@ describe('ProductsService', () => {
       expect(result.publishStatus).toBe('publicado');
     });
 
-    it('bloquea por stock cuando existe registro con availableQty <= 0', async () => {
+    it('ya no bloquea por stock con registro availableQty <= 0 (el stock nunca bloquea)', async () => {
       mockPrisma.product.findUnique.mockResolvedValue(readyProduct());
       mockPrisma.lista.findUnique.mockResolvedValue({ id: 'lista-1', isActive: true, archivedAt: null });
       mockPrisma.price.count.mockResolvedValue(1);
       mockPrisma.productImage.count.mockResolvedValue(1);
       mockPrisma.stock.findUnique.mockResolvedValue({ productId: 'p1', availableQty: 0, reservedQty: 0 });
 
-      await expect(service.publish('p1', {})).rejects.toThrow(BadRequestException);
-      await expect(service.publish('p1', {})).rejects.toThrow(/stock/);
+      mockPrisma.product.update.mockResolvedValue(readyProduct({ publishStatus: 'publicado' }));
+
+      const result = await service.publish('p1', {});
+      expect(result.publishStatus).toBe('publicado');
     });
 
     it('programa publicación futura dejando el producto en DRAFT y persistiendo estado canónico completo', async () => {

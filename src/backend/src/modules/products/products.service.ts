@@ -47,7 +47,6 @@ import { normalizeText } from './import/helpers/text-normalizer';
 import { findProductBySku, normalizeSku } from './helpers/sku-identity';
 import { pickPrimaryImageByProduct, primaryImageInclude } from './helpers/primary-image';
 import { priceValidityWhere } from './validation/price-validity';
-import { isWebBrandExcluded } from './web-brand-policy';
 import { ClassificationService } from './classification/classification.service';
 import type { ClassificationDb } from './classification/classification.types';
 
@@ -1037,28 +1036,9 @@ export class ProductsService {
    *  (b) Producto activo (isActive).
    *  (c) Al menos 1 precio vigente del producto (validFrom nulo o <= now y validUntil nulo o futuro).
    *  (d) Al menos 1 imagen.
-   *  (e) Stock: si existe registro de stock, exige availableQty > 0.
-   *      Si NO existe registro de stock, NO se bloquea (decisión documentada).
+   *  El stock nunca bloquea la publicación (decisión del motor CAT-05).
    * Devuelve la lista de TODOS los requisitos fallidos (mensaje 400 detallado).
    */
-  private assertWebBrandAllowed(...labels: unknown[]) {
-    if (isWebBrandExcluded(...labels.map((label) => typeof label === 'string' ? label : null))) {
-      throw new BadRequestException({
-        code: 'WEB_BRAND_EXCLUDED',
-        message: 'Dahua e Imou no se pueden publicar en la tienda.',
-      });
-    }
-  }
-
-  private async assertRevisionWebBrandAllowed(content: unknown, currentBrandId: string | null) {
-    const snapshot = content as Record<string, unknown> | null;
-    this.assertWebBrandAllowed(snapshot?.catalogBrand);
-    if (typeof snapshot?.brandId === 'string' && snapshot.brandId !== currentBrandId) {
-      const brand = await this.prisma.brand.findUnique({ where: { id: snapshot.brandId }, select: { name: true } });
-      this.assertWebBrandAllowed(brand?.name);
-    }
-  }
-
   private async validatePublishRequirements(product: {
     id: string;
     listaId: string | null;
@@ -1086,12 +1066,6 @@ export class ProductsService {
     const imageCount = await this.prisma.productImage.count({ where: { productId: product.id } });
     if (imageCount === 0) {
       failures.push('El producto no tiene al menos una imagen');
-    }
-
-    // (e) Stock: solo bloquea si existe registro de stock con availableQty <= 0.
-    const stock = await this.operational.stock.findUnique({ where: { productId: product.id } });
-    if (stock && stock.availableQty <= 0) {
-      failures.push('El producto tiene stock registrado pero sin unidades disponibles (availableQty <= 0)');
     }
 
     return failures;
@@ -1164,7 +1138,6 @@ export class ProductsService {
     if (!isFuturePublish) {
       return this.transition(id, { event: 'PUBLISH' }, ctx);
     }
-    this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
 
     // Programación sobre DRAFT: persiste estado canónico DRAFT completo con publishAt.
     // CAT-06 (T3, MISMO servicio que schedulePublication): programar exige
@@ -1493,7 +1466,6 @@ export class ProductsService {
     }
     // Checklist de publicación (P5): solo PUBLISH valida requisitos comerciales.
     if (event === 'PUBLISH') {
-      this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
       const failures = await this.validatePublishRequirements(product);
       if (failures.length > 0) {
         const detail = failures.map((f, i) => `${i + 1}) ${f}`).join('; ');
@@ -1574,7 +1546,6 @@ export class ProductsService {
         select: { id: true, productId: true, content: true },
       });
       if (frozen && frozen.productId === product.id) {
-        await this.assertRevisionWebBrandAllowed(frozen.content, product.brandId);
         return frozen.id;
       }
       // Defensivo: la revisión congelada ya no existe (borrada a mano) → se
@@ -1586,7 +1557,6 @@ export class ProductsService {
       select: { id: true, content: true },
     });
     if (draft) {
-      await this.assertRevisionWebBrandAllowed(draft.content, product.brandId);
       return draft.id;
     }
     const created = await this.revisions!.markPendingFromLive(product.id);
@@ -1718,7 +1688,6 @@ export class ProductsService {
     if (publishAt <= new Date()) {
       throw new BadRequestException('publishAt debe ser una fecha futura');
     }
-    this.assertWebBrandAllowed(product.catalogBrand, product.brand?.name);
     const previous = product.publishAt ? new Date(product.publishAt) : null;
     // CAT-06 (T3, mismo servicio que la ruta legacy): programar exige validación
     // vigente AHORA y congela la revisión que el scheduler publicará al vencer

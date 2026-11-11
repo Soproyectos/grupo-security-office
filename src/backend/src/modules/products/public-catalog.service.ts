@@ -15,7 +15,6 @@ import {
 import { PublicPrice, PublicPricingService } from './public-pricing.service';
 import { Prisma } from '../../../prisma/biblioteca/generated/client';
 import { publicCatalogVisibility } from './public-catalog-visibility';
-import { blockedWebBrandIds } from './web-brand-policy';
 import { PublishedKeySpecsService, type KeySpecFacetsView } from '../library-specs/published-key-specs.service';
 import { parseKeySpecFilter } from '../library-specs/published-key-specs.rules';
 import { applyRevisionLens, effectiveIdentity, loadActiveRevisionContents } from './public-revision-lens';
@@ -81,7 +80,7 @@ export class PublicCatalogService {
   private get prisma() { return this.library.client; }
 
   private async visibility<TJsonNull>(jsonNull: TJsonNull) {
-    return publicCatalogVisibility(jsonNull, await blockedWebBrandIds(this.prisma));
+    return publicCatalogVisibility(jsonNull);
   }
 
   /**

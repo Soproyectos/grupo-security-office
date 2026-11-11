@@ -37,10 +37,10 @@ const input = (over: Partial<ProductValidationInput> = {}): ProductValidationInp
 const codesOf = (issues: ValidationIssue[]) => issues.map((i) => i.code)
 
 describe('runValidation — reglas de publicación', () => {
-  it.each([{ brandName: 'Dahua Technology' }, { catalogBrand: 'IMOU' }])('bloquea la marca excluida (%j)', (brand) => {
+  it.each([{ brandName: 'Dahua Technology' }, { catalogBrand: 'IMOU' }, { catalogBrand: 'dh' }])('ya no bloquea marcas con dahua/imou/dh (%j)', (brand) => {
     const result = runValidation(input({ ...brand, prices: [{ valueOk: true, expired: false }] }))
-    expect(result.status).toBe('CON_PROBLEMAS')
-    expect(codesOf(result.issues)).toContain('WEB_BRAND_EXCLUDED')
+    expect(result.status).toBe('LISTA_PARA_PUBLICAR')
+    expect(codesOf(result.issues)).not.toContain('WEB_BRAND_EXCLUDED')
   })
   it('producto DRAFT con precio vigente: sin errores y LISTA_PARA_PUBLICAR', () => {
     const r = runValidation(input({ prices: [{ valueOk: true, expired: false }] }))

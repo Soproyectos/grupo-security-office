@@ -11,7 +11,6 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { CustomerAccount, Prisma } from "@prisma/client";
 import { applyRevisionLens, loadActiveRevisionContents } from '../products/public-revision-lens';
-import { blockedWebBrandIds, webBrandVisibility } from '../products/web-brand-policy';
 import * as bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { isEmail } from "class-validator";
@@ -428,7 +427,6 @@ export class StorefrontService {
       isActive: true,
       isVisible: true,
       AND: [
-        webBrandVisibility(await blockedWebBrandIds(this.library.client)),
         {
           OR: [
             { listaId: null },

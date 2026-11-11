@@ -114,16 +114,15 @@ describe('PublicCatalogService', () => {
   beforeEach(() => build());
 
   describe('search — listado por categoría', () => {
-    it('filtra la marca congelada antes de paginar y antes de resolver el detalle', async () => {
-      prisma.brand.findMany.mockResolvedValue([{ id: 'blocked-brand' }]);
-      await service.search({});
-      await service.getDetail('p-01');
+    it('no aplica ninguna exclusión de marca y muestra un producto con catalogBrand nulo', async () => {
+      build([], {}, [product('p-null-brand', 'Sin marca de ficha', 'c-cctv', { catalogBrand: null })]);
+      const result = await service.search({});
+      await expect(service.getDetail('p-null-brand')).resolves.toBeDefined();
 
       const listWhere = prisma.product.findMany.mock.calls[0][0].where;
-      expect(prisma.product.count.mock.calls[0][0].where).toEqual(listWhere);
-      const revisionFilter = listWhere.AND[0].AND[2].OR[1].publicRevision.isNot;
-      expect(revisionFilter.OR).toContainEqual({ content: { path: ['brandId'], equals: 'blocked-brand' } });
-      expect(prisma.product.findFirst.mock.calls[0][0].where.AND).toEqual(listWhere.AND);
+      expect(JSON.stringify(listWhere)).not.toMatch(/catalogBrand|brandId|dahua|imou/i);
+      expect(result.data.map((item) => item.id)).toContain('p-null-brand');
+      expect(prisma.brand.findMany).not.toHaveBeenCalled();
     });
     it('con category devuelve los publicados de la categoría y sus descendientes', async () => {
       const result = await service.search({ category: 'cctv' });

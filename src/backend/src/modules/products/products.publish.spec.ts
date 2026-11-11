@@ -106,13 +106,11 @@ function build(opts: {
 
 describe('CAT-06 P1/P2: publicar pinea la revisión exacta y re-valida con el motor', () => {
   it.each([{ brand: { name: 'DA-HUA Technology' } }, { catalogBrand: 'Imou' }])(
-    'rechaza marcas excluidas antes de validar o escribir (%j)', async (identity) => {
-      const { service, tx, validation } = build({ product: identity })
+    'ya no rechaza marcas dahua/imou al publicar (%j)', async (identity) => {
+      const { service, validation } = build({ product: identity })
 
-      await expect(service.transition('p-1', { event: 'PUBLISH' }, ctxAdmin))
-        .rejects.toMatchObject({ response: { code: 'WEB_BRAND_EXCLUDED' } })
-      expect(validation.runFresh).not.toHaveBeenCalled()
-      expect(tx.product.update).not.toHaveBeenCalled()
+      await expect(service.transition('p-1', { event: 'PUBLISH' }, ctxAdmin)).resolves.toBeDefined()
+      expect(validation.runFresh).toHaveBeenCalledWith('p-1')
     },
   )
 
