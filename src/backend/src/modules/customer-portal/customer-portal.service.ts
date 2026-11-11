@@ -8,7 +8,6 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import { directLegacyProductLibrary } from '../products/product-library';
-import { blockedWebBrandIds, webBrandVisibility } from '../products/web-brand-policy';
 import { AuditService } from '../audit/audit.service';
 import { CatalogQueryDto } from './dto/catalog-query.dto';
 import { RegisterPortalAccountDto } from './dto/register-portal-account.dto';
@@ -127,7 +126,6 @@ export class CustomerPortalService {
 
   async getCatalog(query: CatalogQueryDto, accountType?: PortalAccountType, tierId?:string|null) {
     const where: Prisma.ProductWhereInput = {
-      ...webBrandVisibility(await blockedWebBrandIds(this.db)),
       lifecycleStatus: 'PUBLISHED', isActive: true, isVisible: true,
       category: { isActive: true }, brand: { isActive: true },
       ...(query.search?.trim() ? { OR: [
@@ -180,7 +178,6 @@ export class CustomerPortalService {
   async getProductDetail(id: string, accountType?: PortalAccountType, tierId?:string|null) {
     const product = await this.db.product.findFirst({
       where: {
-        ...webBrandVisibility(await blockedWebBrandIds(this.db)),
         id,
         lifecycleStatus: 'PUBLISHED',
         isActive: true,

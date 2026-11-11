@@ -1,5 +1,4 @@
 import { Prisma } from '@prisma/client';
-import { webBrandVisibility } from './web-brand-policy';
 
 /**
  * A product is public when it passed the commercial publication workflow or
@@ -10,9 +9,8 @@ import { webBrandVisibility } from './web-brand-policy';
  * that passed the price/image/stock publication gate.
  */
 /** Keep one predicate while accepting each generated client's nominal JsonNull type. */
-export function publicCatalogVisibility<TJsonNull>(jsonNull: TJsonNull, blockedRevisionBrandIds?: string[]) {
+export function publicCatalogVisibility<TJsonNull>(jsonNull: TJsonNull) {
   return {
-    ...webBrandVisibility(blockedRevisionBrandIds),
     OR: [
       { lifecycleStatus: 'PUBLISHED' as const },
       {

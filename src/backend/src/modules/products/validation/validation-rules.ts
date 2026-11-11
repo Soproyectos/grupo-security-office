@@ -11,7 +11,6 @@
  * trabajo, la `rulesVersion` o si editar creó otra revisión.
  */
 
-import { isWebBrandExcluded } from '../web-brand-policy'
 
 export const RULES_VERSION = 'cat05-r3'
 
@@ -111,13 +110,6 @@ export function runValidation(input: ProductValidationInput): ValidationResult {
       section: 'identidad',
       message: 'El producto no tiene marca y la ficha repite un valor provisional o vacío.',
       fix: 'Asigna la marca del producto (o escríbela en Marca de la ficha).',
-    })
-  }
-  if (isWebBrandExcluded(input.brandName, input.catalogBrand)) {
-    issues.push({
-      code: 'WEB_BRAND_EXCLUDED', severity: 'error', field: 'brand', section: 'identidad',
-      message: 'Dahua e Imou no se pueden publicar en la tienda.',
-      fix: 'Conserva la ficha para consulta interna.',
     })
   }
 
