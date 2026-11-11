@@ -627,6 +627,7 @@ model UploadedFile {
 model PriceList {
   customerAccounts        CustomerAccount[]
   portalTiers             PortalTier[]
+  defaultForCustomers     Customer[]            @relation("CustomerDefaultPriceList")
   id                      String                   @id @default(uuid())
   name                    String
   code                    String                   @unique
@@ -1054,6 +1055,11 @@ model Customer {
   lastContactAt  DateTime?
   notes          String?
   isActive       Boolean          @default(true)
+  /// Panel de clientes (feedback 2026-11-11): tarifa por defecto del cliente.
+  defaultPriceListId String?
+  defaultPriceList   PriceList?   @relation("CustomerDefaultPriceList", fields: [defaultPriceListId], references: [id], onDelete: SetNull)
+  /// Qué puede ver el cliente en su portal: { catalog, prices, quotes, orders }.
+  visibleFields  Json?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   createdBy      User?            @relation("CustomerCreator", fields: [createdById], references: [id])
@@ -1066,6 +1072,7 @@ model Customer {
   @@index([ownerId, status])
   @@index([status])
   @@index([createdAt])
+  @@index([defaultPriceListId])
   @@map("customers")
 }
 
