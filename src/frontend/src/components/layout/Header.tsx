@@ -27,6 +27,7 @@ export default function Header() {
     if (!el) return
     const publish = () => document.documentElement.style.setProperty('--app-header-h', `${el.offsetHeight}px`)
     publish()
+    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(publish)
     observer.observe(el)
     return () => observer.disconnect()
