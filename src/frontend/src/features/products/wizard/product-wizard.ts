@@ -113,3 +113,30 @@ export function pendingItems(product: Pick<Product, 'name' | 'sku' | 'brandId' |
   if (!product.images?.some((image) => image.url)) items.push({ id: 'images', text: 'Falta al menos una imagen.', step: 4 })
   return items
 }
+
+export interface SheetSaveState {
+  /** False while the public sheet has not loaded: there is nothing to save it with yet. */
+  hasDraft: boolean
+  /** Another save moved the sheet to a newer version. */
+  conflict: boolean
+  /** Fields of the public sheet that fail validation. */
+  errorCount: number
+}
+
+/**
+ * Why a save that returned "not saved" gave no message of its own, in plain words.
+ * Null when the sheet already shows its own error (the server rejected it).
+ */
+export function sheetSaveBlocker({ hasDraft, conflict, errorCount }: SheetSaveState): { message: string; step?: WizardStepId } | null {
+  if (!hasDraft) return { message: 'La ficha pública todavía se está cargando. Espera unos segundos y vuelve a pulsar guardar; no se perdió nada de lo escrito.' }
+  if (conflict) return { message: 'La ficha cambió mientras la editabas. Recarga la página para ver la versión vigente antes de guardar de nuevo.' }
+  if (errorCount > 0) {
+    return {
+      message: errorCount === 1
+        ? 'Hay 1 dato de la ficha por corregir en el paso 3 (marcado en rojo). Corrígelo y vuelve a guardar.'
+        : `Hay ${errorCount} datos de la ficha por corregir en el paso 3 (marcados en rojo). Corrígelos y vuelve a guardar.`,
+      step: 3,
+    }
+  }
+  return null
+}
