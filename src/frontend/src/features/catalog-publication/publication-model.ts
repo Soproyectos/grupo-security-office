@@ -217,6 +217,24 @@ const CHECK_TEXT: Record<Exclude<PublishStepContext['check'], 'current'>, string
   unavailable: 'No se pudo cargar qué falta. Recarga la página para intentarlo de nuevo.',
 }
 
+/**
+ * Motivo de rechazo de la publicación masiva en lenguaje simple. El servidor
+ * devuelve los mismos mensajes que la publicación individual: «código (sección):
+ * mensaje» del motor, o frases del checklist.
+ */
+export function bulkProblemText(raw: string): string {
+  const engine = /^([\w.]+) \([^)]*\): (.*)$/.exec(raw)
+  if (engine) {
+    const code = engine[1] ?? ''
+    const message = engine[2] ?? raw
+    if (code === 'media.file_exists') return 'Un archivo de la ficha no está disponible. Vuelve a subirlo.'
+    return ITEM_TEXT[code]?.text ?? message
+  }
+  if (/precio vigente/i.test(raw)) return 'Falta un precio vigente.'
+  if (/al menos una imagen/i.test(raw)) return 'Falta al menos una imagen.'
+  return raw
+}
+
 function itemFor(issue: ValidationIssueView): PublishStepItem {
   if (issue.code === 'media.file_exists') {
     const fixSection: PublishFixSection | null = issue.field === 'images' ? 'imagenes' : issue.field === 'resources' ? 'recursos' : null

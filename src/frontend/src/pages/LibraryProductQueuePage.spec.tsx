@@ -108,6 +108,14 @@ describe('LibraryProductQueuePage', () => {
     expect(without).not.toContain('/products/new')
   })
 
+  it('muestra «Seleccionar para publicar» solo con la concesión de publicar productos', () => {
+    expect(render()).not.toContain('Seleccionar para publicar')
+    hookState.permissions = ['products:publish']
+    const html = render()
+    expect(html).toContain('Seleccionar para publicar')
+    expect(html).not.toContain('type="checkbox"')
+  })
+
   it('muestra el catálogo completo al entrar, incluidos los productos sin pendientes', () => {
     const html = render()
     expect(html).toContain('Buscar por nombre o SKU')

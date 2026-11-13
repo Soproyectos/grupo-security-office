@@ -6,6 +6,8 @@ import { ProductPagination } from '../components/ProductPagination'
 import { resolveAssetUrl } from '../services/api'
 import { formatCurrency } from '../lib/format'
 import { useProducts } from '../features/products/hooks/useProducts'
+import { getTransitionHttpStatus, useBulkTransition } from '../features/products/hooks/useProductTransition'
+import { BulkPublishBar, type BulkPublishOutcome, type BulkPublishPhase } from '../features/catalog-publication/BulkPublishBar'
 import { useHasPermission } from '../lib/rbac'
 import { effectiveLifecycleStatus, LIFECYCLE_STATUS_LABEL } from '../features/products/lib/lifecycle'
 import { NEW_PRODUCT_PATH, sheetEditorPath, sheetEditorState } from '../features/products/lib/library-nav'
@@ -46,6 +48,7 @@ function lifecycleVariant(product: Product): 'success' | 'warning' | 'neutral' {
 export default function LibraryProductQueuePage() {
   const canReadPrices = useHasPermission('prices:read')
   const canCreate = useHasPermission('products:write')
+  const canPublish = useHasPermission('products:publish')
   const navigate = useNavigate()
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -58,6 +61,12 @@ export default function LibraryProductQueuePage() {
   const [layout, setLayout] = useState<QueueLayout>(initial.layout)
   const [activeFlag, setActiveFlag] = useState<PendingFlag | null>(initial.pending)
   const seenLocationKey = useRef(location.key)
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const [bulkPhase, setBulkPhase] = useState<BulkPublishPhase>('idle')
+  const [bulkOutcome, setBulkOutcome] = useState<BulkPublishOutcome | null>(null)
+  const [bulkError, setBulkError] = useState<string | null>(null)
+  const bulkTransition = useBulkTransition()
 
   const filters = useMemo(() => ({ search: search.trim() }), [search])
   const { products = [], total, isLoading, error } = useProducts({ filters, page, pageSize })
@@ -65,6 +74,8 @@ export default function LibraryProductQueuePage() {
   const visible = withFlags.filter(({ flags }) => !activeFlag || flags.includes(activeFlag))
   const countOf = (flag: PendingFlag) => withFlags.filter(({ flags }) => flags.includes(flag)).length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const selectableIds = visible.filter(({ product }) => effectiveLifecycleStatus(product) === 'DRAFT').map(({ product }) => product.id)
+  const selectedIds = selectableIds.filter((id) => selected.has(id))
   const nextPending = withFlags.find(({ flags }) => activeFlag ? flags.includes(activeFlag) : flags.length > 0)
 
   useEffect(() => {
@@ -73,6 +84,12 @@ export default function LibraryProductQueuePage() {
     // The state values are the source for this URL sync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, page, pageSize, layout, activeFlag])
+
+  // The selection belongs to the page being shown: changing page, search or filter clears it.
+  useEffect(() => {
+    setSelected(new Set())
+    setBulkPhase((phase) => (phase === 'confirming' ? 'idle' : phase))
+  }, [search, page, pageSize, activeFlag])
 
   useEffect(() => {
     if (seenLocationKey.current === location.key) return
@@ -87,6 +104,42 @@ export default function LibraryProductQueuePage() {
     // Re-read location state only on external history navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key, navigationType])
+
+  const toggleOne = (id: string, checked: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+
+  const exitSelection = () => {
+    setSelecting(false)
+    setSelected(new Set())
+    setBulkPhase('idle')
+    setBulkOutcome(null)
+    setBulkError(null)
+  }
+
+  const publishSelected = async () => {
+    const ids = selectedIds
+    setBulkError(null)
+    setBulkPhase('running')
+    try {
+      const result = await bulkTransition.mutateAsync({ ids, event: 'PUBLISH' })
+      setBulkOutcome({ requested: ids.length, applied: result.applied.length, rejected: result.rejected })
+      setSelected(new Set())
+      setBulkPhase('done')
+    } catch (failure) {
+      const status = getTransitionHttpStatus(failure)
+      setBulkError(
+        status === 403
+          ? 'No tienes permiso para publicar productos.'
+          : 'No se pudo terminar la publicación. Revisa tu conexión y la lista: los productos ya publicados no se repiten.',
+      )
+      setBulkPhase('idle')
+    }
+  }
 
   const openEditor = (productId: string) =>
     navigate(sheetEditorPath(productId), { state: sheetEditorState(location) })
@@ -189,6 +242,11 @@ export default function LibraryProductQueuePage() {
               Lista
             </button>
           </div>
+            {canPublish && !selecting && (
+              <Button variant="secondary" className="min-h-[44px]" onClick={() => setSelecting(true)}>
+                Seleccionar para publicar
+              </Button>
+            )}
             {canCreate && (
               <Link
                 to={NEW_PRODUCT_PATH}
@@ -208,6 +266,22 @@ export default function LibraryProductQueuePage() {
           </div>
         </div>
       </section>
+
+      {canPublish && selecting && (
+        <BulkPublishBar
+          phase={bulkPhase}
+          selectedCount={selectedIds.length}
+          selectableCount={selectableIds.length}
+          outcome={bulkOutcome}
+          errorMessage={bulkError}
+          onToggleAll={(checked) => setSelected(checked ? new Set(selectableIds) : new Set())}
+          onAskConfirm={() => setBulkPhase('confirming')}
+          onCancelConfirm={() => setBulkPhase('idle')}
+          onConfirm={() => void publishSelected()}
+          onExit={exitSelection}
+          editPath={sheetEditorPath}
+        />
+      )}
 
       {!isLoading && !error && total > 0 && (
         <div className="flex flex-col gap-2 border-b border-neutral-200 pb-2 sm:flex-row sm:items-center sm:justify-between">
@@ -262,7 +336,23 @@ export default function LibraryProductQueuePage() {
           {visible.map(({ product, flags }) => {
             const image = product.images?.find((item) => item.isPrimary) ?? product.images?.[0]
             return (
-              <li key={product.id} className="biblioteca-queue__row">
+              <li key={product.id} className="biblioteca-queue__row" data-selected={selecting && selected.has(product.id) ? 'true' : undefined}>
+                {canPublish && selecting && (
+                  effectiveLifecycleStatus(product) === 'DRAFT' ? (
+                    <label className="biblioteca-queue__check">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[var(--color-primary)]"
+                        checked={selected.has(product.id)}
+                        disabled={bulkPhase !== 'idle'}
+                        onChange={(event) => toggleOne(product.id, event.target.checked)}
+                        aria-label={`Seleccionar ${product.name}`}
+                      />
+                    </label>
+                  ) : (
+                    <span className="biblioteca-queue__check" aria-hidden="true" />
+                  )
+                )}
                 <Link to={sheetEditorPath(product.id)} state={sheetEditorState(location)} className="biblioteca-queue__image" aria-label={`Abrir ficha de ${product.name}`}>
                   {image?.url ? <img src={resolveAssetUrl(image.url)} alt="" loading="lazy" /> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5m-9 5L3 8m9 5v9" /></svg>}
                 </Link>
