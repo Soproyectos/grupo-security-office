@@ -683,5 +683,43 @@ describe('ProductsService — FSM canónico (DRAFT/PUBLISHED/ARCHIVED)', () => {
       expect(result.rejected).toHaveLength(1);
       expect(result.rejected[0].id).toBe('no-existe');
     });
+
+    it('el rechazado trae sku, nombre y la lista de lo que falta (mismo checklist que la publicación individual)', async () => {
+      mockPrisma.price.count.mockResolvedValue(0);
+      mockPrisma.productImage.count.mockResolvedValue(0);
+      mockPrisma.product.findUnique.mockResolvedValue(mkProduct('DRAFT', { id: 'prod-bad', sku: 'SKU-9', name: 'Cámara 9' }));
+
+      const result = await service.bulkTransition(['prod-bad'], { event: 'PUBLISH' });
+
+      expect(result.applied).toEqual([]);
+      expect(result.rejected).toHaveLength(1);
+      expect(result.rejected[0]).toMatchObject({ id: 'prod-bad', sku: 'SKU-9', name: 'Cámara 9' });
+      expect(result.rejected[0].problems).toEqual([
+        'El producto no tiene al menos un precio vigente',
+        'El producto no tiene al menos una imagen',
+      ]);
+      expect(mockPrisma.product.update).not.toHaveBeenCalled();
+    });
+
+    it('un producto que ya no está en borrador se rechaza con un motivo simple (idempotente)', async () => {
+      mockPublishChecklistOk();
+      mockPrisma.product.findUnique.mockResolvedValue(mkProduct('PUBLISHED', { id: 'prod-pub' }));
+
+      const result = await service.bulkTransition(['prod-pub'], { event: 'PUBLISH' });
+
+      expect(result.applied).toEqual([]);
+      expect(result.rejected[0].problems).toEqual(['El producto ya no está en borrador, por eso no se puede publicar.']);
+      expect(mockPrisma.product.update).not.toHaveBeenCalled();
+    });
+
+    it('sin products:publish falla una sola vez con 403 y no toca ningún producto', async () => {
+      mockGrants.grantsForUser.mockResolvedValue(grantRows('products:read'));
+
+      await expect(
+        service.bulkTransition(['a', 'b'], { event: 'PUBLISH' }, { userId: 'u5', roles: ['Consulta'] }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.product.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.product.update).not.toHaveBeenCalled();
+    });
   });
 });
