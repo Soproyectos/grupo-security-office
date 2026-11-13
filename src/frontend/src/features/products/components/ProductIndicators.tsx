@@ -71,6 +71,41 @@ export function StockBadge({ product }: { product: Product }) {
   )
 }
 
+// ------------------------------ Puntos de estado compactos (tarjetas) ------------------------------
+// Mismo significado que los badges, sin texto visible: color + título al pasar el cursor + texto para lectores de pantalla.
+function StatusDot({ label, detail, dotClass }: { label: string; detail: string; dotClass: string }) {
+  return (
+    <span title={`${label}: ${detail}`} className="inline-flex h-4 w-4 items-center justify-center cursor-help">
+      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
+      <span className="sr-only">{`${label}: ${detail}`}</span>
+    </span>
+  )
+}
+
+export function StockDot({ product }: { product: Product }) {
+  const status = product.stockStatus
+  const qty = product.availableQty
+  if (!status && qty == null) return null
+  if (status === 'out_of_stock' || (status === undefined && qty != null && qty <= 0)) {
+    return <StatusDot label="Stock" detail="Sin stock" dotClass="bg-red-500" />
+  }
+  if (status === 'no_stock_data') {
+    return <StatusDot label="Stock" detail="Disponibilidad no registrada" dotClass="bg-gray-300" />
+  }
+  return <StatusDot label="Stock" detail={qty != null ? `Disponible (${qty})` : 'Disponible'} dotClass="bg-emerald-500" />
+}
+
+export function PublishDot({ product }: { product: Product }) {
+  const status = product.publishStatus
+  if (!status) return null
+  const scheduled = Boolean(product.publishAt) && status === 'listo'
+  if (status === 'publicado') return <StatusDot label="Publicación" detail="Publicado" dotClass="bg-emerald-500" />
+  if (scheduled || status === 'programado') return <StatusDot label="Publicación" detail="Programado" dotClass="bg-blue-500" />
+  if (status === 'listo') return <StatusDot label="Publicación" detail="Listo para publicar" dotClass="bg-amber-500" />
+  if (status === 'archivado') return <StatusDot label="Publicación" detail="Archivado" dotClass="bg-gray-700" />
+  return <StatusDot label="Publicación" detail="Borrador" dotClass="bg-gray-400" />
+}
+
 // ------------------------------ Badge de imagen ------------------------------
 export function ImageBadge({ product }: { product: Product }) {
   if (!product.images || product.images.length === 0) {

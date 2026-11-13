@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ImageViewer } from '../../../components/ui/ImageViewer';
 import { toSentenceCase } from '../../storefront/utils/toSentenceCase';
 import { productImageSrc } from '../lib/image-src';
 import { previewField } from '../preview/preview-fields';
@@ -42,19 +43,28 @@ export function ProductBreadcrumb({ items }: { items: ProductDetail['breadcrumb'
 function ProductGallery({ images, name }: { images: ProductDetail['images']; name: string }) {
   const [selected, setSelected] = useState(0);
   const [failed, setFailed] = useState<Set<string>>(new Set());
+  const [viewerOpen, setViewerOpen] = useState(false);
   const current = images[selected] ?? images[0];
 
   return (
     <figure className="flex flex-col gap-3" {...previewField('images')}>
       <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-neutral-50 to-neutral-100 p-8">
         {current && !failed.has(current.src) ? (
-          <img
-            src={productImageSrc(current.src)}
-            alt={current.alt || name}
-            className="max-h-full w-auto object-contain"
-            decoding="async"
-            onError={() => setFailed((prev) => new Set(prev).add(current.src))}
-          />
+          <button
+            type="button"
+            onClick={() => setViewerOpen(true)}
+            aria-label="Ampliar imagen"
+            title="Clic para ampliar"
+            className="flex h-full w-full cursor-zoom-in items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+          >
+            <img
+              src={productImageSrc(current.src)}
+              alt={current.alt || name}
+              className="max-h-full w-auto object-contain"
+              decoding="async"
+              onError={() => setFailed((prev) => new Set(prev).add(current.src))}
+            />
+          </button>
         ) : (
           <span className="text-sm text-neutral-400">Imagen no disponible</span>
         )}
@@ -87,6 +97,13 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
           ))}
         </ul>
       )}
+      <ImageViewer
+        images={images.map((image) => ({ id: image.src, src: productImageSrc(image.src), alt: image.alt || name }))}
+        index={selected}
+        open={viewerOpen}
+        onIndexChange={setSelected}
+        onClose={() => setViewerOpen(false)}
+      />
       <figcaption className="text-center text-[11px] leading-snug text-neutral-400">
         Imágenes de referencia. El aspecto y las especificaciones del producto real pueden variar.
       </figcaption>

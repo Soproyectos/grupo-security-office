@@ -24,6 +24,8 @@ import { getApiErrorMessage } from '../lib/apiError'
 import { formatCurrency, formatDate } from '../lib/format'
 import { hasPermission, hasAnyRole } from '../lib/rbac'
 import { Button, Modal, Alert } from '../components/ui'
+import { ImageViewer } from '../components/ui/ImageViewer'
+import { revealIfAbove } from '../lib/scroll'
 import {
   useTransitionProduct,
   getTransitionHttpStatus,
@@ -628,6 +630,7 @@ export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDet
   const isContextual = Boolean(listaId)
   const [tab, setTab] = useState<DetailTab>(isPublicationMode ? 'publish' : 'ficha')
   const [selectedImage, setSelectedImage] = useState(0)
+  const [viewerOpen, setViewerOpen] = useState(false)
   const [lifecycleModal, setLifecycleModal] = useState<{ event: LifecycleModalEvent } | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [scheduleModal, setScheduleModal] = useState<{ isReprogram: boolean } | null>(null)
@@ -857,11 +860,19 @@ export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDet
           <div className="lg:w-1/2 xl:w-2/5 relative">
             <div className="aspect-[4/3] bg-gradient-to-br from-neutral-50 to-neutral-100 flex items-center justify-center">
               {mainImage ? (
-                <img
-                  src={mainImage}
-                  alt={product.name}
-                  className="w-full h-full object-contain"
-                />
+                <button
+                  type="button"
+                  onClick={() => setViewerOpen(true)}
+                  aria-label="Ampliar imagen"
+                  title="Clic para ampliar"
+                  className="w-full h-full cursor-zoom-in focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-security-600"
+                >
+                  <img
+                    src={mainImage}
+                    alt={product.name}
+                    className="w-full h-full object-contain"
+                  />
+                </button>
               ) : (
                 <svg
                   className="w-24 h-24 text-neutral-300"
@@ -878,6 +889,14 @@ export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDet
                 </svg>
               )}
             </div>
+
+            <ImageViewer
+              images={gallery.map((img) => ({ id: img.id, src: resolveAssetUrl(img.url), alt: product.name }))}
+              index={selectedImage}
+              open={viewerOpen}
+              onIndexChange={setSelectedImage}
+              onClose={() => setViewerOpen(false)}
+            />
 
             <div className="absolute top-4 left-4 flex flex-col gap-1.5 z-10">
               <span className={`px-2.5 py-1 text-white text-[11px] font-semibold rounded ${product.isActive ? 'bg-emerald-700' : 'bg-neutral-500'}`}>
@@ -956,7 +975,8 @@ export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDet
           {visibleTabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => {
+              onClick={(event) => {
+                const bar = event.currentTarget.parentElement
                 if (
                   t.id !== effectiveTab &&
                   effectiveTab === 'ficha' &&
@@ -966,6 +986,7 @@ export default function ProductDetailPage({ mode = 'read' }: { mode?: ProductDet
                   return
                 }
                 setTab(t.id)
+                requestAnimationFrame(() => revealIfAbove(bar))
               }}
               className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors whitespace-nowrap ${
                 effectiveTab === t.id

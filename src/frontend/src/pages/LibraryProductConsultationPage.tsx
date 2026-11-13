@@ -2,6 +2,8 @@ import { useState, type KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Badge, Button } from '../components/ui'
+import { ImageViewer } from '../components/ui/ImageViewer'
+import { revealIfAbove, scrollBehavior } from '../lib/scroll'
 import api, { resolveAssetUrl } from '../services/api'
 import { getApiErrorMessage } from '../lib/apiError'
 import { formatDate } from '../lib/format'
@@ -68,7 +70,12 @@ export function ConsultationProduct({ product, sheet, canReadPrices, sheetLoadin
   const images = (product.images ?? []).filter((image) => image.url)
   const selectedImage = images.find((image) => image.id === imageId) ?? images.find((image) => image.isPrimary) ?? images[0]
   const imageUrl = selectedImage?.url || sheet?.imageUrl
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const viewerIndex = Math.max(0, images.findIndex((image) => image.id === selectedImage?.id))
   const name = sheet?.name || product.name
+  const viewerImages = images.length > 0
+    ? images.map((image) => ({ id: image.id, src: resolveAssetUrl(image.url), alt: image.alt || name }))
+    : imageUrl ? [{ id: 'sheet-image', src: resolveAssetUrl(imageUrl), alt: sheet?.imageAlt || name }] : []
   const status = effectiveLifecycleStatus(product)
   const tabs: { id: Section; label: string }[] = [{ id: 'information', label: 'Información' }, ...(canReadPrices ? [{ id: 'prices' as const, label: 'Precios' }] : []), { id: 'files', label: 'Archivos' }]
   const active = section === 'prices' && !canReadPrices ? 'information' : section
@@ -93,7 +100,7 @@ export function ConsultationProduct({ product, sheet, canReadPrices, sheetLoadin
     setSection(next)
     requestAnimationFrame(() => {
       const panel = document.getElementById(`consultation-panel-${next}`)
-      panel?.scrollIntoView({ block: 'start' })
+      panel?.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
       panel?.focus({ preventScroll: true })
     })
   }
@@ -102,8 +109,9 @@ export function ConsultationProduct({ product, sheet, canReadPrices, sheetLoadin
       <div className="library-consultation__navigation"><Link to="/commercial/products"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>Volver a Productos</Link><span>Solo consulta</span></div>
       <div className="library-consultation__hero">
         <section className="library-consultation__gallery" aria-label="Imágenes del producto">
-          <div className="library-consultation__main-image">{imageUrl ? <img src={resolveAssetUrl(imageUrl)} alt={selectedImage?.alt || sheet?.imageAlt || name} /> : <div className="library-consultation__no-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5m-9 5L3 8m9 5v9" /></svg><p>Imagen no disponible</p></div>}</div>
+          <div className="library-consultation__main-image">{imageUrl ? <button type="button" className="library-consultation__zoom" aria-label="Ampliar imagen" title="Clic para ampliar" onClick={() => setViewerOpen(true)}><img src={resolveAssetUrl(imageUrl)} alt={selectedImage?.alt || sheet?.imageAlt || name} /></button> : <div className="library-consultation__no-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5m-9 5L3 8m9 5v9" /></svg><p>Imagen no disponible</p></div>}</div>
           {images.length > 1 && <div className="library-consultation__thumbnails">{images.map((image, index) => <button type="button" key={image.id} aria-label={`Ver imagen ${index + 1}`} aria-pressed={selectedImage?.id === image.id} onClick={() => setImageId(image.id)}><img src={resolveAssetUrl(image.url)} alt="" /></button>)}</div>}
+          <ImageViewer images={viewerImages} index={viewerIndex} open={viewerOpen} onIndexChange={(i) => { const next = images[i]; if (next) setImageId(next.id) }} onClose={() => setViewerOpen(false)} />
         </section>
         <header className="library-consultation__identity">
           <h2>{name}</h2>
@@ -117,7 +125,7 @@ export function ConsultationProduct({ product, sheet, canReadPrices, sheetLoadin
       </div>
       {sheetFailed && <Alert variant="warning">No se pudo cargar la ficha complementaria. Puedes seguir consultando los datos del producto. <button type="button" className="underline underline-offset-2" onClick={onRetrySheet}>Reintentar ficha</button></Alert>}
       <div className="library-consultation__detail">
-        <div role="tablist" aria-label="Información del producto" className="library-consultation__tabs">{tabs.map((tab, index) => <button type="button" role="tab" id={`consultation-tab-${tab.id}`} key={tab.id} aria-selected={active === tab.id} aria-controls={`consultation-panel-${tab.id}`} tabIndex={active === tab.id ? 0 : -1} onClick={() => setSection(tab.id)} onKeyDown={(event) => chooseWithKeyboard(event, index)}>{tab.label}</button>)}</div>
+        <div role="tablist" aria-label="Información del producto" className="library-consultation__tabs">{tabs.map((tab, index) => <button type="button" role="tab" id={`consultation-tab-${tab.id}`} key={tab.id} aria-selected={active === tab.id} aria-controls={`consultation-panel-${tab.id}`} tabIndex={active === tab.id ? 0 : -1} onClick={(event) => { setSection(tab.id); const bar = event.currentTarget.parentElement; requestAnimationFrame(() => revealIfAbove(bar)) }} onKeyDown={(event) => chooseWithKeyboard(event, index)}>{tab.label}</button>)}</div>
         <div role="tabpanel" id={`consultation-panel-${active}`} aria-labelledby={`consultation-tab-${active}`} tabIndex={0} className="library-consultation__panel">
           {sheetLoading && active !== 'prices' && <p role="status" className="library-consultation__note">Cargando información complementaria…</p>}
           {active === 'information' && <ConsultationInformation product={product} sheet={sheet} />}

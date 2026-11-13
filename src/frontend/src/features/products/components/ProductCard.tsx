@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import type { Product } from '../types/product.types'
-import { StockBadge, PublishBadge } from './ProductIndicators'
+import { StockDot, PublishDot } from './ProductIndicators'
 import { hasPermission } from '../../../lib/rbac'
 import { formatCurrency } from '../../../lib/format'
 import { resolveAssetUrl } from '../../../services/api'
@@ -30,26 +30,21 @@ export function ProductCard({ product, onEdit, onDelete, onMoveCategory, onAcces
 
   return (
     <div
-      className="rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group cursor-pointer flex flex-col"
+      className="rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group cursor-pointer flex flex-col h-full"
       onClick={handleCardClick}
     >
-      <div className="aspect-[16/9] bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative">
+      <div className="aspect-[4/3] shrink-0 overflow-hidden bg-white border-b border-gray-100 flex items-center justify-center relative">
         {product.images[0]?.url ? (
           <img
             src={resolveAssetUrl(product.images[0].url)}
             alt={product.name}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain p-1"
           />
         ) : (
           <svg className="w-14 h-14 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
         )}
-        {/* Status badges */}
-        <div className="absolute top-2 left-2 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
-          <StockBadge product={product} />
-          <PublishBadge product={product} />
-        </div>
         {/* Actions */}
         {!readOnly && (
         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
@@ -88,24 +83,33 @@ export function ProductCard({ product, onEdit, onDelete, onMoveCategory, onAcces
         </div>
         )}
       </div>
-      <div className="p-2 flex flex-col grow">
-        <p className="truncate text-[10px] font-semibold uppercase">
-      {product.brand?.name ? `${product.brand.name.length > 25 ? `${product.brand.name.substring(0, 25)}...` : product.brand.name}` : ''}
-    </p>
-        <h3 className="text-xs font-medium text-gray-800 leading-snug line-clamp-2 break-words flex-grow" title={product.name}>{product.name}</h3>
-        <p className="truncate text-[11px] text-gray-400 font-mono" title={product.sku}>{product.sku}</p>
-        <div className="mt-1">
+      <div className="p-3 flex flex-col grow text-left">
+        {/* Grupo de identidad: nombre, referencia (con los estados como puntos) y marca; el nombre reserva siempre 2 líneas. */}
+        <div className="space-y-0.5">
+          <h3 className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 break-words min-h-[2.75em]" title={product.name}>{product.name}</h3>
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-[11px] text-gray-500 font-mono" title={product.sku}>{product.sku}</p>
+            <span className="flex shrink-0 items-center">
+              <StockDot product={product} />
+              <PublishDot product={product} />
+            </span>
+          </div>
+          <p className="truncate text-[11px] text-gray-400" title={product.brand?.name ?? undefined}>
+            {product.brand?.name ?? ' '}
+          </p>
+        </div>
+        {/* Precio y acción: siempre pegados al borde inferior para que todas las tarjetas alineen igual. */}
+        <div className="mt-auto pt-3 flex items-center justify-between gap-2 min-h-[2.75rem]">
           {product.prices[0] ? (
-            <p className="text-[13px] font-bold text-security-700">
+            <p className="text-base font-bold text-security-700">
               {formatCurrency(product.prices[0].value, product.prices[0].currency)}
             </p>
           ) : (
-            <span className="inline-block text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+            <span className="inline-block text-[11px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
               Sin precio
             </span>
           )}
-        </div>
-        <div className="mt-1 flex items-center gap-2">
+          <div className="flex items-center gap-2">
           {onEditSheet && (
             <button
               type="button"
@@ -129,6 +133,7 @@ export function ProductCard({ product, onEdit, onDelete, onMoveCategory, onAcces
               </svg>
             </button>
           )}
+          </div>
         </div>
       </div>
     </div>
