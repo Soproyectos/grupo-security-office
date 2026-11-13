@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 interface ProductPaginationProps {
   page: number
   totalPages: number
@@ -17,15 +19,17 @@ export function ProductPagination({
   onPageChange,
   onPageSizeChange,
 }: ProductPaginationProps) {
+  // Two paginations (toolbar + bottom) are mounted at once: each needs its own id so the label points at its own select.
+  const pageSizeId = useId()
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <label htmlFor={`pageSize-${page}`} className="text-sm text-neutral-600">
+          <label htmlFor={pageSizeId} className="text-sm text-neutral-600">
             Mostrar:
           </label>
           <select
-            id={`pageSize-${page}`}
+            id={pageSizeId}
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
             className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary text-sm bg-white"

@@ -264,3 +264,6 @@
     animation: none;
   }
 }
+
+/* Saltos de scroll (anclas, scrollIntoView) y paneles pegajosos dejan libre el encabezado fijo. */
+html { scroll-padding-top: calc(var(--app-header-h, 56px) + 16px); }

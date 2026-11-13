@@ -19,6 +19,18 @@ import {
 export default function Header() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const headerRef = useRef<HTMLElement>(null)
+
+  // Publishes the real header height (it wraps on small screens) so sticky panels and scroll jumps clear it.
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const publish = () => document.documentElement.style.setProperty('--app-header-h', `${el.offsetHeight}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
   const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const [commercialOpen, setCommercialOpen] = useState(false)
@@ -155,7 +167,7 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-[var(--color-bg-card)] shadow-sm sticky top-0 z-50 border-b border-[var(--color-border)] transition-all duration-300 ease-out">
+    <header ref={headerRef} className="bg-[var(--color-bg-card)] shadow-sm sticky top-0 z-50 border-b border-[var(--color-border)] transition-all duration-300 ease-out">
       {/* Nivel 1 - Identidad + búsqueda + acciones */}
       <div className="max-w-[1600px] mx-auto px-5">
         <div className="flex flex-wrap items-center justify-between min-h-[48px] lg:min-h-[56px] h-auto py-2 gap-3">

@@ -428,7 +428,7 @@ export function SearchFilterBar({
                 id="filter-sidebar"
                 role="region"
                 aria-label="Filtros"
-                className="w-full lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:overscroll-contain rounded-xl border border-neutral-200 bg-white shadow-sm"
+                className="w-full lg:sticky lg:top-[calc(var(--app-header-h,56px)+1rem)] lg:max-h-[calc(100vh-var(--app-header-h,56px)-2rem)] lg:overflow-y-auto lg:overscroll-contain rounded-xl border border-neutral-200 bg-white shadow-sm"
               >
                 <header className="flex items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4">
                   <div className="min-w-0">

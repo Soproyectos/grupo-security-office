@@ -40,6 +40,14 @@ export default function ProductsPage() {
   const [pageSize, setPageSize] = useState(initial.pageSize)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(initial.viewMode)
 
+  // After paginating, go back to the top of the page.
+  const pagedOnce = useRef(false)
+  useEffect(() => {
+    if (!pagedOnce.current) { pagedOnce.current = true; return }
+    // Immediately and instantly: waiting for the load makes the page shrink and bounce before reaching the top.
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [page, pageSize])
+
   // Batch filters state
   const [filterChips, setFilterChips] = useState({
     categoryIds: initial.categoryIds,
@@ -244,6 +252,9 @@ export default function ProductsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setViewMode('grid')}
+                aria-label="Ver como tarjetas"
+                aria-pressed={viewMode === 'grid'}
+                title="Ver como tarjetas"
                 className={`p-2 rounded-lg border transition-colors ${
                   viewMode === 'grid'
                     ? 'bg-security-500 text-white border-security-500'
@@ -256,6 +267,9 @@ export default function ProductsPage() {
               </button>
               <button
                 onClick={() => setViewMode('list')}
+                aria-label="Ver como lista de precios"
+                aria-pressed={viewMode === 'list'}
+                title="Ver como lista de precios"
                 className={`p-2 rounded-lg border transition-colors ${
                   viewMode === 'list'
                     ? 'bg-security-500 text-white border-security-500'
