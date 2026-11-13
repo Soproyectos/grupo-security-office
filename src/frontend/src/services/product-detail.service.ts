@@ -63,7 +63,12 @@ export interface BulkTransitionApplied {
 
 export interface BulkTransitionRejected {
   id: string
+  /** Puede faltar si el servidor aún no los envía. */
+  sku?: string | null
+  name?: string | null
   reason: string
+  /** Lo que falta, uno por línea; mismos mensajes que la publicación individual. */
+  problems?: string[]
 }
 
 export interface BulkTransitionResult {

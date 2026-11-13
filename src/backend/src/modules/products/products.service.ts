@@ -68,6 +68,15 @@ export interface SchedulerTickReport {
   publishFailed: Array<{ id: string; reasons: string }>;
 }
 
+/** Producto que el lote no pudo transicionar: quién es y qué le falta, en lenguaje simple. */
+export interface BulkTransitionRejection {
+  id: string;
+  sku: string | null;
+  name: string | null;
+  reason: string;
+  problems: string[];
+}
+
 /** Resultado consolidado de una operacion de publicacion/programacion/cancelacion por Lista. */
 export interface ListaPublicationBatchResult {
   listaId: string;
@@ -1775,22 +1784,64 @@ export class ProductsService {
    */
   async bulkTransition(ids: string[], dto: TransitionProductDto, ctx?: AccessContext) {
     this.library.assertWritesAllowed();
+    // Un solo 403 claro al inicio en lugar de uno repetido por cada producto.
+    if (ctx) {
+      await assertGlobalGrant(this.grants, ProductsService.grantForEvent(dto.event), ctx);
+    }
     const applied: { id: string; lifecycleStatus: string }[] = [];
-    const rejected: { id: string; reason: string }[] = [];
+    const rejected: BulkTransitionRejection[] = [];
 
     for (const id of ids) {
       try {
         const result = await this.transition(id, dto, ctx);
         applied.push({ id, lifecycleStatus: result.lifecycleStatus });
       } catch (error) {
+        const label = await this.productLabel(id);
         rejected.push({
           id,
+          sku: label?.sku ?? null,
+          name: label?.name ?? null,
           reason: error instanceof Error ? error.message : 'Error interno',
+          problems: ProductsService.rejectionProblems(error),
         });
       }
     }
 
     return { applied, rejected };
+  }
+
+  private async productLabel(id: string): Promise<{ sku: string; name: string } | null> {
+    try {
+      const row = await this.prisma.product.findUnique({ where: { id }, select: { sku: true, name: true } });
+      return row ? { sku: row.sku, name: row.name } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Lista de motivos legibles de un rechazo, tomada de los mismos mensajes que
+   * devuelve la publicación individual (checklist y motor de validación).
+   */
+  private static rejectionProblems(error: unknown): string[] {
+    const response = (error as { response?: { feedback?: unknown } })?.response;
+    if (Array.isArray(response?.feedback) && response.feedback.length > 0) {
+      return response.feedback.filter((item): item is string => typeof item === 'string');
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    const marker = 'Requisitos incumplidos: ';
+    const at = message.indexOf(marker);
+    if (at >= 0) {
+      return message
+        .slice(at + marker.length)
+        .split('; ')
+        .map((part) => part.replace(/^\d+\)\s*/, '').trim())
+        .filter(Boolean);
+    }
+    if (message.startsWith('No se puede pasar de ')) {
+      return ['El producto ya no está en borrador, por eso no se puede publicar.'];
+    }
+    return [message];
   }
 
   /**
