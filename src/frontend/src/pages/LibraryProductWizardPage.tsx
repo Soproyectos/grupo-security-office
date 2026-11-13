@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../services/api'
@@ -40,6 +40,7 @@ import {
   normalizeReference,
   parseWizardStep,
   pendingItems,
+  sheetSaveBlocker,
   type DuplicateReference,
   type WizardStepId,
 } from '../features/products/wizard/product-wizard'
@@ -92,6 +93,8 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
   const [duplicate, setDuplicate] = useState<DuplicateReference | null>(null)
   const [keySpecsDirty, setKeySpecsDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const datosFailed = useRef(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const baseline = useMemo<EditorValues | null>(
     () => (product ? { ...valuesOfProduct(product), name: nameForField(product) } : null),
@@ -134,6 +137,7 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
     if (!product || !current) return false
     const problem = validateEditorValues(current, changed)
     if (problem) {
+      datosFailed.current = true
       setFormError(problem)
       return false
     }
@@ -149,6 +153,7 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
       setFormError(null)
       return true
     } catch (error) {
+      datosFailed.current = true
       setFormError(classificationErrorMessage(error) ?? getApiErrorMessage(error, 'No se pudieron guardar los datos.'))
       return false
     }
@@ -168,6 +173,9 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
   const saveAndContinue = async (next: WizardStepId | null) => {
     setBusy(true)
     setDuplicate(null)
+    setNotice(null)
+    setFormError(null)
+    datosFailed.current = false
     try {
       if (!product) {
         if (identity.referenceError) {
@@ -186,7 +194,19 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
         }
         return
       }
-      if ((await saveAll()) && next) onStep(next)
+      if (await saveAll()) {
+        setNotice('Producto guardado')
+        // The last step ends the wizard: go to the saved product's sheet.
+        if (next) onStep(next)
+        else navigate(sheetEditorPath(product.id))
+        return
+      }
+      // Never fail in silence: say why when neither the page fields nor the sheet showed their own error.
+      const blocker = datosFailed.current ? null : sheetSaveBlocker({ hasDraft: Boolean(draft), conflict: Boolean(draft?.conflict), errorCount: draft?.errorCount ?? 0 })
+      if (blocker) {
+        setFormError(blocker.message)
+        if (blocker.step) onStep(blocker.step)
+      }
     } finally {
       setBusy(false)
     }
@@ -380,6 +400,7 @@ function WizardBody({ product, brands, step, onStep }: WizardBodyProps) {
       </main>
 
       {formError && <Alert variant="error">{formError}</Alert>}
+      {notice && !formError && <Alert variant="success">{notice}</Alert>}
       {draft?.saveError && <Alert variant="error">{draft.saveError}</Alert>}
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4">

@@ -11,6 +11,7 @@ import {
   normalizeReference,
   parseWizardStep,
   pendingItems,
+  sheetSaveBlocker,
 } from './product-wizard'
 
 const saved = {
@@ -77,5 +78,26 @@ describe('product wizard model', () => {
     expect(pendingItems(bare, false).map((item) => [item.id, item.step])).toEqual([
       ['name', 1], ['brand', 2], ['subcategory', 2], ['description', 3], ['highlights', 3], ['images', 4],
     ])
+  })
+})
+
+describe('sheetSaveBlocker (a save must never fail in silence)', () => {
+  it('explains a sheet that has not loaded yet', () => {
+    expect(sheetSaveBlocker({ hasDraft: false, conflict: false, errorCount: 0 })?.message).toContain('se está cargando')
+  })
+
+  it('explains a version conflict', () => {
+    expect(sheetSaveBlocker({ hasDraft: true, conflict: true, errorCount: 0 })?.message).toContain('cambió')
+  })
+
+  it('points to step 3 when the sheet has fields to fix', () => {
+    const one = sheetSaveBlocker({ hasDraft: true, conflict: false, errorCount: 1 })
+    expect(one).toMatchObject({ step: 3 })
+    expect(one?.message).toContain('1 dato')
+    expect(sheetSaveBlocker({ hasDraft: true, conflict: false, errorCount: 4 })?.message).toContain('4 datos')
+  })
+
+  it('says nothing when the sheet shows its own server error', () => {
+    expect(sheetSaveBlocker({ hasDraft: true, conflict: false, errorCount: 0 })).toBeNull()
   })
 })
