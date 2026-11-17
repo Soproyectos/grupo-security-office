@@ -101,7 +101,7 @@ describe('CAT-02 backend-publico — lente de revisión', () => {
           count: jest.fn().mockResolvedValue(0),
         },
         productRevision: { findMany: jest.fn().mockResolvedValue([]) },
-        $queryRaw: jest.fn().mockResolvedValue([{ id: 'p1' }]),
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ id: 'p1', rank: 0, name: 'x' }]),
       } as any;
       const pricing = { getPublicPrices: jest.fn().mockResolvedValue(new Map()) } as any;
       const service = new PublicCatalogService(prisma, pricing);

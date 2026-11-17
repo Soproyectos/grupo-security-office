@@ -18,6 +18,14 @@ import { publicCatalogVisibility } from './public-catalog-visibility';
 import { PublishedKeySpecsService, type KeySpecFacetsView } from '../library-specs/published-key-specs.service';
 import { parseKeySpecFilter } from '../library-specs/published-key-specs.rules';
 import { applyRevisionLens, effectiveIdentity, loadActiveRevisionContents } from './public-revision-lens';
+import { buildProductSearchSql, looksLikeCode } from './helpers/product-search';
+
+/** Product found by the public text search: relevance rank (0 exact … 3 words) and its published name. */
+interface SnapshotMatch {
+  id: string;
+  rank: number;
+  name: string;
+}
 
 /** Fila del listado público: solo campos aptos para un visitante anónimo. */
 export interface PublicProductListItem {
@@ -129,9 +137,13 @@ export class PublicCatalogService {
     // Published-isolation: text search and category filter match the PUBLISHED snapshot
     // (live columns only when the revision lacks the key / the product has no pinned revision).
     let snapshotIds: string[] | undefined;
+    let ranks: Map<string, SnapshotMatch> | undefined;
     if (term !== '' || categoryIds) {
-      snapshotIds = await this.snapshotMatchingIds(term, categoryIds);
-      if (snapshotIds.length === 0) return empty;
+      const matches = await this.snapshotMatches(term, categoryIds);
+      if (matches.length === 0) return empty;
+      snapshotIds = matches.map((m) => m.id);
+      // With a text term the order is relevance (exact > starts with > contains > words), then name.
+      if (term !== '') ranks = new Map(matches.map((m) => [m.id, m]));
     }
 
     const where = {
@@ -142,32 +154,53 @@ export class PublicCatalogService {
       ],
     };
 
-    const [products, total] = await Promise.all([
-      this.prisma.product.findMany({
-        where,
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          lifecycleStatus: true,
-          publicRevisionId: true,
-          categoryId: true,
-          brandId: true,
-          category: { select: { name: true, slug: true } },
-          brand: { select: { name: true } },
-          images: {
-            where: { isPrimary: true },
-            select: { url: true },
-            take: 1,
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
-        skip: offset,
-        take: limit,
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+    const select = {
+      id: true,
+      sku: true,
+      name: true,
+      lifecycleStatus: true,
+      publicRevisionId: true,
+      categoryId: true,
+      brandId: true,
+      category: { select: { name: true, slug: true } },
+      brand: { select: { name: true } },
+      images: {
+        where: { isPrimary: true },
+        select: { url: true },
+        take: 1,
+        orderBy: { sortOrder: 'asc' },
+      },
+    } satisfies Prisma.ProductSelect;
+
+    let products: Array<Prisma.ProductGetPayload<{ select: typeof select }>>;
+    let total: number;
+    if (ranks) {
+      // Visibility stays the one public rule; the page is cut AFTER ordering by relevance.
+      const visible = await this.prisma.product.findMany({ where, select: { id: true } });
+      const order = visible.map((row) => row.id).sort((x, y) => {
+        const a = ranks.get(x)!;
+        const b = ranks.get(y)!;
+        return a.rank - b.rank || a.name.localeCompare(b.name) || x.localeCompare(y);
+      });
+      total = order.length;
+      const pageIds = order.slice(offset, offset + limit);
+      const pageRows = pageIds.length
+        ? await this.prisma.product.findMany({ where: { id: { in: pageIds } }, select })
+        : [];
+      const position = new Map(pageIds.map((id, index) => [id, index]));
+      products = pageRows.sort((x, y) => position.get(x.id)! - position.get(y.id)!);
+    } else {
+      [products, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          select,
+          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          skip: offset,
+          take: limit,
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+    }
 
     const prices = await this.pricing.getPublicPrices(
       products.filter((p) => p.lifecycleStatus === 'PUBLISHED').map((p) => p.id),
@@ -272,28 +305,59 @@ export class PublicCatalogService {
   }
 
   /**
-   * Ids of products matching the public text search and/or category filter, evaluated on the
-   * PUBLISHED snapshot: `name`/`sku`/`categoryId` of the pinned PUBLICADA revision when it holds
-   * the key, otherwise the live column. Visibility is NOT decided here (the caller applies it).
+   * Products matching the public text search and/or category filter, evaluated on the PUBLISHED
+   * snapshot: `name`/`sku`/`catalogName`/`catalogModel`/`categoryId` of the pinned PUBLICADA revision
+   * when it holds the key, otherwise the live column. `catalogManufacturerRefs` (SKUs of deleted
+   * duplicates) is matched live: it only finds the product, it is never shown. Each row carries its
+   * relevance `rank` (0 exact, 1 starts with, 2 contains, 3 every word) and the published name.
+   * Visibility is NOT decided here (the caller applies it).
    * Fully parameterized; the text match is case-insensitive and has no LIKE wildcards.
    */
-  private async snapshotMatchingIds(term: string, categoryIds?: string[]): Promise<string[]> {
-    const conditions: Prisma.Sql[] = [];
+  private async snapshotMatches(term: string, categoryIds?: string[]): Promise<SnapshotMatch[]> {
+    const params: unknown[] = [];
+    const bind = (value: unknown) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const published = (key: string, live: string) => `COALESCE(r.content->>'${key}', ${live})`;
+    const name = published('name', 'p.name');
+    const conditions: string[] = [];
+    let rank = '0';
     if (term !== '') {
-      conditions.push(Prisma.sql`(
-        strpos(lower(COALESCE(r.content->>'name', p.name)), lower(${term})) > 0
-        OR strpos(lower(COALESCE(r.content->>'sku', p.sku)), lower(${term})) > 0
-      )`);
+      const codeLike = looksLikeCode(term);
+      const termParam = bind(term);
+      const search = buildProductSearchSql({
+        param: termParam,
+        alias: 'p',
+        codeLike,
+        columns: {
+          sku: published('sku', 'p.sku'),
+          model: published('catalogModel', 'p."catalogModel"'),
+          name,
+          catalogName: published('catalogName', 'p."catalogName"'),
+          description: null,
+        },
+      });
+      // Several words (not a code): every word must appear somewhere in the name/SKU/model.
+      const words = codeLike ? [] : [...new Set(term.toLowerCase().split(/\s+/).filter(Boolean))];
+      const wordsMatch = words.length > 1
+        ? `NOT EXISTS (SELECT 1 FROM unnest(${bind(words)}::text[]) AS w(v) WHERE strpos(lower(concat_ws(' ', ${name}, ${published('catalogName', 'p."catalogName"')}, ${published('sku', 'p.sku')}, ${published('catalogModel', 'p."catalogModel"')})), w.v) = 0)`
+        : 'false';
+      conditions.push(`(${search.literal} OR ${wordsMatch})`);
+      rank = search.rank;
     }
     if (categoryIds) {
-      conditions.push(Prisma.sql`(CASE WHEN r.content IS NOT NULL AND jsonb_exists(r.content, 'categoryId')
-        THEN r.content->>'categoryId' ELSE p."categoryId" END) = ANY(${categoryIds}::text[])`);
+      conditions.push(`(CASE WHEN r.content IS NOT NULL AND jsonb_exists(r.content, 'categoryId')
+        THEN r.content->>'categoryId' ELSE p."categoryId" END) = ANY(${bind(categoryIds)}::text[])`);
     }
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT p.id FROM products p
-      LEFT JOIN product_revisions r ON r.id = p."publicRevisionId" AND r.status = 'PUBLICADA'
-      WHERE ${Prisma.join(conditions, ' AND ')}`);
-    return rows.map((r) => r.id);
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; rank: number; name: string | null }>>(
+      `SELECT p.id, (${rank})::int AS rank, ${name} AS name
+       FROM products p
+       LEFT JOIN product_revisions r ON r.id = p."publicRevisionId" AND r.status = 'PUBLICADA'
+       WHERE ${conditions.join(' AND ')}`,
+      ...params,
+    );
+    return rows.map((r) => ({ id: r.id, rank: Number(r.rank), name: r.name ?? '' }));
   }
 
   /**

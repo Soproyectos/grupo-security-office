@@ -66,7 +66,7 @@ describe('PublicCatalogService.search', () => {
     jest.resetAllMocks();
     mockPrisma.product.count.mockResolvedValue(0);
     // Text search runs on the published snapshot (raw SQL): the fake matches every product by id.
-    (mockPrisma as any).$queryRaw = jest.fn().mockResolvedValue(mockProducts.map((p) => ({ id: p.id })));
+    (mockPrisma as any).$queryRawUnsafe = jest.fn().mockResolvedValue(mockProducts.map((p) => ({ id: p.id, rank: 0, name: p.name })));
     build();
   });
 
@@ -112,14 +112,14 @@ describe('PublicCatalogService.search', () => {
     await service.search({ q: '  domo  ', limit: 10 });
 
     // The trimmed term travels as a bound SQL parameter (name and SKU matched on the snapshot).
-    const sql = (mockPrisma as any).$queryRaw.mock.calls[0][0];
-    expect(sql.values).toEqual(['domo', 'domo']);
+    const [, ...params] = (mockPrisma as any).$queryRawUnsafe.mock.calls[0];
+    expect(params).toEqual(['domo']);
+    // The ids that match the text are filtered by the public visibility rule; the page is cut after ranking.
     expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           AND: [publicCatalogVisibility(LibraryPrisma.JsonNull), { id: { in: ['prod-1', 'prod-2'] } }],
         },
-        take: 10,
       }),
     );
   });
@@ -220,7 +220,8 @@ describe('PublicCatalogService.search', () => {
       expect(serialized).not.toContain(forbidden);
     }
     // Y la consulta nunca pide esos campos (brandId/categoryId solo resuelven la marca y categoría publicadas).
-    const select = mockPrisma.product.findMany.mock.calls[0][0].select;
+    // (con texto, la primera consulta solo trae ids visibles para ordenar; la de la página trae la ficha)
+    const select = mockPrisma.product.findMany.mock.calls.at(-1)![0].select;
     expect(Object.keys(select).sort()).toEqual(['brand', 'brandId', 'category', 'categoryId', 'id', 'images', 'lifecycleStatus', 'name', 'publicRevisionId', 'sku']);
   });
 });

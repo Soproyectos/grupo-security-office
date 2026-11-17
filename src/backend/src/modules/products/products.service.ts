@@ -46,6 +46,7 @@ import * as XLSX from 'xlsx';
 import { normalizeText } from './import/helpers/text-normalizer';
 import { findProductBySku, normalizeSku } from './helpers/sku-identity';
 import { pickPrimaryImageByProduct, primaryImageInclude } from './helpers/primary-image';
+import { buildProductSearchSql, looksLikeCode } from './helpers/product-search';
 import { priceValidityWhere } from './validation/price-validity';
 import { ClassificationService } from './classification/classification.service';
 import type { ClassificationDb } from './classification/classification.types';
@@ -589,15 +590,9 @@ export class ProductsService {
         : '';
 
       const whereClause = `WHERE 1=1 ${categoryFilter} ${brandFilter} ${isVisibleFilter} ${isActiveFilter} ${activeListaOnlyFilter}`;
-      const normalizedSearch = `NULLIF(regexp_replace(upper($1), '[^A-Z0-9]', '', 'g'), '')`;
-      const normalizedSku = `regexp_replace(upper(COALESCE(p."sku", '')), '[^A-Z0-9]', '', 'g')`;
-      const literalMatch = `(
-        POSITION(LOWER($1) IN LOWER(COALESCE(p."name", ''))) > 0
-        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."catalogName", ''))) > 0
-        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."sku", ''))) > 0
-        OR POSITION(LOWER($1) IN LOWER(COALESCE(p."description", ''))) > 0
-        OR (${normalizedSearch} IS NOT NULL AND POSITION(${normalizedSearch} IN ${normalizedSku}) > 0)
-      )`;
+      // Orden: exacta, empieza por, contiene y, al final, difusa (ver helpers/product-search.ts).
+      const codeLike = looksLikeCode(searchTerm);
+      const searchSql = buildProductSearchSql({ param: '$1', alias: 'p', codeLike });
       const limitParam = `$${filterParams.length + 2}`;
       const offsetParam = `$${filterParams.length + 3}`;
       const runSearch = async (useSimilarity: boolean) => {
@@ -607,7 +602,8 @@ export class ProductsService {
         const similarityScore = useSimilarity
           ? `(similarity(COALESCE(p."name", ''), $1) + similarity(COALESCE(p."catalogName", ''), $1) + similarity(COALESCE(p."sku", ''), $1) + similarity(COALESCE(p."description", ''), $1))`
           : '0::real';
-        const searchClause = `AND (${literalMatch} OR ${fuzzyMatch})`;
+        const searchClause = `AND (${searchSql.literal} OR ${fuzzyMatch})`;
+        const tieBreak = codeLike ? 'p."sku" ASC' : 'p."createdAt" DESC';
 
         // Conteo y resultados comparten el mismo predicado literal/fuzzy.
         const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(`
@@ -618,30 +614,41 @@ export class ProductsService {
         `, searchTerm, ...filterParams);
         const matchingCount = Number(countResult[0]?.count ?? 0);
 
-        // Paginar con relevancia trigram si está disponible; substring siempre se incluye.
+        // Paginar por rank (exacta < prefijo < contiene < difusa) y luego por relevancia trigram.
         const foundProducts = await this.prisma.$queryRawUnsafe<any[]>(`
           SELECT
             p.*,
+            ${searchSql.rank} as _rank,
             ${similarityScore} as _similarity
           FROM "products" p
           ${whereClause}
           ${searchClause}
-          ORDER BY _similarity DESC, p."createdAt" DESC, p.id ASC
+          ORDER BY _rank ASC, _similarity DESC, ${tieBreak}, p.id ASC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `, searchTerm, ...filterParams, take, skip);
         return { matchingCount, foundProducts };
       };
 
+      const runWithFuzzy = async (): Promise<Awaited<ReturnType<typeof runSearch>>> => {
+        try {
+          return await runSearch(true);
+        } catch (error) {
+          if (!this.isMissingSimilarityFunction(error)) throw error;
+          this.similarityUnavailable = true;
+          this.logger.warn('pg_trgm similarity is unavailable; using literal product search.');
+          // Retry exactly once without similarity; other SQL errors remain visible.
+          return runSearch(false);
+        }
+      };
+      const canFuzzy = searchTerm.length > 2 && !this.similarityUnavailable;
+
       let searchResult: Awaited<ReturnType<typeof runSearch>>;
-      const useSimilarity = searchTerm.length > 2 && !this.similarityUnavailable;
-      try {
-        searchResult = await runSearch(useSimilarity);
-      } catch (error) {
-        if (!useSimilarity || !this.isMissingSimilarityFunction(error)) throw error;
-        this.similarityUnavailable = true;
-        this.logger.warn('pg_trgm similarity is unavailable; using literal product search.');
-        // Retry exactly once without similarity; other SQL errors remain visible.
+      if (codeLike) {
+        // Un SKU/modelo busca solo literal; la difusa entra únicamente si no hubo ninguna coincidencia.
         searchResult = await runSearch(false);
+        if (searchResult.matchingCount === 0 && canFuzzy) searchResult = await runWithFuzzy();
+      } else {
+        searchResult = canFuzzy ? await runWithFuzzy() : await runSearch(false);
       }
       total = searchResult.matchingCount;
       products = searchResult.foundProducts;
@@ -683,7 +690,8 @@ export class ProductsService {
         brand: brandMap.get(p.brandId) || null,
         images: imageMap.get(p.id) ? [imageMap.get(p.id)!] : [],
         prices: pricesByProduct.get(p.id) || [],
-        _similarity: undefined, // remove internal field
+        _similarity: undefined, // remove internal fields
+        _rank: undefined,
       }));
     } else {
       // Fallback: búsqueda por contains insensible (search ≤ 2 chars o sin search)
