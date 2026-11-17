@@ -95,14 +95,25 @@ describe('PublicCatalogService', () => {
     prisma.product.count.mockImplementation(
       async (args: any) => table.filter((row) => matchesProductWhere(row, args.where)).length,
     );
-    // Snapshot search/category filter (raw SQL): the fake reads the bound parameters (term, category ids).
-    (prisma as any).$queryRaw = jest.fn(async (sql: { values: unknown[] }) => {
-      const term = sql.values.find((v) => typeof v === 'string') as string | undefined;
-      const ids = sql.values.find((v) => Array.isArray(v)) as string[] | undefined;
+    // Snapshot search/category filter (raw SQL): the fake reads the bound parameters (term first, then category ids)
+    // and ranks like the SQL does: 0 exact, 1 starts with, 2 contains (name or SKU).
+    (prisma as any).$queryRawUnsafe = jest.fn(async (sql: string, ...params: unknown[]) => {
+      const term = typeof params[0] === 'string' ? (params[0] as string).toLowerCase() : undefined;
+      const idsParam = sql.match(/= ANY\(\$(\d+)::text\[\]\)/)?.[1];
+      const ids = idsParam ? (params[Number(idsParam) - 1] as string[]) : undefined;
+      const rankOf = (row: { name: string; sku: string }): number | undefined => {
+        if (!term) return 0;
+        const fields = [row.name.toLowerCase(), row.sku.toLowerCase()];
+        if (fields.some((f) => f === term)) return 0;
+        if (fields.some((f) => f.startsWith(term))) return 1;
+        if (fields.some((f) => f.includes(term))) return 2;
+        return undefined;
+      };
       return table
-        .filter((row) => !term || row.name.toLowerCase().includes(term.toLowerCase()) || row.sku.toLowerCase().includes(term.toLowerCase()))
-        .filter((row) => !ids || ids.includes(row.categoryId))
-        .map((row) => ({ id: row.id }));
+        .map((row) => ({ row, rank: rankOf(row) }))
+        .filter(({ rank }) => rank !== undefined)
+        .filter(({ row }) => !ids || ids.includes(row.categoryId))
+        .map(({ row, rank }) => ({ id: row.id, rank, name: row.name }));
     });
     prisma.product.findFirst.mockImplementation(async (args: any) => {
       const row = table.find((candidate) => matchesProductWhere(candidate, args.where));
@@ -140,7 +151,7 @@ describe('PublicCatalogService', () => {
         { lifecycleStatus: 'PUBLISHED' },
         expect.objectContaining({ extraAttributes: expect.objectContaining({ path: ['biblioteca'] }) }),
       ]));
-      const bound = (prisma as any).$queryRaw.mock.calls[0][0].values.find(Array.isArray) as string[];
+      const bound = (prisma as any).$queryRawUnsafe.mock.calls[0].slice(1).find(Array.isArray) as string[];
       expect([...bound].sort()).toEqual(['c-cctv', 'c-domos', 'c-ptz']);
       expect(where.AND.some((c: any) => c.id?.in)).toBe(true);
     });
@@ -187,6 +198,50 @@ describe('PublicCatalogService', () => {
 
       expect(result.data.map((item) => item.id)).toEqual(['p-02']);
       expect(result.meta.total).toBe(1);
+    });
+
+    it('q ordena por relevancia (exacta, empieza por, contiene) y luego por nombre, y pagina después de ordenar', async () => {
+      build([], {}, [
+        product('p-a', 'Zeta', 'c-cctv', { sku: 'DS-PWA48-KIT-WB' }),
+        product('p-b', 'Alfa', 'c-cctv', { sku: 'DS-PWA48-KIT-WB/EU' }),
+        product('p-c', 'Beta', 'c-cctv', { sku: 'X-DS-PWA48-KIT-WB' }),
+      ]);
+
+      const all = await service.search({ q: 'DS-PWA48-KIT-WB' });
+      expect(all.data.map((item) => item.id)).toEqual(['p-a', 'p-b', 'p-c']);
+      expect(all.meta.total).toBe(3);
+
+      const page = await service.search({ q: 'DS-PWA48-KIT-WB', offset: 1, limit: 1 });
+      expect(page.data.map((item) => item.id)).toEqual(['p-b']);
+      expect(page.meta).toEqual({ total: 3, offset: 1, limit: 1 });
+    });
+
+    it('q excluye lo no visible aunque coincida (borrador) y cuenta solo los visibles', async () => {
+      const result = await service.search({ q: 'Cámara Domo' });
+
+      expect(result.data.map((item) => item.id)).toEqual(['p-02']); // p-04 es DRAFT
+      expect(result.meta.total).toBe(1);
+    });
+
+    it('la consulta del snapshot busca SKU, modelo, nombre y referencias; sin descripción y sin LIKE', async () => {
+      await service.search({ q: 'DS-PWA48-KIT-WB' });
+
+      const [sql, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(params).toEqual(['DS-PWA48-KIT-WB']);
+      expect(sql).toContain("r.content->>'catalogModel'");
+      expect(sql).toContain('p."catalogManufacturerRefs"');
+      expect(sql).toContain("r.content->>'sku'");
+      expect(sql).not.toContain('p."description"');
+      expect(sql).not.toMatch(/LIKE/i);
+      expect(sql).not.toContain('DS-PWA48-KIT-WB');
+    });
+
+    it('varias palabras (sin forma de código) también buscan por todas las palabras', async () => {
+      await service.search({ q: 'camara domo' });
+
+      const [sql, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(params).toEqual(['camara domo', ['camara', 'domo']]);
+      expect(sql).toContain('unnest($2::text[])');
     });
 
     it('sin category ni q lista todos los publicados', async () => {
