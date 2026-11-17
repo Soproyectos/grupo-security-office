@@ -1282,6 +1282,9 @@ describe('ProductsService', () => {
 
       it('normaliza SKU ignorando separadores y conserva el término como parámetro', async () => {
         const term = 'IDS-E04HQHI-D';
+        mockPrisma.$queryRawUnsafe.mockReset()
+          .mockResolvedValueOnce([{ count: BigInt(1) }])
+          .mockResolvedValueOnce([]);
         await service.findAll({ search: term, take: 5, skip: 0 });
         const { countSql, countArgs, selectSql, selectArgs } = calls();
 
@@ -1294,7 +1297,7 @@ describe('ProductsService', () => {
       });
 
       it('reintenta sin pg_trgm solo ante similarity ausente y memoriza el fallback', async () => {
-        const term = 'IDSE04HQHID';
+        const term = 'camara domo exterior';
         const pgTrgmError = {
           code: 'P2010',
           meta: { code: '42883', message: 'function similarity(text,text) does not exist' },
@@ -1311,7 +1314,7 @@ describe('ProductsService', () => {
           search: term, categoryId: validCategory, brandId: validBrand,
           isVisible: true, isActive: false, take: 5, skip: 10,
         });
-        await service.findAll({ search: 'ANOTHER-LONG-QUERY', take: 3, skip: 2 });
+        await service.findAll({ search: 'another long query', take: 3, skip: 2 });
 
         const calls = mockPrisma.$queryRawUnsafe.mock.calls;
         expect(calls).toHaveLength(5);
@@ -1327,12 +1330,59 @@ describe('ProductsService', () => {
         expect(calls[1].slice(1)).toEqual([term, validCategory, validBrand, true, false]);
         expect(calls[2][0]).toContain('LIMIT $6 OFFSET $7');
         expect(calls[2].slice(1)).toEqual([term, validCategory, validBrand, true, false, 5, 10]);
-        expect(calls[3].slice(1)).toEqual(['ANOTHER-LONG-QUERY']);
+        expect(calls[3].slice(1)).toEqual(['another long query']);
         expect(calls[4][0]).toContain('LIMIT $2 OFFSET $3');
-        expect(calls[4].slice(1)).toEqual(['ANOTHER-LONG-QUERY', 3, 2]);
+        expect(calls[4].slice(1)).toEqual(['another long query', 3, 2]);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(term));
         warn.mockRestore();
+      });
+
+      it('un SKU/código busca solo literal: sin similarity, ordenado por rank y luego SKU', async () => {
+        mockPrisma.$queryRawUnsafe.mockReset()
+          .mockResolvedValueOnce([{ count: BigInt(2) }])
+          .mockResolvedValueOnce([]);
+        await service.findAll({ search: 'DS-PWA48-KIT-WB', take: 10, skip: 0 });
+        const { countSql, countArgs, selectSql } = calls();
+
+        expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+        expect(countArgs).toEqual(['DS-PWA48-KIT-WB']);
+        for (const sql of [countSql, selectSql]) {
+          expect(sql).not.toContain('similarity(');
+          expect(sql).toContain('p."catalogModel"');
+          expect(sql).toContain('p."catalogManufacturerRefs"');
+          // La descripción no cuenta para un código.
+          expect(sql).not.toContain('p."description"');
+        }
+        expect(selectSql).toContain('ORDER BY _rank ASC, _similarity DESC, p."sku" ASC, p.id ASC');
+        expect(selectSql).toMatch(/CASE WHEN .* THEN 0 WHEN .* THEN 1 WHEN .* THEN 2 ELSE 3 END as _rank/s);
+      });
+
+      it('un código sin ninguna coincidencia literal cae a difusa', async () => {
+        mockPrisma.$queryRawUnsafe.mockReset()
+          .mockResolvedValueOnce([{ count: BigInt(0) }])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ count: BigInt(3) }])
+          .mockResolvedValueOnce([]);
+        await service.findAll({ search: 'DS-PWA49-KIT-WB', take: 10, skip: 0 });
+
+        const sqls = mockPrisma.$queryRawUnsafe.mock.calls.map(([sql]: [string]) => sql);
+        expect(sqls).toHaveLength(4);
+        expect(sqls[0]).not.toContain('similarity(');
+        expect(sqls[1]).not.toContain('similarity(');
+        expect(sqls[2]).toContain('similarity(');
+        expect(sqls[3]).toContain('similarity(');
+      });
+
+      it('un texto sin forma de código (palabras) conserva la descripción y la difusa', async () => {
+        await service.findAll({ search: 'camara domo', take: 10, skip: 0 });
+        const { countSql, selectSql } = calls();
+
+        for (const sql of [countSql, selectSql]) {
+          expect(sql).toContain('p."description"');
+          expect(sql).toContain('similarity(');
+        }
+        expect(selectSql).toContain('ORDER BY _rank ASC, _similarity DESC, p."createdAt" DESC, p.id ASC');
       });
 
       it.each([
