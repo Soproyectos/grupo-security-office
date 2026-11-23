@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { CatalogSearch } from '../../common/security/throttle-policy';
 import type { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { PublicCatalogService } from './public-catalog.service';
@@ -12,7 +12,7 @@ export class PublicCatalogKeySpecFacetsController {
   constructor(private readonly catalog: PublicCatalogService) {}
 
   @Public()
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @CatalogSearch()
   @Get('key-spec-facets')
   @ApiOperation({ summary: 'Filter facets (key specs) of a subcategory; a product listing filter uses `keySpec=<specKey>:<value>`' })
   facets(@Query('subcategoryId') subcategoryId: string | undefined, @Res({ passthrough: true }) res: Response) {

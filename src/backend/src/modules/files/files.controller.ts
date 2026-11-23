@@ -16,6 +16,7 @@ import { AclService, AccessContext } from '../../common/acl/acl.service';
 import { SessionService } from '../../common/security/session.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FilesService } from './files.service';
+import { CatalogRead } from '../../common/security/throttle-policy';
 
 /** Extrae el token de sesión (cookie httpOnly o Bearer), como `jwt.strategy`. */
 function extractToken(req: Request): string | null {
@@ -43,6 +44,7 @@ export class FilesController {
 
   @Get(':id')
   @Public()
+  @CatalogRead() // imagen de tarjeta: decenas por listado, ya con Cache-Control immutable
   @ApiOperation({ summary: 'Sirve un archivo subido (imagen de producto, logo de marca)' })
   @ApiResponse({ status: 200, description: 'Bytes del archivo' })
   @ApiResponse({ status: 401, description: 'Archivo privado: se requiere sesión' })

@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AllowMastersWrite, RolesOrMastersWriteGuard } from '../masters/masters-write';
 import { SetActiveDto } from '../masters/dto/set-active.dto';
 import { RequireGrant } from '../../common/security/require-grant';
+import { CatalogRead } from '../../common/security/throttle-policy';
 
 type ActorRequest = { user?: { sub?: string; name?: string } };
 
@@ -19,6 +20,7 @@ type ActorRequest = { user?: { sub?: string; name?: string } };
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  @CatalogRead()
   @Get()
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar categorías' })
@@ -26,6 +28,7 @@ export class CategoriesController {
     return this.categoriesService.findAll();
   }
 
+  @CatalogRead()
   @Get('tree')
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener árbol de categorías' })
@@ -33,6 +36,7 @@ export class CategoriesController {
     return this.categoriesService.findTree();
   }
 
+  @CatalogRead()
   @Get('classification-tree')
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Categorías principales con sus subcategorías activas (selector de clasificación)' })
@@ -40,6 +44,7 @@ export class CategoriesController {
     return this.categoriesService.classificationTree();
   }
 
+  @CatalogRead()
   @Get(':id/usage')
   @RequireGrant('masters:read')
   @ApiOperation({ summary: 'Uso y dependencias de la categoría (productos, hijas, subcategorías) y si se puede eliminar' })
@@ -47,6 +52,7 @@ export class CategoriesController {
     return this.categoriesService.usage(id);
   }
 
+  @CatalogRead()
   @Get(':id')
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener categoría por ID' })

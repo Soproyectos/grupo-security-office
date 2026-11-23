@@ -2,7 +2,7 @@ import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { StorefrontService } from '../../storefront/storefront.service';
 import { Public } from '../../../common/decorators/public.decorator';
-import { Throttle } from '@nestjs/throttler';
+import { CatalogRead } from '../../../common/security/throttle-policy';
 import type { ProductDetailDto } from './dto/product-detail.dto';
 import { PublicProductDetailService } from './public-product-detail.service';
 
@@ -17,7 +17,7 @@ export class PublicProductDetailController {
    * Identificador inválido → 400; inexistente o no visible → 404.
    */
   @Public()
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @CatalogRead()
   @Get(':idOrSlug/detail')
   async findByIdOrSlug(@Param('idOrSlug') idOrSlug: string, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<ProductDetailDto> {
     res.setHeader('Cache-Control', 'private, no-store');

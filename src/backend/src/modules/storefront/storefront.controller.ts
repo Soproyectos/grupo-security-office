@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
+import { CatalogRead, CatalogSearch } from "../../common/security/throttle-policy";
 import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { CustomerAccount } from "@prisma/client";
@@ -44,9 +45,11 @@ const cookieName = "gs_customer_session";
 @Controller("api/storefront")
 export class StorefrontController {
   constructor(private readonly storefront: StorefrontService) {}
+  @CatalogRead()
   @Get("settings") settings() {
     return this.storefront.publicSettings();
   }
+  @CatalogSearch()
   @Get("products")
   products(
     @Query() query: StorefrontQueryDto,
@@ -57,6 +60,7 @@ export class StorefrontController {
     response.vary("Cookie");
     return this.storefront.catalog(query, request.cookies?.[cookieName]);
   }
+  @CatalogRead()
   @Get("products/:id")
   product(
     @Param("id", ParseUUIDPipe) id: string,

@@ -23,6 +23,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessContext } from '../../common/acl/acl.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { CatalogRead, CatalogSearch } from '../../common/security/throttle-policy';
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -41,6 +42,7 @@ export class ProductsController {
   }
 
   @Get('trending')
+  @CatalogSearch()
   @RequireGrant('products:read')
   @ApiOperation({ summary: 'Obtener productos tendencia' })
   findTrending(
@@ -53,6 +55,7 @@ export class ProductsController {
   }
 
   @Get('publish-scheduled')
+  @CatalogRead()
   @RequireGrant('products:read')
   @ApiOperation({ summary: 'Listar productos programados para publicaciÃ³n' })
   @ApiQuery({ name: 'from', required: false, type: String, description: 'Inicio del rango (ISO). Default: ahora.' })
@@ -65,6 +68,7 @@ export class ProductsController {
   }
 
   @Get()
+  @CatalogSearch()
   @RequireGrant('products:read')
   @ApiOperation({ summary: 'Listar productos' })
   @ApiQuery({ name: 'skip', required: false, type: Number })
@@ -95,6 +99,7 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @CatalogRead()
   @RequireGrant('products:read')
   @ApiOperation({ summary: 'Obtener producto por ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
@@ -117,6 +122,7 @@ export class ProductsController {
   }
 
   @Get(':id/revisions')
+  @CatalogRead()
   @RequireGrant('products:read')
   @ApiOperation({ summary: 'Versiones de revisión del producto (resumen, sin contenido)' })
   listRevisions(@Param('id') id: string, @CurrentUser() user: any) {
