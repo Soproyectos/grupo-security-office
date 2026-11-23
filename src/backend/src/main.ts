@@ -9,10 +9,14 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { UPLOADS_DIR, UPLOADS_URL_PREFIX } from './common/uploads-path';
 import { AppModule } from './app.module';
+import { applyTrustProxy } from './common/http/trust-proxy';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['error', 'warn', 'log'] });
   const configService = app.get(ConfigService);
+
+  // Detrás de nginx: sin esto `req.ip` es siempre la dirección del proxy y el límite de solicitudes cuenta a todos como una IP.
+  applyTrustProxy(app, configService.get<string>('TRUST_PROXY'));
 
   app.use(helmet());
   app.use(cookieParser());

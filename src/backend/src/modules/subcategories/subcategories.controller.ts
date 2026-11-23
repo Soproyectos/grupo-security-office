@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SetActiveDto } from '../masters/dto/set-active.dto';
 import { CreateSubcategoryDto, ListSubcategoriesQueryDto, UpdateSubcategoryDto } from './dto/subcategory.dto';
 import { SubcategoriesService } from './subcategories.service';
+import { CatalogRead } from '../../common/security/throttle-policy';
 
 type ActorRequest = { user?: { sub?: string; name?: string } };
 const actorFrom = (req: ActorRequest) => ({ id: req.user?.sub, name: req.user?.name });
@@ -18,6 +19,7 @@ const actorFrom = (req: ActorRequest) => ({ id: req.user?.sub, name: req.user?.n
 export class SubcategoriesController {
   constructor(private readonly subcategories: SubcategoriesService) {}
 
+  @CatalogRead()
   @Get()
   @RequireGrant('masters:read')
   @ApiOperation({ summary: 'Listar y buscar subcategorías (paginado; por categoría y estado)' })
@@ -25,6 +27,7 @@ export class SubcategoriesController {
     return this.subcategories.list(query);
   }
 
+  @CatalogRead()
   @Get(':id/usage')
   @RequireGrant('masters:read')
   @ApiOperation({ summary: 'Uso y dependencias de la subcategoría y si se puede eliminar' })
@@ -32,6 +35,7 @@ export class SubcategoriesController {
     return this.subcategories.usage(id);
   }
 
+  @CatalogRead()
   @Get(':id')
   @RequireGrant('masters:read')
   @ApiOperation({ summary: 'Obtener subcategoría por ID' })

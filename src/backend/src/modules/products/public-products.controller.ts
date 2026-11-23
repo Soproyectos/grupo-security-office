@@ -2,11 +2,11 @@ import { Request, Response } from 'express';
 import { StorefrontService } from '../storefront/storefront.service';
 import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { PublicCatalogService } from './public-catalog.service';
 import { PublicProductSearchDto } from './dto/public-product-search.dto';
 import { PublicProductParamsDto } from './dto/public-product-params.dto';
+import { CatalogRead, CatalogSearch } from '../../common/security/throttle-policy';
 
 /**
  * Catálogo público del storefront. La presentación puede consultarse sin JWT;
@@ -28,7 +28,7 @@ export class PublicProductsController {
    * vacía debe verse como "sin productos", no como un fallo de red.
    */
   @Public()
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @CatalogSearch()
   @Get()
   @ApiOperation({ summary: 'Listar/buscar productos publicados con su precio público (storefront)' })
   @ApiQuery({ name: 'q', required: false, type: String, description: 'Término de búsqueda (nombre o SKU)' })
@@ -46,7 +46,7 @@ export class PublicProductsController {
    * DTO); id inexistente o producto que no está PUBLISHED → 404.
    */
   @Public()
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @CatalogRead()
   @Get(':id')
   @ApiOperation({ summary: 'Detalle público de un producto publicado (storefront)' })
   @ApiResponse({ status: 404, description: 'El producto no existe o no está publicado' })

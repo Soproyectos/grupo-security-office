@@ -9,6 +9,7 @@ import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AllowMastersWrite, RolesOrMastersWriteGuard } from '../masters/masters-write';
 import { RequireGrant } from '../../common/security/require-grant';
+import { CatalogRead } from '../../common/security/throttle-policy';
 
 type ActorRequest = { user?: { sub?: string; name?: string } };
 const actorFrom = (req: ActorRequest) => ({ id: req.user?.sub, name: req.user?.name });
@@ -20,6 +21,7 @@ const actorFrom = (req: ActorRequest) => ({ id: req.user?.sub, name: req.user?.n
 export class BrandsController {
   constructor(private readonly brandsService: BrandsService) {}
 
+  @CatalogRead()
   @Get()
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar marcas' })
@@ -27,6 +29,7 @@ export class BrandsController {
     return this.brandsService.findAll();
   }
 
+  @CatalogRead()
   @Get(':id/usage')
   @RequireGrant('masters:read')
   @ApiOperation({ summary: 'Uso y dependencias de la marca y si se puede eliminar' })
@@ -34,6 +37,7 @@ export class BrandsController {
     return this.brandsService.usage(id);
   }
 
+  @CatalogRead()
   @Get(':id')
   @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener marca por ID' })
