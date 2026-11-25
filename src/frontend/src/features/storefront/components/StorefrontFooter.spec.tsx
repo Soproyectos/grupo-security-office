@@ -74,11 +74,11 @@ describe('enlaces', () => {
     }
   })
 
-  it('convierte "Vende con nosotros" en un enlace de WhatsApp con mensaje', () => {
+  it('no muestra "Vende con nosotros" mientras el acceso no esté validado', () => {
     const markup = renderFooter()
 
-    expect(markup).toContain('Vende con nosotros')
-    expect(markup).toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}"`)
+    expect(markup).not.toContain('Vende con nosotros')
+    expect(markup).not.toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}"`)
   })
 
   it('deja el estatuto del consumidor como enlace externo', () => {
@@ -86,6 +86,7 @@ describe('enlaces', () => {
 
     expect(markup).toContain('Estatuto del consumidor')
     expect(markup).toContain('href="https://www.sic.gov.co/"')
+    expect(markup).toContain(' (abre en otra pestaña)')
     expect(markup).toContain('target="_blank"')
     expect(markup).toContain('rel="noreferrer noopener"')
   })

@@ -81,4 +81,37 @@ describe('formulario de registro', () => {
     expect(markup).toContain('>Crear mi cuenta</button>')
     expect(markup).toContain('href="/clientes/login"')
   })
+
+  it('pide la casilla de política con enlace, y deshabilita Google hasta marcarla', () => {
+    expect(markup).toContain('name="acceptPrivacy"')
+    expect(markup).toContain('type="checkbox"')
+    expect(markup).toContain('href="/politica-de-privacidad"')
+    expect(markup).toContain('política de tratamiento de datos')
+    expect(markup).toMatch(/<button type="button" disabled=""[^>]*aria-describedby="google-signin-hint"/)
+    expect(markup).toContain('primero marca la casilla de la política de tratamiento de datos')
+  })
+
+  it('muestra la lista de requisitos de la clave y el botón Mostrar en ambas claves', () => {
+    expect(markup).toContain('aria-live="polite"')
+    expect(markup).toContain('Falta: </span>Un símbolo')
+    expect(markup).toContain('aria-controls="signup-password"')
+    expect(markup).toContain('aria-controls="signup-confirm"')
+  })
+})
+
+describe('formulario de inicio de sesión: clave', () => {
+  it('usa el campo con botón Mostrar', () => {
+    const markup = render(ClientLoginPage, '/clientes/login')
+    expect(markup).toContain('aria-controls="login-password"')
+    expect(markup).toContain('>Mostrar</button>')
+  })
+})
+
+describe('aviso de cuenta eliminada', () => {
+  it('se muestra con ?deleted=1 y no aparece sin él', () => {
+    const withNotice = render(ClientLoginPage, '/clientes/login?deleted=1')
+    expect(withNotice).toContain('role="status"')
+    expect(withNotice).toContain('Tu cuenta fue eliminada. Puedes crear una nueva cuando quieras.')
+    expect(render(ClientLoginPage, '/clientes/login')).not.toContain('Tu cuenta fue eliminada')
+  })
 })

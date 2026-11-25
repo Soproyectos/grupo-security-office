@@ -81,8 +81,8 @@ describe('CategoryShopTiles', () => {
 })
 
 describe('ProductShelfView', () => {
-  it('muestra el título, hasta cuatro tarjetas con precio y el enlace "Ver todo"', () => {
-    const items = ['1', '2', '3', '4'].map((id) => product(id))
+  it('muestra los productos de la fila y el enlace "Ver todo"', () => {
+    const items = ['1', '2', '3', '4', '5', '6'].map((id) => product(id))
     const markup = inRouter(
       createElement(ProductShelfView, { shelf, status: 'ready', items, total: 164, onRetry: vi.fn() }),
     )
@@ -90,7 +90,7 @@ describe('ProductShelfView', () => {
     expect(markup).toContain('>Videovigilancia</h2>')
     expect(markup).toContain('href="/catalogo/categoria/camaras-turbo"')
     expect(markup).toContain('Ver todo<span class="sr-only"> en Videovigilancia</span>')
-    expect(markup.split('IVA incluido').length - 1).toBe(4)
+    expect(markup.split('IVA incluido').length - 1).toBe(6)
     expect(markup).toContain('href="/catalogo/productos/1"')
   })
 
@@ -108,7 +108,7 @@ describe('ProductShelfView', () => {
     )
 
     expect(markup).toContain('Cargando Videovigilancia')
-    expect(markup.split('data-testid="product-skeleton-card"').length - 1).toBe(4)
+    expect(markup.split('data-testid="product-skeleton-card"').length - 1).toBe(5)
     expect(markup).toContain('>Videovigilancia</h2>')
   })
 

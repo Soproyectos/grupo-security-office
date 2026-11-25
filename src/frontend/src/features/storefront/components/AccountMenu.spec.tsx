@@ -37,11 +37,12 @@ describe('menú de cuenta del cliente', () => {
     expect(markup).not.toContain('Mi portal')
   })
 
-  it('con sesión precargada ofrece Mi portal y Salir en lugar de Ingresar', () => {
+  it('usa el nombre del cliente para abrir el panel de su cuenta', () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(['customer-portal', 'session'], {
       id: 'acc-1',
       email: 'cliente@example.com',
+      contactName: 'Ana Pérez',
       type: 'FINAL_CUSTOMER',
     })
     const markup = renderToStaticMarkup(
@@ -52,9 +53,9 @@ describe('menú de cuenta del cliente', () => {
       ),
     )
     expect(markup).toMatch(/<a[^>]*href="\/clientes"[^>]*>Mi portal<\/a>/)
-    expect(markup).toMatch(/<button[^>]*>Salir<\/button>/)
+    expect(markup).toMatch(/<button[^>]*>Cerrar sesión<\/button>/)
     expect(markup).not.toContain('Ingresar')
-    expect(markup).toContain('Mi cuenta')
+    expect(markup).toContain('title="Ana Pérez"')
   })
 
   it('con QueryClientProvider pero sin sesión mantiene las opciones de visitante', () => {
@@ -66,6 +67,6 @@ describe('menú de cuenta del cliente', () => {
       ),
     )
     expect(markup).toContain('Ingresar')
-    expect(markup).not.toContain('Salir')
+    expect(markup).not.toContain('Cerrar sesión')
   })
 })

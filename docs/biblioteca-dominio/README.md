@@ -1,5 +1,11 @@
 # Biblioteca dedicada: índice único y estado
 
+[Continuidad vigente de tienda y atributos, 24/11/2026](../handoffs/2026-11-24-tienda-local-estado-vigente.md): entorno, carga confirmada, límites y pendientes.
+
+## Atributos por categoría y filtros de tienda (24/11/2026)
+
+Estado: normalización y conteos contextuales probados en local; diccionario y plantillas PROPOSED generados desde una consulta de solo lectura de 850 productos. 55 definiciones compartidas, 2.035 valores propuestos y 107 casos pendientes. Carga autorizada y confirmada en PostgreSQL: 55 definiciones inactivas, 206 asociaciones PROPOSED y 2.035 valores WORKING para 705 productos, con auditoría. Fichas publicadas intactas; sin cambio de D5. [Contrato, cobertura y validación](../handoffs/2026-11-24-atributos-categoria.md); [bitácora](../bitacora/2026-11-24-atributos-categoria.md).
+
 Para seguir pantallas, endpoints y fuentes de datos, consulta el [mapa técnico del panel](panel-biblioteca-referencias-tecnicas.md).
 
 <!-- biblioteca-vigente-20261103 -->

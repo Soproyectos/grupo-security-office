@@ -13,6 +13,7 @@ const PUBLIC_LIST = { code: 'CLIENTE_FINAL_IVA' };
 // Árbol: cctv > domos > ptz ; acceso ; oculta (inactiva) > hija-de-oculta
 const categories = [
   { id: 'c-cctv', name: 'CCTV', slug: 'cctv', parentId: null, isActive: true },
+  { id: 'c-camaras', name: 'Cámaras', slug: 'camaras', parentId: null, isActive: true },
   { id: 'c-domos', name: 'Domos', slug: 'domos', parentId: 'c-cctv', isActive: true },
   { id: 'c-ptz', name: 'PTZ', slug: 'ptz', parentId: 'c-domos', isActive: true },
   { id: 'c-acceso', name: 'Control de Acceso', slug: 'acceso', parentId: null, isActive: true },
@@ -25,7 +26,7 @@ const product = (
   id: string,
   name: string,
   categoryId: string,
-  overrides: Record<string, unknown> = {},
+  overrides: Record<string, unknown> & { publicRevisionId?: string } = {},
 ) => ({
   id,
   sku: `SKU-${id}`,
@@ -36,6 +37,7 @@ const product = (
   technicalSpecs: null,
   documents: null,
   extraAttributes: { COSTO: 1_000_000, PLATINO: 1_100_000 },
+  brandId: 'brand-hikvision',
   brand: { name: 'Hikvision', slug: 'hikvision' },
   images: [],
   ...overrides,
@@ -76,9 +78,49 @@ describe('PublicCatalogService', () => {
     priceRows: FakePriceRow[] = [],
     env: Record<string, string | undefined> = {},
     extraProducts: ReturnType<typeof product>[] = [],
+    revisions: Record<string, { brandId?: string | null; sku?: string }> = {},
   ) => {
     const table = [...products, ...extraProducts];
+    const publishedRevisions = Object.entries(revisions).map(([id, content]) => ({ id, content }));
+    const brands = [
+      { id: 'brand-ezviz', name: 'Ezviz', slug: 'ezviz', isActive: true },
+      { id: 'brand-hikvision', name: 'Hikvision', slug: 'hikvision', isActive: true },
+      { id: 'brand-inactive', name: 'Inactive', slug: 'inactive', isActive: false },
+      { id: 'brand-empty', name: 'Empty', slug: 'empty', isActive: true },
+    ];
+    const snapshotBrandId = (row: { brandId: string | null; publicRevisionId?: string }) => {
+      const revision = revisions[row.publicRevisionId ?? ''];
+      return revision?.brandId === undefined ? row.brandId : revision.brandId;
+    };
+  const snapshotSubcategoryId = (row: { subcategoryId?: string | null; publicRevisionId?: string }) => {
+    const revision = revisions[row.publicRevisionId ?? ''] as any;
+    return revision && Object.prototype.hasOwnProperty.call(revision, 'subcategoryId')
+      ? revision.subcategoryId
+      : row.subcategoryId ?? null;
+  };
     prisma = createPrismaMock();
+    Object.assign(prisma, {
+      productRevision: {
+        findMany: jest.fn(async ({ where }) => {
+          expect(where.status).toBe('PUBLICADA');
+          return publishedRevisions.filter(({ id }) => where.id.in.includes(id));
+        }),
+      },
+    });
+    prisma.brand.findUnique.mockImplementation(async ({ where }) => brands.find((b) => b.slug === where.slug) ?? null);
+    prisma.brand.findMany.mockImplementation(async ({ where }) =>
+      brands.filter((b) => where.id?.in ? where.id.in.includes(b.id) : b.isActive === where.isActive),
+    );
+    const subcategoryIdsBySlug: Record<string, string> = {
+      'camaras-ip-y-wi-fi': 'sub-ip',
+      'camaras-analogicas': 'sub-analog',
+      'camaras-especiales-y-para-vehiculos': 'sub-special',
+    };
+    prisma.subcategory.findMany.mockImplementation(async ({ where }: any) =>
+      where.category?.slug === 'camaras'
+        ? (where.slug.in as string[]).filter((slug) => subcategoryIdsBySlug[slug]).map((slug) => ({ id: subcategoryIdsBySlug[slug] }))
+        : [],
+    );
     prisma.price.findMany.mockImplementation(fakePriceFindMany(priceRows));
     prisma.category.findMany.mockResolvedValue(categories);
     prisma.product.findMany.mockImplementation(async (args: any) => {
@@ -95,16 +137,22 @@ describe('PublicCatalogService', () => {
     prisma.product.count.mockImplementation(
       async (args: any) => table.filter((row) => matchesProductWhere(row, args.where)).length,
     );
-    // Snapshot search/category filter (raw SQL): the fake reads the bound parameters (term first, then category ids)
-    // and ranks like the SQL does: 0 exact, 1 starts with, 2 contains (name or SKU).
+    // Simula filtros y ranking usando los valores enlazados a la consulta.
     (prisma as any).$queryRawUnsafe = jest.fn(async (sql: string, ...params: unknown[]) => {
-      const term = typeof params[0] === 'string' ? (params[0] as string).toLowerCase() : undefined;
-      const idsParam = sql.match(/= ANY\(\$(\d+)::text\[\]\)/)?.[1];
+      const term = sql.includes('lower(b.name)') ? (params[0] as string).toLowerCase() : undefined;
+      const brandParam = sql.match(/ELSE p\."brandId" END\) = \$(\d+)/)?.[1];
+      const brandId = brandParam ? params[Number(brandParam) - 1] : undefined;
+      const subcategoryParam = sql.match(/ELSE p\."subcategoryId" END\) = ANY\(\$(\d+)::text\[\]\)/)?.[1];
+      const subcategoryIds = subcategoryParam ? (params[Number(subcategoryParam) - 1] as string[]) : undefined;
+      const idsParam = sql.match(/ELSE p\."categoryId" END\) = ANY\(\$(\d+)::text\[\]\)/)?.[1];
+      const skuParam = sql.match(/COALESCE\(r\.content->>'sku', p\.sku\) = ANY\(\$(\d+)::text\[\]\)/)?.[1];
+      const skus = skuParam ? (params[Number(skuParam) - 1] as string[]) : undefined;
       const ids = idsParam ? (params[Number(idsParam) - 1] as string[]) : undefined;
-      const rankOf = (row: { name: string; sku: string }): number | undefined => {
+      const rankOf = (row: typeof table[number]): number | undefined => {
         if (!term) return 0;
         const fields = [row.name.toLowerCase(), row.sku.toLowerCase()];
-        if (fields.some((f) => f === term)) return 0;
+        const brand = brands.find((b) => b.id === snapshotBrandId(row) && b.isActive);
+        if (brand?.name.toLowerCase() === term || fields.some((f) => f === term)) return 0;
         if (fields.some((f) => f.startsWith(term))) return 1;
         if (fields.some((f) => f.includes(term))) return 2;
         return undefined;
@@ -113,6 +161,9 @@ describe('PublicCatalogService', () => {
         .map((row) => ({ row, rank: rankOf(row) }))
         .filter(({ rank }) => rank !== undefined)
         .filter(({ row }) => !ids || ids.includes(row.categoryId))
+        .filter(({ row }) => !skus || skus.includes(revisions[row.publicRevisionId ?? '']?.sku ?? row.sku))
+        .filter(({ row }) => !brandId || brandId === snapshotBrandId(row))
+        .filter(({ row }) => !subcategoryIds || subcategoryIds.includes(snapshotSubcategoryId(row as never)))
         .map(({ row, rank }) => ({ id: row.id, rank, name: row.name }));
     });
     prisma.product.findFirst.mockImplementation(async (args: any) => {
@@ -193,6 +244,29 @@ describe('PublicCatalogService', () => {
       expect(result.meta.total).toBe(0);
     });
 
+    it('filtra por referencias publicadas exactas dentro de la categoría', async () => {
+      const exact = 'CAM (2.8mm)/LA';
+      const live = 'BORRADOR-01';
+      build([], {}, [
+        product('p-picked', 'Cámara elegida', 'c-domos', { sku: live, publicRevisionId: 'r-picked' }),
+        product('p-prefix', 'Variante distinta', 'c-cctv', { sku: exact + '-PRO' }),
+        product('p-other', 'Categoría distinta', 'c-acceso', { sku: 'ACCESO-01' }),
+        product('p-hidden', 'Cámara borrador', 'c-cctv', { sku: 'OCULTO-01', lifecycleStatus: 'DRAFT' }),
+      ], { 'r-picked': { sku: exact } });
+
+      const skus = [exact, live, 'ACCESO-01', 'OCULTO-01'];
+      const result = await service.search({ category: 'cctv', sku: skus });
+
+      expect(result.data).toMatchObject([{ id: 'p-picked', sku: exact }]);
+      expect(result.meta.total).toBe(1);
+      const [sql, , boundSkus] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(boundSkus).toEqual(skus);
+      expect(sql).not.toContain(exact);
+
+      const oldSku = await service.search({ category: 'cctv', sku: [live] });
+      expect(oldSku.data).toEqual([]);
+    });
+
     it('combina category con q', async () => {
       const result = await service.search({ category: 'cctv', q: '  domo ' });
 
@@ -262,6 +336,114 @@ describe('PublicCatalogService', () => {
       expect(result.data.map((item) => item.price)).toEqual([{ value: 850000, currency: 'COP' }, null]);
       expect(prisma.price.findMany).toHaveBeenCalledTimes(1);
     });
+
+    it('combina marca publicada, categoría y texto antes de paginar', async () => {
+      build([], {}, [
+        product('p-snapshot', 'Cámara de prueba', 'c-domos', { publicRevisionId: 'r-switch' }),
+        product('p-null', 'Otra cámara', 'c-domos', { brandId: 'brand-ezviz', publicRevisionId: 'r-null' }),
+        product('p-out', 'Cámara exterior', 'c-acceso', { publicRevisionId: 'r-switch' }),
+      ], { 'r-switch': { brandId: 'brand-ezviz' }, 'r-null': { brandId: null } });
+
+      const result = await service.search({ brand: 'ezviz', category: 'cctv', q: 'cámara', limit: 1 });
+
+      expect(prisma.brand.findUnique).toHaveBeenCalledWith({
+        where: { slug: 'ezviz' }, select: { id: true, isActive: true },
+      });
+      expect(result.data).toMatchObject([{ id: 'p-snapshot', brandName: 'Ezviz' }]);
+      expect(result.meta).toEqual({ total: 1, offset: 0, limit: 1 });
+      const [sql, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(sql).toContain("WHEN jsonb_exists(r.content, 'brandId')");
+      expect(sql).toContain('ELSE p."brandId" END) = $3');
+      expect(params).toEqual(['cámara', expect.arrayContaining(['c-cctv', 'c-domos']), 'brand-ezviz']);
+    });
+
+    it.each(['inactive', 'marca-inexistente'])('devuelve lista vacía para el slug %s', async (brand) => {
+      const result = await service.search({ brand });
+      expect(result).toEqual({ data: [], meta: { total: 0, offset: 0, limit: 24 } });
+      expect(prisma.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('q admite el nombre exacto de la marca efectiva sin usar la marca viva de una revisión', async () => {
+      build([], {}, [
+        product('p-snapshot', 'Cámara de prueba', 'c-domos', { publicRevisionId: 'r-switch' }),
+      ], { 'r-switch': { brandId: 'brand-ezviz' } });
+
+      const exact = await service.search({ q: ' eZViZ ' });
+      const partial = await service.search({ q: 'Ezv' });
+      const oldBrand = await service.search({ q: 'Hikvision' });
+      expect(exact.data).toMatchObject([{ id: 'p-snapshot', brandName: 'Ezviz' }]);
+      expect(partial.meta.total).toBe(0);
+      expect(oldBrand.data.map((p) => p.id)).not.toContain('p-snapshot');
+      const [sql, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(sql).toContain('lower(b.name) = lower($1)');
+      expect(params).toEqual(['eZViZ']);
+    });
+  });
+
+  describe('search — subcategoría de cámaras', () => {
+    it('combina subcategoría, categoría, marca y q sobre identidad publicada conservando el ranking', async () => {
+      build([], {}, [
+        product('p-sub', 'Cámara IP publicada', 'c-camaras', { publicRevisionId: 'r-sub', subcategoryId: null }),
+        product('p-other-sub', 'Cámara IP distinta', 'c-camaras', { subcategoryId: 'sub-other' }),
+      ], { 'r-sub': { brandId: 'brand-ezviz', subcategoryId: 'sub-ip' } as any });
+
+      const result = await service.search({
+        category: 'camaras', subcategory: 'camaras-ip-y-wi-fi', brand: 'ezviz', q: 'publicada', offset: 0, limit: 10,
+      });
+
+      expect(result.data.map((item) => item.id)).toEqual(['p-sub']);
+      expect(prisma.subcategory.findMany).toHaveBeenCalledWith({
+        where: { slug: { in: ['camaras-ip-y-wi-fi'] }, isActive: true, category: { slug: 'camaras', isActive: true } },
+        select: { id: true },
+      });
+      const [sql, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(sql).toContain("jsonb_exists(r.content, 'subcategoryId')");
+      expect(params).toContainEqual(['sub-ip']);
+      expect(prisma.product.findMany.mock.calls.at(-1)![0].where.AND).toContainEqual({ id: { in: ['p-sub'] } });
+    });
+
+    it('respeta un subcategoryId publicado explícitamente nulo y devuelve vacío si el slug no resuelve', async () => {
+      build([], {}, [product('p-unassigned', 'Sin asignación', 'c-camaras', { subcategoryId: 'sub-ip', publicRevisionId: 'r-null-sub' })], {
+        'r-null-sub': { subcategoryId: null } as any,
+      });
+      const result = await service.search({ category: 'camaras', subcategory: 'camaras-ip-y-wi-fi' });
+      expect(result.data).toEqual([]);
+      expect((prisma as any).$queryRawUnsafe.mock.calls[0][0]).toContain("jsonb_exists(r.content, 'subcategoryId')");
+
+      prisma.subcategory.findMany.mockResolvedValueOnce([]);
+      await expect(service.search({ subcategory: 'no-existe' })).resolves.toMatchObject({ meta: { total: 0 }, data: [] });
+    });
+
+    it('no combina una subcategoría de Cámaras con otra categoría', async () => {
+      await expect(service.search({ category: 'acceso', subcategory: 'camaras-ip-y-wi-fi' })).resolves.toMatchObject({
+        data: [], meta: { total: 0 },
+      });
+      // La subcategoría se busca dentro de la categoría pedida, así que no aparece bajo otra.
+      expect(prisma.subcategory.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ category: { slug: 'acceso', isActive: true } }),
+      }));
+    });
+
+    it('acepta una lista de subcategorías y consulta todas con sus ids en el SQL', async () => {
+      build([], {}, [
+        product('p-ip', 'Cámara IP', 'c-camaras', { subcategoryId: 'sub-ip' }),
+        product('p-an', 'Cámara análoga', 'c-camaras', { subcategoryId: 'sub-analog' }),
+        product('p-acc', 'Accesorio', 'c-camaras', { subcategoryId: 'sub-other' }),
+      ]);
+      const result = await service.search({ category: 'camaras', subcategory: 'camaras-ip-y-wi-fi, camaras-analogicas,camaras-ip-y-wi-fi' });
+      expect(prisma.subcategory.findMany).toHaveBeenCalledWith({
+        where: { slug: { in: ['camaras-ip-y-wi-fi', 'camaras-analogicas'] }, isActive: true, category: { slug: 'camaras', isActive: true } },
+        select: { id: true },
+      });
+      const [, ...params] = (prisma as any).$queryRawUnsafe.mock.calls[0];
+      expect(params).toContainEqual(['sub-ip', 'sub-analog']);
+      expect(result.data.map((item) => item.id).sort()).toEqual(['p-an', 'p-ip']);
+    });
+
+    it('devuelve vacío si algún slug de la lista es desconocido', async () => {
+      await expect(service.search({ subcategory: 'camaras-ip-y-wi-fi,no-existe' })).resolves.toMatchObject({ data: [], meta: { total: 0 } });
+      expect(prisma.subcategory.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('search — paginación', () => {
@@ -297,6 +479,31 @@ describe('PublicCatalogService', () => {
       expect(new Set(ids).size).toBe(6);
       const names = [...first.data, ...second.data].map((item) => item.name);
       expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    });
+  });
+
+  describe('search — orden recent', () => {
+    it('sort=recent ordena por publishedAt desc (nulos al final), createdAt desc e id', async () => {
+      await service.search({ sort: 'recent', limit: 4 });
+
+      expect(prisma.product.findMany.mock.calls[0][0].orderBy).toEqual([
+        { publishedAt: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('sin sort conserva nombre e id', async () => {
+      await service.search({});
+
+      expect(prisma.product.findMany.mock.calls[0][0].orderBy).toEqual([{ name: 'asc' }, { id: 'asc' }]);
+    });
+
+    it('con texto q ignora sort y mantiene la relevancia', async () => {
+      await service.search({ q: 'a', sort: 'recent' });
+
+      const orders = prisma.product.findMany.mock.calls.map((c: any[]) => c[0].orderBy).filter(Boolean);
+      expect(orders).not.toContainEqual(expect.arrayContaining([{ createdAt: 'desc' }]));
     });
   });
 
@@ -433,6 +640,31 @@ describe('PublicCatalogService', () => {
       ]);
 
       expect((await service.getDetail('p-05')).price).toBeNull();
+    });
+  });
+
+  describe('listBrands', () => {
+    it('cuenta la marca efectiva y los productos informativos visibles sin paginar', async () => {
+      build([], {}, [
+        product('p-switch', 'Cambio visible', 'c-cctv', { publicRevisionId: 'r-switch' }),
+        product('p-legacy', 'Revisión antigua', 'c-cctv', { publicRevisionId: 'r-legacy' }),
+        product('p-null', 'Sin marca publicada', 'c-cctv', { publicRevisionId: 'r-null' }),
+        product('p-inactive', 'Marca inactiva', 'c-cctv', { brandId: 'brand-inactive' }),
+        product('p-draft', 'Borrador privado', 'c-cctv', { brandId: 'brand-ezviz', lifecycleStatus: 'DRAFT' }),
+        product('p-info', 'Ficha informativa', 'c-cctv', {
+          brandId: 'brand-ezviz', lifecycleStatus: 'DRAFT', extraAttributes: { biblioteca: {} },
+        }),
+      ], { 'r-switch': { brandId: 'brand-ezviz' }, 'r-legacy': {}, 'r-null': { brandId: null } });
+
+      await expect(service.listBrands()).resolves.toEqual([
+        { name: 'Ezviz', slug: 'ezviz', productCount: 2 },
+        { name: 'Hikvision', slug: 'hikvision', productCount: 7 },
+      ]);
+      expect(prisma.brand.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true } }));
+      expect(prisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { OR: expect.any(Array) },
+        select: { brandId: true, publicRevisionId: true },
+      }));
     });
   });
 });

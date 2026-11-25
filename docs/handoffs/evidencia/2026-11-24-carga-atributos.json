@@ -1,0 +1,53 @@
+{
+  "scope": "Carga autorizada WORKING/PROPOSED, sin publicar; resumen sin credenciales ni datos personales",
+  "batchId": "57f4726f-c1b2-4696-843d-1be7ccbdfc43",
+  "startedAt": "2026-11-24T20:05:57.529Z",
+  "finishedAt": "2026-11-24T20:06:03.229Z",
+  "mode": "APPLY",
+  "committed": true,
+  "sourceSha256": "83abfa2875dfffbae280257a89b812c44bd2bf1a3d5c8d10eb7cc9bd8e01e690",
+  "dictionarySha256": "1c592eea228965e7ccf6a44ec7d970eebad65abda81f59ba0d3f5be2ab3d90c8",
+  "proposalSha256": "83af84ad9832affcc05fa34233306b305be276dec16feb3c6d7308560c5b7422",
+  "beforeCounts": {
+    "spec_definitions": 0,
+    "spec_options": 0,
+    "subcategory_specs": 0,
+    "product_spec_values": 0,
+    "product_spec_value_options": 0
+  },
+  "insertedCounts": {
+    "spec_definitions": 55,
+    "spec_options": 68,
+    "subcategory_specs": 206,
+    "product_spec_values": 2035,
+    "product_spec_value_options": 4496
+  },
+  "afterCounts": {
+    "spec_definitions": 55,
+    "spec_options": 68,
+    "subcategory_specs": 206,
+    "product_spec_values": 2035,
+    "product_spec_value_options": 4496
+  },
+  "auditRows": 705,
+  "publicBefore": {
+    "products": 850,
+    "digest": "e482c47dfd06e1fbc7c9aafe2e561f4c"
+  },
+  "publicAfter": {
+    "products": 850,
+    "digest": "e482c47dfd06e1fbc7c9aafe2e561f4c"
+  },
+  "afterCommitReadOnlyPreflight": {
+    "allExistingRowsMatch": true,
+    "pendingInserts": {
+      "spec_definitions": 0,
+      "spec_options": 0,
+      "subcategory_specs": 0,
+      "product_spec_values": 0,
+      "product_spec_value_options": 0
+    }
+  },
+  "fullLocalReport": "data/atributos-biblioteca-20261124/apply-1795550750915.json",
+  "fullLocalReportIsGitIgnored": true
+}

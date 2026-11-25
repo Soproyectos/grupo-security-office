@@ -51,6 +51,8 @@ describe('CategoriesService', () => {
     mockPrisma.category.findMany.mockResolvedValue([]);
     mockPrisma.category.count.mockResolvedValue(0);
     mockPrisma.product.count.mockResolvedValue(0);
+    mockPrisma.product.findMany.mockResolvedValue([]);
+    mockPrisma.productRevision.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -214,7 +216,8 @@ describe('CategoriesService', () => {
 
   describe('findMenu', () => {
     beforeEach(() => {
-      mockPrisma.product.groupBy.mockResolvedValue([]);
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.productRevision.findMany.mockResolvedValue([]);
     });
 
     it('excluye categorías inactivas y sus subárboles', async () => {
@@ -276,17 +279,21 @@ describe('CategoriesService', () => {
       expect(result.data[0]).not.toHaveProperty('_count');
     });
 
-    it('acumula productCount hacia los ancestros con una sola consulta agrupada', async () => {
+    it('acumula productCount hacia los ancestros con una sola consulta de productos públicos', async () => {
       mockPrisma.category.findMany.mockResolvedValue([
         { ...mockCategory, id: 'root', slug: 'root', parentId: null },
         { ...mockCategory, id: 'child', slug: 'child', parentId: 'root' },
         { ...mockCategory, id: 'leaf', slug: 'leaf', parentId: 'child' },
         { ...mockCategory, id: 'empty', slug: 'empty', parentId: 'root' },
       ]);
-      mockPrisma.product.groupBy.mockResolvedValue([
-        { categoryId: 'root', _count: { _all: 1 } },
-        { categoryId: 'child', _count: { _all: 2 } },
-        { categoryId: 'leaf', _count: { _all: 4 } },
+      mockPrisma.product.findMany.mockResolvedValue([
+        { categoryId: 'root', publicRevisionId: null },
+        { categoryId: 'child', publicRevisionId: null },
+        { categoryId: 'child', publicRevisionId: null },
+        { categoryId: 'leaf', publicRevisionId: null },
+        { categoryId: 'leaf', publicRevisionId: null },
+        { categoryId: 'leaf', publicRevisionId: null },
+        { categoryId: 'leaf', publicRevisionId: null },
       ]);
 
       const result = await service.findMenu();
@@ -297,7 +304,25 @@ describe('CategoriesService', () => {
       expect(child.productCount).toBe(6);
       expect(child.children[0].productCount).toBe(4);
       expect(empty.productCount).toBe(0);
-      expect(mockPrisma.product.groupBy).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.product.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('usa la categoría de la revisión pública en lugar de la columna operativa', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'root', slug: 'root', parentId: null },
+        { ...mockCategory, id: 'child', slug: 'child', parentId: 'root' },
+      ]);
+      mockPrisma.product.findMany.mockResolvedValue([
+        { categoryId: 'root', publicRevisionId: 'revision-published' },
+      ]);
+      mockPrisma.productRevision.findMany.mockResolvedValue([
+        { id: 'revision-published', content: { categoryId: 'child' } },
+      ]);
+
+      const result = await service.findMenu();
+
+      expect(result.data[0].productCount).toBe(1);
+      expect(result.data[0].children[0].productCount).toBe(1);
     });
 
     it('cuenta productos comerciales y fichas informativas oficiales', async () => {
@@ -307,7 +332,7 @@ describe('CategoriesService', () => {
 
       await service.findMenu();
 
-      expect(mockPrisma.product.groupBy.mock.calls[0][0].where.OR).toEqual(expect.arrayContaining([
+      expect(mockPrisma.product.findMany.mock.calls[0][0].where.OR).toEqual(expect.arrayContaining([
         { lifecycleStatus: 'PUBLISHED' },
         expect.objectContaining({ extraAttributes: expect.objectContaining({ path: ['biblioteca'] }) }),
       ]));
@@ -329,6 +354,117 @@ describe('CategoriesService', () => {
       expect(query.select).not.toHaveProperty('createdAt');
       expect(query.select).not.toHaveProperty('updatedAt');
       expect(query.select).not.toHaveProperty('_count');
+    });
+
+    it('anida las subcategorías de cámaras con productos, evita duplicar la categoría legacy y cuenta la identidad publicada', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'camera-root', name: 'Cámaras', slug: 'camaras', parentId: null },
+        { ...mockCategory, id: 'legacy-ip', name: 'Cámara IP legacy', slug: 'ip-antiguo', parentId: 'camera-root' },
+      ]);
+      mockPrisma.product.findMany.mockResolvedValue([
+        { categoryId: 'legacy-ip', subcategoryId: 'sub-ip-live', publicRevisionId: 'revision-ip' },
+        { categoryId: 'camera-root', subcategoryId: 'sub-analog', publicRevisionId: null },
+        { categoryId: 'camera-root', subcategoryId: 'sub-recorder', publicRevisionId: null },
+        { categoryId: 'camera-root', subcategoryId: 'sub-special', publicRevisionId: 'revision-special' },
+        { categoryId: 'other-root', subcategoryId: 'sub-ip', publicRevisionId: null },
+      ]);
+      mockPrisma.productRevision.findMany.mockResolvedValue([
+        { id: 'revision-ip', content: { subcategoryId: 'sub-ip' } },
+        { id: 'revision-special', content: { subcategoryId: null } },
+      ]);
+      mockPrisma.subcategory.findMany.mockResolvedValue([
+        { id: 'sub-ip', categoryId: 'camera-root', name: 'Cámaras IP y Wi-Fi', slug: 'camaras-ip-y-wi-fi', sortOrder: 1, legacyCategoryId: 'legacy-ip' },
+        { id: 'sub-analog', categoryId: 'camera-root', name: 'Cámaras analógicas', slug: 'camaras-analogicas', sortOrder: 2, legacyCategoryId: null },
+        { id: 'sub-special', categoryId: 'camera-root', name: 'Cámaras especiales y para vehículos', slug: 'camaras-especiales-y-para-vehiculos', sortOrder: 3, legacyCategoryId: null },
+        { id: 'sub-recorder', categoryId: 'camera-root', name: 'Grabadores DVR y NVR', slug: 'grabadores-dvr-y-nvr', sortOrder: 4, legacyCategoryId: null },
+      ]);
+
+      const { data } = await service.findMenu();
+      const camera = data[0];
+
+      // sub-special queda en 0 (la revisión le quita la subcategoría) y no aparece; los grabadores sí.
+      expect(camera.children.map((child) => child.id)).toEqual(['legacy-ip', 'sub-analog', 'sub-recorder']);
+      expect(camera.children.find((child) => child.id === 'legacy-ip')).toMatchObject({
+        subcategoryId: 'sub-ip', subcategorySlug: 'camaras-ip-y-wi-fi', productCount: 1,
+        slug: 'ip-antiguo', name: 'Cámaras IP y Wi-Fi',
+      });
+      expect(camera.children.find((child) => child.id === 'sub-analog')).toMatchObject({ subcategoryId: 'sub-analog', productCount: 1 });
+      expect(camera.children.find((child) => child.id === 'sub-recorder')).toMatchObject({
+        subcategoryId: 'sub-recorder', subcategorySlug: 'grabadores-dvr-y-nvr', slug: 'grabadores-dvr-y-nvr', productCount: 1,
+      });
+      expect(mockPrisma.subcategory.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { isActive: true, categoryId: { in: ['camera-root'] } },
+      }));
+    });
+
+    it('anida las subcategorías de cualquier raíz con su conteo y orden, y oculta las vacías', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'alarm-root', name: 'Alarmas', slug: 'alarmas', parentId: null },
+        { ...mockCategory, id: 'audio-root', name: 'Audio', slug: 'audio', parentId: null, sortOrder: 1 },
+      ]);
+      mockPrisma.product.findMany.mockResolvedValue([
+        { categoryId: 'alarm-root', subcategoryId: 'sub-sirena', publicRevisionId: null },
+        { categoryId: 'alarm-root', subcategoryId: 'sub-sirena', publicRevisionId: null },
+        { categoryId: 'alarm-root', subcategoryId: 'sub-sensor', publicRevisionId: null },
+        { categoryId: 'audio-root', subcategoryId: 'sub-parlante', publicRevisionId: 'revision-audio' },
+        // Subcategoría de Alarmas pero categoría de Audio: no cuenta para Alarmas.
+        { categoryId: 'audio-root', subcategoryId: 'sub-sirena', publicRevisionId: null },
+      ]);
+      mockPrisma.productRevision.findMany.mockResolvedValue([
+        { id: 'revision-audio', content: { subcategoryId: 'sub-parlante' } },
+      ]);
+      mockPrisma.subcategory.findMany.mockResolvedValue([
+        { id: 'sub-sensor', categoryId: 'alarm-root', name: 'Sensores', slug: 'sensores', sortOrder: 1, legacyCategoryId: null },
+        { id: 'sub-sirena', categoryId: 'alarm-root', name: 'Sirenas', slug: 'sirenas', sortOrder: 2, legacyCategoryId: null },
+        { id: 'sub-panel', categoryId: 'alarm-root', name: 'Paneles', slug: 'paneles', sortOrder: 3, legacyCategoryId: null },
+        { id: 'sub-parlante', categoryId: 'audio-root', name: 'Parlantes', slug: 'parlantes', sortOrder: 1, legacyCategoryId: null },
+      ]);
+
+      const { data } = await service.findMenu();
+      const [alarmas, audio] = data;
+
+      expect(alarmas.children.map((child) => child.id)).toEqual(['sub-sensor', 'sub-sirena']);
+      expect(alarmas.children[1]).toEqual({
+        id: 'sub-sirena', subcategoryId: 'sub-sirena', subcategorySlug: 'sirenas', name: 'Sirenas', slug: 'sirenas',
+        imageUrl: null, iconUrl: null, isFeatured: false, sortOrder: 2, productCount: 2, children: [],
+      });
+      expect(alarmas.children[0].productCount).toBe(1);
+      expect(audio.children.map((child) => child.id)).toEqual(['sub-parlante']);
+      expect(alarmas.productCount).toBe(3);
+      expect(mockPrisma.product.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.productRevision.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.subcategory.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('solo consulta subcategorías activas', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'alarm-root', name: 'Alarmas', slug: 'alarmas', parentId: null },
+      ]);
+      mockPrisma.subcategory.findMany.mockResolvedValue([]);
+
+      await service.findMenu();
+
+      const query = mockPrisma.subcategory.findMany.mock.calls[0][0];
+      expect(query.where.isActive).toBe(true);
+      expect(query.orderBy).toEqual([{ sortOrder: 'asc' }, { name: 'asc' }]);
+    });
+
+    it('fusiona por slug en otras raíces sin duplicar el nodo existente', async () => {
+      mockPrisma.category.findMany.mockResolvedValue([
+        { ...mockCategory, id: 'net-root', name: 'Redes', slug: 'redes', parentId: null },
+        { ...mockCategory, id: 'legacy-switch', name: 'Switch viejo', slug: 'switches', parentId: 'net-root' },
+      ]);
+      mockPrisma.product.findMany.mockResolvedValue([
+        { categoryId: 'legacy-switch', subcategoryId: 'sub-switch', publicRevisionId: null },
+      ]);
+      mockPrisma.subcategory.findMany.mockResolvedValue([
+        { id: 'sub-switch', categoryId: 'net-root', name: 'Switches', slug: 'switches', sortOrder: 1, legacyCategoryId: null },
+      ]);
+
+      const { data } = await service.findMenu();
+
+      expect(data[0].children).toHaveLength(1);
+      expect(data[0].children[0]).toMatchObject({ id: 'legacy-switch', subcategoryId: 'sub-switch', name: 'Switches', productCount: 1 });
     });
   });
 

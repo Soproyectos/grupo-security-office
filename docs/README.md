@@ -1,5 +1,9 @@
 # Documentación — Grupo Security Office
 
+## Entrega de tienda local — 24/11/2026
+
+[Guía vigente: tienda 5181, atributos por categoría y carga de datos](handoffs/2026-11-24-tienda-local-estado-vigente.md). [Evidencia de la carga](handoffs/evidencia/2026-11-24-carga-atributos.json). Sin commit ni despliegue de esta entrega.
+
 > Punto de entrada canónico de la documentación del proyecto.
 
 ## Identidad del proyecto

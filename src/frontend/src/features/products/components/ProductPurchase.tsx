@@ -8,8 +8,9 @@ import { ChatIcon } from './icons';
 const TRUST_ITEMS = ['Distribuidor autorizado', 'Garantía de fábrica', 'Envíos a toda Colombia'];
 
 /** Public price (IVA incluido) or the quote prompt when the product has none. */
-export function ProductPriceBlock({ price, isInformational = false }: { price: ProductDetail['price']; isInformational?: boolean }) {
+export function ProductPriceBlock({ price, isInformational = false, discontinued = false }: { price: ProductDetail['price']; isInformational?: boolean; discontinued?: boolean }) {
   if (price === null) {
+    if (discontinued && !isInformational) return null;
     return (
       <div {...previewField('price')}>
         <p className="text-2xl font-bold text-neutral-950">
@@ -29,18 +30,27 @@ export function ProductPriceBlock({ price, isInformational = false }: { price: P
   );
 }
 
+function purchaseAction(product: ProductDetail) {
+  const discontinued = product.status === 'discontinued';
+  return {
+    label: discontinued ? 'Preguntar por un equivalente' : 'Cotizar',
+    href: quoteUrl(product, discontinued),
+  };
+}
+
 export function ProductCtas({ product }: { product: ProductDetail }) {
+  const action = purchaseAction(product);
   return (
     <div className="flex flex-col gap-3 sm:flex-row">
       {!product.isInformational && (
         <a
-          href={quoteUrl(product)}
+          href={action.href}
           target="_blank"
           rel="noopener noreferrer"
           className={cx(ui.btnPrimary, 'sm:min-w-52')}
         >
           <ChatIcon className="h-4 w-4" />
-          Cotizar por WhatsApp
+          {action.label}
         </a>
       )}
     </div>
@@ -73,9 +83,11 @@ export function ProductTrustStrip() {
 
 /** Fixed bottom bar of small screens, so price and quote CTA stay reachable. */
 export function ProductMobileBar({ product }: { product: ProductDetail }) {
+  const action = purchaseAction(product);
+  const showPrice = product.price !== null || product.isInformational || product.status !== 'discontinued';
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-neutral-200 bg-white px-4 py-3 lg:hidden" {...previewField('price')}>
-      <div className="min-w-0 flex-1">
+    <div className="fixed inset-x-0 bottom-0 z-30 flex flex-col gap-2 border-t border-neutral-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:hidden" {...previewField('price')}>
+      {showPrice && <div className="min-w-0 flex-1">
         {product.price !== null ? (
           <>
             <p className="truncate text-xl font-bold leading-tight tabular-nums text-neutral-950">
@@ -88,10 +100,10 @@ export function ProductMobileBar({ product }: { product: ProductDetail }) {
             {product.isInformational ? 'Ficha informativa' : 'Precio a consultar'}
           </p>
         )}
-      </div>
+      </div>}
       {!product.isInformational && (
-        <a href={quoteUrl(product)} target="_blank" rel="noopener noreferrer" className={ui.btnPrimarySm}>
-          Cotizar por WhatsApp
+        <a href={action.href} target="_blank" rel="noopener noreferrer" className={cx(ui.btnPrimary, 'min-h-11 w-full text-center')}>
+          {action.label}
         </a>
       )}
     </div>

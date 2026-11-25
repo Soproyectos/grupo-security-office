@@ -29,7 +29,6 @@ const COLUMNS: FooterColumn[] = [
     links: [
       { label: 'Sobre nosotros', href: '/nosotros' },
       { label: 'Sedes', href: '/sedes' },
-      { label: 'Vende con nosotros', href: whatsappUrl(WHATSAPP_MESSAGES.sellWithUs), external: true },
       { label: 'Trabaja con nosotros' },
       { label: 'Mapa del sitio' },
     ],
@@ -104,7 +103,7 @@ const GRID_BY_COLUMNS: Record<number, string> = {
 function FooterLinkList({ title, links }: { title: string; links: Array<FooterLink & { href: string }> }) {
   return (
     <nav aria-labelledby={`footer-${title}-title`}>
-      <h2 id={`footer-${title}-title`} className="mb-2 text-sm font-bold text-white">
+      <h2 id={`footer-${title}-title`} className="mb-2 break-words text-sm font-bold text-white">
         {title}
       </h2>
       <ul className="space-y-1">
@@ -112,10 +111,10 @@ function FooterLinkList({ title, links }: { title: string; links: Array<FooterLi
           <li key={link.label}>
             <a
               href={link.href}
-              className={`inline-flex min-h-6 items-center text-sm ${LINK_COLOR} ${LINK_FOCUS}`}
+              className={`inline-flex min-h-11 items-center text-sm ${LINK_COLOR} ${LINK_FOCUS}`}
               {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             >
-              {link.label}
+              {link.label}{link.external ? ' (abre en otra pestaña)' : ''}
             </a>
           </li>
         ))}
@@ -131,14 +130,14 @@ export default function StorefrontFooter() {
   const socials = SOCIAL_LINKS.filter(hasHref)
 
   return (
-    <footer className="bg-storefront-ink px-5 py-6 text-white/80 lg:px-12">
+    <footer className="bg-storefront-ink px-5 py-6 text-white/80 [overflow-wrap:anywhere] lg:px-12">
       <div className="mx-auto max-w-7xl">
         <div className={`grid grid-cols-1 gap-x-8 gap-y-6 ${GRID_BY_COLUMNS[columns.length] ?? GRID_BY_COLUMNS[3]}`}>
           {columns.map((column) => (
             <FooterLinkList key={column.title} title={column.title} links={column.links} />
           ))}
           <div aria-labelledby="footer-contacto-title">
-            <h2 id="footer-contacto-title" className="mb-2 text-sm font-bold text-white">
+            <h2 id="footer-contacto-title" className="mb-2 break-words text-sm font-bold text-white">
               Contacto
             </h2>
             <ul className="space-y-1 text-sm">
@@ -147,7 +146,7 @@ export default function StorefrontFooter() {
                   href={whatsappUrl(WHATSAPP_MESSAGES.contact)}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className={`${LINK_COLOR} ${LINK_FOCUS}`}
+                  className={`inline-flex min-h-11 items-center ${LINK_COLOR} ${LINK_FOCUS}`}
                 >
                   Escríbenos por WhatsApp: {SALES_PHONE_DISPLAY}
                 </a>

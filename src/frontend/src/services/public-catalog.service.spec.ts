@@ -6,7 +6,7 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 
 vi.mock('./api', () => ({ default: { get } }))
 
-import { fetchCategoryMenu, fetchPublicProducts } from './public-catalog.service'
+import { fetchCategoryMenu, fetchPublicKeySpecFacets, fetchPublicProducts, fetchPublicRequirements } from './public-catalog.service'
 
 // ---------------------------------------------------------------------------
 // Covered scenarios:
@@ -177,6 +177,44 @@ describe('fetchPublicProducts', () => {
     })
   })
 
+  it('envía subcategoría persistida junto con su categoría padre', async () => {
+    get.mockResolvedValue({ data: { data: results, meta } })
+
+    await fetchPublicProducts({ category: 'camaras', subcategory: 'camaras-ip-wifi' })
+
+    expect(get).toHaveBeenCalledWith('/public/products', {
+      params: { category: 'camaras', subcategory: 'camaras-ip-wifi', offset: 0, limit: 24 },
+    })
+  })
+
+  it('envía la selección de referencias exactas en una sola consulta de la categoría', async () => {
+    get.mockResolvedValue({ data: { data: results, meta } })
+
+    await fetchPublicProducts({ category: 'camaras', sku: ['CAM (2.8mm)/LA', 'CAM+02'] }, 0, 2)
+
+    expect(get).toHaveBeenCalledTimes(1)
+    const query = new URL(get.mock.calls[0]?.[0], 'https://tienda.example').searchParams
+    expect(query.get('category')).toBe('camaras')
+    expect(query.get('limit')).toBe('2')
+    expect(query.getAll('sku')).toEqual(['CAM (2.8mm)/LA', 'CAM+02'])
+  })
+
+  it('envía cada faceta keySpec repetida como parámetro de URL', async () => {
+    get.mockResolvedValue({ data: { data: results, meta } })
+
+    await fetchPublicProducts({ category: 'camaras', subcategory: 'camaras-ip-wifi', keySpec: ['resolution:4k', 'color:black'] })
+
+    expect(get).toHaveBeenCalledWith('/public/products?offset=0&limit=24&category=camaras&subcategory=camaras-ip-wifi&keySpec=resolution%3A4k&keySpec=color%3Ablack')
+  })
+
+  it('pide las facetas públicas para la subcategoría seleccionada', async () => {
+    const facets = { subcategoryId: 'sub-ip', products: 2, facets: [{ specKey: 'resolution', label: 'Resolución', dataType: 'ENUM', unit: null, values: [{ value: '4k', label: '4K', count: 2 }] }] }
+    get.mockResolvedValue({ data: { data: facets } })
+
+    await expect(fetchPublicKeySpecFacets('sub-ip')).resolves.toEqual(facets)
+    expect(get).toHaveBeenCalledWith('/public/catalog/key-spec-facets', { params: { subcategoryId: 'sub-ip' } })
+  })
+
   it('omite los filtros vacíos', async () => {
     get.mockResolvedValue({ data: { data: [], meta: { total: 0, offset: 0, limit: 24 } } })
 
@@ -235,5 +273,91 @@ describe('fetchPublicProducts', () => {
     get.mockRejectedValue(failure)
 
     await expect(fetchPublicProducts({ q: 'cámara' })).rejects.toBe(failure)
+  })
+})
+
+describe('fetchPublicKeySpecFacets (forma inválida)', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it.each([
+    ['facets no es arreglo', { data: { facets: 'x' } }],
+    ['faceta sin values', { data: { facets: [{ specKey: 'color' }] } }],
+    ['payload sin facets', { data: { foo: 1 } }],
+  ])('devuelve el respaldo vacío si %s', async (_caso: string, payload: unknown) => {
+    get.mockResolvedValue(payload)
+
+    await expect(fetchPublicKeySpecFacets('sub-ip')).resolves.toEqual({ subcategoryId: 'sub-ip', products: 0, facets: [] })
+  })
+
+  it('normaliza products no numérico a 0', async () => {
+    get.mockResolvedValue({ data: { subcategoryId: 'sub-ip', products: 'many', facets: [] } })
+
+    await expect(fetchPublicKeySpecFacets('sub-ip')).resolves.toMatchObject({ products: 0, facets: [] })
+  })
+})
+
+describe('fetchPublicRequirements', () => {
+  const facet = { specKey: 'protocolo', label: 'Protocolo', dataType: 'ENUM', unit: null, values: [{ value: 'TCP', label: 'TCP', count: 3 }] }
+
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('envía categoría, subcategoría, búsqueda, marca, keySpec y requirement en la query exacta', async () => {
+    get.mockResolvedValue({ data: { facets: [], products: 0 } })
+
+    await fetchPublicRequirements('camaras', 'camaras-ip-wifi', {
+      q: 'panel',
+      brand: 'ajax',
+      keySpec: ['resolution:4k', 'color:black'],
+      requirement: ['zonas:16', 'protocolo:TCP'],
+    })
+
+    expect(get).toHaveBeenCalledWith(
+      '/public/catalog/requirements?category=camaras&subcategory=camaras-ip-wifi&q=panel&brand=ajax&keySpec=resolution%3A4k&keySpec=color%3Ablack&requirement=zonas%3A16&requirement=protocolo%3ATCP',
+    )
+  })
+
+  const body = { products: 2, facets: [facet] }
+
+  it.each([
+    ['doble envoltorio', { data: { data: body } }],
+    ['envoltorio simple', { data: body }],
+    ['objeto plano', body],
+  ])('desenvuelve la respuesta con %s', async (_caso: string, responseData: unknown) => {
+    get.mockResolvedValue({ data: responseData })
+
+    await expect(fetchPublicRequirements('camaras')).resolves.toEqual({ products: 2, facets: [facet], truncated: undefined })
+  })
+
+  it('conserva truncated cuando el servidor lo envía', async () => {
+    get.mockResolvedValue({ data: { products: 2, facets: [facet], truncated: true } })
+
+    await expect(fetchPublicRequirements('camaras')).resolves.toMatchObject({ truncated: true })
+  })
+
+  it('normaliza products ausente a 0', async () => {
+    get.mockResolvedValue({ data: { facets: [facet] } })
+
+    await expect(fetchPublicRequirements('camaras')).resolves.toMatchObject({ products: 0, facets: [facet] })
+  })
+
+  it.each([
+    ['data con forma inválida', { data: { foo: 1 } }],
+    ['facets no es arreglo', { data: { facets: 'x', products: 1 } }],
+    ['faceta sin values', { data: { facets: [{ specKey: 'protocolo' }], products: 1 } }],
+  ])('rechaza si %s', async (_caso: string, payload: unknown) => {
+    get.mockResolvedValue(payload)
+
+    await expect(fetchPublicRequirements('camaras')).rejects.toThrow('No se pudieron leer los requisitos de esta categoría')
+  })
+
+  it('propaga el error HTTP de la API', async () => {
+    const failure = Object.assign(new Error('Request failed with status code 400'), { response: { status: 400 } })
+    get.mockRejectedValue(failure)
+
+    await expect(fetchPublicRequirements('camaras')).rejects.toBe(failure)
   })
 })

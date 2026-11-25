@@ -13,6 +13,14 @@ export function categoryHref(slug: string): string {
   return `${CATEGORY_ROUTE}/${slug}`
 }
 
+/** A persisted subcategory is a filter on its parent category route, not a Category route. */
+export function categoryNodeHref(node: MenuCategory, parentSlug?: string): string {
+  if (node.subcategoryId && parentSlug) {
+    return `${categoryHref(parentSlug)}?tipo=${encodeURIComponent(node.subcategorySlug ?? node.slug)}`
+  }
+  return categoryHref(node.slug)
+}
+
 export function productHref(id: string): string {
   return `${PRODUCT_ROUTE}/${id}`
 }
@@ -20,20 +28,25 @@ export function productHref(id: string): string {
 /**
  * Roots the mega menu is able to present.
  *
- * When the endpoint includes families with children, keep the sidebar focused
- * on those families and leave any legacy flat roots out of the scroll list. If
- * every root is empty (the current empty-catalog state), show the roots so the
- * catalog navigation remains available while the catalog has no products.
+ * Every root that has products is listed, in the order the backend sends
+ * them, whether or not it has subcategories. Roots without products are left
+ * out. If no root has products (empty catalog), show all of them so the
+ * catalog navigation never ends up empty.
  */
 export function navigableRoots(categories: MenuCategory[]): MenuCategory[] {
-  const families = categories.filter((root) => root.children.length > 0)
-  return families.length > 0 ? families : categories
+  const stocked = categories.filter((root) => root.productCount > 0)
+  return stocked.length > 0 ? stocked : categories
 }
 
-/** Keeps the wanted root when it still exists, otherwise falls back to the first. */
+/** "1 producto" / "378 productos". */
+export function productCountLabel(count: number): string {
+  return count === 1 ? '1 producto' : `${count} productos`
+}
+
+/** Keeps the selected root, or starts with a root that offers subcategories. */
 export function resolveRootId(roots: MenuCategory[], preferredId: string | null): string | null {
   if (preferredId !== null && roots.some((root) => root.id === preferredId)) return preferredId
-  return roots[0]?.id ?? null
+  return roots.find((root) => root.children.length > 0)?.id ?? roots[0]?.id ?? null
 }
 
 export function findRoot(roots: MenuCategory[], rootId: string | null): MenuCategory | null {
@@ -63,8 +76,8 @@ export function featuredTiles(root: MenuCategory | null): MenuCategory[] {
   const tiles: MenuCategory[] = []
   const visit = (nodes: MenuCategory[]): void => {
     for (const node of nodes) {
-      if (node.isFeatured) tiles.push(node)
-      visit(node.children)
+      if (node.productCount > 0 && node.isFeatured) tiles.push(node)
+      visit(node.children.filter((child) => child.productCount > 0))
     }
   }
   visit(root.children)

@@ -1,8 +1,11 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import Header from './Header'
 import { useOwnUserAccess } from '../../features/users/access'
+import { useDocumentTitle } from '../../features/storefront/hooks/useDocumentTitle'
+import { ADMIN_TITLE } from '../../features/storefront/utils/documentTitle'
 
 export default function AdminLayout() {
+  useDocumentTitle(ADMIN_TITLE)
   const pathname = useLocation().pathname.replace(/\/$/, '')
   const accessWorkspace = ['/users/access', '/agenda', '/sales/agenda', '/supervisor/agenda'].includes(pathname)
   // COM-01 §4: el shell monta el acceso real de la identidad UNA vez con la

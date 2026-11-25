@@ -44,7 +44,7 @@ function node(
     iconUrl: options.iconUrl ?? null,
     isFeatured: options.isFeatured ?? false,
     sortOrder: options.sortOrder ?? 0,
-    productCount: 0,
+    productCount: options.productCount ?? 1,
     children: options.children ?? [],
   }
 }
@@ -195,6 +195,18 @@ describe('estado vacío', () => {
     // Sin categorías no hay nada que enlistar ni enlaces de categoría.
     expect(markup).not.toContain('aria-labelledby="catalogo-todas-categorias"')
     expect(markup).not.toContain('href="/catalogo/categoria/')
+  })
+})
+
+describe('conteo público efectivo', () => {
+  it('oculta raíces vacías del índice, pero no altera el acceso directo a su página', () => {
+    const empty = node('empty', 'Sin productos', 'sin-productos', { productCount: 0 })
+    menuMock.categories = [empty, videovigilancia]
+
+    const markup = renderPage()
+
+    expect(markup).not.toContain('href="/catalogo/categoria/sin-productos"')
+    expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
   })
 })
 

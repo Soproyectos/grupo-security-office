@@ -1,5 +1,7 @@
 const SITE_NAME = 'Grupo Security'
 
+export const ADMIN_TITLE = `${SITE_NAME} - Panel de Administración`
+
 /** Title of the storefront home. */
 export const HOME_TITLE = `${SITE_NAME} | Seguridad electrónica al mejor precio`
 

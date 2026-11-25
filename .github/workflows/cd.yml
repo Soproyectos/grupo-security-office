@@ -93,6 +93,9 @@ jobs:
           file: src/frontend/Dockerfile
           target: runner
           push: true
+          # Public site key (repository variable, not a secret) inlined by Vite.
+          build-args: |
+            VITE_TURNSTILE_SITE_KEY=${{ vars.VITE_TURNSTILE_SITE_KEY }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}

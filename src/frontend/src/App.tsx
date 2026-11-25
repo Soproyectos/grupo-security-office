@@ -1,7 +1,12 @@
 import CustomerAccountPage, { CustomerPortalShell } from './features/customer-portal/pages/CustomerAccountPage'
+import CompleteProfilePage from './features/customer-portal/pages/CompleteProfilePage'
 import PortalAccountsAdminPage from './features/customer-portal/pages/PortalAccountsAdminPage'
 import ClientLoginPage from './features/storefront/pages/ClientLoginPage'
+import PrivacyPolicyPage from './features/storefront/pages/PrivacyPolicyPage'
 import AccessRequestPage from './features/storefront/pages/AccessRequestPage'
+import ClientForgotPasswordPage from './features/storefront/pages/ClientForgotPasswordPage'
+import ClientResetPasswordPage from './features/storefront/pages/ClientResetPasswordPage'
+import PasswordResetSuccessPage from './features/storefront/pages/PasswordResetSuccessPage'
 import ClientCatalogPage from './features/customer-portal/pages/ClientCatalogPage'
 import PortalProductDetailPage from './features/customer-portal/pages/PortalProductDetailPage'
 import AgendaCalendarPage from './features/agenda/AgendaCalendarPage'
@@ -10,14 +15,17 @@ import TeamWorkflowPage from './features/supervisor/TeamWorkflowPage'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/auth.store'
 import AdminLayout from './components/layout/AdminLayout'
+import ScrollToTop from './components/ScrollToTop'
 import CommercialLayout from './components/layout/CommercialLayout'
 import CategoryPage from './features/storefront/pages/CategoryPage'
 import SearchResultsPage from './features/storefront/pages/SearchResultsPage'
 import StorefrontHome from './features/storefront/pages/StorefrontHome'
+import StorefrontNotFoundPage from './features/storefront/pages/StorefrontNotFoundPage'
 import CatalogIndexPage from './features/storefront/pages/CatalogIndexPage'
 import ServicesPage from './features/storefront/pages/ServicesPage'
 import ProjectsPage from './features/storefront/pages/ProjectsPage'
 import CertificationsPage from './features/storefront/pages/CertificationsPage'
+import TrainingCalendarPage from './features/storefront/pages/TrainingCalendarPage'
 import SupportPage from './features/storefront/pages/SupportPage'
 import SolutionsPage from './features/storefront/pages/SolutionsPage'
 import AboutPage from './features/storefront/pages/AboutPage'
@@ -96,6 +104,8 @@ export function AccessBoundary({ children, actions = [], libraryPanel, marketing
 
 function App() {
   return (
+    <>
+    <ScrollToTop />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -182,9 +192,15 @@ function App() {
         <Route path="*" element={<Navigate to="/supervisor" replace />} />
       </Route>
       <Route path="/clientes/login" element={<ClientLoginPage />} />
+      <Route path="/politica-de-privacidad" element={<PrivacyPolicyPage />} />
       <Route path="/clientes/registro" element={<AccessRequestPage />} />
       <Route path="/clientes/solicitar-acceso" element={<Navigate to="/clientes/registro" replace />} />
-      <Route path="/clientes" element={<CustomerPortalShell />}><Route index element={<CustomerAccountPage />} /><Route path="perfil" element={<CustomerAccountPage profile />} /><Route path="productos" element={<ClientCatalogPage />} /><Route path="productos/:productId" element={<PortalProductDetailPage privateCatalog />} /></Route>
+      <Route path="/clientes/recuperar" element={<ClientForgotPasswordPage />} />
+      <Route path="/clientes/recuperar/exitoso" element={<PasswordResetSuccessPage stage="requested" />} />
+      <Route path="/clientes/recuperar/satisfecho" element={<PasswordResetSuccessPage />} />
+      <Route path="/clientes/restablecer" element={<ClientResetPasswordPage />} />
+      <Route path="/recuperar-contrasena" element={<Navigate to="/login" replace />} />
+      <Route path="/clientes" element={<CustomerPortalShell />}><Route index element={<CustomerAccountPage />} /><Route path="perfil" element={<CustomerAccountPage profile />} /><Route path="completar-perfil" element={<CompleteProfilePage />} /><Route path="productos" element={<ClientCatalogPage />} /><Route path="productos/:productId" element={<PortalProductDetailPage privateCatalog />} /></Route>
       <Route path="/tienda" element={<StorefrontHome />} />
       <Route path="/soluciones" element={<SolutionsPage />} />
       <Route path="/nosotros" element={<AboutPage />} />
@@ -195,6 +211,7 @@ function App() {
       <Route path="/servicios/soporte" element={<SupportPage />} />
       <Route path="/servicios/soporte/configurar" element={<ConfigureEquipmentPage />} />
       <Route path="/servicios/certificaciones" element={<CertificationsPage />} />
+      <Route path="/capacitate" element={<TrainingCalendarPage />} />
       <Route path="/catalogo" element={<CatalogIndexPage />} />
       <Route path="/catalogo/categoria/:slug" element={<CategoryPage />} />
       <Route path="/catalogo/buscar" element={<SearchResultsPage />} />
@@ -203,8 +220,9 @@ function App() {
       <Route path="/productos/:slug" element={<ProductDetailRoute />} />
       {/* The storefront owns every unknown route: a visitor never lands on the
           internal app (/, /commercial/*, ...) from a dead or future link. */}
-      <Route path="*" element={<Navigate to="/tienda" replace />} />
+      <Route path="*" element={<StorefrontNotFoundPage />} />
     </Routes>
+    </>
   )
 }
 

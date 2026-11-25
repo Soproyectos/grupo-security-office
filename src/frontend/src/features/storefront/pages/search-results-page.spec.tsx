@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { PublicProductResult } from '../types/publicProduct'
 import SearchResultsPage from './SearchResultsPage'
+import { CAMERA_SUBCATEGORY_SLUGS } from '../constants/home-catalog'
 
 /**
  * The repo has no DOM environment and no @testing-library, so — as
@@ -28,7 +29,14 @@ const searchMock = vi.hoisted(() => ({
   retry: retryMock,
 }))
 
-vi.mock('../hooks/usePublicProductListing', () => ({ usePublicProductListing: () => searchMock }))
+const listingMock = vi.hoisted(() => vi.fn())
+
+vi.mock('../hooks/usePublicProductListing', () => ({
+  usePublicProductListing: (filters: unknown) => {
+    listingMock(filters)
+    return searchMock
+  },
+}))
 
 const results: PublicProductResult[] = [
   {
@@ -55,8 +63,12 @@ const results: PublicProductResult[] = [
   },
 ]
 
-function renderPage(query?: string): string {
-  const entry = query === undefined ? '/catalogo/buscar' : `/catalogo/buscar?q=${encodeURIComponent(query)}`
+function renderPage(query?: string, brand?: string, category?: string): string {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (brand) params.set('brand', brand)
+  if (category) params.set('category', category)
+  const entry = params.size ? `/catalogo/buscar?${params.toString()}` : '/catalogo/buscar'
   return renderToStaticMarkup(
     createElement(
       MemoryRouter,
@@ -87,9 +99,37 @@ beforeEach(() => {
   searchMock.loadMoreError = false
   loadMoreMock.mockReset()
   retryMock.mockReset()
+  listingMock.mockReset()
 })
 
 describe('resultados de búsqueda', () => {
+  it('con category=camaras envía las subcategorías reales de cámaras', () => {
+    renderPage(undefined, 'hikvision', 'camaras')
+
+    expect(listingMock).toHaveBeenCalledWith({
+      q: '',
+      brand: 'hikvision',
+      category: 'camaras',
+      subcategory: CAMERA_SUBCATEGORY_SLUGS,
+    })
+    expect(CAMERA_SUBCATEGORY_SLUGS).toBe('camaras-ip-y-wi-fi,camaras-analogicas,camaras-especiales-y-para-vehiculos')
+  })
+
+  it('sin category no envía subcategory', () => {
+    renderPage(undefined, 'hikvision')
+
+    expect(listingMock).toHaveBeenCalled()
+    expect(listingMock.mock.calls[0]?.[0]).not.toHaveProperty('subcategory')
+  })
+
+  it('ofrece acotar una búsqueda por marca a cámaras', () => {
+    const markup = renderPage(undefined, 'hikvision')
+
+    expect(markup).toContain('«hikvision»')
+    expect(markup).toContain('brand=hikvision&amp;category=camaras')
+    expect(markup).not.toContain('Escribe lo que estás buscando')
+  })
+
   it('muestra una tarjeta por producto con nombre, precio, imagen y link', () => {
     const markup = renderPage('cámara')
 
@@ -101,7 +141,8 @@ describe('resultados de búsqueda', () => {
     // (dev: relative, served by the Vite proxy).
     expect(markup).toContain('src="/api/files/img-1"')
     expect(markup).toContain('$ 118.259')
-    expect(markup).toContain('Precio a consultar')
+    expect(markup).toContain('>Cotizar</span>')
+    expect(markup).not.toContain('Precio a consultar')
   })
 
   it('muestra la cantidad de resultados junto al término buscado', () => {

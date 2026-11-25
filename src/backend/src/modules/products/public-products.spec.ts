@@ -238,6 +238,7 @@ describe('PublicProductsController', () => {
   const catalogService = {
     search: jest.fn(),
     getDetail: jest.fn(),
+    listBrands: jest.fn(),
   };
   const PRODUCT_ID = '3f2b8c1e-6a4d-4e0b-9d57-1c2a3b4c5d6e';
 
@@ -317,8 +318,37 @@ describe('PublicProductsController', () => {
     expect(catalogService.search).toHaveBeenCalledWith({ category: 'camaras-ip', offset: 48, limit: 48 });
   });
 
+  it('pasa el filtro brand al servicio de catálogo', async () => {
+    await request(app.getHttpServer()).get('/api/public/products?brand=hikvision').expect(200);
+    expect(catalogService.search).toHaveBeenCalledWith({ brand: 'hikvision' });
+  });
+
+  it('pasa el filtro subcategory al servicio de catálogo', async () => {
+    await request(app.getHttpServer())
+      .get('/api/public/products?category=camaras&subcategory=camaras-ip-y-wi-fi&brand=hikvision&q=IP&offset=12&limit=24')
+      .expect(200);
+    expect(catalogService.search).toHaveBeenCalledWith({
+      category: 'camaras', subcategory: 'camaras-ip-y-wi-fi', brand: 'hikvision', q: 'IP', offset: 12, limit: 24,
+    });
+  });
+
+  it('rechaza un filtro brand que excede el tamaño permitido', async () => {
+    await request(app.getHttpServer()).get('/api/public/products?brand=' + 'x'.repeat(101)).expect(400);
+    expect(catalogService.search).not.toHaveBeenCalled();
+  });
+
+  it('resuelve la lista de marcas en la ruta brands', async () => {
+    const brands = [{ name: 'Hikvision', slug: 'hikvision', productCount: 3 }];
+    catalogService.listBrands.mockResolvedValue(brands);
+
+    const response = await request(app.getHttpServer()).get('/api/public/products/brands').expect(200);
+    expect(response.body).toEqual(brands);
+    expect(catalogService.getDetail).not.toHaveBeenCalled();
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, PublicProductsController.prototype.listBrands)).toBe(true);
+  });
+
   it('rechaza offset negativo o no entero, category vacía y limit sobre el tope de 48', async () => {
-    for (const query of ['offset=-1', 'offset=1.5', 'offset=abc', 'category=', 'limit=49', 'limit=2.5']) {
+    for (const query of ['offset=-1', 'offset=1.5', 'offset=abc', 'category=', 'subcategory=', 'limit=49', 'limit=2.5']) {
       await request(app.getHttpServer()).get(`/api/public/products?${query}`).expect(400);
     }
     expect(catalogService.search).not.toHaveBeenCalled();

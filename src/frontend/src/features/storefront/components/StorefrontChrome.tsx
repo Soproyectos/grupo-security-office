@@ -9,6 +9,7 @@ type StorefrontChromeProps = {
   home?: boolean
   /** Header search field; defaults to on for inner pages and off for the home. */
   search?: boolean
+  hideMobileWhatsapp?: boolean
 }
 
 const SEARCH_ROUTE = '/catalogo/buscar'
@@ -40,13 +41,13 @@ function NavigationIcon({ name }: { name: keyof typeof navigationIcons }) {
   )
 }
 
-export default function StorefrontChrome({ children, home = false, search }: StorefrontChromeProps) {
+export default function StorefrontChrome({ children, home = false, search, hideMobileWhatsapp = false }: StorefrontChromeProps) {
   const showSearch = search ?? !home
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const catalogActive = home || pathname.startsWith('/catalogo')
   return (
-    <div className="min-h-screen bg-surface-50 text-ink-900">
+    <div className={`flex min-h-screen flex-col bg-surface-50 text-ink-900 [&>main]:flex-1${hideMobileWhatsapp ? " pb-32 lg:pb-0" : ""}`}>
       <header className="relative border-b border-surface-200 bg-white">
         <div className="mx-auto flex max-w-[105rem] flex-wrap items-center gap-x-4 py-1.5 lg:min-h-[84px] lg:flex-nowrap lg:gap-x-7 lg:py-0 px-5 sm:px-8 lg:px-12">
           <Link
@@ -140,7 +141,7 @@ export default function StorefrontChrome({ children, home = false, search }: Sto
         rel="noreferrer noopener"
         aria-label="Escríbenos por WhatsApp"
         title="Escríbenos por WhatsApp"
-        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg transition hover:brightness-95"
+        className={`fixed bottom-5 right-5 z-50 h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg transition hover:brightness-95 ${hideMobileWhatsapp ? 'hidden lg:flex' : 'flex'}`}
       >
         <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6" aria-hidden="true">
           <path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3zm0 16.3a7.3 7.3 0 0 1-3.7-2l-.3-.3-2.7.7.7-2.6-.2-.3A7.3 7.3 0 1 1 12 19.3zm4.1-5.4c-.2-.1-1.3-.6-1.5-.7-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.4.3-.6.1a6 6 0 0 1-3-2.6c-.2-.3 0-.4.1-.6l.5-.6c.1-.2.1-.3 0-.5l-.7-1.7c-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.5.1-.7.3-.9.9-.9 2.1.1 3.7a9.7 9.7 0 0 0 3.9 3.5c1.5.7 2.3.7 3 .6.5-.1 1.3-.6 1.5-1.1.2-.5.2-1 .1-1.1l-.5-.3z" />

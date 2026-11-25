@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { MenuCategory } from '../types/categoryMenu'
-import type { PublicProductResult } from '../types/publicProduct'
+import type { PublicProductFilters, PublicProductResult } from '../types/publicProduct'
 import CategoryPage from './CategoryPage'
 
 /**
@@ -32,9 +33,31 @@ const productsMock = vi.hoisted(() => ({
   loadMoreError: false,
   loadMore: vi.fn(),
   retry: vi.fn(),
+  filters: {} as PublicProductFilters,
+  paged: { filters: {} as PublicProductFilters, page: 1, pageSize: 20 },
 }))
 
-vi.mock('../hooks/usePublicProductListing', () => ({ usePublicProductListing: () => productsMock }))
+vi.mock('../hooks/usePublicProductListing', () => ({
+  usePublicProductListing: (filters: { category?: string; subcategory?: string; brand?: string }) => {
+    productsMock.filters = filters
+    return productsMock
+  },
+}))
+
+vi.mock('../hooks/usePublicProductPage', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../hooks/usePublicProductPage')>(),
+  usePublicProductPage: (filters: PublicProductFilters, page: number, pageSize: number) => {
+    productsMock.paged = { filters, page, pageSize }
+    const ready = productsMock.status === 'ready'
+    return {
+      data: ready ? { items: productsMock.items, total: productsMock.total } : undefined,
+      isPending: productsMock.status === 'loading',
+      isSuccess: ready,
+      isError: productsMock.status === 'error',
+      refetch: productsMock.retry,
+    }
+  },
+}))
 
 vi.mock('../hooks/useCategoryMenu', () => ({ useCategoryMenu: () => menuMock }))
 
@@ -50,13 +73,15 @@ function node(
 ): MenuCategory {
   return {
     id,
+    ...(options.subcategoryId ? { subcategoryId: options.subcategoryId } : {}),
+    ...(options.subcategorySlug ? { subcategorySlug: options.subcategorySlug } : {}),
     name,
     slug,
     imageUrl: options.imageUrl ?? null,
     iconUrl: options.iconUrl ?? null,
     isFeatured: options.isFeatured ?? false,
     sortOrder: options.sortOrder ?? 0,
-    productCount: 0,
+    productCount: options.productCount ?? 1,
     children: options.children ?? [],
   }
 }
@@ -88,11 +113,10 @@ const cablesUtp = node('f-cables', 'Cables UTP', 'cables-utp')
 
 const menu: MenuCategory[] = [cablesUtp, videovigilancia, acceso]
 
-function renderPage(slug: string): string {
-  return renderToStaticMarkup(
-    createElement(
+function renderPage(slug: string, query = ''): string {
+  const route = createElement(
       MemoryRouter,
-      { initialEntries: [`/catalogo/categoria/${slug}`] },
+      { initialEntries: [`/catalogo/categoria/${slug}${query}`] },
       createElement(
         Routes,
         null,
@@ -101,8 +125,9 @@ function renderPage(slug: string): string {
           element: createElement(CategoryPage),
         }),
       ),
-    ),
   )
+  const client = new QueryClient()
+  return renderToStaticMarkup(createElement(QueryClientProvider, { client }, route))
 }
 
 /** Number of times a substring shows up in the markup. */
@@ -133,11 +158,49 @@ beforeEach(() => {
 })
 
 describe('búsqueda de la categoría por slug', () => {
+  it('mantiene accesible por URL directa una categoría vacía y ofrece contacto', () => {
+    const emptyCategory = node('empty-child', 'Cámaras especiales', 'camaras-especiales', { productCount: 0 })
+    menuMock.categories = [node('cameras', 'Cámaras', 'camaras', { productCount: 0, children: [emptyCategory] })]
+
+    const markup = renderPage('camaras-especiales')
+
+    expect(markup).toContain('<h1 class="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">Cámaras especiales</h1>')
+    expect(markup).toContain('Aún no hay productos en esta categoría')
+    expect(markup).toContain('href="/servicios/soporte"')
+  })
+
+  it('conserva subcategoría, marca y varios requisitos al leer la URL de Cámaras', () => {
+    const cameraRoot = node('root-camera', 'Cámaras', 'camaras', {
+      productCount: 2,
+      children: [
+        node('ip', 'Cámaras IP y Wi-Fi', 'legacy-ip-row', { productCount: 1, subcategoryId: 'sub-ip', subcategorySlug: 'camaras-ip-wifi' }),
+        node('analog', 'Cámaras analógicas', 'camaras-analogicas', { productCount: 1, subcategoryId: 'sub-analog' }),
+        node('special', 'Cámaras especiales y para vehículos', 'camaras-especiales-vehiculos', { productCount: 1, subcategoryId: 'sub-special' }),
+        node('accessories', 'Soportes y accesorios', 'soportes-accesorios', { productCount: 8, subcategoryId: 'sub-accessories' }),
+      ],
+    })
+    menuMock.categories = [cameraRoot]
+
+    const markup = renderPage('camaras', '?tipo=camaras-ip-wifi&brand=hikvision&keySpec=resolution%3A4k&requirement=protocolo%3AHTTP&requirement=protocolo%3AHTTPS')
+
+    expect(markup).toContain('>Cámaras IP y Wi-Fi</h1>')
+    expect(markup).toContain('href="/catalogo/categoria/camaras"')
+    expect(markup).not.toContain('id="camera-family-filter"')
+    expect(markup).not.toContain('id="categoria-subcategorias"')
+    expect(productsMock.paged).toEqual({
+      filters: { category: 'camaras', subcategory: 'camaras-ip-wifi', brand: 'hikvision', q: undefined, keySpec: [], requirement: ['protocolo:HTTP', 'protocolo:HTTPS'] },
+      page: 1,
+      pageSize: 20,
+    })
+
+    expect(renderPage('camaras', '?tipo=soportes-accesorios')).toContain('>Soportes y accesorios</h1>')
+  })
+
   /** A root is found and the breadcrumb has no family above it. */
   it('responde por una raíz sin familia en la migaja de pan', () => {
     const markup = renderPage('videovigilancia')
 
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Videovigilancia</h1>')
+    expect(markup).toContain('<h1 class="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">Videovigilancia</h1>')
     expect(occurrences(markup, 'aria-current="page"')).toBe(1)
     // Nothing between Catálogo and the category itself.
     expect(occurrences(markup, 'href="/catalogo/categoria/')).toBe(2)
@@ -151,7 +214,7 @@ describe('búsqueda de la categoría por slug', () => {
   it('responde por una categoría de nivel 3 con su cadena de ancestros', () => {
     const markup = renderPage('camaras-ip-domo')
 
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Domo</h1>')
+    expect(markup).toContain('<h1 class="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">Domo</h1>')
     expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
     expect(markup).toContain('href="/catalogo/categoria/camaras-ip"')
     expect(markup).toContain('Videovigilancia')
@@ -206,7 +269,7 @@ describe('categoría conocida', () => {
   it('usa el nombre de la categoría como título de la página', () => {
     const markup = renderPage('camaras-ip')
 
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Cámaras IP</h1>')
+    expect(markup).toContain('<h1 class="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">Cámaras IP</h1>')
   })
 
   it('enlaza cada subcategoría con su página de categoría', () => {
@@ -219,8 +282,9 @@ describe('categoría conocida', () => {
     expect(markup).not.toContain('href="/catalogo/categoria/camaras-ip-domo"')
   })
 
-  it('ordena las subcategorías por sortOrder', () => {
-    const markup = renderPage('camaras-ip')
+  it('ordena las subcategorías de una familia por sortOrder', () => {
+    menuMock.categories = [node('test-root', 'Familia', 'familia', { children: camarasIp.children })]
+    const markup = renderPage('familia')
 
     const domo = markup.indexOf('camaras-ip-domo')
     const bala = markup.indexOf('camaras-ip-bala')
@@ -232,13 +296,14 @@ describe('categoría conocida', () => {
   })
 
   it('pinta la portada del hijo y el icono de trazo como máscara del texto', () => {
-    const markup = renderPage('camaras-ip')
+    menuMock.categories = [node('test-root', 'Familia', 'familia', { children: camarasIp.children })]
+    const markup = renderPage('familia')
 
     expect(markup).toContain('src="/images/categories/camaras-ip-domo.svg"')
     expect(markup).toContain('text-security-500')
     expect(markup).toMatch(/mask-image:url\((&quot;|')?\/images\/category-icons\/bala\.svg/)
     // PTZ has neither cover nor icon: the circle keeps a neutral placeholder.
-    expect(occurrences(markup, 'class="h-full w-full bg-surface-100"')).toBe(1)
+    expect(occurrences(markup, 'bg-surface-100 text-ink-500"><svg')).toBe(1)
   })
 
   it('muestra la grilla de productos con su precio y el conteo', () => {
@@ -249,8 +314,24 @@ describe('categoría conocida', () => {
     expect(markup).toContain('aria-labelledby="categoria-productos"')
     expect(markup).toContain('Cámara Domo 4K')
     expect(markup).toContain('$ 118.259')
-    expect(markup).toContain('30</span> productos')
+    expect(markup).toContain('30 productos</p>')
     expect(markup).not.toContain('Productos próximamente')
+  })
+
+  it('pagina y busca dentro de la misma subcategoría', () => {
+    productsMock.items = [product]
+    productsMock.total = 85
+    const markup = renderPage('camaras-ip', '?page=2&limit=40&q=domo&brand=hikvision')
+
+    expect(markup).toContain('Página 2 de 3')
+    expect(markup).toContain('Buscar en esta categoría')
+    expect(markup).toContain('Paginación superior')
+    expect(markup).not.toContain('id="categoria-subcategorias"')
+    expect(productsMock.paged).toMatchObject({
+      filters: { category: 'camaras-ip', q: 'domo', brand: 'hikvision' },
+      page: 2,
+      pageSize: 40,
+    })
   })
 
   it('muestra el esqueleto mientras cargan los productos', () => {
@@ -293,7 +374,7 @@ describe('categoría conocida', () => {
   it('responde por una categoría plana, sin familia', () => {
     const markup = renderPage('cables-utp')
 
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Cables UTP</h1>')
+    expect(markup).toContain('<h1 class="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">Cables UTP</h1>')
     // No family in the trail: the breadcrumb stops at Catálogo.
     expect(markup).toContain('Catálogo')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
@@ -322,19 +403,22 @@ describe('categoría desconocida y error', () => {
     expect(markup).not.toContain('Productos próximamente')
   })
 
-  it('muestra el mismo bloque cuando el árbol no se pudo cargar', () => {
+  it('permite reintentar la carga del árbol de categorías', () => {
     menuMock.status = 'error'
     const markup = renderPage('videovigilancia')
 
-    expect(markup).toContain('Categoría no encontrada')
-    expect(markup).toContain('Volver al catálogo')
+    expect(markup).toContain('No pudimos cargar la categoría')
+    expect(markup).toContain('Intentar de nuevo')
+    expect(markup).not.toContain('Categoría no encontrada')
     expect(markup).not.toContain('aria-labelledby="categoria-subcategorias"')
   })
 
   it('no deja un esqueleto en el DOM cuando el árbol y los productos están listos', () => {
     productsMock.items = [product]
     productsMock.total = 1
-    expect(renderPage('videovigilancia')).not.toContain('role="status"')
+    const markup = renderPage('videovigilancia')
+    expect(markup).not.toContain('Cargando productos')
+    expect(markup).toContain('1 producto</p>')
   })
 })
 

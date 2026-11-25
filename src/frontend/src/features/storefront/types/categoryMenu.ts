@@ -5,6 +5,10 @@
  */
 export interface MenuCategory {
   id: string
+  /** Present for a persisted library Subcategory exposed below its parent category. */
+  subcategoryId?: string
+  /** Persisted Subcategory slug when its menu node is backed by a legacy Category row. */
+  subcategorySlug?: string
   name: string
   slug: string
   imageUrl: string | null

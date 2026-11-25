@@ -22,6 +22,13 @@ export interface PublicProductResult {
   price: PublicPrice | null
 }
 
+/** Summary of a public brand with visible products. */
+export interface PublicBrandSummary {
+  name: string
+  slug: string
+  productCount: number
+}
+
 /** One page of the public listing plus the total the backend reports. */
 export interface PublicProductListing {
   items: PublicProductResult[]
@@ -32,5 +39,13 @@ export interface PublicProductListing {
 
 export interface PublicProductFilters {
   q?: string
+  sku?: readonly string[]
   category?: string
+  /** Persisted subcategory slug, scoped to category when provided. */
+  subcategory?: string
+  brand?: string
+  keySpec?: string[]
+  requirement?: string[]
+  /** `recent`: newest published first (the server ignores it when `q` is set). */
+  sort?: 'recent'
 }

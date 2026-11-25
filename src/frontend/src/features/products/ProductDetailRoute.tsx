@@ -23,7 +23,7 @@ export function ProductDetailRoute({ idOrSlug, headerOffset }: ProductDetailRout
   useDocumentTitle(pageTitle(data ? data.name : notFound ? 'Producto no encontrado' : 'Producto'));
 
   return (
-    <StorefrontChrome>
+    <StorefrontChrome hideMobileWhatsapp={data !== undefined && !data.isInformational}>
       <main>
         {isPending && <ProductDetailSkeleton />}
         {isError && (

@@ -1,5 +1,9 @@
 # `docs/handoffs/` — Traspasos
 
+## Continuidad de la tienda local
+
+[Estado vigente del 24/11/2026: tienda 5181, atributos cargados, recuperación y arranque](2026-11-24-tienda-local-estado-vigente.md). Es el punto de entrada para esta entrega; incluye pruebas, límites y pendientes.
+
 Esta carpeta guarda dos tipos de documentos:
 
 - **Handoff de sesión:** estado del proyecto y pendientes entre sesiones (`HANDOFF_ACTUAL.md`).

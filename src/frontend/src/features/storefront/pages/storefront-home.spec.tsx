@@ -1,8 +1,26 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import StorefrontHome from './StorefrontHome'
+
+type MockMenuNode = {
+  id: string
+  name: string
+  slug: string
+  productCount: number
+  subcategoryId?: string
+  subcategorySlug?: string
+  children: MockMenuNode[]
+}
+
+const categoryMenuMock = vi.hoisted(() => ({
+  status: 'ready',
+  categories: [] as MockMenuNode[],
+  retry: vi.fn(),
+}))
+
+vi.mock('../hooks/useCategoryMenu', () => ({ useCategoryMenu: () => categoryMenuMock }))
 
 /**
  * The suite asserts what the visitor sees on a server render
@@ -30,6 +48,20 @@ function occurrences(markup: string, needle: string): number {
   return markup.split(needle).length - 1
 }
 
+beforeEach(() => {
+  categoryMenuMock.status = 'ready'
+  categoryMenuMock.categories = ['camaras', 'alarmas', 'control-de-acceso', 'cableado', 'redes-y-wi-fi', 'energia-y-electricidad', 'audio-y-perifoneo', 'parqueaderos', 'casa-inteligente']
+    .map((slug) => ({
+      id: slug, name: slug, slug, productCount: 1,
+      children: slug === 'camaras' ? [
+        { id: 'sub-ip', name: 'Cámaras IP y Wi-Fi', slug: 'legacy-ip-row', subcategoryId: 'sub-ip', subcategorySlug: 'camaras-ip-wifi', productCount: 1, children: [] },
+        { id: 'sub-analog', name: 'Cámaras analógicas', slug: 'camaras-analogicas', subcategoryId: 'sub-analog', productCount: 1, children: [] },
+        { id: 'sub-special', name: 'Cámaras especiales y para vehículos', slug: 'camaras-especiales', subcategoryId: 'sub-special', productCount: 1, children: [] },
+        { id: 'sub-accessory', name: 'Soportes y accesorios', slug: 'soportes-accesorios', subcategoryId: 'sub-accessory', productCount: 5, children: [] },
+      ] : [],
+    }))
+})
+
 describe('portada: buscador', () => {
   it('muestra un único h1 con el título de la tienda', () => {
     const markup = renderPage()
@@ -52,7 +84,7 @@ describe('portada: confianza', () => {
   it('muestra solo datos verificados del sitio actual', () => {
     const markup = renderPage()
 
-    for (const text of ['Distribuidor autorizado', 'Hikvision y Ezviz', 'Soporte sin costo adicional', 'Garantía de 1 año', 'Cuatro sedes']) {
+    for (const text of ['Distribuidor autorizado', 'Hikvision y Ezviz', 'Soporte técnico', 'Garantía de 1 año', 'Cuatro sedes']) {
       expect(markup).toContain(text)
     }
   })
@@ -66,41 +98,52 @@ describe('portada: categorías con imagen y marcas', () => {
     for (const slug of ['camaras', 'alarmas', 'control-de-acceso', 'cableado']) {
       expect(markup).toContain(`href="/catalogo/categoria/${slug}"`)
     }
-    expect(markup.split('storefront-art.png').length - 1).toBeGreaterThanOrEqual(5)
+    for (const slug of ['camaras', 'alarmas', 'control-de-acceso', 'cableado']) {
+      expect(markup).toContain(`src="/images/home/tiles/${slug}.jpg"`)
+    }
   })
 
-  it('muestra los banners de Hikvision y Ezviz con texto alternativo', () => {
+  it('oculta mosaicos de categoría sin productos públicos', () => {
+    categoryMenuMock.categories = categoryMenuMock.categories.map((category) =>
+      category.slug === 'camaras' ? { ...category, productCount: 0 } : category,
+    )
+    const markup = renderPage()
+    expect(markup).not.toContain('href="/catalogo/categoria/camaras"')
+    expect(markup).toContain('href="/catalogo/categoria/alarmas"')
+  })
+
+  it('mantiene las marcas cuando falla el menú y permite reintentar las categorías', () => {
+    categoryMenuMock.status = 'error'
+    categoryMenuMock.categories = []
+
     const markup = renderPage()
 
-    expect(markup).toContain('alt="Hikvision: distribuidor autorizado"')
-    expect(markup).toContain('alt="Ezviz: cámaras H8X, H80x y H90x"')
-    expect(markup).toContain('href="/catalogo/buscar?q=Hikvision"')
-    expect(markup).toContain('href="/catalogo/buscar?q=Ezviz"')
+    expect(markup).toContain('No pudimos cargar las categorías')
+    expect(markup).toContain('Reintentar')
+    expect(markup).not.toContain('href="/catalogo/categoria/camaras"')
   })
 })
 
-describe('portada: qué quieres proteger', () => {
-  it('ofrece tres entradas que llevan a categorías reales', () => {
+describe('portada: secciones retiradas', () => {
+  it('no muestra «¿Qué quieres proteger?» ni los banners de marcas', () => {
     const markup = renderPage()
 
-    expect(markup).toContain('aria-labelledby="home-protect-title"')
-    for (const name of ['Mi casa', 'Mi negocio', 'Mi conjunto o edificio']) {
-      expect(markup).toContain(name)
-    }
-    expect(markup).toContain('href="/catalogo/categoria/camaras"')
-    expect(markup).toContain('href="/catalogo/categoria/control-de-acceso"')
-    expect(markup).toContain('href="/soluciones"')
+    expect(markup).not.toContain('home-protect-title')
+    expect(markup).not.toContain('Qué quieres proteger')
+    expect(markup).not.toContain('aria-label="Marcas"')
+    expect(markup).not.toContain('alt="Ezviz: cámaras H8X, H80x y H90x"')
   })
 })
 
 describe('portada: secciones de productos', () => {
-  it('muestra un estante por cada categoría destacada con su enlace «Ver todo»', () => {
+  it('no muestra vitrinas de productos y admite categorías sin subcategorías en el menú', () => {
+    categoryMenuMock.categories = categoryMenuMock.categories.map((category) => ({ ...category, children: [] }))
     const markup = renderPage()
 
-    for (const title of ['Cámaras', 'Alarmas', 'Control de acceso', 'Casa inteligente']) {
+    for (const title of ['Cámaras de seguridad', 'Alarmas', 'Control de acceso']) {
       expect(markup).toContain(title)
     }
-    expect(markup.split('Ver todo<').length - 1).toBe(4)
+    expect(markup).not.toContain('id="home-shelf-')
   })
 
   it('lista el resto de categorías como mosaico y enlaza a todo el catálogo', () => {

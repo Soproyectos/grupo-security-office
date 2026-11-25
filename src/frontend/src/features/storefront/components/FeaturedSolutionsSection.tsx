@@ -100,14 +100,14 @@ export default function FeaturedSolutionsSection({ solutions }: { solutions: Fea
                 />
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-1.5 p-5">
-                <p className="text-eyebrow font-semibold uppercase text-security-600">
+                <p className="text-sm font-semibold uppercase text-security-600">
                   {solution.category}
                 </p>
                 <h3 className="font-semibold text-ink-900">{solution.title}</h3>
-                <p className="text-body-sm text-ink-500">{solution.description}</p>
+                <p className="text-sm text-ink-500">{solution.description}</p>
                 <Link
                   to={solution.href}
-                  className="mt-auto inline-block break-words pt-3 text-body-sm font-bold text-security-500 transition hover:text-security-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
+                  className="mt-auto inline-block break-words pt-3 text-sm font-bold text-security-500 transition hover:text-security-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
                 >
                   {solution.ctaLabel}
                 </Link>

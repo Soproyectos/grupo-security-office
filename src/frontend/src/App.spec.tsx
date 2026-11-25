@@ -217,8 +217,17 @@ describe('rutas administrativas con asignaciones expresas', () => {
   })
   it('la excepción explícita permite que Super Admin asigne paneles', () => {
     login(['Super Admin'])
-    expect(renderAt('/users/access', [])).toContain('Asignación de paquetes de acceso')
+    expect(renderAt('/users/access', [])).toContain('Elige a una persona de la lista para ver sus paneles y administrar sus accesos.')
   })
+  it('ofrece una página de recuperación en una ruta pública inexistente', () => {
+    const html = renderAt('/catalogo/pagina-inexistente', [])
+    expect(html).toContain('No encontramos esta página')
+    expect(html).toContain('alt="Grupo Security"')
+    expect(html).toContain('href="/catalogo"')
+    expect(html).toContain('Volver al catálogo')
+    expect(html).toContain('Ir a la tienda')
+  })
+
   it('no aplica estas restricciones administrativas a la tienda pública', () => {
     expect(renderAt('/tienda', [])).not.toContain('Sin paneles asignados')
   })

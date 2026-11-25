@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth.store'
+import { useDocumentTitle } from '../features/storefront/hooks/useDocumentTitle'
+import { ADMIN_TITLE } from '../features/storefront/utils/documentTitle'
 import api from '../services/api'
 import MfaChallenge, {
   BackupCodes,
@@ -21,6 +23,7 @@ interface LoginErrors {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Login() {
+  useDocumentTitle(ADMIN_TITLE)
   const [form, setForm] = useState<LoginForm>({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
@@ -296,10 +299,10 @@ export default function Login() {
                   <span className="ml-2 text-sm text-neutral-700">Mantener sesión iniciada</span>
                 </label>
                 <a
-                  href="/recuperar-contrasena"
-                  className="text-sm text-security-600 hover:text-security-700 font-medium"
+                  href="mailto:soporte@gruposecurity.com"
+                  className="inline-flex min-h-11 items-center rounded-control text-sm font-medium text-security-600 hover:text-security-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
                 >
-                  ¿Olvidaste tu contraseña?
+                  Pedir ayuda con mi contraseña
                 </a>
               </div>
 
