@@ -51,6 +51,21 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
       API_PORT: 3000
+      # Customer portal (Better Auth). Optional here so a rollback to an older image
+      # still starts; the new API refuses to boot in production without the first three.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      PORTAL_AUTH_URL: ${PORTAL_AUTH_URL:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      STOREFRONT_URL: ${STOREFRONT_URL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PRIVACY_POLICY_VERSION: ${PRIVACY_POLICY_VERSION:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     volumes:
       - uploads:/app/uploads
       # Manifests and import reports are persisted on the VPS and never baked

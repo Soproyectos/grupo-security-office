@@ -21,6 +21,11 @@ COPY public ./public
 COPY .env.production ./.env.production
 COPY src ./src
 
+# Public Cloudflare Turnstile site key (not a secret): Vite inlines it at build time.
+# Empty means the widget is not rendered, so the backend must not require the captcha.
+ARG VITE_TURNSTILE_SITE_KEY=""
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
+
 # Typecheck then bundle
 RUN npx tsc -b && npx vite build
 
