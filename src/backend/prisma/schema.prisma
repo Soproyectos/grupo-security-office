@@ -1223,10 +1223,19 @@ model PortalAccount {
   rejectedById    String?
   rejectedAt      DateTime?
   rejectionReason String?
+  /// Data-processing policy acceptance (the server decides the version).
+  privacyAcceptedAt   DateTime?
+  privacyVersion      String?
+  /// Customer asked to delete the account; staff handles it, nothing is deleted automatically.
+  deletionRequestedAt DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   customer        Customer?          @relation("PortalAccountCustomer", fields: [customerId], references: [id])
   sessions        PortalSession[]    @relation("PortalAccountSession")
+  passwordReset   PortalPasswordReset?
+  /// Usuario de Better Auth vinculado (login nuevo). Null en cuentas legacy.
+  authUserId      String?            @unique
+  authUser        PortalAuthUser?    @relation(fields: [authUserId], references: [id], onDelete: SetNull)
 
   @@index([state, createdAt])
   @@index([customerId])
@@ -1249,6 +1258,16 @@ model PortalSession {
   @@index([accountId, revokedAt])
   @@index([expiresAt])
   @@map("portal_sessions")
+}
+
+/// Enlace de recuperación vigente de una cuenta del portal.
+model PortalPasswordReset {
+  accountId String        @id
+  account   PortalAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenHash String        @unique
+  expiresAt DateTime
+
+  @@map("portal_password_resets")
 }
 
 /// Tarifa de precios asignada a cada tipo de cuenta del portal.
@@ -1325,6 +1344,7 @@ enum PortalAccountState {
   PENDING
   ACTIVE
   REJECTED
+  SUSPENDED
 }
 
 enum PromotionAudience {
@@ -1754,4 +1774,71 @@ model ProductSource {
   @@unique([sourceFile, sourceSheet, sourceRow, cutoffDate])
   @@index([productId])
   @@map("product_sources")
+}
+
+/// Better Auth (login del portal de clientes). Tablas propias: no mezclan con empleados.
+model PortalAuthUser {
+  id            String               @id
+  name          String
+  email         String               @unique
+  emailVerified Boolean              @default(false)
+  image         String?
+  companyName   String               @default("")
+  type          String               @default("FINAL_CUSTOMER")
+  documentId    String?
+  phone         String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @default(now()) @updatedAt
+  sessions      PortalAuthSession[]
+  accounts      PortalAuthAccount[]
+  portalAccount PortalAccount?
+
+  @@map("portal_auth_user")
+}
+
+model PortalAuthSession {
+  id        String         @id
+  expiresAt DateTime
+  token     String         @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      PortalAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("portal_auth_session")
+}
+
+model PortalAuthAccount {
+  id                    String         @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  PortalAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([userId])
+  @@map("portal_auth_account")
+}
+
+model PortalAuthVerification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([identifier])
+  @@map("portal_auth_verification")
 }

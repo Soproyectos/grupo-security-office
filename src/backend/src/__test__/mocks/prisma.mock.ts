@@ -86,8 +86,18 @@ export const createPrismaMock = () => ({
     count: jest.fn(),
     groupBy: jest.fn(),
   },
+  productRevision: { findMany: jest.fn().mockResolvedValue([]) },
   category: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+  },
+  subcategory: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),

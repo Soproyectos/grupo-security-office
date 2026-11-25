@@ -1,13 +1,17 @@
 jest.mock('bcrypt', () => ({ compare: jest.fn(), hash: jest.fn() }));
 
-import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { CustomerPortalService } from './customer-portal.service';
 
 const prisma: any = {
   portalAccount: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   portalTier: {findUnique:jest.fn(),findFirst:jest.fn(),create:jest.fn(),update:jest.fn()},
+  $transaction: jest.fn((operation) => operation(prisma)),
+  $queryRaw: jest.fn(),
   portalSession: { create: jest.fn(), updateMany: jest.fn() },
+  portalPasswordReset: { upsert: jest.fn(), findUnique: jest.fn(), deleteMany: jest.fn() },
   portalPriceListMapping: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   brand: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
@@ -19,6 +23,7 @@ const prisma: any = {
 const jwt: any = { sign: jest.fn(() => 'portal-token') };
 const config: any = { get: jest.fn((_key: string, fallback?: unknown) => fallback) };
 const audit: any = { log: jest.fn() };
+const mail: any = { send: jest.fn() };
 
 const REGISTER_DTO = {
   email: 'SALES@ACME.CO', password: 'long-password-12', contactName: 'Ana',
@@ -27,7 +32,7 @@ const REGISTER_DTO = {
 
 describe('CustomerPortalService', () => {
   let service: CustomerPortalService;
-  beforeEach(() => { jest.clearAllMocks(); service = new CustomerPortalService(prisma, jwt, config, audit); });
+  beforeEach(() => { jest.clearAllMocks(); service = new CustomerPortalService(prisma, jwt, config, audit, mail); });
 
   // ---------- Registro ----------
 
@@ -91,6 +96,7 @@ describe('CustomerPortalService', () => {
   it('login de cuenta ACTIVE funciona sin depender de la tarifa configurada', async () => {
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', email: 'sales@acme.co', passwordHash: 'hash', state: 'ACTIVE', type: 'INSTALLER' });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    prisma.$queryRaw.mockResolvedValueOnce([{ passwordHash: 'hash' }]);
     prisma.portalSession.create.mockResolvedValue({});
     // Sin mapping configurado: el login NO se bloquea (el catálogo lo valida).
 
@@ -104,6 +110,125 @@ describe('CustomerPortalService', () => {
       expect.objectContaining({ expiresIn: '8h' }),
     );
     expect(result.account).toEqual({ id: 'p1', email: 'sales@acme.co', type: 'INSTALLER' });
+  });
+
+  it('rechaza el login si el hash verificado cambió antes de emitir la sesión', async () => {
+    prisma.portalAccount.findUnique.mockResolvedValueOnce({ id: 'p1', passwordHash: 'old-hash', state: 'ACTIVE' });
+    prisma.$queryRaw.mockResolvedValueOnce([{ passwordHash: 'new-hash' }]);
+    (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+
+    await expect(service.login('sales@acme.co', 'old-password', {})).rejects.toThrow(UnauthorizedException);
+    expect(prisma.portalSession.create).not.toHaveBeenCalled();
+    expect(jwt.sign).not.toHaveBeenCalled();
+  });
+
+  describe('recuperación de contraseña', () => {
+    const email = 'sales@acme.co';
+    const account = { id: 'p1', contactName: 'Ana', state: 'ACTIVE' };
+    const token = 'a'.repeat(64);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const password = `  ${'ñ'.repeat(90)}  `;
+    const passwordDigest = createHash('sha256').update(password).digest('hex');
+    const flushBackgroundWork = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    it('envía un enlace de una hora y solo guarda su hash sin tocar sesiones', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValueOnce(account);
+      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
+      config.get.mockReturnValueOnce('https://vitrina.example');
+      const started = Date.now();
+
+      const response = service.requestPasswordReset(' SALES@ACME.CO ');
+      await flushBackgroundWork();
+
+      expect(response.message).toMatch(/Si la cuenta existe/);
+      expect(mail.send).toHaveBeenCalledTimes(1);
+      const link = new URL(mail.send.mock.calls[0][2].split('\n').find((line: string) => line.startsWith('https://')));
+      expect(link.origin).toBe('https://vitrina.example');
+      expect(link.pathname).toBe('/clientes/restablecer');
+      expect(link.searchParams.get('email')).toBe(email);
+      const raw = link.searchParams.get('token')!;
+      expect(raw).toMatch(/^[a-f0-9]{64}$/);
+      const stored = prisma.portalPasswordReset.upsert.mock.calls[0][0].create;
+      expect(stored).toEqual({
+        accountId: 'p1',
+        tokenHash: createHash('sha256').update(raw).digest('hex'),
+        expiresAt: expect.any(Date),
+      });
+      expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(started + 3_600_000);
+      expect(stored.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 3_600_000);
+      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
+      expect(prisma.portalSession.create).not.toHaveBeenCalled();
+    });
+
+    it('da la misma respuesta para cuenta ausente, inactiva y falla de correo', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...account, state: 'PENDING' })
+        .mockResolvedValueOnce(account);
+      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
+      mail.send.mockRejectedValueOnce(new Error('SMTP'));
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const missing = service.requestPasswordReset('missing@example.com');
+        expect(service.requestPasswordReset('pending@example.com')).toEqual(missing);
+        expect(service.requestPasswordReset(email)).toEqual(missing);
+        await flushBackgroundWork();
+        expect(mail.send).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith('No fue posible emitir el correo de recuperación del portal.');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('consume el enlace al cambiar la contraseña y revoca las sesiones de esa cuenta', async () => {
+      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce({ accountId: 'p1' });
+      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
+      prisma.portalPasswordReset.deleteMany.mockResolvedValueOnce({ count: 1 });
+      (bcrypt.hash as jest.Mock).mockResolvedValueOnce('new-hash');
+
+      await expect(service.resetPassword(email, token, password))
+        .resolves.toEqual({ message: 'Contraseña restaurada correctamente' });
+      expect(prisma.portalPasswordReset.findUnique).toHaveBeenCalledWith({
+        where: { tokenHash, account: { email, state: 'ACTIVE' }, expiresAt: { gt: expect.any(Date) } },
+        select: { accountId: true },
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.portalPasswordReset.deleteMany).toHaveBeenCalledWith({
+        where: { accountId: 'p1', tokenHash, expiresAt: { gt: expect.any(Date) } },
+      });
+      expect(bcrypt.hash).toHaveBeenCalledWith(passwordDigest, 12);
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({
+        where: { id: 'p1' }, data: { passwordHash: 'sha256:new-hash' },
+      });
+      expect(prisma.portalSession.updateMany).toHaveBeenCalledWith({
+        where: { accountId: 'p1', revokedAt: null }, data: { revokedAt: expect.any(Date) },
+      });
+
+      prisma.portalAccount.findUnique.mockResolvedValueOnce({ ...account, email, passwordHash: 'sha256:new-hash' });
+      prisma.$queryRaw.mockResolvedValueOnce([{ email, passwordHash: 'sha256:new-hash' }]);
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+      await service.login(email, password, {});
+      expect(bcrypt.compare).toHaveBeenCalledWith(passwordDigest, 'new-hash');
+    });
+
+    it('rechaza el enlace cuando vence o deja de estar vigente antes del consumo', async () => {
+      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce({ accountId: 'p1' });
+      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
+      prisma.portalPasswordReset.deleteMany.mockResolvedValueOnce({ count: 0 });
+      (bcrypt.hash as jest.Mock).mockResolvedValueOnce('unused-hash');
+
+      await expect(service.resetPassword(email, token, password)).rejects.toThrow(UnauthorizedException);
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rechaza sin modificar datos cuando no existe un enlace vigente para la cuenta', async () => {
+      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce(null);
+
+      await expect(service.resetPassword(email, token, password)).rejects.toThrow(UnauthorizedException);
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   // ---------- Catálogo ----------

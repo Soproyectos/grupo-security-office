@@ -1,10 +1,10 @@
 import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException, Inject } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PortalAccountState, PortalAccountType, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import { directLegacyProductLibrary } from '../products/product-library';
@@ -13,13 +13,34 @@ import { CatalogQueryDto } from './dto/catalog-query.dto';
 import { RegisterPortalAccountDto } from './dto/register-portal-account.dto';
 import { ApprovePortalAccountDto, RejectPortalAccountDto } from './dto/review-portal-account.dto';
 import { UpsertPortalPriceListMappingDto } from './dto/upsert-price-list-mapping.dto';
+import { StorefrontMailService } from '../storefront/storefront-mail.service';
+import { UpdatePortalProfileDto } from './dto/portal-profile.dto';
+import { DEFAULT_PRIVACY_POLICY_VERSION } from './portal-auth/portal-auth.rules';
+import { portalAccountView } from './portal-profile';
+import { DeletePortalAccountDto } from './dto/delete-portal-account.dto';
+import { verifyPortalPassword } from './portal-auth/portal-auth.hash';
+import { validatePortalPassword, weakPasswordMessage } from './portal-auth/password-policy';
 
 const GENERIC_LOGIN_ERROR = 'Credenciales inválidas';
 const DUMMY_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEe.7ROU8.4uWxTPoqkbnk1k1ZfMCTPQmPu';
+const RESET_REQUEST_MESSAGE = 'Si la cuenta existe, se ha enviado un correo de recuperación.';
+const RESET_TOKEN_ERROR = 'Token inválido o expirado';
+const PASSWORD_HASH_PREFIX = 'sha256:';
+
+function sha256(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 @Injectable()
 export class CustomerPortalService {
-  constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService, private readonly config: ConfigService, private readonly audit: AuditService,
+  private readonly logger = new Logger(CustomerPortalService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+    private readonly audit: AuditService,
+    private readonly mail: StorefrontMailService,
     /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
     @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
   ) {}
@@ -72,6 +93,7 @@ export class CustomerPortalService {
   listAccounts() {
     return this.prisma.portalAccount.findMany({orderBy:{createdAt:'desc'},take:1000,select:{
       id:true,email:true,contactName:true,companyName:true,documentId:true,type:true,state:true,
+      privacyAcceptedAt:true,deletionRequestedAt:true,
       tierId:true,tier:{select:{id:true,name:true,isActive:true}},createdAt:true,
     }});
   }
@@ -105,10 +127,117 @@ export class CustomerPortalService {
     return {id:updated.id,tierId:updated.tierId};
   }
 
+  private static readonly PRIVACY_REQUIRED = {code:'PRIVACY_NOT_ACCEPTED',message:'Debes aceptar la política de tratamiento de datos'};
+
+  /** Customer completes their own profile. Never touches type, tier or state. */
+  async updateProfile(accountId:string,dto:UpdatePortalProfileDto) {
+    const account=await this.prisma.portalAccount.findUnique({where:{id:accountId},select:{id:true,privacyAcceptedAt:true}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    const acceptsNow=dto.acceptPrivacy===true;
+    if(!account.privacyAcceptedAt&&!acceptsNow)throw new BadRequestException(CustomerPortalService.PRIVACY_REQUIRED);
+    const data:Prisma.PortalAccountUpdateInput={companyName:dto.companyName.trim()};
+    if(dto.documentId!==undefined)data.documentId=dto.documentId.trim()||null;
+    if(dto.phone!==undefined)data.phone=dto.phone.trim()||null;
+    if(!account.privacyAcceptedAt&&acceptsNow){
+      data.privacyAcceptedAt=new Date();
+      data.privacyVersion=this.config.get<string>('PRIVACY_POLICY_VERSION')||DEFAULT_PRIVACY_POLICY_VERSION;
+    }
+    const updated=await this.prisma.portalAccount.update({where:{id:accountId},data,include:{tier:{select:{id:true,name:true,isActive:true}},authUser:{select:{accounts:{select:{providerId:true,password:true}}}}}});
+    return {account:portalAccountView(updated)};
+  }
+
+  /** Records the request only; staff decides and nothing is deleted here. Idempotent. */
+  async requestDeletion(accountId:string) {
+    const account=await this.prisma.portalAccount.findUnique({where:{id:accountId},select:{id:true,deletionRequestedAt:true}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    if(account.deletionRequestedAt)return {deletionRequestedAt:account.deletionRequestedAt};
+    const now=new Date();
+    await this.prisma.portalAccount.update({where:{id:accountId},data:{deletionRequestedAt:now}});
+    await this.audit.log({action:'deletion-request',entity:'PortalAccount',entityId:accountId,newValues:{deletionRequestedAt:now}});
+    return {deletionRequestedAt:now};
+  }
+
+  /** True when the Better Auth user has a credential (email+password) login. Legacy accounts without authUserId: false. */
+  async hasPassword(authUserId?:string|null):Promise<boolean> {
+    if(!authUserId)return false;
+    const credential=await this.prisma.portalAuthAccount.findFirst({where:{userId:authUserId,providerId:'credential',password:{not:null}},select:{id:true}});
+    return !!credential;
+  }
+
+  private static readonly PASSWORD_ALREADY_SET = {code:'PASSWORD_ALREADY_SET',message:'Tu cuenta ya tiene contraseña. Puedes cambiarla en Mis datos.'};
+
+  /**
+   * Google-only accounts create their first password here. `create` is the Better Auth server-side setPassword
+   * call, injected so this stays unit-testable. Acts only on the session owner. Audit carries no personal data.
+   */
+  async createOwnPassword(owner:{id:string;email:string;contactName?:string|null;authUserId?:string|null;hasPassword?:boolean},newPassword:string,create:(password:string)=>Promise<void>) {
+    if(!owner.authUserId)throw new BadRequestException({code:'PASSWORD_NOT_AVAILABLE',message:'Esta cuenta no puede crear contraseña aquí'});
+    if(owner.hasPassword===true)throw new BadRequestException(CustomerPortalService.PASSWORD_ALREADY_SET);
+    const failed=validatePortalPassword(newPassword,{email:owner.email,name:owner.contactName});
+    if(failed.length)throw new BadRequestException({code:'WEAK_PASSWORD',message:weakPasswordMessage(failed)});
+    await create(newPassword);
+    await this.audit.log({action:'set-password',entity:'PortalAccount',entityId:owner.id});
+    return {hasPassword:true};
+  }
+
+  /** Deletes ONLY the portal account (and its auth login); customers, quotes and orders stay. Audit carries no personal data. */
+  async deleteOwnAccount(owner:{id:string;email:string;authUserId?:string|null;hasPassword?:boolean},dto:DeletePortalAccountDto) {
+    // The guard already knows when there is no password: skip the lookup. Otherwise the hash is needed to verify it.
+    const credential=owner.authUserId&&owner.hasPassword!==false
+      ? await this.prisma.portalAuthAccount.findFirst({where:{userId:owner.authUserId,providerId:'credential',password:{not:null}},select:{password:true}})
+      : null;
+    if(credential?.password){
+      const ok=!!dto.password&&await verifyPortalPassword({hash:credential.password,password:dto.password});
+      if(!ok)throw new BadRequestException({code:'DELETE_CONFIRMATION_INVALID',message:'La contraseña no es correcta'});
+    }else if((dto.confirmEmail??'').trim().toLowerCase()!==owner.email.trim().toLowerCase()||!dto.confirmEmail?.trim()){
+      throw new BadRequestException({code:'DELETE_CONFIRMATION_INVALID',message:'El correo escrito no coincide con el de tu cuenta'});
+    }
+    try{
+      await this.prisma.$transaction(async(tx:any)=>{
+        await tx.portalAccount.delete({where:{id:owner.id}});
+        if(owner.authUserId)await tx.portalAuthUser.delete({where:{id:owner.authUserId}});
+      });
+    }catch(error){
+      if((error as {code?:string})?.code==='P2003')throw new ConflictException({code:'DELETE_BLOCKED',message:'No pudimos borrar tu cuenta porque tiene información asociada. Contacta a tu asesor.'});
+      throw error;
+    }
+    await this.audit.log({action:'delete',entity:'PortalAccount',entityId:owner.id});
+    return {deleted:true};
+  }
+
+  async suspend(id:string,reason:string,actorId:string) {
+    const account=await this.prisma.portalAccount.findUnique({where:{id}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    if(account.state==='SUSPENDED')throw new BadRequestException('La cuenta ya está suspendida');
+    if(account.state!=='ACTIVE')throw new BadRequestException('Solo se pueden suspender cuentas activas');
+    const now=new Date();
+    await this.prisma.$transaction(async (tx)=>{
+      await tx.portalAccount.update({where:{id},data:{state:PortalAccountState.SUSPENDED}});
+      if(account.authUserId)await tx.portalAuthSession.deleteMany({where:{userId:account.authUserId}});
+      await tx.portalSession.updateMany({where:{accountId:id,revokedAt:null},data:{revokedAt:now}});
+    });
+    await this.audit.log({userId:actorId,action:'suspend',entity:'PortalAccount',entityId:id,oldValues:{state:account.state},newValues:{state:PortalAccountState.SUSPENDED,reason:reason.trim()}});
+    return {id,state:PortalAccountState.SUSPENDED};
+  }
+
+  async reactivate(id:string,actorId:string) {
+    const account=await this.prisma.portalAccount.findUnique({where:{id}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    if(account.state!=='SUSPENDED')throw new BadRequestException('Solo se pueden reactivar cuentas suspendidas');
+    await this.prisma.portalAccount.update({where:{id},data:{state:PortalAccountState.ACTIVE}});
+    await this.audit.log({userId:actorId,action:'reactivate',entity:'PortalAccount',entityId:id,oldValues:{state:'SUSPENDED'},newValues:{state:PortalAccountState.ACTIVE}});
+    return {id,state:PortalAccountState.ACTIVE};
+  }
+
   async login(emailInput: string, password: string, meta: { ipAddress?: string; userAgent?: string }) {
     const email = emailInput.trim().toLowerCase();
     const account = await this.prisma.portalAccount.findUnique({ where: { email } });
-    const valid = await bcrypt.compare(password, account?.passwordHash ?? DUMMY_HASH);
+    const storedHash = account?.passwordHash ?? DUMMY_HASH;
+    const prehashed = storedHash.startsWith(PASSWORD_HASH_PREFIX);
+    const valid = await bcrypt.compare(
+      prehashed ? sha256(password) : password,
+      prehashed ? storedHash.slice(PASSWORD_HASH_PREFIX.length) : storedHash,
+    );
     if (!account || !valid) throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
     // El estado se revela SOLO con contraseña correcta (dueño de la cuenta);
     // sin contraseña el login sigue siendo un 401 genérico anti-enumeración.
@@ -117,7 +246,13 @@ export class CustomerPortalService {
     const hours = this.config.get<number>('PORTAL_SESSION_HOURS', 8);
     const expiresAt = new Date(Date.now() + hours * 3_600_000);
     const jti = randomUUID();
-    await this.prisma.portalSession.create({ data: { jti, accountId: account.id, expiresAt, ...meta } });
+    await this.prisma.$transaction(async (tx) => {
+      const current = await this.lockActiveAccount(tx, account.id);
+      if (!current || current.passwordHash !== account.passwordHash) {
+        throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
+      }
+      await tx.portalSession.create({ data: { jti, accountId: account.id, expiresAt, ...meta } });
+    });
     const token = this.jwt.sign({ sub: account.id, jti, scope: 'customer_portal' }, { expiresIn: `${hours}h` });
     return { token, expiresAt, account: { id: account.id, email: account.email, type: account.type } };
   }
@@ -312,5 +447,91 @@ export class CustomerPortalService {
     const mapping = await this.prisma.portalPriceListMapping.upsert({ where: { type: dto.type }, create: dto, update: { priceListId: dto.priceListId } });
     await this.audit.log({ userId: actorId, action: 'upsert', entity: 'PortalPriceListMapping', entityId: mapping.id, newValues: { type: dto.type, priceListId: dto.priceListId } });
     return mapping;
+  }
+
+  requestPasswordReset(email: string) {
+    void this.sendPasswordReset(email).catch(() => {
+      this.logger.warn('No fue posible emitir el correo de recuperación del portal.');
+    });
+    return { message: RESET_REQUEST_MESSAGE };
+  }
+
+  private async sendPasswordReset(emailInput: string) {
+    const email = emailInput.trim().toLowerCase();
+    const account = await this.prisma.portalAccount.findUnique({
+      where: { email },
+      select: { id: true, state: true, contactName: true },
+    });
+    if (account?.state !== 'ACTIVE') return;
+
+    const token = randomBytes(32).toString('hex');
+    const storefrontUrl = this.config.get<string>('STOREFRONT_URL');
+    const production = this.config.get<string>('NODE_ENV') === 'production';
+    if (production && !storefrontUrl) throw new Error('Falta STOREFRONT_URL para la recuperación del portal');
+    const url = new URL('/clientes/restablecer', storefrontUrl || 'http://localhost:5173');
+    if ((production && url.protocol !== 'https:') || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('STOREFRONT_URL no es válida para la recuperación del portal');
+    }
+    url.searchParams.set('email', email);
+    url.searchParams.set('token', token);
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const current = await this.lockActiveAccount(tx, account.id);
+      if (current?.email !== email) return false;
+      const reset = { tokenHash: sha256(token), expiresAt: new Date(Date.now() + 3_600_000) };
+      await tx.portalPasswordReset.upsert({
+        where: { accountId: account.id },
+        create: { accountId: account.id, ...reset },
+        update: reset,
+      });
+      return true;
+    });
+    if (!saved) return;
+
+    await this.mail.send(
+      email,
+      'Recuperación de contraseña',
+      `Hola ${account.contactName}.\n\nUsa este enlace para establecer una nueva contraseña:\n${url}\n\nEl enlace vence en una hora y solo puede usarse una vez. Si no lo solicitaste, puedes ignorar este correo.`,
+    );
+  }
+
+  async resetPassword(emailInput: string, token: string, newPassword: string) {
+    const email = emailInput.trim().toLowerCase();
+    const tokenHash = sha256(token);
+    const pending = await this.prisma.portalPasswordReset.findUnique({
+      where: { tokenHash, account: { email, state: 'ACTIVE' }, expiresAt: { gt: new Date() } },
+      select: { accountId: true },
+    });
+    if (!pending) throw new UnauthorizedException(RESET_TOKEN_ERROR);
+
+    // El prehash conserva los bytes que bcrypt descartaría en contraseñas largas.
+    const passwordHash = PASSWORD_HASH_PREFIX + await bcrypt.hash(sha256(newPassword), 12);
+    await this.prisma.$transaction(async (tx) => {
+      const current = await this.lockActiveAccount(tx, pending.accountId);
+      if (current?.email !== email) throw new UnauthorizedException(RESET_TOKEN_ERROR);
+      const now = new Date();
+      const consumed = await tx.portalPasswordReset.deleteMany({
+        where: { accountId: pending.accountId, tokenHash, expiresAt: { gt: now } },
+      });
+      if (!consumed.count) throw new UnauthorizedException(RESET_TOKEN_ERROR);
+      await tx.portalAccount.update({
+        where: { id: pending.accountId },
+        data: { passwordHash },
+      });
+      await tx.portalSession.updateMany({
+        where: { accountId: pending.accountId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+    });
+    return { message: 'Contraseña restaurada correctamente' };
+  }
+
+  private async lockActiveAccount(tx: Prisma.TransactionClient, accountId: string) {
+    // Serializa la emisión de sesiones con el consumo y la revocación.
+    const [account] = await tx.$queryRaw<{ email: string; passwordHash: string }[]>`
+      SELECT "email", "passwordHash" FROM "portal_accounts"
+      WHERE "id" = ${accountId} AND "state" = 'ACTIVE'
+      FOR UPDATE
+    `;
+    return account;
   }
 }
