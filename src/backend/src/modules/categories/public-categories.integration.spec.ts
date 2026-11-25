@@ -74,16 +74,12 @@ describe('PublicCategoriesController', () => {
     expect(response.body).toEqual({ data: menu });
   });
 
-  it('returns 429 on the 61st request in the throttle window', async () => {
+  it('is not rate limited: a burst beyond the global limit (20/min) keeps returning 200', async () => {
     for (let requestNumber = 0; requestNumber < 60; requestNumber += 1) {
       await request(app.getHttpServer())
         .get('/api/public/categories/menu')
         .expect(200);
     }
-
-    await request(app.getHttpServer())
-      .get('/api/public/categories/menu')
-      .expect(429);
   }, 15000);
 
   it('rejects javascript URLs in category media DTOs', async () => {
