@@ -7,7 +7,23 @@ export interface PortalAccount {
   contactName?: string
   companyName?: string
   tier?: { id: string; name: string; isActive: boolean } | null
+  documentId?: string | null
+  phone?: string | null
+  privacyAcceptedAt?: string | null
+  deletionRequestedAt?: string | null
+  profileComplete?: boolean
+  hasPassword?: boolean
+  linkedProviders?: string[]
 }
+
+export interface PortalProfileInput {
+  companyName: string
+  documentId?: string
+  phone?: string
+  acceptPrivacy?: true
+}
+
+export type PortalAdminAccountState = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED'
 
 export interface CatalogProduct {
   id: string

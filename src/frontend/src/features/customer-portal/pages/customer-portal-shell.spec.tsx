@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import CustomerAccountPage, { CustomerPortalShell } from './CustomerAccountPage'
 import ClientCatalogPage from './ClientCatalogPage'
+import CompleteProfilePage from './CompleteProfilePage'
 import PortalProductDetailPage from './PortalProductDetailPage'
 
 /**
@@ -14,15 +16,25 @@ import PortalProductDetailPage from './PortalProductDetailPage'
 
 const sessionMock = vi.hoisted(() => ({
   isPending: false,
+  isSuccess: true,
   isError: false,
   data: undefined as unknown,
 }))
-const logoutMock = vi.hoisted(() => ({ isPending: false, isError: false, mutate: vi.fn() }))
+const logoutMock = vi.hoisted(() => ({ isPending: false, isError: false, mutateAsync: vi.fn() }))
+const profileMock = vi.hoisted(() => ({ isPending: false, isError: false, mutate: vi.fn() }))
 const productMock = vi.hoisted(() => ({ data: undefined as unknown, isLoading: false }))
 
 vi.mock('../hooks/useCustomerPortal', () => ({
   useCustomerPortalSession: () => sessionMock,
   useCustomerPortalLogout: () => logoutMock,
+}))
+vi.mock('../hooks/usePortalProfile', () => ({
+  useDeletePortalAccount: () => profileMock,
+  useUpdatePortalProfile: () => profileMock,
+  useCreatePortalPassword: () => profileMock,
+  useChangePortalPassword: () => profileMock,
+  useChangePortalEmail: () => profileMock,
+  useRefreshPortalSession: () => vi.fn(),
 }))
 vi.mock('../hooks/useCatalog', () => ({
   useCustomerCatalog: () => ({ data: undefined, isLoading: false, isError: false }),
@@ -31,8 +43,7 @@ vi.mock('../hooks/useCatalog', () => ({
 }))
 
 function renderPortal(path: string): string {
-  return renderToStaticMarkup(
-    createElement(
+  const portal = createElement(
       MemoryRouter,
       { initialEntries: [path] },
       createElement(
@@ -43,6 +54,7 @@ function renderPortal(path: string): string {
           { path: '/clientes', element: createElement(CustomerPortalShell) },
           createElement(Route, { index: true, element: createElement(CustomerAccountPage) }),
           createElement(Route, { path: 'perfil', element: createElement(CustomerAccountPage, { profile: true }) }),
+          createElement(Route, { path: 'completar-perfil', element: createElement(CompleteProfilePage) }),
           createElement(Route, { path: 'productos', element: createElement(ClientCatalogPage) }),
           createElement(Route, {
             path: 'productos/:productId',
@@ -50,8 +62,8 @@ function renderPortal(path: string): string {
           }),
         ),
       ),
-    ),
   )
+  return renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, portal))
 }
 
 function occurrences(markup: string, needle: string): number {
@@ -89,11 +101,12 @@ describe.each([
     expect(markup).not.toContain('slate-')
   })
 
-  it('conserva la sesión, el cierre de sesión y la navegación del portal', () => {
+  it('usa el menú superior para la cuenta y el cierre de sesión', () => {
     const markup = renderPortal(path)
 
-    expect(markup).toContain('Ana Pérez')
-    expect(markup).toContain('Cerrar sesión</button>')
+    expect(markup).toContain('title="Ana Pérez"')
+    expect(occurrences(markup, 'Cerrar sesión</button>')).toBe(1)
+    expect(markup).toMatch(/id="storefront-account-menu"[^>]*hidden[^>]*>.*Cerrar sesión<\/button>/)
     expect(markup).toContain('aria-label="Mi cuenta de cliente"')
     expect(markup).toContain('href="/clientes/productos"')
     expect(markup).toContain('href="/clientes/perfil"')

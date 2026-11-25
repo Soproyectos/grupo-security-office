@@ -1,5 +1,6 @@
 import axios from 'axios'
-import type { CatalogFilters, CatalogProduct, CatalogResponse, PendingPortalAccount, PortalAccount, PortalRegistration } from '../features/customer-portal/types/customer-portal.types'
+import api from './api'
+import type { PortalProfileInput, CatalogFilters, CatalogProduct, CatalogResponse, PendingPortalAccount, PortalAccount, PortalRegistration } from '../features/customer-portal/types/customer-portal.types'
 
 export const portalApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -57,6 +58,38 @@ export async function getPortalSession(): Promise<PortalAccount> {
   return unwrap<{ account: PortalAccount }>(response.data).account
 }
 
+export async function updatePortalProfile(input: PortalProfileInput): Promise<PortalAccount> {
+  const response = await portalApi.patch('/customer-portal/auth/me/profile', input)
+  return unwrap<{ account: PortalAccount }>(response.data).account
+}
+
+/** Sets the first password of an account that entered with Google. */
+export async function createPortalPassword(input: { newPassword: string }): Promise<{ hasPassword: boolean }> {
+  const response = await portalApi.post('/customer-portal/auth/me/password', input)
+  return unwrap<{ hasPassword: boolean }>(response.data)
+}
+
+export interface DeletePortalAccountInput {
+  password?: string
+  confirmEmail?: string
+}
+
+export async function deletePortalAccount(input: DeletePortalAccountInput): Promise<{ deleted: boolean }> {
+  const response = await portalApi.post('/customer-portal/auth/me/delete', input)
+  return unwrap<{ deleted: boolean }>(response.data)
+}
+
+/** Internal panel actions: they use the staff session client, not the customer one. */
+export async function suspendPortalAccount(id: string, reason: string) {
+  const response = await api.post(`/customer-portal/admin/accounts/${id}/suspend`, { reason })
+  return response.data
+}
+
+export async function reactivatePortalAccount(id: string) {
+  const response = await api.post(`/customer-portal/admin/accounts/${id}/reactivate`)
+  return response.data
+}
+
 export async function logoutPortal(): Promise<void> {
   await portalApi.post('/customer-portal/auth/logout')
 }
@@ -74,4 +107,14 @@ export async function approvePortalAccount(id: string, customerId?: string) {
 export async function rejectPortalAccount(id: string, reason: string) {
   const response = await portalApi.post(`/customer-portal/admin/accounts/${id}/reject`, { reason })
   return unwrap<{ id: string; state: string }>(response.data)
+}
+
+export async function requestPasswordReset(email: string) {
+  const response = await portalApi.post('/customer-portal/accounts/forgot-password', { email })
+  return unwrap<{ message: string }>(response.data)
+}
+
+export async function resetPassword(email: string, token: string, password: string) {
+  const response = await portalApi.post('/customer-portal/accounts/reset-password', { email, token, password })
+  return unwrap<{ message: string }>(response.data)
 }
