@@ -17,8 +17,17 @@ import { Prisma } from '../../../prisma/biblioteca/generated/client';
 import { publicCatalogVisibility } from './public-catalog-visibility';
 import { PublishedKeySpecsService, type KeySpecFacetsView } from '../library-specs/published-key-specs.service';
 import { parseKeySpecFilter } from '../library-specs/published-key-specs.rules';
-import { applyRevisionLens, effectiveIdentity, loadActiveRevisionContents } from './public-revision-lens';
+import { applyRevisionLens, applySheetSnapshot, effectiveIdentity, loadActiveRevisionContents } from './public-revision-lens';
+import {
+  buildPublicRequirementFacets,
+  buildPublicRequirementFacetsResult,
+  parseRequirementFilter,
+  productMatchesRequirements,
+  validateRequirementFilters,
+  type RequirementProduct,
+} from './public-requirements';
 import { buildProductSearchSql, looksLikeCode } from './helpers/product-search';
+import type { PublicProductSearchDto } from './dto/public-product-search.dto';
 
 /** Product found by the public text search: relevance rank (0 exact … 3 words) and its published name. */
 interface SnapshotMatch {
@@ -65,6 +74,12 @@ export interface PublicProductDetail {
   isInformational: boolean;
 }
 
+export interface PublicBrandSummary {
+  name: string;
+  slug: string;
+  productCount: number;
+}
+
 export const PUBLIC_LIST_DEFAULT_LIMIT = 24;
 
 type PublishedCategory = { name: string; slug: string; id?: string; parentId?: string | null };
@@ -100,17 +115,31 @@ export class PublicCatalogService {
    */
   async search(params: {
     q?: string;
+    sku?: string[];
     category?: string;
+    brand?: string;
+    subcategory?: string;
     /** Repeated `<specKey>:<value>` filters on PUBLISHED key specs; all must match. */
     keySpec?: string[];
+    requirement?: string[];
+    /** `recent`: newest published first; ignored when there is a text term. */
+    sort?: 'recent';
     offset?: number;
     limit?: number;
   }): Promise<PublicProductListResponse> {
     const term = params.q?.trim() ?? '';
     const categorySlug = params.category?.trim() ?? '';
+    const brandSlug = params.brand?.trim() ?? '';
+    const subcategorySlug = params.subcategory?.trim() ?? '';
     const limit = params.limit ?? PUBLIC_LIST_DEFAULT_LIMIT;
     const offset = params.offset ?? 0;
     const empty: PublicProductListResponse = { data: [], meta: { total: 0, offset, limit } };
+
+    if (params.requirement?.length) {
+      if (!categorySlug) throw new BadRequestException('Selecciona una categoría para filtrar requisitos');
+      const requirementError = validateRequirementFilters(categorySlug, params.requirement);
+      if (requirementError) throw new BadRequestException(requirementError);
+    }
 
     let categoryIds: string[] | undefined;
     if (categorySlug !== '') {
@@ -119,6 +148,34 @@ export class PublicCatalogService {
       });
       categoryIds = collectCategoryIds(categories, categorySlug);
       if (categoryIds.length === 0) return empty;
+    }
+
+    let brandId: string | undefined;
+    if (brandSlug !== '') {
+      const brand = await this.prisma.brand.findUnique({
+        where: { slug: brandSlug },
+        select: { id: true, isActive: true },
+      });
+      if (!brand?.isActive) return empty;
+      brandId = brand.id;
+    }
+
+    let subcategoryIds: string[] | undefined;
+    if (subcategorySlug !== '') {
+      if (categorySlug === '') return empty;
+      const slugs = [...new Set(subcategorySlug.split(',').map((slug) => slug.trim()).filter(Boolean))];
+      if (slugs.length === 0) return empty;
+      const db = this.prisma as unknown as {
+        subcategory?: { findMany?: (args: unknown) => Promise<Array<{ id: string }>> };
+      };
+      const findSubcategories = db.subcategory?.findMany;
+      if (!findSubcategories) return empty;
+      const subcategories = await findSubcategories.call(db.subcategory, {
+        where: { slug: { in: slugs }, isActive: true, category: { slug: categorySlug, isActive: true } },
+        select: { id: true },
+      });
+      if (!subcategories || subcategories.length !== slugs.length) return empty;
+      subcategoryIds = subcategories.map((subcategory) => subcategory.id);
     }
 
     // Key-spec filters narrow by id; visibility below stays the one public rule.
@@ -138,18 +195,26 @@ export class PublicCatalogService {
     // (live columns only when the revision lacks the key / the product has no pinned revision).
     let snapshotIds: string[] | undefined;
     let ranks: Map<string, SnapshotMatch> | undefined;
-    if (term !== '' || categoryIds) {
-      const matches = await this.snapshotMatches(term, categoryIds);
+    if (term !== '' || categoryIds || brandId || subcategoryIds || params.sku?.length) {
+      const matches = await this.snapshotMatches(term, categoryIds, brandId, subcategoryIds, params.sku);
       if (matches.length === 0) return empty;
       snapshotIds = matches.map((m) => m.id);
       // With a text term the order is relevance (exact > starts with > contains > words), then name.
       if (term !== '') ranks = new Map(matches.map((m) => [m.id, m]));
     }
 
+    let requirementIds: string[] | undefined;
+    if (params.requirement?.length) {
+      const candidates = await this.requirementProducts(categorySlug, subcategorySlug);
+      requirementIds = candidates.filter((row) => productMatchesRequirements(categorySlug, row, params.requirement!)).map((row) => row.id);
+      if (!requirementIds.length) return empty;
+    }
+
     const where = {
       AND: [
         await this.visibility(Prisma.JsonNull),
         ...(keySpecIds ? [{ id: { in: keySpecIds } }] : []),
+        ...(requirementIds ? [{ id: { in: requirementIds } }] : []),
         ...(snapshotIds ? [{ id: { in: snapshotIds } }] : []),
       ],
     };
@@ -185,7 +250,7 @@ export class PublicCatalogService {
       total = order.length;
       const pageIds = order.slice(offset, offset + limit);
       const pageRows = pageIds.length
-        ? await this.prisma.product.findMany({ where: { id: { in: pageIds } }, select })
+        ? await this.prisma.product.findMany({ where: { AND: [where, { id: { in: pageIds } }] }, select })
         : [];
       const position = new Map(pageIds.map((id, index) => [id, index]));
       products = pageRows.sort((x, y) => position.get(x.id)! - position.get(y.id)!);
@@ -194,7 +259,10 @@ export class PublicCatalogService {
         this.prisma.product.findMany({
           where,
           select,
-          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          // `recent` (home "Novedades") only applies without a text term; with `q` relevance wins.
+          orderBy: params.sort === 'recent'
+            ? [{ publishedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }, { id: 'asc' }]
+            : [{ name: 'asc' }, { id: 'asc' }],
           skip: offset,
           take: limit,
         }),
@@ -298,10 +366,128 @@ export class PublicCatalogService {
     };
   }
 
+  /** Count products using the same visibility and effective brand as the public list. */
+  async listBrands(): Promise<PublicBrandSummary[]> {
+    const [brands, products] = await Promise.all([
+      this.prisma.brand.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, slug: true },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.product.findMany({
+        where: await this.visibility(Prisma.JsonNull),
+        select: { brandId: true, publicRevisionId: true },
+      }),
+    ]);
+    const contents = await loadActiveRevisionContents(this.prisma, products.map((p) => p.publicRevisionId));
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      const brandId = effectiveIdentity(product, contents, 'brandId', product.brandId);
+      if (brandId) counts.set(brandId, (counts.get(brandId) ?? 0) + 1);
+    }
+
+    return brands.flatMap(({ id, name, slug }) => {
+      const productCount = counts.get(id);
+      return productCount ? [{ name, slug, productCount }] : [];
+    });
+  }
+
   /** Key-spec facets of a subcategory over the products visible under the public rule. */
   async keySpecFacets(subcategoryId: string): Promise<KeySpecFacetsView> {
     if (!this.keySpecs) throw new Error('Key-spec facets need PublishedKeySpecsService');
     return this.keySpecs.facets(subcategoryId, await this.visibility(OperationalPrisma.JsonNull));
+  }
+
+  private async requirementProducts(categorySlug: string, subcategorySlug?: string): Promise<RequirementProduct[]> {
+    const categories = await this.prisma.category.findMany({ select: { id: true, slug: true, parentId: true, isActive: true } });
+    const categoryIds = collectCategoryIds(categories, categorySlug);
+    if (!categoryIds.length) return [];
+    let subcategoryIds: string[] | undefined;
+    if (subcategorySlug) {
+      const slugs = [...new Set(subcategorySlug.split(',').map((slug) => slug.trim()).filter(Boolean))];
+      const db = this.prisma as unknown as { subcategory?: { findMany: (args: unknown) => Promise<Array<{ id: string }>> } };
+      if (!db.subcategory) return [];
+      const subcategories = await db.subcategory.findMany({
+        where: { slug: { in: slugs }, isActive: true, category: { slug: categorySlug, isActive: true } },
+        select: { id: true },
+      });
+      if (!slugs.length || subcategories.length !== slugs.length) return [];
+      subcategoryIds = subcategories.map((row) => row.id);
+    }
+    const matches = await this.snapshotMatches('', categoryIds, undefined, subcategoryIds);
+    if (!matches.length) return [];
+    const rows = await this.prisma.product.findMany({
+      where: { AND: [await this.visibility(Prisma.JsonNull), { id: { in: matches.map((match) => match.id) } }] },
+      select: {
+        id: true, publicRevisionId: true, technicalSpecs: true,
+        catalogSpecGroups: { select: { title: true, items: { select: { label: true, value: true } } } },
+      },
+      orderBy: { id: 'asc' },
+    });
+    const contents = await loadActiveRevisionContents(this.prisma, rows.map((row) => row.publicRevisionId));
+    return rows.map((row) => {
+      const sheet = applySheetSnapshot(applyRevisionLens(row, contents), contents);
+      return { id: row.id, categorySlug, technicalSpecs: sanitizeTechnicalSpecs(sheet.technicalSpecs), catalogSpecGroups: sheet.catalogSpecGroups };
+    });
+  }
+
+  async requirements(categorySlug: string, subcategorySlug?: string, filters: PublicProductSearchDto = {}) {
+    if (filters.requirement?.length) {
+      const requirementError = validateRequirementFilters(categorySlug, filters.requirement);
+      if (requirementError) throw new BadRequestException(requirementError);
+    }
+    const products = await this.requirementProducts(categorySlug, subcategorySlug);
+    const base = buildPublicRequirementFacetsResult(categorySlug, products);
+    const baseFacets = base.facets;
+    let eligibleIds = new Set(products.map((product) => product.id));
+
+    if (filters.q || filters.brand) {
+      let brandId: string | undefined;
+      if (filters.brand) {
+        const brand = await this.prisma.brand.findUnique({
+          where: { slug: filters.brand.trim() },
+          select: { id: true, isActive: true },
+        });
+        if (!brand?.isActive) eligibleIds.clear();
+        else brandId = brand.id;
+      }
+      if (eligibleIds.size > 0) {
+        const matches = await this.snapshotMatches(filters.q?.trim() ?? '', undefined, brandId);
+        const matchedIds = new Set(matches.map((match) => match.id));
+        eligibleIds = new Set([...eligibleIds].filter((id) => matchedIds.has(id)));
+      }
+    }
+
+    if (filters.keySpec?.length) {
+      if (!this.keySpecs) throw new Error('Key-spec filters need PublishedKeySpecsService');
+      const keySpecFilters = filters.keySpec.map((raw) => {
+        const filter = parseKeySpecFilter(raw);
+        if (!filter) throw new BadRequestException('keySpec debe tener la forma <dato>:<valor>');
+        return filter;
+      });
+      const matches = new Set(await this.keySpecs.matchingProductIds(keySpecFilters));
+      eligibleIds = new Set([...eligibleIds].filter((id) => matches.has(id)));
+    }
+
+    const inScope = products.filter((product) => eligibleIds.has(product.id));
+    const selectedRequirements = filters.requirement ?? [];
+    const facets = baseFacets.map((facet) => {
+      const otherGroups = selectedRequirements.filter((raw) => {
+        const specKey = parseRequirementFilter(raw)?.specKey;
+        return facet.specKey.startsWith('protocolo') || specKey !== facet.specKey;
+      });
+      const contextualProducts = inScope.filter((product) => productMatchesRequirements(categorySlug, product, otherGroups));
+      // Sin recorte: un subconjunto distinto no debe poner conteos a 0 por truncar sus facetas.
+      const contextual = buildPublicRequirementFacets(categorySlug, contextualProducts, { limit: Number.POSITIVE_INFINITY })
+        .find((candidate) => candidate.specKey === facet.specKey);
+      const counts = new Map(contextual?.values.map((option) => [option.value, option.count]) ?? []);
+      return {
+        ...facet,
+        values: facet.values.map((option) => ({ ...option, count: counts.get(option.value) ?? 0 })),
+      };
+    });
+    const matching = inScope.filter((product) => productMatchesRequirements(categorySlug, product, selectedRequirements));
+    return { facets, products: matching.length, truncated: base.truncated };
   }
 
   /**
@@ -313,7 +499,7 @@ export class PublicCatalogService {
    * Visibility is NOT decided here (the caller applies it).
    * Fully parameterized; the text match is case-insensitive and has no LIKE wildcards.
    */
-  private async snapshotMatches(term: string, categoryIds?: string[]): Promise<SnapshotMatch[]> {
+  private async snapshotMatches(term: string, categoryIds?: string[], brandId?: string, subcategoryIds?: string[], skus?: string[]): Promise<SnapshotMatch[]> {
     const params: unknown[] = [];
     const bind = (value: unknown) => {
       params.push(value);
@@ -321,7 +507,14 @@ export class PublicCatalogService {
     };
     const published = (key: string, live: string) => `COALESCE(r.content->>'${key}', ${live})`;
     const name = published('name', 'p.name');
+    const effectiveBrand = `(CASE
+      WHEN jsonb_exists(r.content, 'brandId') THEN
+        CASE WHEN jsonb_typeof(r.content->'brandId') = 'string' THEN r.content->>'brandId' END
+      ELSE p."brandId" END)`;
     const conditions: string[] = [];
+    const brandJoin = term !== ''
+      ? `LEFT JOIN brands b ON b.id = ${effectiveBrand} AND b."isActive"`
+      : '';
     let rank = '0';
     if (term !== '') {
       const codeLike = looksLikeCode(term);
@@ -343,17 +536,32 @@ export class PublicCatalogService {
       const wordsMatch = words.length > 1
         ? `NOT EXISTS (SELECT 1 FROM unnest(${bind(words)}::text[]) AS w(v) WHERE strpos(lower(concat_ws(' ', ${name}, ${published('catalogName', 'p."catalogName"')}, ${published('sku', 'p.sku')}, ${published('catalogModel', 'p."catalogModel"')})), w.v) = 0)`
         : 'false';
-      conditions.push(`(${search.literal} OR ${wordsMatch})`);
-      rank = search.rank;
+      const exactBrand = `lower(b.name) = lower(${termParam})`;
+      conditions.push(`(${search.literal} OR ${wordsMatch} OR ${exactBrand})`);
+      rank = `CASE WHEN ${exactBrand} THEN 0 ELSE ${search.rank} END`;
     }
     if (categoryIds) {
       conditions.push(`(CASE WHEN r.content IS NOT NULL AND jsonb_exists(r.content, 'categoryId')
         THEN r.content->>'categoryId' ELSE p."categoryId" END) = ANY(${bind(categoryIds)}::text[])`);
     }
+    if (brandId) {
+      conditions.push(`${effectiveBrand} = ${bind(brandId)}`);
+    }
+    if (subcategoryIds) {
+      const effectiveSubcategory = `(CASE
+        WHEN jsonb_exists(r.content, 'subcategoryId') THEN
+          CASE WHEN jsonb_typeof(r.content->'subcategoryId') = 'string' THEN r.content->>'subcategoryId' END
+        ELSE p."subcategoryId" END)`;
+      conditions.push(`${effectiveSubcategory} = ANY(${bind(subcategoryIds)}::text[])`);
+    }
+    if (skus?.length) {
+      conditions.push(`${published('sku', 'p.sku')} = ANY(${bind(skus)}::text[])`);
+    }
     const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; rank: number; name: string | null }>>(
       `SELECT p.id, (${rank})::int AS rank, ${name} AS name
        FROM products p
        LEFT JOIN product_revisions r ON r.id = p."publicRevisionId" AND r.status = 'PUBLICADA'
+       ${brandJoin}
        WHERE ${conditions.join(' AND ')}`,
       ...params,
     );

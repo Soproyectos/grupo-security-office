@@ -19,26 +19,38 @@ export class PublicProductsController {
   constructor(private readonly catalog: PublicCatalogService, private readonly customers: StorefrontService) {}
 
   /**
-   * Búsqueda y listado por categoría, paginados. Responde `{ data, meta }` con
+   * Búsqueda y listado por categoría/marca, paginados. Responde `{ data, meta }` con
    * `meta = { total, offset, limit }`.
    *
-   * Decisión: un `category` (slug) desconocido o inactivo NO es un error; se
+   * Decisión: un `category` o `brand` (slug) desconocido o inactivo NO es un error; se
    * responde 200 con `data: []` y `meta.total: 0`, porque la página de
-   * categoría del storefront resuelve el slug contra el menú y una categoría
+   * categoría/marca del storefront resuelve el slug contra el menú y una categoría/marca
    * vacía debe verse como "sin productos", no como un fallo de red.
    */
   @Public()
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Get()
   @ApiOperation({ summary: 'Listar/buscar productos publicados con su precio público (storefront)' })
-  @ApiQuery({ name: 'q', required: false, type: String, description: 'Término de búsqueda (nombre o SKU)' })
+  @ApiQuery({ name: 'q', required: false, type: String, description: 'Término de búsqueda (nombre, SKU o marca)' })
   @ApiQuery({ name: 'category', required: false, type: String, description: 'Slug de categoría (incluye subcategorías); desconocido = lista vacía' })
+  @ApiQuery({ name: 'brand', required: false, type: String, description: 'Slug de marca; desconocido = lista vacía' })
+  @ApiQuery({ name: 'subcategory', required: false, type: String, description: 'Slug de subcategoría activa bajo Cámaras; desconocido = lista vacía' })
+  @ApiQuery({ name: 'sku', required: false, type: [String], description: 'Referencia exacta del catálogo publicado, repetible (máximo 12)' })
+  @ApiQuery({ name: 'sort', required: false, enum: ['recent'], description: 'recent = más recientes primero; se ignora si hay `q`' })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Productos a omitir (default 0)' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Cantidad máxima de resultados (default 24, tope 48)' })
   async search(@Query() query: PublicProductSearchDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     res.setHeader('Cache-Control', 'private, no-store'); res.vary('Cookie');
     const result = await this.catalog.search(query);
     return { ...result, data: await this.customers.applyCustomerPrices(result.data, req.cookies?.gs_customer_session) };
+  }
+
+  @Public()
+  @Get('brands')
+  @ApiOperation({ summary: 'Lista de marcas con productos publicados (storefront)' })
+  @ApiResponse({ status: 200, description: 'Lista de marcas con sus productos visibles' })
+  async listBrands() {
+    return this.catalog.listBrands();
   }
 
   /**

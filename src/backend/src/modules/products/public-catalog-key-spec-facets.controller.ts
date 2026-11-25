@@ -4,12 +4,24 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { PublicCatalogService } from './public-catalog.service';
+import { PublicProductSearchDto } from './dto/public-product-search.dto';
 
 /** Store filters built from the PUBLISHED key specs of the products visible in the public catalog. */
 @ApiTags('Public Products')
 @Controller('api/public/catalog')
 export class PublicCatalogKeySpecFacetsController {
   constructor(private readonly catalog: PublicCatalogService) {}
+
+  @Public()
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @Get('requirements')
+  requirements(@Query() query: PublicProductSearchDto, @Res({ passthrough: true }) res: Response) {
+    const { category, subcategory } = query;
+    if (typeof category !== 'string' || !/^[a-z0-9-]{1,100}$/.test(category)) throw new BadRequestException('Selecciona una categoría válida');
+    if (subcategory !== undefined && (typeof subcategory !== 'string' || subcategory.length > 300 || !/^[a-z0-9-]+(,[a-z0-9-]+){0,2}$/.test(subcategory))) throw new BadRequestException('Selecciona una subcategoría válida');
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.catalog.requirements(category, subcategory, query);
+  }
 
   @Public()
   @Throttle({ default: { limit: 60, ttl: 60000 } })

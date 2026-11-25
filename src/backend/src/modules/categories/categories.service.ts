@@ -5,6 +5,7 @@ import { LibraryAuditService, type LibraryActor } from '../library-audit/library
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { publicCatalogVisibility } from '../products/public-catalog-visibility';
+import { effectiveIdentity, loadActiveRevisionContents } from '../products/public-revision-lens';
 import { ClassificationService } from '../products/classification/classification.service';
 import { buildUsageReport, findNameCollision, impactConfirmationRequired, nameTaken } from '../masters/master-rules';
 import type { ClassificationDb } from '../products/classification/classification.types';
@@ -31,6 +32,10 @@ export type MenuCategory = {
   sortOrder: number;
   /** Productos públicos de la categoría y de todas sus descendientes activas. */
   productCount: number;
+  /** Solo los nodos de Subcategory incluyen su identidad persistida. */
+  subcategoryId?: string;
+  /** Slug de Subcategory cuando el nodo se fusiona con una categoría legacy. */
+  subcategorySlug?: string;
   children: MenuCategory[];
 };
 
@@ -89,35 +94,121 @@ export class CategoriesService {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
 
-    const counts = await this.publishedCountsByCategory(categories);
+    // Una sola lectura de productos públicos y una de contenidos de revisión para todo el menú.
+    const productDb = this.prisma as unknown as {
+      product: { findMany: (args: unknown) => Promise<Array<{ categoryId: string | null; subcategoryId: string | null; publicRevisionId: string | null }>> };
+    };
+    const products = await productDb.product.findMany({
+      where: publicCatalogVisibility(Prisma.JsonNull),
+      select: { categoryId: true, subcategoryId: true, publicRevisionId: true },
+    });
+    const contents = await loadActiveRevisionContents(this.prisma, products.map((product) => product.publicRevisionId));
+    const counts = this.publishedCountsByCategory(categories, products, contents);
+    const tree = this.buildMenuTree(categories, counts);
 
-    return { data: this.buildMenuTree(categories, counts) };
+    const db = this.prisma as unknown as {
+      subcategory?: { findMany?: (args: unknown) => Promise<Array<{
+        id: string; categoryId: string; name: string; slug: string; sortOrder: number;
+        legacyCategoryId: string | null;
+      }>> };
+    };
+    const findSubcategories = db.subcategory?.findMany;
+    if (findSubcategories && tree.length) {
+      const rows = (await findSubcategories.call(db.subcategory, {
+        where: { isActive: true, categoryId: { in: tree.map((root) => root.id) } },
+        select: { id: true, categoryId: true, name: true, slug: true, sortOrder: true, legacyCategoryId: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      })) ?? [];
+
+      if (rows.length) {
+        // Raíz de cada categoría activa, para contar por familia de la subcategoría.
+        const byId = new Map(categories.map((category) => [category.id, category]));
+        const rootOf = (id: string): string | null => {
+          const seen = new Set<string>();
+          let current: string | null = id;
+          while (current && byId.has(current) && !seen.has(current)) {
+            seen.add(current);
+            const parentId: string | null = byId.get(current)!.parentId;
+            if (!parentId) return current;
+            current = parentId;
+          }
+          return null;
+        };
+        const countsBySubcategory = new Map<string, number>();
+        for (const product of products) {
+          const categoryId = effectiveIdentity(product, contents, 'categoryId', product.categoryId);
+          const subcategoryId = effectiveIdentity(product, contents, 'subcategoryId', product.subcategoryId);
+          if (!categoryId || !subcategoryId) continue;
+          const root = rootOf(categoryId);
+          if (!root) continue;
+          const key = `${root}|${subcategoryId}`;
+          countsBySubcategory.set(key, (countsBySubcategory.get(key) ?? 0) + 1);
+        }
+        const findNode = (nodes: MenuCategory[], match: (node: MenuCategory) => boolean): MenuCategory | undefined => {
+          for (const node of nodes) {
+            if (match(node)) return node;
+            const nested = findNode(node.children, match);
+            if (nested) return nested;
+          }
+          return undefined;
+        };
+        for (const root of tree) {
+          const rootRows = rows
+            .filter((row) => row.categoryId === root.id)
+            .map((row) => ({ row, count: countsBySubcategory.get(`${root.id}|${row.id}`) ?? 0 }))
+            .filter((entry) => entry.count > 0);
+          if (!rootRows.length) continue;
+          for (const { row, count } of rootRows) {
+            const node = (row.legacyCategoryId ? findNode(root.children, (n) => n.id === row.legacyCategoryId) : undefined)
+              ?? findNode(root.children, (n) => n.slug === row.slug);
+            if (node) {
+              node.subcategoryId = row.id;
+              node.subcategorySlug = row.slug;
+              node.name = row.name;
+              node.productCount = count;
+            } else {
+              root.children.push({
+                id: row.id,
+                subcategoryId: row.id,
+                subcategorySlug: row.slug,
+                name: row.name,
+                slug: row.slug,
+                imageUrl: null,
+                iconUrl: null,
+                isFeatured: false,
+                sortOrder: row.sortOrder,
+                productCount: count,
+                children: [],
+              });
+            }
+          }
+          root.children.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+        }
+      }
+    }
+
+    return { data: tree };
   }
 
   /**
-   * Una sola consulta agrupada de productos públicos por categoría; los
-   * conteos se acumulan hacia los ancestros en memoria.
+   * Cuenta los productos públicos por su categoría efectiva: la categoría
+   * fijada en la revisión publicada cuando existe, con fallback a la columna
+   * operativa para productos legados. Los conteos se acumulan hacia ancestros.
    */
-  private async publishedCountsByCategory(
+  private publishedCountsByCategory(
     categories: MenuCategoryRecord[],
-  ): Promise<Map<string, number>> {
-    const args = {
-      by: ['categoryId'],
-      where: publicCatalogVisibility(Prisma.JsonNull),
-      _count: { _all: true },
-    } satisfies Prisma.ProductGroupByArgs;
-    const grouped = await this.prisma.product.groupBy(args);
-
+    products: Array<{ categoryId: string | null; subcategoryId: string | null; publicRevisionId: string | null }>,
+    contents: Awaited<ReturnType<typeof loadActiveRevisionContents>>,
+  ): Map<string, number> {
     const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
     const totals = new Map<string, number>();
 
-    for (const row of grouped) {
-      const own = row._count._all;
+    for (const product of products) {
       const seen = new Set<string>();
-      let current: string | null = row.categoryId;
+      let current: string | null = effectiveIdentity(product, contents, 'categoryId', product.categoryId);
       while (current !== null && parentOf.has(current) && !seen.has(current)) {
         seen.add(current);
-        totals.set(current, (totals.get(current) ?? 0) + own);
+        totals.set(current, (totals.get(current) ?? 0) + 1);
         current = parentOf.get(current) ?? null;
       }
     }

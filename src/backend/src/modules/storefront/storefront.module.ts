@@ -17,6 +17,6 @@ import { CustomerSessionGuard } from "./customer-session.guard";
     StorefrontAdminController,
   ],
   providers: [StorefrontService, StorefrontMailService, CustomerSessionGuard],
-  exports: [StorefrontService],
+  exports: [StorefrontService, StorefrontMailService],
 })
 export class StorefrontModule {}
