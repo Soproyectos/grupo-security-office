@@ -141,7 +141,7 @@ export default function CatalogIndexPage() {
   useDocumentTitle(pageTitle('Catálogo'))
 
   const roots = useMemo(
-    () => (status === 'ready' ? rootsBySortOrder(categories) : NO_ROOTS),
+    () => (status === 'ready' ? rootsBySortOrder(categories.filter((category) => category.productCount > 0)) : NO_ROOTS),
     [categories, status],
   )
 
@@ -154,7 +154,11 @@ export default function CatalogIndexPage() {
           <>
             <Breadcrumb />
             <h1 className="mt-4 text-page-title font-bold text-ink-900">Catálogo</h1>
-            {roots.length > 0 ? (
+            {categories.length === 0 ? (
+              <div className="mt-8">
+                <CatalogEmpty />
+              </div>
+            ) : roots.length > 0 ? (
               <section aria-labelledby="catalogo-todas-categorias" className="mt-8">
                 <h2 id="catalogo-todas-categorias" className="text-eyebrow uppercase text-ink-500">
                   Todas las categorías
@@ -170,7 +174,9 @@ export default function CatalogIndexPage() {
               </section>
             ) : (
               <div className="mt-8">
-                <CatalogEmpty />
+                <section role="status" className="rounded-card border border-dashed border-surface-300 bg-white p-8 text-center">
+                  <p className="text-body-sm text-ink-500">No hay productos públicos disponibles por ahora. Escríbenos y te ayudamos a encontrar lo que necesitas.</p>
+                </section>
               </div>
             )}
           </>

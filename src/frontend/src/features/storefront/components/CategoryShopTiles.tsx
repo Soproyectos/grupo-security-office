@@ -40,7 +40,7 @@ function CategoryShopTile({ entry }: { entry: CountedCategory }) {
           <span className="line-clamp-2 font-condensed text-base font-bold leading-5 text-storefront-ink">
             {entry.category.name}
           </span>
-          <span className="text-body-sm tabular-nums text-ink-500">
+          <span className="text-sm tabular-nums text-ink-500">
             {entry.count} {entry.count === 1 ? 'producto' : 'productos'}
           </span>
         </span>

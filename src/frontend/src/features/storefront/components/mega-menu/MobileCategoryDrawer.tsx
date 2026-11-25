@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { categoryHref } from './menu-model'
+import { categoryHref, categoryNodeHref, productCountLabel } from './menu-model'
 import { CategoryIcon } from './CategorySidebar'
 import type { MegaMenuView } from './menu-controller'
 import type { MenuCategory } from '../../types/categoryMenu'
@@ -30,6 +30,8 @@ function ChevronRight({ className }: { className: string }) {
     </svg>
   )
 }
+
+const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 
 function CloseIcon() {
   return (
@@ -101,25 +103,33 @@ export default function MobileCategoryDrawer({
           >
             Ver {selectedRoot.name}
           </Link>
-          <ul role="list" className="space-y-2">
+          {selectedRoot.children.length > 0 && (
+            <h2 className="mb-3 mt-4 text-sm font-semibold text-ink-700">Subcategorías</h2>
+          )}
+          <ul role="list" aria-label={`Subcategorías de ${selectedRoot.name}`} className="space-y-2">
             {selectedRoot.children.map((child) => (
               <li key={child.id} className="rounded-panel border border-surface-200">
                 {child.children.length === 0 ? (
                   <Link
-                    to={categoryHref(child.slug)}
+                    to={categoryNodeHref(child, selectedRoot.slug)}
                     onClick={onNavigate}
-                    className="flex items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-security-500"
+                    className={`flex min-h-11 items-center justify-between gap-2 rounded-panel bg-surface-50 px-4 py-3 text-sm ${FOCUS}`}
                   >
-                    <span className="truncate">{child.name}</span>
-                    <ChevronRight className="shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block break-words font-semibold text-ink-900">{child.name}</span>
+                      {child.productCount > 0 && (
+                        <span className="block text-ink-600">{productCountLabel(child.productCount)}</span>
+                      )}
+                    </span>
+                    <ChevronRight className="shrink-0 text-security-600" />
                   </Link>
                 ) : (
                   <details className="group">
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-security-500 marker:hidden">
                       <Link
-                        to={categoryHref(child.slug)}
+                        to={categoryNodeHref(child, selectedRoot.slug)}
                         onClick={onNavigate}
-                        className="min-w-0 truncate"
+                        className={`min-w-0 break-words rounded-control ${FOCUS}`}
                       >
                         {child.name}
                       </Link>
@@ -129,9 +139,9 @@ export default function MobileCategoryDrawer({
                       {child.children.map((leaf) => (
                         <li key={leaf.id}>
                           <Link
-                            to={categoryHref(leaf.slug)}
+                            to={categoryNodeHref(leaf, selectedRoot.slug)}
                             onClick={onNavigate}
-                            className="block truncate py-2 text-sm text-ink-600"
+                            className={`flex min-h-11 items-center break-words rounded-control py-2 text-sm text-ink-600 ${FOCUS}`}
                           >
                             {leaf.name}
                           </Link>

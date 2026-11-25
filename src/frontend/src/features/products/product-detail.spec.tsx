@@ -172,7 +172,19 @@ describe('ficha de un producto sin datos enriquecidos', () => {
 
     expect(markup).toContain(`href="https://wa.me/573160275100?text=${message}"`)
     expect(markup).not.toContain('tel:')
-    expect(markup.split('Cotizar por WhatsApp').length - 1).toBeGreaterThanOrEqual(2)
+    const main = markup.match(/<main>.*?<\/main>/)?.[0]
+    expect(main?.match(/>\s*Cotizar\s*<\/a>/g)).toHaveLength(2)
+  })
+
+  it('ofrece consultar un equivalente para un producto descontinuado sin precio', () => {
+    queryMock.data = { ...bare, status: 'discontinued', price: null }
+    const markup = renderRoute()
+    const message = encodeURIComponent("Hola, quiero consultar por un equivalente del producto Cámara Domo 4K (SKU: DS-2CD2143).")
+
+    expect(markup).toContain(message)
+    expect(markup.match(/Preguntar por un equivalente<\/a>/g)).toHaveLength(2)
+    expect(markup).not.toContain('Precio a consultar')
+    expect(markup).not.toContain('>Cotizar</a>')
   })
 
   it('muestra la franja de confianza y el chrome de la tienda', () => {
@@ -206,7 +218,7 @@ describe('ficha de un producto sin datos enriquecidos', () => {
     expect(markup).toContain('Precio a consultar')
     expect(markup).not.toContain('IVA incluido')
     expect(markup).not.toContain('$ ')
-    expect(markup).toContain('Cotizar por WhatsApp')
+    expect(markup).toContain('>Cotizar</a>')
   })
 
   it('identifica una ficha informativa y no ofrece cotizar datos incompletos', () => {
@@ -216,7 +228,7 @@ describe('ficha de un producto sin datos enriquecidos', () => {
 
     expect(markup).toContain('Ficha informativa')
     expect(markup).toContain('Estamos completando los datos comerciales')
-    expect(markup).not.toContain('Cotizar por WhatsApp')
+    expect(markup).not.toContain('>Cotizar</a>')
   })
 
   it('ofrece solo la sección con datos en la barra de secciones', () => {
@@ -270,7 +282,7 @@ describe('estados', () => {
     const markup = renderRoute()
 
     expect(markup).toContain('Cargando producto')
-    expect(markup).not.toContain('Cotizar por WhatsApp')
+    expect(markup).not.toContain('>Cotizar</a>')
   })
 
   it('muestra "no encontrado" con el enlace de vuelta al catálogo y sin reintento', () => {

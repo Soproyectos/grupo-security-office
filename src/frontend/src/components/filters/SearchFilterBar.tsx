@@ -23,6 +23,8 @@ export type SidebarAccordionId =
   | 'status'
   | 'entities'
   | 'actions'
+  | 'specifications'
+  | 'requirements'
 
 export type SidebarFilterSection = {
   id: SidebarAccordionId
@@ -38,6 +40,7 @@ export type SearchFilterBarProps = {
     onChange: (value: string) => void
     placeholder: string
     ariaLabel: string
+    maxLength?: number
   }
   activeFilterCount: number
   activeFilterChips: SearchFilterChip[]
@@ -57,6 +60,7 @@ export type SearchFilterBarProps = {
    * se muestran en la misma fila que el botón «Filtros» en lugar de una fila aparte.
    */
   toolbarEnd?: ReactNode
+  touchFriendly?: boolean
 }
 
 const SIDEBAR_ACCORDIONS = [
@@ -149,6 +153,7 @@ export function SearchFilterBar({
   sidebarContent,
   sidebarSections,
   toolbarEnd,
+  touchFriendly = false,
 }: SearchFilterBarProps) {
   const [isDesktop, setIsDesktop] = useState(viewportIsDesktop)
   const [isOpen, setIsOpen] = useState(() => layout === 'sidebar' && viewportIsDesktop())
@@ -159,7 +164,50 @@ export function SearchFilterBar({
     status: false,
     entities: true,
     actions: false,
+    specifications: true,
+    requirements: true,
   })
+
+  const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarAnchorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current
+    const anchor = sidebarAnchorRef.current
+    if (layout !== 'sidebar' || !isDesktop || !isOpen || !sidebar || !anchor) return
+    let frame = 0
+    const measure = () => {
+      const bounds = anchor.getBoundingClientRect()
+      const pinned = bounds.top <= 16
+      const top = Math.max(16, bounds.top)
+      sidebar.style.position = pinned ? 'fixed' : 'relative'
+      sidebar.style.top = pinned ? '16px' : '0px'
+      sidebar.style.left = pinned ? bounds.left + 'px' : ''
+      sidebar.style.width = pinned ? bounds.width + 'px' : '100%'
+      const contentBottom = anchor.closest('main')?.getBoundingClientRect().bottom ?? window.innerHeight
+      const availableHeight = Math.max(0, Math.min(window.innerHeight, contentBottom) - top - 16)
+      sidebar.style.maxHeight = availableHeight + 'px'
+      // Once the page is entirely in the footer, the filter panel has no usable space.
+      sidebar.style.visibility = availableHeight >= 140 ? 'visible' : 'hidden'
+    }
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    }
+    measure()
+    window.addEventListener('scroll', scheduleMeasure, { passive: true })
+    window.addEventListener('resize', scheduleMeasure)
+    const observer = new ResizeObserver(scheduleMeasure)
+    observer.observe(anchor)
+    const main = anchor.closest('main')
+    if (main) observer.observe(main)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('scroll', scheduleMeasure)
+      window.removeEventListener('resize', scheduleMeasure)
+    }
+  }, [layout, isDesktop, isOpen])
 
   const panelId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -350,7 +398,8 @@ export function SearchFilterBar({
               onChange={handleSearchChange}
               placeholder={search.placeholder}
               aria-label={search.ariaLabel}
-              className="w-full rounded-lg border border-neutral-300 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-800 placeholder:text-neutral-400 focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)]"
+              maxLength={search.maxLength}
+              className={`w-full rounded-lg border border-neutral-300 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-800 focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)] ${touchFriendly ? 'min-h-11 placeholder:text-neutral-600' : 'placeholder:text-neutral-400'}`}
             />
           </div>
         )}
@@ -361,8 +410,9 @@ export function SearchFilterBar({
               type="button"
               variant="secondary"
               icon={<FilterIcon />}
+              className={touchFriendly ? 'min-h-11' : undefined}
               aria-expanded={isOpen}
-              aria-controls={isOpen ? panelId : undefined}
+              aria-controls={isOpen ? (isSidebar ? 'filter-sidebar' : panelId) : undefined}
               aria-haspopup={isSidebar ? 'menu' : 'dialog'}
               onClick={() => {
                 if (isOpen) {
@@ -387,7 +437,7 @@ export function SearchFilterBar({
         <div className="flex items-center gap-2 overflow-x-auto pb-1" role="group" aria-label="Filtros">
           {sectionsToRender.map((section) => (
             <Popover.Root key={section.id}>
-              <Popover.Trigger className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] data-[popup-open]:border-[var(--color-primary)] data-[popup-open]:text-[var(--color-primary)]">
+              <Popover.Trigger className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] data-[popup-open]:border-[var(--color-primary)] data-[popup-open]:text-[var(--color-primary)] ${touchFriendly ? 'min-h-11 text-sm' : ''}`}>
                 {section.isActive && (
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]" aria-hidden="true" />
                 )}
@@ -405,7 +455,7 @@ export function SearchFilterBar({
             </Popover.Root>
           ))}
 
-          {activeFilterCount > 0 && (
+          {activeFilterCount > 0 && !(touchFriendly && activeFilterChips.length > 0) && (
             <button
               type="button"
               onClick={handleClearFilters}
@@ -424,13 +474,15 @@ export function SearchFilterBar({
         isDesktop ? (
           isOpen ? (
             <div className="lg:grid lg:grid-cols-[288px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+              <div ref={sidebarAnchorRef} className="min-w-0 self-start">
               <aside
+                ref={sidebarRef}
                 id="filter-sidebar"
                 role="region"
                 aria-label="Filtros"
-                className="w-full lg:sticky lg:top-[calc(var(--app-header-h,56px)+1rem)] lg:max-h-[calc(100vh-var(--app-header-h,56px)-2rem)] lg:overflow-y-auto lg:overscroll-contain rounded-xl border border-neutral-200 bg-white shadow-sm"
+                className="z-20 flex w-full flex-col overflow-hidden lg:max-h-[calc(100dvh-2rem)] rounded-xl border border-neutral-200 bg-white"
               >
-                <header className="flex items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4">
+                <header className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4">
                   <div className="min-w-0">
                     <h2 className="text-base font-semibold text-neutral-800">
                       Filtros
@@ -452,10 +504,11 @@ export function SearchFilterBar({
                   </button>
                 </header>
 
-                <div className="px-5 py-4">
+                <div role="region" aria-label="Opciones de filtros" tabIndex={0} className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4 [scrollbar-gutter:stable] focus-visible:outline focus-visible:outline-2 focus-visible:outline-security-600">
                   {renderSidebarAccordion()}
                 </div>
               </aside>
+              </div>
 
               <div className="min-w-0">{content}</div>
             </div>

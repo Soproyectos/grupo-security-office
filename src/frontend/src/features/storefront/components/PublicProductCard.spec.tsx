@@ -70,7 +70,7 @@ describe('PublicProductCard', () => {
   it('reserva un medio 4:3 y no usa cuadrado', () => {
     const markup = render()
 
-    expect(markup).toContain('aspect-[4/3]')
+    expect(markup).toContain('aspect-[var(--product-card-media-ratio,4/3)]')
     expect(markup).not.toContain('aspect-square')
   })
 
@@ -93,7 +93,7 @@ describe('PublicProductCard', () => {
   it('ofrece cotizar cuando no hay precio público', () => {
     const markup = render({ price: null })
 
-    expect(markup).toContain('Precio a consultar')
+    expect(markup).not.toContain('Precio a consultar')
     expect(markup).toContain('Cotizar')
     expect(markup).not.toContain('IVA incluido')
     expect(markup).not.toContain('$ ')

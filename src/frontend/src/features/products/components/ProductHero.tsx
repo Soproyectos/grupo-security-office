@@ -41,15 +41,21 @@ export function ProductBreadcrumb({ items }: { items: ProductDetail['breadcrumb'
 }
 
 function ProductGallery({ images, name }: { images: ProductDetail['images']; name: string }) {
-  const [selected, setSelected] = useState(0);
+  const [selectedSrc, setSelectedSrc] = useState<string>();
   const [failed, setFailed] = useState<Set<string>>(new Set());
   const [viewerOpen, setViewerOpen] = useState(false);
-  const current = images[selected] ?? images[0];
+  const availableImages = images.filter((image) => !failed.has(image.src));
+  const selectedIndex = Math.max(0, availableImages.findIndex((image) => image.src === selectedSrc));
+  const current = availableImages[selectedIndex];
+
+  function markFailed(src: string) {
+    setFailed((previous) => previous.has(src) ? previous : new Set([...previous, src]));
+  }
 
   return (
     <figure className="flex flex-col gap-3" {...previewField('images')}>
       <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-neutral-50 to-neutral-100 p-8">
-        {current && !failed.has(current.src) ? (
+        {current ? (
           <button
             type="button"
             onClick={() => setViewerOpen(true)}
@@ -58,29 +64,30 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
             className="flex h-full w-full cursor-zoom-in items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
           >
             <img
+              key={current.src}
               src={productImageSrc(current.src)}
               alt={current.alt || name}
               className="max-h-full w-auto object-contain"
               decoding="async"
-              onError={() => setFailed((prev) => new Set(prev).add(current.src))}
+              onError={() => markFailed(current.src)}
             />
           </button>
         ) : (
-          <span className="text-sm text-neutral-400">Imagen no disponible</span>
+          <span className="text-sm text-neutral-600">Imagen no disponible</span>
         )}
       </div>
-      {images.length > 1 && (
+      {availableImages.length > 1 && (
         <ul aria-label="Imágenes del producto" className="flex flex-wrap gap-2">
-          {images.map((image, index) => (
+          {availableImages.map((image, index) => (
             <li key={image.src}>
               <button
                 type="button"
-                onClick={() => setSelected(index)}
-                aria-label={`Ver imagen ${index + 1} de ${images.length}`}
-                aria-current={index === selected}
+                onClick={() => setSelectedSrc(image.src)}
+                aria-label={`Ver imagen ${index + 1} de ${availableImages.length}`}
+                aria-current={index === selectedIndex}
                 className={cx(
                   'h-16 w-16 overflow-hidden rounded-lg border bg-white transition-colors',
-                  index === selected ? 'border-red-600' : 'border-neutral-200 hover:border-neutral-400',
+                  index === selectedIndex ? 'border-red-600' : 'border-neutral-200 hover:border-neutral-400',
                 )}
               >
                 <img
@@ -90,7 +97,8 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
                   height={64}
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
+                  onError={() => markFailed(image.src)}
                 />
               </button>
             </li>
@@ -98,10 +106,10 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
         </ul>
       )}
       <ImageViewer
-        images={images.map((image) => ({ id: image.src, src: productImageSrc(image.src), alt: image.alt || name }))}
-        index={selected}
-        open={viewerOpen}
-        onIndexChange={setSelected}
+        images={availableImages.map((image) => ({ id: image.src, src: productImageSrc(image.src), alt: image.alt || name }))}
+        index={selectedIndex}
+        open={viewerOpen && current !== undefined}
+        onIndexChange={(index) => setSelectedSrc(availableImages[index]?.src)}
         onClose={() => setViewerOpen(false)}
       />
       <figcaption className="text-center text-[11px] leading-snug text-neutral-400">
@@ -123,7 +131,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
   return (
     <section className="grid gap-8 pb-12 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-14 lg:gap-y-6 lg:pb-16">
       <div className="lg:col-start-1 lg:row-start-1">
-        <ProductGallery images={product.images.length > 0 ? product.images : product.image ? [product.image] : []} name={product.name} />
+        <ProductGallery key={product.id} images={product.images.length > 0 ? product.images : product.image ? [product.image] : []} name={product.name} />
       </div>
 
       <div className="flex flex-col gap-5 lg:col-start-2 lg:row-span-2 lg:row-start-1">
@@ -152,7 +160,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
           {product.brand && <p className="mt-1 text-sm text-neutral-500" {...previewField('brand')}>Marca: {product.brand}</p>}
         </div>
 
-        <ProductPriceBlock price={product.price} isInformational={product.isInformational} />
+        <ProductPriceBlock price={product.price} isInformational={product.isInformational} discontinued={product.status === 'discontinued'} />
 
         {product.highlights.length > 0 ? (
           <ul className="space-y-2.5" {...previewField('highlights')}>

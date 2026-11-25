@@ -31,8 +31,9 @@ describe('cabecera común', () => {
     expect(markup).not.toContain('<span>Centro de ayuda</span>')
   })
 
-  it('convierte "Vende con nosotros" en WhatsApp con mensaje', () => {
-    expect(renderChrome()).toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}"`)
+  it('no muestra "Vende con nosotros" mientras el acceso no esté validado', () => {
+    expect(renderChrome()).not.toContain('Vende con nosotros')
+    expect(renderChrome()).not.toContain(`href="${whatsappUrl(WHATSAPP_MESSAGES.sellWithUs)}"`)
   })
 
   it('ya no ofrece el botón rojo "Categorías" aparte', () => {
@@ -60,10 +61,12 @@ describe('plantilla común', () => {
     }
   })
 
-  it('pinta la navegación Tienda con Catálogo, Soluciones y Soporte en ambos modos', () => {
+  it('muestra Catálogo, Soluciones y Soporte en la navegación de la tienda', () => {
     for (const markup of [renderChrome(), renderHome()]) {
       expect(occurrences(markup, 'aria-label="Tienda"')).toBe(1)
-      expect(markup).toMatch(/<nav aria-label="Tienda"[^>]*>.*Catálogo.*Soluciones.*Soporte.*<\/nav>/)
+      const nav = markup.match(/<nav aria-label="Tienda"[^>]*>(.*?)<\/nav>/)?.[1]
+      expect(nav).toMatch(/Catálogo.*Soluciones.*Soporte/)
+      expect(nav).not.toContain('Cotizar')
     }
   })
 

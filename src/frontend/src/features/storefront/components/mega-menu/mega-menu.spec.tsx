@@ -3,7 +3,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import type { MenuCategory } from '../../types/categoryMenu'
-import { categoryHref, featuredTiles, hasForwardOverflow, navigableRoots, nextRootId, resolveRootId } from './menu-model'
+import {
+  categoryHref,
+  categoryNodeHref,
+  featuredTiles,
+  hasForwardOverflow,
+  navigableRoots,
+  nextRootId,
+  productCountLabel,
+  resolveRootId,
+} from './menu-model'
+import { categoryImage } from './menu-images'
 import { createMegaMenuStore, HOVER_INTENT_MS } from './menu-controller'
 import MegaMenu from './MegaMenu'
 import CategoryMenuContainer from './CategoryMenuContainer'
@@ -42,7 +52,7 @@ function node(
   slug: string,
   options: Partial<MenuCategory> & { featured?: boolean; children?: MenuCategory[] } = {},
 ): MenuCategory {
-  const { featured = false, children = [], ...rest } = options
+  const { featured = false, children = [], productCount = featured ? 1 : 0, ...rest } = options
   return {
     id,
     name,
@@ -51,13 +61,16 @@ function node(
     iconUrl: rest.iconUrl ?? null,
     isFeatured: featured,
     sortOrder: rest.sortOrder ?? 0,
-    productCount: 0,
+    productCount,
+    ...(rest.subcategoryId ? { subcategoryId: rest.subcategoryId } : {}),
+    ...(rest.subcategorySlug ? { subcategorySlug: rest.subcategorySlug } : {}),
     children,
   }
 }
 
 const videovigilancia = node('r-vv', 'Videovigilancia', 'videovigilancia', {
   sortOrder: 10,
+  productCount: 378,
   iconUrl: '/images/category-icons/videovigilancia.svg',
   children: [
     node('c-camaras', 'Cámaras IP', 'camaras-ip', {
@@ -83,6 +96,7 @@ const videovigilancia = node('r-vv', 'Videovigilancia', 'videovigilancia', {
 
 const acceso = node('r-acceso', 'Control de Acceso', 'control-de-acceso', {
   sortOrder: 20,
+  productCount: 1,
   iconUrl: '/images/category-icons/control-de-acceso.svg',
   children: [
     node('c-biometricos', 'Biométricos', 'biometricos', {
@@ -98,8 +112,10 @@ const acceso = node('r-acceso', 'Control de Acceso', 'control-de-acceso', {
 /** Flat roots coming from the library import: no children, `sortOrder` 0. */
 const cablesUtp = node('f-cables', 'Cables UTP', 'cables-utp')
 const herramientas = node('f-herramientas', 'Herramientas', 'herramientas')
+/** Flat root with products and a bundled photo: listed even without children. */
+const cableado = node('f-cableado', 'Cableado', 'cableado', { productCount: 12 })
 
-const menu: MenuCategory[] = [cablesUtp, videovigilancia, herramientas, acceso]
+const menu: MenuCategory[] = [cablesUtp, videovigilancia, cableado, herramientas, acceso]
 const roots = navigableRoots(menu)
 
 function renderMenu(props: Partial<Parameters<typeof MegaMenu>[0]> = {}): string {
@@ -139,9 +155,30 @@ describe('menu-model', () => {
     expect(categoryHref('videovigilancia')).toBe('/catalogo/categoria/videovigilancia')
   })
 
-  it('mantiene solo las familias con hijas cuando la respuesta mezcla raíces planas', () => {
-    expect(roots.map((root) => root.id)).toEqual(['r-vv', 'r-acceso'])
-    expect(menu).toHaveLength(4)
+  it('lista todas las raíces con productos y deja fuera las de 0 productos', () => {
+    expect(roots.map((root) => root.id)).toEqual(['r-vv', 'f-cableado', 'r-acceso'])
+    expect(menu).toHaveLength(5)
+  })
+
+  it('arma el texto singular y plural del conteo', () => {
+    expect(productCountLabel(1)).toBe('1 producto')
+    expect(productCountLabel(378)).toBe('378 productos')
+    expect(productCountLabel(0)).toBe('0 productos')
+  })
+
+  it('arma rutas filtradas para una subcategoría persistida y rutas normales para categorías', () => {
+    const subcategory = node('sub-ip', 'Cámaras IP y Wi-Fi', 'legacy-ip-row', { subcategoryId: 'sub-ip', subcategorySlug: 'camaras-ip-wifi' })
+    const category = node('cat-ip', 'Videovigilancia', 'videovigilancia')
+
+    expect(categoryNodeHref(subcategory, 'camaras')).toBe('/catalogo/categoria/camaras?tipo=camaras-ip-wifi')
+    expect(categoryNodeHref(category, 'camaras')).toBe('/catalogo/categoria/videovigilancia')
+  })
+
+  it('la foto sale del backend, luego del mapa por slug y si no es null', () => {
+    expect(categoryImage({ slug: 'camaras', imageUrl: '/api/x.jpg' })).toBe('/api/x.jpg')
+    expect(categoryImage({ slug: 'camaras', imageUrl: null })).toBe('/images/menu/camaras.jpg')
+    expect(categoryImage({ slug: 'otra', imageUrl: null })).toBeNull()
+    expect(categoryImage({ slug: 'constructor', imageUrl: null })).toBeNull()
   })
 
   it('muestra todas las raíces recibidas cuando ninguna tiene hijas', () => {
@@ -156,10 +193,13 @@ describe('menu-model', () => {
     expect(navigableRoots([])).toEqual([])
   })
 
-  it('mantiene la raíz elegida si sigue existiendo y si no cae en la primera', () => {
+  it('mantiene la raíz elegida y, sin selección, prioriza la que tiene subcategorías', () => {
     expect(resolveRootId(roots, 'r-acceso')).toBe('r-acceso')
     expect(resolveRootId(roots, 'borrada')).toBe('r-vv')
     expect(resolveRootId(roots, null)).toBe('r-vv')
+    expect(resolveRootId([cableado, videovigilancia], null)).toBe('r-vv')
+    expect(resolveRootId([cableado, videovigilancia], cableado.id)).toBe(cableado.id)
+    expect(resolveRootId([cableado], null)).toBe(cableado.id)
     expect(resolveRootId([], 'r-vv')).toBeNull()
   })
 
@@ -181,7 +221,7 @@ describe('menu-model', () => {
   })
 
   it('navega entre raíces con las flechas y devuelve null en otras teclas', () => {
-    expect(nextRootId(roots, 'r-vv', 'ArrowDown')).toBe('r-acceso')
+    expect(nextRootId(roots, 'r-vv', 'ArrowDown')).toBe('f-cableado')
     expect(nextRootId(roots, 'r-acceso', 'ArrowDown')).toBe('r-vv')
     expect(nextRootId(roots, 'r-vv', 'ArrowUp')).toBe('r-acceso')
     expect(nextRootId(roots, 'r-acceso', 'Home')).toBe('r-vv')
@@ -264,11 +304,11 @@ describe('store del mega menú', () => {
     store.select('r-acceso')
     expect(store.getState().rootId).toBe('r-acceso')
 
-    expect(store.move('ArrowUp')).toBe('r-vv')
-    expect(store.getState().rootId).toBe('r-vv')
+    expect(store.move('ArrowUp')).toBe('f-cableado')
+    expect(store.getState().rootId).toBe('f-cableado')
 
     expect(store.move('Enter')).toBeNull()
-    expect(store.getState().rootId).toBe('r-vv')
+    expect(store.getState().rootId).toBe('f-cableado')
   })
 
   it('deja la selección en la primera raíz si la elegida desaparece', () => {
@@ -368,12 +408,12 @@ describe('store del mega menú', () => {
 })
 
 describe('mega menu en el escritorio', () => {
-  it('lista solo las familias con subcategorías y marca la seleccionada', () => {
+  it('lista las raíces con productos y marca la seleccionada', () => {
     const markup = renderMenu()
 
     // Solo la barra lateral de escritorio lleva `data-root-id` y `aria-current`:
     // el cajón móvil abre el detalle con un botón por familia.
-    expect(occurrences(markup, 'data-root-id=')).toBe(2)
+    expect(occurrences(markup, 'data-root-id=')).toBe(3)
     expect(occurrences(markup, 'aria-current="true"')).toBe(1)
     expect(markup).toContain('Videovigilancia')
     expect(markup).toContain('Control de Acceso')
@@ -381,21 +421,46 @@ describe('mega menu en el escritorio', () => {
     expect(markup).not.toContain('Herramientas')
   })
 
-  it('pinta el icono de la raíz como máscara del color del texto', () => {
+  it('muestra la miniatura y el conteo de cada raíz en la lista', () => {
     const markup = renderMenu()
 
-    expect(markup).toContain('bg-current')
-    expect(markup).toMatch(/mask-image:url\((&quot;|')?\/images\/category-icons\/videovigilancia\.svg/)
-    expect(markup).toContain('mask-size:contain')
+    expect(markup).toContain('src="/images/menu/cableado.jpg"')
+    expect(markup).toContain('378 productos')
+    expect(markup).toContain('1 producto<')
   })
 
-  it('enlaza cada columna y cada hoja a su página de categoría', () => {
+  it('muestra el título, Ver todo con el conteo y la foto grande de la raíz', () => {
+    const markup = renderMenu({ selectedRoot: cableado, selectedId: cableado.id })
+
+    expect(markup).toContain('Ver todos los productos')
+    expect(markup).toContain('12 productos')
+    expect(markup).toContain('aspect-[4/3] w-56')
+    // Thumbnail in the list plus the large photo.
+    expect(occurrences(markup, 'src="/images/menu/cableado.jpg"')).toBe(2)
+    expect(markup).not.toContain('Subcategorías de Cableado')
+  })
+
+  it('usa el singular cuando la raíz tiene un solo producto', () => {
+    const markup = renderMenu({ selectedRoot: acceso, selectedId: acceso.id })
+
+    expect(markup).toContain('Ver todo (1 producto)')
+  })
+
+  it('una raíz sin foto da espacio a la lista de subcategorías', () => {
+    const markup = renderMenu({ selectedRoot: videovigilancia, selectedId: videovigilancia.id })
+
+    expect(markup).toContain('Ver todo (378 productos)')
+    expect(markup).toContain('aria-label="Subcategorías de Videovigilancia" class="flex flex-wrap')
+    expect(markup).not.toContain('/images/menu/videovigilancia.jpg')
+  })
+
+  it('enlaza la raíz y cada subcategoría a su página de categoría', () => {
     const markup = renderMenu()
 
+    expect(markup).toContain('href="/catalogo/categoria/videovigilancia"')
     expect(markup).toContain('href="/catalogo/categoria/camaras-ip"')
-    expect(markup).toContain('href="/catalogo/categoria/camaras-ip-domo"')
-    expect(markup).toContain('href="/catalogo/categoria/kit-4-camaras"')
-    expect(markup).toContain('grid grid-cols-5 gap-x-8')
+    expect(markup).toContain('href="/catalogo/categoria/grabadores"')
+    expect(markup).toContain('Subcategorías de Videovigilancia')
   })
 
   it('muestra la fila de círculos con las portadas destacadas', () => {
@@ -432,7 +497,7 @@ describe('mega menu en el escritorio', () => {
   it('cambia las columnas al cambiar la raíz seleccionada', () => {
     const markup = renderMenu({ selectedRoot: acceso, selectedId: acceso.id })
 
-    expect(markup).toContain('Categorías de Control de Acceso')
+    expect(markup).toContain('Subcategorías de Control de Acceso')
     expect(markup).toContain('href="/catalogo/categoria/biometricos"')
     expect(markup).not.toContain('href="/catalogo/categoria/camaras-ip-domo"')
   })

@@ -4,39 +4,33 @@ import type { PublicProductResult } from '../types/publicProduct'
 
 export type ProductShelfStatus = 'loading' | 'ready' | 'error'
 
-/**
- * First `limit` products of one category, with the category total, for a home
- * shelf. A stale response of a previous slug or attempt never overwrites the
- * current one; `retry` re-runs the request after a failure.
- */
-export function usePublicProductShelf(category: string, limit: number) {
+export function usePublicProductShelf(category: string, skus: readonly string[]) {
   const [status, setStatus] = useState<ProductShelfStatus>('loading')
   const [items, setItems] = useState<PublicProductResult[]>([])
-  const [total, setTotal] = useState(0)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setStatus('loading')
 
-    fetchPublicProducts({ category }, 0, limit)
+    fetchPublicProducts({ category, sku: skus }, 0, skus.length)
       .then((page) => {
         if (cancelled) return
-        setItems(page.items)
-        setTotal(page.total)
+        const bySku = new Map(page.items.filter((item) => !item.isInformational).map((item) => [item.sku, item]))
+        const featured = skus.flatMap((sku) => {
+          const item = bySku.get(sku)
+          return item ? [item] : []
+        })
+        setItems(featured)
         setStatus('ready')
       })
       .catch(() => {
-        if (cancelled) return
-        setStatus('error')
+        if (!cancelled) setStatus('error')
       })
 
-    return () => {
-      cancelled = true
-    }
-  }, [category, limit, attempt])
+    return () => { cancelled = true }
+  }, [category, skus, attempt])
 
   const retry = useCallback(() => setAttempt((n) => n + 1), [])
-
-  return { status, items, total, retry }
+  return { status, items, total: items.length, retry }
 }

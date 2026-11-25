@@ -9,7 +9,12 @@ const LANGUAGES: Record<string, string> = {
   en: 'Inglés',
   pt: 'Portugués',
   fr: 'Francés',
+  und: 'Idioma no disponible',
 };
+
+function languageLabel(code: string): string {
+  return LANGUAGES[code.toLowerCase()] ?? code.toUpperCase();
+}
 
 /* Acordeón con animación de altura (grid-rows 0fr → 1fr). */
 function Disclosure({
@@ -70,7 +75,7 @@ function LanguageLabel({ code }: { code: string }) {
   return (
     <p className="mb-2 flex items-center gap-2 text-xs font-semibold text-neutral-950">
       <span aria-hidden="true" className="h-3.5 w-0.5 rounded-full bg-red-600" />
-      Idioma: {LANGUAGES[code] ?? code.toUpperCase()}
+      {code.toLowerCase() === 'und' ? languageLabel(code) : 'Idioma: ' + languageLabel(code)}
     </p>
   );
 }
@@ -79,7 +84,10 @@ const rowClass =
   'group flex w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left text-sm text-neutral-800 transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600';
 
 function DocumentsList({ documents, onDownload }: { documents: ProductDocument[]; onDownload?: DownloadHandler }) {
-  const byLanguage = documents.reduce<Record<string, ProductDocument[]>>((acc, doc) => {
+  const unique = documents.filter((doc, index, all) =>
+    !doc.url || all.findIndex((candidate) => candidate.url === doc.url) === index,
+  );
+  const byLanguage = unique.reduce<Record<string, ProductDocument[]>>((acc, doc) => {
     (acc[doc.language] ??= []).push(doc);
     return acc;
   }, {});
@@ -102,7 +110,7 @@ function DocumentsList({ documents, onDownload }: { documents: ProductDocument[]
                   <span className="flex min-w-0 items-center gap-3">
                     <FileIcon className="h-4 w-4 shrink-0 text-neutral-400" />
                     <span className="truncate">{doc.title}</span>
-                    <span className={ui.langTag}>{doc.language}</span>
+                    {doc.language.toLowerCase() !== 'und' && <span className={ui.langTag}>{doc.language}</span>}
                   </span>
                   <DownloadIcon className="h-4 w-4 shrink-0 text-neutral-500 transition-colors group-hover:text-red-600" />
                   <span className="sr-only">(abre en una pestaña nueva)</span>

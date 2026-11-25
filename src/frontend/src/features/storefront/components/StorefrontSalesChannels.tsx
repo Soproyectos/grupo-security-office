@@ -81,7 +81,7 @@ export default function StorefrontSalesChannels() {
                 {channel.icon}
               </span>
               <span className="font-condensed text-lg font-bold text-storefront-ink">{channel.title}</span>
-              <span className="text-body-sm text-ink-500">{channel.description}</span>
+              <span className="text-sm text-ink-500">{channel.description}</span>
             </a>
           </li>
         ))}

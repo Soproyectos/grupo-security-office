@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { categoryHref, hasForwardOverflow } from './menu-model'
+import { categoryNodeHref, hasForwardOverflow } from './menu-model'
 import type { MenuCategory } from '../../types/categoryMenu'
 
 export interface FeaturedCategoryRowProps {
   nodes: MenuCategory[]
+  parentSlug?: string
   onNavigate: () => void
 }
 
@@ -36,7 +37,7 @@ function ChevronRight() {
  * `hidden lg:flex`: the circles are a desktop affordance, the mobile drawer
  * lists the same categories as a drill-down instead.
  */
-export default function FeaturedCategoryRow({ nodes, onNavigate }: FeaturedCategoryRowProps) {
+export default function FeaturedCategoryRow({ nodes, parentSlug, onNavigate }: FeaturedCategoryRowProps) {
   const trackRef = useRef<HTMLUListElement>(null)
   const [canScrollForward, setCanScrollForward] = useState(false)
 
@@ -74,7 +75,7 @@ export default function FeaturedCategoryRow({ nodes, onNavigate }: FeaturedCateg
         {nodes.map((node) => (
           <li key={node.id} className="w-24 shrink-0 snap-start">
             <Link
-              to={categoryHref(node.slug)}
+              to={categoryNodeHref(node, parentSlug)}
               onClick={onNavigate}
               className="group flex flex-col items-center gap-2 text-center"
             >

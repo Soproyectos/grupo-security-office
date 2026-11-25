@@ -6,6 +6,7 @@ import {
   PublicProductListingError,
   PublicProductPager,
 } from '../components/PublicProductGrid'
+import { CAMERA_SUBCATEGORY_SLUGS } from '../constants/home-catalog'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { usePublicProductListing } from '../hooks/usePublicProductListing'
 import { pageTitle } from '../utils/documentTitle'
@@ -55,17 +56,28 @@ function EmptyQuery() {
 export default function SearchResultsPage() {
   const [searchParams] = useSearchParams()
   const query = (searchParams.get('q') ?? '').trim()
-  useDocumentTitle(pageTitle(query === '' ? 'Buscar productos' : `Resultados para ${query}`))
+  const brand = (searchParams.get('brand') ?? '').trim()
+  const category = searchParams.get('category') === 'camaras' ? 'camaras' : ''
+  const categoryParams = new URLSearchParams(searchParams)
+  if (category) categoryParams.delete('category')
+  else categoryParams.set('category', 'camaras')
+  const searchLabel = [query, brand].filter(Boolean).join(' · ')
+  useDocumentTitle(pageTitle(searchLabel ? `Resultados para ${searchLabel}` : 'Buscar productos'))
   const { status, items, total, hasMore, loadingMore, loadMoreError, loadMore, retry } =
-    usePublicProductListing({ q: query })
+    usePublicProductListing({
+      q: query,
+      brand,
+      category,
+      ...(category === 'camaras' ? { subcategory: CAMERA_SUBCATEGORY_SLUGS } : {}),
+    })
 
   return (
     <StorefrontChrome>
       <main className="mx-auto max-w-7xl px-5 py-8 lg:px-12">
         <h1 className="text-page-title font-bold text-ink-900">Resultados de búsqueda</h1>
-        {query !== '' && (
+        {searchLabel !== '' && (
           <p className="mt-2 text-body-sm text-ink-500">
-            Buscando <span className="font-semibold text-ink-700">«{query}»</span>
+            Buscando <span className="font-semibold text-ink-700">«{searchLabel}»</span>
             {status === 'ready' && total > 0 && (
               <>
                 {' · '}
@@ -76,8 +88,16 @@ export default function SearchResultsPage() {
             )}
           </p>
         )}
+        {brand && (
+          <Link
+            to={`?${categoryParams.toString()}`}
+            className="mt-4 inline-flex min-h-11 items-center rounded-control px-3 font-semibold text-security-600 underline focus-visible:outline focus-visible:outline-security-600"
+          >
+            {category ? 'Ver todas las categorías de la marca' : 'Ver cámaras de la marca'}
+          </Link>
+        )}
         <div className="mt-8">
-          {status === 'idle' && query === '' && <EmptyQuery />}
+          {status === 'idle' && searchLabel === '' && <EmptyQuery />}
           {status === 'loading' && <PublicProductGridSkeleton label="Cargando resultados…" />}
           {status === 'error' && <PublicProductListingError onRetry={retry} subject="los resultados" />}
           {status === 'ready' && items.length > 0 && (
@@ -93,7 +113,7 @@ export default function SearchResultsPage() {
               />
             </>
           )}
-          {status === 'ready' && items.length === 0 && query !== '' && <NoResults query={query} />}
+          {status === 'ready' && items.length === 0 && searchLabel !== '' && <NoResults query={searchLabel} />}
         </div>
       </main>
     </StorefrontChrome>

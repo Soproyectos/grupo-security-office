@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { categoryImage } from './menu-images'
+import { productCountLabel } from './menu-model'
 import type { MenuCategory } from '../../types/categoryMenu'
 
 export interface CategorySidebarProps {
@@ -69,10 +71,11 @@ export default function CategorySidebar({
       role="list"
       aria-label="Categorías"
       onKeyDown={(event) => onKeyDown(event.key)}
-      className="w-60 shrink-0 space-y-0.5 overflow-y-auto border-r border-surface-200 bg-surface-50 p-3 lg:w-64"
+      className="w-64 shrink-0 space-y-0.5 overflow-y-auto border-r border-surface-200 bg-surface-50 p-3 lg:w-64"
     >
       {roots.map((root) => {
         const selected = root.id === selectedId
+        const image = categoryImage(root)
         return (
           <li key={root.id}>
             <button
@@ -83,18 +86,26 @@ export default function CategorySidebar({
               onMouseEnter={() => onHover(root.id)}
               onMouseLeave={onLeave}
               onFocus={() => onSelect(root.id)}
-              className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left text-sm transition ${
+              className={`flex min-h-11 w-full items-center gap-3 rounded-control px-2 py-1.5 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-security-500 ${
                 selected
-                  ? 'bg-surface-100 font-bold text-security-500'
-                  : 'font-medium text-ink-600 hover:bg-surface-100 hover:text-security-500'
+                  ? 'bg-white font-bold text-security-500 shadow-sm ring-1 ring-surface-200'
+                  : 'font-medium text-ink-700 hover:bg-surface-100 hover:text-security-500'
               }`}
             >
-              {root.iconUrl ? (
-                <CategoryIcon src={root.iconUrl} className="h-5 w-5 shrink-0" />
-              ) : (
-                <span aria-hidden="true" className="h-5 w-5 shrink-0 rounded-full bg-surface-200" />
-              )}
-              <span className="min-w-0 flex-1 truncate">{root.name}</span>
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-control bg-surface-100"
+              >
+                {image !== null && (
+                  <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{root.name}</span>
+                <span className="block text-micro font-normal text-ink-500">
+                  {productCountLabel(root.productCount)}
+                </span>
+              </span>
               <ChevronRight className={`shrink-0 ${selected ? 'text-security-500' : 'text-ink-400'}`} />
             </button>
           </li>

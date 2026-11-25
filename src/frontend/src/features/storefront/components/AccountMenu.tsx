@@ -12,15 +12,16 @@ const ITEM =
 
 interface AccountMenuViewProps {
   signedIn: boolean
+  accountName?: string
   onSignOut?: () => Promise<void>
+  signingOut?: boolean
+  signOutFailed?: boolean
 }
 
 /**
- * Account entry shared by the home and the inner pages: always "Mi cuenta" with
- * a small menu. When a QueryClient is mounted it reads the customer portal
- * session and offers "Mi portal" / "Salir"; without a QueryClient (or while the
- * session loads, or when there is none) it offers the visitor options. The
- * session hooks live in an inner component so they only run under a provider.
+ * The storefront header keeps visitor and signed-in actions in a single panel.
+ * Session hooks run inside the query provider. Without one, the visitor menu
+ * can still render in static contexts.
  *
  * The panel stays in the DOM and is hidden with `hidden` while closed, so it
  * is out of the tab order and the accessibility tree until opened.
@@ -38,12 +39,13 @@ function SessionAccountMenu() {
   const signedIn = session.isSuccess && Boolean(session.data) && !session.isError
   const onSignOut = async () => {
     await logout.mutateAsync()
-    navigate('/')
+    navigate('/clientes/login', { replace: true })
   }
-  return <AccountMenuView signedIn={signedIn} onSignOut={onSignOut} />
+  const accountName = signedIn ? session.data?.contactName?.trim() || session.data?.email : undefined
+  return <AccountMenuView signedIn={signedIn} accountName={accountName} onSignOut={onSignOut} signingOut={logout.isPending} signOutFailed={logout.isError} />
 }
 
-function AccountMenuView({ signedIn, onSignOut }: AccountMenuViewProps) {
+function AccountMenuView({ signedIn, accountName, onSignOut, signingOut = false, signOutFailed = false }: AccountMenuViewProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -81,7 +83,7 @@ function AccountMenuView({ signedIn, onSignOut }: AccountMenuViewProps) {
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0">
           <path d={ACCOUNT_ICON} />
         </svg>
-        Mi cuenta
+        {accountName ? <span title={accountName} className="max-w-24 truncate sm:max-w-40 xl:max-w-56">{accountName}</span> : 'Mi cuenta'}
       </button>
       <div
         id="storefront-account-menu"
@@ -95,15 +97,13 @@ function AccountMenuView({ signedIn, onSignOut }: AccountMenuViewProps) {
             </Link>
             <button
               type="button"
-              className={`${ITEM} w-full text-left`}
-              onClick={() => {
-                setOpen(false)
-                // A failed logout leaves the menu as is; the next session check decides what to show.
-                onSignOut?.().catch(() => undefined)
-              }}
+              disabled={signingOut}
+              className={`${ITEM} w-full text-left disabled:opacity-60`}
+              onClick={() => { void onSignOut?.().then(() => setOpen(false)).catch(() => undefined) }}
             >
-              Salir
+              {signingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
             </button>
+            {signOutFailed && <p role="alert" className="px-3 py-2 text-sm text-security-600">No se pudo cerrar sesión. Vuelve a intentarlo.</p>}
           </>
         ) : (
           <>

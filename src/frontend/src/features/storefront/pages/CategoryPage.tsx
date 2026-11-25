@@ -1,18 +1,16 @@
-import { Fragment, useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Fragment, useMemo, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
+import SubcategoryProducts from '../components/SubcategoryProducts'
 import { CategoryIcon } from '../components/mega-menu/CategorySidebar'
-import { categoryHref } from '../components/mega-menu/menu-model'
-import {
-  PublicProductGrid,
-  PublicProductGridSkeleton,
-  PublicProductListingError,
-  PublicProductPager,
-} from '../components/PublicProductGrid'
+import { categoryImage } from '../components/mega-menu/menu-images'
+import { ProductGlyph } from '../components/ProductMedia'
+import { productGlyphKind } from '../utils/productGlyphKind'
+import { categoryHref, categoryNodeHref } from '../components/mega-menu/menu-model'
+import { PublicProductListingError } from '../components/PublicProductGrid'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { pageTitle } from '../utils/documentTitle'
-import { usePublicProductListing } from '../hooks/usePublicProductListing'
 import type { MenuCategory } from '../types/categoryMenu'
 
 /**
@@ -57,7 +55,7 @@ function findCategoryTrail(roots: MenuCategory[], slug: string): CategoryTrail |
 
 /** Children by `sortOrder`. Ties keep the order the backend sent (stable sort). */
 function childrenBySortOrder(category: MenuCategory): MenuCategory[] {
-  return [...category.children].sort((a, b) => a.sortOrder - b.sortOrder)
+  return category.children.filter((child) => child.productCount > 0).sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
 function ChevronRight() {
@@ -92,10 +90,10 @@ function BreadcrumbSeparator() {
  * Trail of the page: Inicio / Catálogo / ancestors… / current. The ancestors are
  * links to their own page, so the user can walk up the tree.
  */
-function Breadcrumb({ trail }: { trail: CategoryTrail }) {
+function Breadcrumb({ trail, className }: { trail: CategoryTrail; className?: string }) {
   return (
-    <nav aria-label="Ruta de navegación">
-      <ol role="list" className="flex flex-wrap items-center gap-1.5 text-body-sm text-ink-500">
+    <nav aria-label="Ruta de navegación" className={className}>
+      <ol role="list" className="flex flex-wrap items-center gap-1.5 text-sm text-ink-500">
         <BreadcrumbItem>
           <Link to="/tienda" className="transition hover:text-security-500">
             Inicio
@@ -134,19 +132,30 @@ function Breadcrumb({ trail }: { trail: CategoryTrail }) {
  * the `CategoryIcon` mask because `currentColor` does not cross the `<img>`
  * boundary.
  */
-export function CategoryTile({ node }: { node: MenuCategory }) {
+export function CategoryTile({ node, parentSlug }: { node: MenuCategory; parentSlug?: string }) {
+  const imageUrl = categoryImage(node)
+  const [failedImage, setFailedImage] = useState<string | null>(null)
+
   return (
     <li className="flex flex-col items-center gap-3 text-center">
-      <Link to={categoryHref(node.slug)} className="group flex flex-col items-center gap-3 text-center">
+      <Link to={categoryNodeHref(node, parentSlug)} className="group flex flex-col items-center gap-3 text-center">
         <span className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-security-500 bg-white transition group-hover:border-security-600 group-hover:shadow-lg">
-          {node.imageUrl ? (
-            <img src={node.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+          {imageUrl !== null && failedImage !== imageUrl ? (
+            <img
+              src={imageUrl}
+              alt=""
+              loading="lazy"
+              onError={() => setFailedImage(imageUrl)}
+              className="h-full w-full object-cover"
+            />
           ) : node.iconUrl ? (
             <span className="flex h-full w-full items-center justify-center text-security-500">
               <CategoryIcon src={node.iconUrl} className="h-8 w-8" />
             </span>
           ) : (
-            <span className="h-full w-full bg-surface-100" />
+            <span className="flex h-full w-full items-center justify-center bg-surface-100 text-ink-500">
+              <ProductGlyph kind={productGlyphKind(node.slug)} />
+            </span>
           )}
         </span>
         <span className="line-clamp-2 text-body-sm font-medium leading-tight text-ink-600 transition group-hover:text-security-500">
@@ -165,6 +174,9 @@ function EmptyProducts() {
       <p className="mx-auto mt-2 max-w-md text-body-sm text-ink-500">
         Explora otras categorías o escríbenos y te ayudamos a encontrar lo que necesitas.
       </p>
+      <Link to="/servicios/soporte" className="mt-4 inline-flex min-h-11 items-center font-semibold text-security-500 underline hover:text-security-600">
+        Contactar a un asesor
+      </Link>
       <Link
         to="/catalogo"
         className="mt-6 inline-flex rounded-control bg-security-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-security-600"
@@ -172,49 +184,6 @@ function EmptyProducts() {
         Volver al catálogo
       </Link>
     </div>
-  )
-}
-
-/**
- * Product grid of a category. The endpoint already includes the products of
- * every descendant category, so a family page lists its whole subtree.
- */
-function CategoryProducts({ slug }: { slug: string }) {
-  const { status, items, total, hasMore, loadingMore, loadMoreError, loadMore, retry } =
-    usePublicProductListing({ category: slug })
-
-  return (
-    <section aria-labelledby="categoria-productos" className="mt-10">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="categoria-productos" className="text-eyebrow uppercase text-ink-500">
-          Productos
-        </h2>
-        {status === 'ready' && total > 0 && (
-          <p className="text-body-sm text-ink-500">
-            <span className="font-semibold text-ink-700">{total}</span>{' '}
-            {total === 1 ? 'producto' : 'productos'}
-          </p>
-        )}
-      </div>
-      <div className="mt-5">
-        {status === 'loading' && <PublicProductGridSkeleton />}
-        {status === 'error' && <PublicProductListingError onRetry={retry} />}
-        {status === 'ready' && items.length === 0 && total === 0 && <EmptyProducts />}
-        {status === 'ready' && items.length > 0 && (
-          <>
-            <PublicProductGrid products={items} />
-            <PublicProductPager
-              shown={items.length}
-              total={total}
-              hasMore={hasMore}
-              loadingMore={loadingMore}
-              loadMoreError={loadMoreError}
-              onLoadMore={loadMore}
-            />
-          </>
-        )}
-      </div>
-    </section>
   )
 }
 
@@ -241,18 +210,12 @@ function CategorySkeleton() {
   )
 }
 
-/**
- * Shown when the slug does not exist in the tree and when the tree could not be
- * loaded: from this page both mean the same thing to the visitor, the category
- * cannot be shown. The header of the storefront keeps the retry of the menu
- * available, so no extra control is duplicated here.
- */
-function CategoryNotFound({ slug }: { slug: string }) {
+function CategoryNotFound({ slug, subcategory = false }: { slug: string; subcategory?: boolean }) {
   return (
     <section role="alert" className="rounded-card border border-surface-200 bg-white p-8 text-center">
-      <h1 className="text-2xl font-bold text-ink-900">Categoría no encontrada</h1>
+      <h1 className="text-2xl font-bold text-ink-900">{subcategory ? 'Subcategoría no encontrada' : 'Categoría no encontrada'}</h1>
       <p className="mt-2 text-body-sm text-ink-500">
-        La categoría <span className="font-semibold text-ink-700">{slug}</span> no existe o ya no
+        La {subcategory ? 'subcategoría' : 'categoría'} <span className="break-all font-semibold text-ink-700">{slug}</span> no existe o ya no
         está disponible.
       </p>
       <Link
@@ -272,26 +235,56 @@ function CategoryNotFound({ slug }: { slug: string }) {
  */
 export default function CategoryPage() {
   const { slug = '' } = useParams<{ slug: string }>()
-  const { status, categories } = useCategoryMenu()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { status, categories, retry } = useCategoryMenu()
 
   const trail = useMemo(
     () => (status === 'ready' ? findCategoryTrail(categories, slug) : null),
     [categories, slug, status],
   )
   const children = trail === null ? NO_CHILDREN : childrenBySortOrder(trail.category)
-  const showNotFound = status === 'error' || (status === 'ready' && trail === null)
-  useDocumentTitle(pageTitle(showNotFound ? 'Categoría no encontrada' : (trail?.category.name ?? 'Catálogo')))
+  const families = trail
+    ? trail.category.children.filter((child) => Boolean(child.subcategoryId))
+    : NO_CHILDREN
+  const availableFamilies = families.filter((family) => family.productCount > 0)
+  const requestedFamily = searchParams.get('tipo') ?? ''
+  const subcategorySlug = (family: MenuCategory) => family.subcategorySlug ?? family.slug
+  const activeFamily = families.find((family) => subcategorySlug(family) === requestedFamily)
+  const missingSubcategory = trail !== null && requestedFamily !== '' && !activeFamily
+  const visibleTrail = activeFamily && trail
+    ? { category: activeFamily, ancestors: [...trail.ancestors, trail.category] }
+    : trail
+  const isSubcategory = Boolean(activeFamily || trail?.ancestors.length)
+  const showNotFound = status === 'ready' && (trail === null || missingSubcategory)
+  const title = missingSubcategory
+    ? 'Subcategoría no encontrada'
+    : showNotFound ? 'Categoría no encontrada' : (visibleTrail?.category.name ?? 'Catálogo')
+  useDocumentTitle(pageTitle(title))
 
   return (
-    <StorefrontChrome>
-      <main className="mx-auto max-w-7xl px-5 py-8 lg:px-12">
+    <StorefrontChrome search={isSubcategory ? false : undefined}>
+      <main className="mx-auto w-full max-w-[105rem] px-5 py-8 lg:px-12">
         {status === 'loading' && <CategorySkeleton />}
-        {showNotFound && <CategoryNotFound slug={slug} />}
-        {status === 'ready' && trail !== null && (
+        {status === 'error' && <PublicProductListingError onRetry={retry} subject="la categoría" />}
+        {showNotFound && <CategoryNotFound slug={missingSubcategory ? requestedFamily : slug} subcategory={missingSubcategory} />}
+        {status === 'ready' && trail !== null && visibleTrail !== null && !showNotFound && (
           <>
-            <Breadcrumb trail={trail} />
-            <h1 className="mt-4 text-page-title font-bold text-ink-900">{trail.category.name}</h1>
-            {children.length > 0 && (
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <Breadcrumb trail={visibleTrail} className="lg:flex-1 lg:min-w-0" />
+              <h1 className="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">{visibleTrail.category.name}</h1>
+            </div>
+            {isSubcategory && (
+              <div className="mt-8">
+                <SubcategoryProducts
+                  key={visibleTrail.category.id}
+                  category={trail.category}
+                  subcategory={activeFamily}
+                  children={childrenBySortOrder(visibleTrail.category)}
+                  emptyState={<EmptyProducts />}
+                />
+              </div>
+            )}
+            {!isSubcategory && children.length > 0 && (
               <section aria-labelledby="categoria-subcategorias" className="mt-8">
                 <h2
                   id="categoria-subcategorias"
@@ -304,12 +297,36 @@ export default function CategoryPage() {
                   className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6"
                 >
                   {children.map((child) => (
-                    <CategoryTile key={child.id} node={child} />
+                    <CategoryTile key={child.id} node={child} parentSlug={trail.category.slug} />
                   ))}
                 </ul>
               </section>
             )}
-            <CategoryProducts slug={slug} />
+            {!isSubcategory && availableFamilies.length > 0 && (
+              <div className="mt-8 max-w-sm">
+                <label htmlFor="camera-family-filter" className="mb-2 block text-sm font-semibold text-ink-700">Subcategoría</label>
+                <select
+                  id="camera-family-filter"
+                  value={activeFamily ? subcategorySlug(activeFamily) : ''}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(searchParams)
+                    if (event.currentTarget.value) next.set('tipo', event.currentTarget.value)
+                    else next.delete('tipo')
+                    next.delete('keySpec')
+                    next.delete('requirement')
+                    next.delete('page')
+                    setSearchParams(next)
+                  }}
+                  className="min-h-11 w-full rounded-control border border-surface-300 bg-white px-3 text-sm text-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
+                >
+                  <option value="">Todas las subcategorías</option>
+                  {availableFamilies.map((family) => <option key={family.id} value={subcategorySlug(family)}>{family.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="mt-10">
+              {!isSubcategory && <SubcategoryProducts key={trail.category.id} category={trail.category} children={children} emptyState={<EmptyProducts />} />}
+            </div>
           </>
         )}
       </main>
