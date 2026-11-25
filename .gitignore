@@ -30,6 +30,8 @@ build/
 # Entorno
 .env
 *.env.local
+.env.*
+!.env.example
 
 # Datos y memoria (NUNCA al repo — datos de Grupo Security)
 # El directorio data/ tiene .gitkeep y data/import/ (con su propio .gitignore)
