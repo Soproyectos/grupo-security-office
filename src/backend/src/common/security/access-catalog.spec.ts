@@ -11,6 +11,7 @@ import {
   ACCESS_CATALOG_VERSION,
   getActionDefinition,
   isActionIdFormat,
+  isAssignableAction,
 } from './access-catalog';
 import * as catalogModule from './access-catalog';
 import type { AccessScope } from './access-catalog';
@@ -308,6 +309,21 @@ describe('Mi resumen — estadísticas de Biblioteca por pestaña', () => {
   });
 });
 
+describe('acciones que reemplazan las rutas protegidas solo por cargo', () => {
+  it('declara las cinco acciones, asignables y con sus alcances y dependencias', () => {
+    expect(ACCESS_CATALOG_VERSION).toBe('panels-20261127-1');
+    expect(definition('audit:read')).toMatchObject({ allowedScopes: ['global'], dependencies: [], enabled: true });
+    expect(definition('salesOrders:read')).toMatchObject({ allowedScopes: ['own', 'team', 'global'], dependencies: [], enabled: true });
+    expect(definition('salesOrders:invoice')).toMatchObject({ allowedScopes: ['own', 'team', 'global'], dependencies: ['salesOrders:read'], enabled: true });
+    expect(definition('storefront:manage')).toMatchObject({ allowedScopes: ['global'], dependencies: [], enabled: true });
+    expect(definition('portalTariffs:manage')).toMatchObject({ allowedScopes: ['global'], dependencies: ['portalAccounts:read'], enabled: true });
+    for (const id of ['audit:read', 'salesOrders:read', 'salesOrders:invoice', 'storefront:manage', 'portalTariffs:manage']) {
+      expect(isActionIdFormat(id)).toBe(true);
+      expect(isAssignableAction(id)).toBe(true);
+    }
+  });
+});
+
 describe('los paquetes de paneles ya no existen', () => {
   it('el catálogo solo expone acciones: no hay plantillas de paquete que asignar', () => {
     const exported = Object.keys(catalogModule);
@@ -335,6 +351,7 @@ describe('alcances propio / equipo / global por tipo de dato', () => {
       'commercialPromotions:read', 'commercialPromotions:create', 'commercialPromotions:edit',
       'commercialPromotions:publish', 'commercialPromotions:withdraw',
       'teamInsights:read',
+      'salesOrders:read', 'salesOrders:invoice',
     ];
     for (const id of groupA) expect([id, [...definition(id).allowedScopes]]).toEqual([id, THREE]);
   });

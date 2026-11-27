@@ -62,9 +62,9 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
     expect(portal.assignAdvisor).toHaveBeenCalledWith('a1', { advisorId: 'adv' }, ctx);
   });
 
-  // ---------- Configuración de tarifas por tipo: área comercial ----------
+  // ---------- Tarifa general y niveles: acción portalTariffs:manage (ver customer-portal.tariffs.spec.ts) ----------
 
-  it('GET/POST admin/price-list-mappings van tras la sesión interna; el servicio exige Super Admin o Admin Comercial', () => {
+  it('GET/POST admin/price-list-mappings van tras la sesión interna; el servicio exige portalTariffs:manage', () => {
     for (const method of [proto.listMappings, proto.mapping]) expect(guardsOf(method)).toContain(JwtAuthGuard);
   });
 
@@ -98,7 +98,7 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
   it('la clase no aplica guards a nivel global (exigiría sesión interna en rutas públicas)', () => {
     expect(Reflect.getMetadata('__guards__', CustomerPortalController)).toBeUndefined();
   });
-  it('crear y editar escalafones van tras la sesión interna; el servicio exige Super Admin', () => {
+  it('crear y editar escalafones van tras la sesión interna; el servicio exige portalTariffs:manage', () => {
     for (const method of [proto.createTier, proto.editTier]) expect(guardsOf(method)).toContain(JwtAuthGuard);
   });
 

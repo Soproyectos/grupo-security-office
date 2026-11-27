@@ -19,6 +19,7 @@ export const PORTAL_ACTIONS = {
   read: 'portalAccounts:read',
   assign: 'portalAccounts:assign',
   manage: 'portalAccounts:manage',
+  tariffs: 'portalTariffs:manage',
 } as const;
 
 /** What the access check needs to know about an account to decide its scope. */

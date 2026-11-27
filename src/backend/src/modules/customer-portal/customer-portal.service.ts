@@ -39,11 +39,12 @@ function sha256(value: string) {
 }
 
 /**
- * The tariff belongs to the COMPANY (the linked customer): the guard already exposes its tier as `tierId`.
- * An account that is not linked to a customer gets no prices at all (returns null).
+ * The tariff of an account: the guard exposes the EFFECTIVE tier as `tierId` (the linked customer's own tier wins,
+ * otherwise the tier set directly on the account). Without a tier the general tariff applies. Only approved accounts
+ * reach this point (the guard denies pending ones), so every approved account sees prices.
  */
 export function portalPricing(account: { type: PortalAccountType; tierId?: string | null; customerId?: string | null }) {
-  return account.customerId ? { type: account.type, tierId: account.tierId ?? null } : null;
+  return { type: account.type, tierId: account.tierId ?? null };
 }
 
 @Injectable()
@@ -93,6 +94,7 @@ export class CustomerPortalService {
     id:true,email:true,contactName:true,companyName:true,documentId:true,phone:true,type:true,state:true,
     privacyAcceptedAt:true,deletionRequestedAt:true,city:true,createdAt:true,
     advisorId:true,advisor:{select:{id:true,name:true}},
+    tierId:true,tier:{select:{id:true,name:true,isActive:true}},
     customerId:true,customer:{select:{id:true,code:true,name:true,documentId:true,email:true,ownerId:true,portalTierId:true,portalTier:{select:{id:true,name:true,isActive:true}}}},
   } satisfies Prisma.PortalAccountSelect;
 
@@ -109,13 +111,9 @@ export class CustomerPortalService {
     const lists=await this.priceListsById(tiers.map((x)=>x.priceListId).filter((x):x is string=>!!x));
     return tiers.map((x)=>{const l=x.priceListId?lists.get(x.priceListId):undefined;return {...x,priceList:l?{id:l.id,name:l.name,isActive:l.isActive}:null};});
   }
-  /** Tiers and the general tariff are Super Admin only (the screen for them lives in Biblioteca). */
-  requireSuperAdmin(ctx:PortalAdminContext) {
-    if(!ctx.roles?.includes(ROLE.SUPER_ADMIN))throw new ForbiddenException('No tienes permiso para esta acción');
-  }
-  /** General tariff screens: the listed roles. */
-  requireTariffAdmin(ctx:PortalAdminContext,roles:readonly string[]) {
-    if(!ctx.roles?.some(r=>roles.includes(r)))throw new ForbiddenException('No tienes permiso para esta acción');
+  /** General tariff and tiers: Super Admin, or whoever was given the `portalTariffs:manage` panel action (global). */
+  async requireTariffAdmin(ctx:PortalAdminContext) {
+    if(await this.acl.scopeOf(PORTAL_ACTIONS.tariffs,ctx)!=='global')throw new ForbiddenException('No tienes permiso para esta acción');
   }
   /** Advisors that manage accounts need the tier list to pick one; they never see the price list behind it. */
   async listTiersFor(ctx:PortalAdminContext) {
@@ -135,23 +133,24 @@ export class CustomerPortalService {
     await this.audit.log({userId:actorId,action:id?'update':'create',entity:'PortalTier',entityId:tier.id,newValues:{name:tier.name,priceListId:tier.priceListId,isActive:tier.isActive}});
     return tier;
   }
-  /** The tariff is the company's: it is stored on the linked customer, so every person of the company quotes with it. */
+  /**
+   * The tariff is set on the ACCOUNT (it does not need a linked customer). If the linked customer already has its own
+   * tier, that one wins and is the one applied; the account's own tier stays stored and applies if the customer's is removed.
+   */
   async assignTier(id:string,dto:AssignPortalTierDto,ctx:PortalAdminContext) {
     await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
     if(dto.tierId===undefined)throw new BadRequestException('Indica el escalafón o null para usar la tarifa general');
-    const account=await this.prisma.portalAccount.findUnique({where:{id},select:{id:true,state:true,customerId:true,customer:{select:{id:true,portalTierId:true,ownerId:true}}}});
+    const account=await this.prisma.portalAccount.findUnique({where:{id},select:{id:true,state:true,tierId:true,customerId:true,customer:{select:{portalTierId:true}}}});
     if(!account)throw new NotFoundException('Cuenta no encontrada');
     if(account.state==='REJECTED')throw new BadRequestException('La solicitud de esta cuenta fue rechazada');
-    if(!account.customerId)throw new BadRequestException('Primero vincula la cuenta a un cliente');
-    // The tariff changes the whole company: its owner must be within the caller's manage scope.
-    if(!(await this.acl.ownerInScope(PORTAL_ACTIONS.manage,ctx,account.customer?.ownerId??null)))throw new ForbiddenException('Esta empresa no está en tu alcance');
     if(dto.tierId) {
       const tier=await this.prisma.portalTier.findUnique({where:{id:dto.tierId}});
       if(!tier?.isActive)throw new BadRequestException('Selecciona un escalafón activo');
     }
-    const customer=await this.prisma.customer.update({where:{id:account.customerId},data:{portalTierId:dto.tierId}});
-    await this.audit.log({userId:ctx.userId,action:'update',entity:'Customer',entityId:account.customerId,oldValues:{portalTierId:account.customer?.portalTierId??null},newValues:{portalTierId:customer.portalTierId??null,viaPortalAccount:id}});
-    return {id:account.id,customerId:account.customerId,tierId:customer.portalTierId??null};
+    const updated=await this.prisma.portalAccount.update({where:{id},data:{tierId:dto.tierId}});
+    await this.audit.log({userId:ctx.userId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{tierId:account.tierId??null},newValues:{tierId:updated.tierId??null}});
+    const customerTierId=account.customer?.portalTierId??null;
+    return {id:account.id,customerId:account.customerId??null,tierId:updated.tierId??null,customerTierId,effectiveTierId:customerTierId??updated.tierId??null};
   }
 
   /**
@@ -271,7 +270,7 @@ export class CustomerPortalService {
     const saved=await this.prisma.portalAccount.update({where:{id:accountId},data,include:PORTAL_ACCOUNT_INCLUDE});
     // The person just gave a city: look for an advisor in that zone (no-op when the account already has one).
     if(dto.city!==undefined&&!saved.advisorId)await this.assignment?.assignForAccount(accountId);
-    return {account:portalAccountView({...saved,tier:saved.customer?.portalTier??null})};
+    return {account:portalAccountView({...saved,tier:saved.customer?.portalTier??saved.tier??null})};
   }
 
   /** Records the request only; staff decides and nothing is deleted here. Idempotent. */

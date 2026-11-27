@@ -18,13 +18,14 @@ const SESSION_STATES = ['ACTIVE', 'PENDING'];
 
 /**
  * What the controller needs from the account. The tariff is the COMPANY's: it comes from the linked customer
- * (`tierId` / `tier`); an account without a linked customer has no tier and gets no prices.
+ * (`tierId` / `tier`) or, failing that, the tier set on the account itself; with neither there are no prices.
  */
 function sessionAccount(account: any, jti: string | undefined) {
   return {
     id: account.id, email: account.email, type: account.type, state: account.state, customerId: account.customerId, authUserId: account.authUserId,
     contactName: account.contactName, companyName: account.companyName, city: account.city, advisorId: account.advisorId, createdAt: account.createdAt,
-    tierId: account.customer?.portalTierId ?? null, tier: account.customer?.portalTier ?? null,
+    // Effective tariff: the linked customer's own tier wins; otherwise the tier set directly on the account.
+    tierId: account.customer?.portalTierId ?? account.tierId ?? null, tier: account.customer?.portalTier ?? account.tier ?? null,
     // Minimal company view so /auth/me can tell whether the account can send quotes (canQuote).
     customer: account.customer ? { id: account.customer.id, isActive: account.customer.isActive, ownerId: account.customer.ownerId } : null,
     advisorName: account.advisor?.name ?? account.customer?.owner?.name ?? null,

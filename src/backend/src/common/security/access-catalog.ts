@@ -28,7 +28,7 @@ export interface ActionDefinition {
 }
 
 /** Versión del catálogo con la que se resuelve y con la que se asigna (§4). */
-export const ACCESS_CATALOG_VERSION = 'panels-20261125-1';
+export const ACCESS_CATALOG_VERSION = 'panels-20261127-1';
 
 const ACTION_ID_PATTERN = /^[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9-]*$/;
 
@@ -96,6 +96,15 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   action('portalAccounts:assign', 'Asignar asesor del portal', 'Asignar o reasignar el asesor de una cuenta web (y de su cliente vinculado).', COMMERCIAL_SCOPES, ['portalAccounts:read']),
   action('portalAccounts:manage', 'Gestionar cuentas del portal', 'Vincular cliente, asignar tarifa, activar, rechazar, suspender y reactivar cuentas web.', COMMERCIAL_SCOPES, ['portalAccounts:read']),
   action('portalZones:manage', 'Gestionar zonas de asesores', 'Crear, editar, activar y eliminar las zonas que reparten los registros nuevos entre asesores.', CATALOG_SCOPES, ['portalAccounts:read']),
+  // Tarifa general y niveles de clientes del portal (global: son datos de la empresa, sin dueño).
+  action('portalTariffs:manage', 'Gestionar tarifa general y niveles', 'Elegir la tarifa general de la tienda y crear o editar los niveles de clientes con su tarifa.', CATALOG_SCOPES, ['portalAccounts:read']),
+  // Pedidos de venta: ver y registrar la factura externa, con el alcance concedido.
+  action('salesOrders:read', 'Consultar pedidos', 'Ver los pedidos de venta en el alcance concedido.', COMMERCIAL_SCOPES),
+  action('salesOrders:invoice', 'Registrar factura del pedido', 'Anotar el número y la fecha de la factura de un pedido en el alcance concedido.', COMMERCIAL_SCOPES, ['salesOrders:read']),
+  // Tienda web: avisos y consultas de clientes, cuentas y ajustes de la tienda (global).
+  action('storefront:manage', 'Gestionar la tienda web', 'Ver el resumen de la tienda, cambiar sus ajustes y atender cuentas y consultas de clientes.', CATALOG_SCOPES),
+  // Auditoría: quién cambió qué. Biblioteca sigue exigiendo editar fichas con notas.
+  action('audit:read', 'Consultar auditoría', 'Ver el registro de cambios de las áreas comerciales. El historial de Biblioteca sigue pidiendo editar fichas con notas internas.', CATALOG_SCOPES),
   action('erpSales:read', 'Consultar ventas ERP', 'Ver ventas y facturas del ERP.', COMMERCIAL_SCOPES, [], false),
   action('targets:read', 'Consultar metas', 'Ver metas comerciales en el alcance concedido.', COMMERCIAL_SCOPES),
   action('stockRequests:read', 'Consultar pedidos por stock', 'Ver solicitudes por falta de stock.', COMMERCIAL_SCOPES, [], false),

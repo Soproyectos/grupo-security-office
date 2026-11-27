@@ -3,11 +3,8 @@ import { Body, Controller, ForbiddenException, Optional, Get, HttpCode, HttpStat
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { ROLE } from '../../common/rbac/roles.constants';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PortalAuthGuard, PORTAL_COOKIE, RequireApprovedPortalAccount } from './portal-auth.guard';
 import { CustomerPortalService, portalPricing } from './customer-portal.service';
@@ -27,11 +24,9 @@ import { CreatePortalPasswordDto } from './dto/create-portal-password.dto';
 /**
  * Cuentas del portal (panel): ya no son solo Super Admin. Cada ruta exige una acción de panel
  * (`portalAccounts:read|manage|assign`) con su alcance propio / de equipo / total; la comprobación vive en el
- * servicio (PortalAccountAccessService) porque depende de la cuenta concreta. Niveles, tarifa general y zonas
- * siguen siendo solo de Super Admin.
+ * servicio (PortalAccountAccessService) porque depende de la cuenta concreta. Niveles y tarifa general exigen la
+ * acción de panel `portalTariffs:manage` (global); las zonas, `portalZones:manage`. Super Admin conserva todo.
  */
-/** Configuración de tarifas por tipo: queda en manos del área comercial. */
-const MAPPING_ROLES = [ROLE.SUPER_ADMIN, ROLE.ADMIN_COMERCIAL];
 
 /**
  * Portal comercial de clientes. Tres zonas con autenticaciones INDEPENDIENTES:
@@ -43,8 +38,7 @@ const MAPPING_ROLES = [ROLE.SUPER_ADMIN, ROLE.ADMIN_COMERCIAL];
  *    nunca la del panel interno. Sin @Public, el guard global interno las
  *    bloquearía antes de que PortalAuthGuard llegara a ejecutarse.
  * 3. Rutas admin: SIN @Public → exigen sesión interna (JwtAuthGuard) y, según la ruta, la acción de
- *    panel con su alcance (servicio) o un rol vía RolesGuard (niveles, tarifa general). El RolesGuard
- *    NO es global en esta app: sin @UseGuards(RolesGuard) el @Roles() es metadata muerta.
+ *    panel con su alcance (servicio): cuentas con `portalAccounts:*`, niveles y tarifa general con `portalTariffs:manage`.
  */
 @ApiTags('Customer Portal')
 @Controller('api/customer-portal')
@@ -181,21 +175,21 @@ export class CustomerPortalController {
   @UseGuards(JwtAuthGuard)
   @Get('admin/price-list-mappings')
   @ApiBearerAuth()
-  async listMappings(@CurrentUser() user: any) { this.portal.requireTariffAdmin(this.adminCtx(user), MAPPING_ROLES); return this.portal.listMappings(); }
+  async listMappings(@CurrentUser() user: any) { await this.portal.requireTariffAdmin(this.adminCtx(user)); return this.portal.listMappings(); }
 
   @UseGuards(JwtAuthGuard)
   @Post('admin/price-list-mappings')
   @ApiBearerAuth()
-  async mapping(@Body() dto: UpsertPortalPriceListMappingDto, @CurrentUser() user: any) { this.portal.requireTariffAdmin(this.adminCtx(user), MAPPING_ROLES); return this.portal.upsertMapping(dto, user.sub ?? user.id); }
+  async mapping(@Body() dto: UpsertPortalPriceListMappingDto, @CurrentUser() user: any) { await this.portal.requireTariffAdmin(this.adminCtx(user)); return this.portal.upsertMapping(dto, user.sub ?? user.id); }
   @Get('admin/accounts') @UseGuards(JwtAuthGuard)
   accounts(@CurrentUser() user:any) {return this.portal.listAccounts(this.adminCtx(user));}
   /** Super Admin: full tiers. Advisors with portalAccounts:manage: active tiers only, to pick one for a company. */
   @Get('admin/tiers') @UseGuards(JwtAuthGuard)
   tiers(@CurrentUser() user:any) {return this.portal.listTiersFor(this.adminCtx(user));}
   @Post('admin/tiers') @UseGuards(JwtAuthGuard)
-  async createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {this.portal.requireSuperAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id);}
+  async createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {await this.portal.requireTariffAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id);}
   @Patch('admin/tiers/:id') @UseGuards(JwtAuthGuard)
-  async editTier(@Param('id') id:string,@Body() dto:PortalTierDto,@CurrentUser() user:any) {this.portal.requireSuperAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id,id);}
+  async editTier(@Param('id') id:string,@Body() dto:PortalTierDto,@CurrentUser() user:any) {await this.portal.requireTariffAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id,id);}
   @Post('admin/accounts/:id/suspend') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard)
   suspend(@Param('id') id:string,@Body() dto:SuspendPortalAccountDto,@CurrentUser() user:any) {return this.portal.suspend(id,dto.reason,this.adminCtx(user));}
   @Post('admin/accounts/:id/reactivate') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard)
