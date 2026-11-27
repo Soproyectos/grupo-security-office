@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { resolveAssetUrl } from '../../../services/api'
-import type { PublicProductResult } from '../types/publicProduct'
+import type { PublicPrice, PublicProductResult } from '../types/publicProduct'
 import { formatCop } from '../utils/formatCop'
 import { productHref } from './mega-menu/menu-model'
 import { ProductSpecLabel } from './ProductMedia'
+import AddToQuoteButton, { type QuoteAction } from './AddToQuoteButton'
 
 /**
  * Product card shared by the search, category and home pages. The price is the
@@ -15,16 +16,17 @@ import { ProductSpecLabel } from './ProductMedia'
  * route (`/api/files/:id`) resolved through `resolveAssetUrl`; without one the
  * media tile shows the spec label (family icon plus key specs).
  */
-export default function PublicProductCard({ product, eagerImage = false, compact = false }: { product: PublicProductResult; eagerImage?: boolean; compact?: boolean }) {
+export default function PublicProductCard({ product, eagerImage = false, compact = false, assignedPrice = null, quoteAction }: { product: PublicProductResult; eagerImage?: boolean; compact?: boolean; assignedPrice?: PublicPrice | null; /** Present only for a signed-in client with an active account. */ quoteAction?: QuoteAction }) {
   const imageSrc = product.imageUrl ? resolveAssetUrl(product.imageUrl) : null
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const showImage = imageSrc !== null && failedImage !== imageSrc
 
+  const canQuote = quoteAction !== undefined && !product.isInformational
   return (
-    <li>
+    <li className={canQuote ? 'flex h-full flex-col gap-2' : undefined}>
       <Link
         to={productHref(product.id)}
-        className="group flex h-full flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition-colors duration-150 hover:border-storefront-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
+        className={`group flex flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition-colors duration-150 hover:border-storefront-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500 ${canQuote ? 'flex-1' : 'h-full'}`}
       >
         <span className="block aspect-[var(--product-card-media-ratio,4/3)] w-full overflow-hidden bg-white p-3">
           {showImage ? (
@@ -53,12 +55,12 @@ export default function PublicProductCard({ product, eagerImage = false, compact
             </span>
           )}
           <span className="mt-auto pt-2">
-            {product.price !== null ? (
+            {assignedPrice !== null || product.price !== null ? (
               <>
                 <span className="block font-condensed text-2xl font-bold leading-tight tabular-nums text-storefront-ink">
-                  {formatCop(product.price.value)}
+                  {formatCop((assignedPrice ?? product.price)!.value)}
                 </span>
-                <span className="text-micro text-ink-500">IVA incluido</span>
+                <span className="text-micro text-ink-500">{assignedPrice !== null ? 'Tu tarifa' : 'IVA incluido'}</span>
               </>
             ) : (
               <>
@@ -67,7 +69,8 @@ export default function PublicProductCard({ product, eagerImage = false, compact
                     Datos en preparación
                   </span>
                 )}
-                {!product.isInformational && (
+                {canQuote && <span className="block text-sm font-semibold text-ink-600">Precio por confirmar</span>}
+                {!product.isInformational && !canQuote && (
                   <span className="mt-1 inline-flex min-h-11 items-center rounded-control border border-security-500 px-4 text-sm font-bold text-security-500 transition-colors group-hover:bg-security-500 group-hover:text-white">
                     Cotizar
                   </span>
@@ -77,6 +80,13 @@ export default function PublicProductCard({ product, eagerImage = false, compact
           </span>
         </span>
       </Link>
+      {quoteAction && !product.isInformational && (
+        <AddToQuoteButton
+          action={quoteAction}
+          productName={product.name}
+          className="w-full rounded-control border border-security-500 px-3 text-sm font-bold text-security-600 transition-colors hover:bg-security-50 disabled:opacity-60"
+        />
+      )}
     </li>
   )
 }

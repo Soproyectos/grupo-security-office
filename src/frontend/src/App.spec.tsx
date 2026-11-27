@@ -24,12 +24,9 @@ function login(roles = ['Consulta']) {
   useAuthStore.setState(session)
   Object.assign(useAuthStore.getInitialState(), session)
 }
-function renderAt(path: string, grants?: AccessGrant[], failed = false, packageIds: string[] = []) {
+function renderAt(path: string, grants?: AccessGrant[], failed = false) {
   const client = new QueryClient()
-  if (grants) client.setQueryData(userAccessKey('u1'), {
-    catalogVersion: 'v1', accessVersion: 1, grants, sources: [],
-    packages: packageIds.map((id) => ({ id, name: id, selections: [], applied: true, sourceId: id })),
-  })
+  if (grants) client.setQueryData(userAccessKey('u1'), { catalogVersion: 'v1', accessVersion: 1, grants, sources: [] })
   if (failed) client.getQueryCache().build(client, { queryKey: userAccessKey('u1') }).setState({ status: 'error', error: new Error('sin conexión') })
   return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><App /></MemoryRouter></QueryClientProvider>)
 }
@@ -54,52 +51,47 @@ describe('rutas administrativas con asignaciones expresas', () => {
     const html = renderAt('/commercial/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], true)
     expect(html).not.toContain('DATOS-BIBLIOTECA')
   })
-  it('un usuario de cualquier cargo entra al paquete Productos que recibió', () => {
+  it('un usuario de cualquier cargo entra a Productos con la acción que recibió', () => {
     login(['Vendedor'])
-    const html = renderAt('/commercial/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], false, ['biblioteca-consulta'])
+    const html = renderAt('/commercial/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])
     expect(html).toContain('DATOS-BIBLIOTECA')
     expect(html).toContain('>Biblioteca</h1>')
   })
-  it('Precios monta con su paquete y no abre por grant dependiente sin paquete exacto', () => {
-    const allowed = renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'prices:preview', scope: 'global' }], false, ['biblioteca-precios'])
+  it('Precios monta con prices:preview y no abre con otras acciones', () => {
+    const allowed = renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'prices:preview', scope: 'global' }])
     expect(allowed).toContain('DATOS-PRECIOS')
-    expect(renderAt('/commercial/library/update', [
-      { sourceId: 's1', actionId: 'products:read', scope: 'global' },
-      { sourceId: 's1', actionId: 'prices:preview', scope: 'global' },
-    ])).not.toContain('DATOS-PRECIOS')
-    expect(renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], false, ['biblioteca-consulta'])).not.toContain('DATOS-PRECIOS')
+    expect(renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])).not.toContain('DATOS-PRECIOS')
+    expect(renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'prices:preview', scope: 'team' }])).not.toContain('DATOS-PRECIOS')
     expect(renderAt('/commercial/library/update', [{ sourceId: 's1', actionId: 'listas:read', scope: 'global' }])).not.toContain('DATOS-PRECIOS')
     expect(renderAt('/commercial/library/update', [])).not.toContain('DATOS-PRECIOS')
   })
-  it('Fichas monta con su paquete y no abre por grant dependiente sin paquete exacto', () => {
-    const allowed = renderAt('/commercial/library/update/products', [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }], false, ['biblioteca-fichas'])
+  it('Fichas monta con products:write y no abre solo con products:read', () => {
+    const allowed = renderAt('/commercial/library/update/products', [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }])
     expect(allowed).toContain('DATOS-FICHAS')
-    expect(renderAt('/commercial/library/update/products', [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }])).not.toContain('DATOS-FICHAS')
+    expect(renderAt('/commercial/library/update/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])).not.toContain('DATOS-FICHAS')
   })
-  it('Importaciones monta con imports:read y su paquete; Fichas, Productos o un grant sin paquete no la abren', () => {
+  it('Importaciones monta con imports:read; Fichas o Productos no la abren', () => {
     const path = '/commercial/library/update/import'
-    const allowed = renderAt(path, [{ sourceId: 's1', actionId: 'imports:read', scope: 'global' }], false, ['biblioteca-importaciones'])
+    const allowed = renderAt(path, [{ sourceId: 's1', actionId: 'imports:read', scope: 'global' }])
     expect(allowed).toContain('DATOS-IMPORTADOR-CATALOGO')
     expect(allowed).toContain('Importaciones</a>')
-    const fichas = renderAt(path, [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }], false, ['biblioteca-fichas'])
+    const fichas = renderAt(path, [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }])
     expect(fichas).not.toContain('DATOS-IMPORTADOR-CATALOGO')
-    const noPackage = renderAt(path, [{ sourceId: 's1', actionId: 'imports:read', scope: 'global' }])
-    expect(noPackage).not.toContain('DATOS-IMPORTADOR-CATALOGO')
-    expect(noPackage).toContain('Sin paneles asignados')
-    const consulta = renderAt(path, [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], false, ['biblioteca-consulta'])
+    const consulta = renderAt(path, [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])
     expect(consulta).not.toContain('DATOS-IMPORTADOR-CATALOGO')
+    const noScope = renderAt(path, [{ sourceId: 's1', actionId: 'imports:read', scope: 'own' }])
+    expect(noScope).not.toContain('DATOS-IMPORTADOR-CATALOGO')
     expect(renderAt(path, [])).not.toContain('DATOS-IMPORTADOR-CATALOGO')
   })
-  it('Catálogos maestros y sus subrutas montan con masters:read; la URL directa sin concesión se niega', () => {
+  it('Catálogos maestros y sus subrutas montan con masters:read; la URL directa sin esa acción se niega', () => {
     const grants = [{ sourceId: 's1', actionId: 'masters:read', scope: 'global' as const }]
     for (const path of ['/commercial/library/masters', '/commercial/library/masters/marcas']) {
-      expect(renderAt(path, grants, false, ['biblioteca-maestros'])).toContain('DATOS-MAESTROS')
-      expect(renderAt(path, [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], false, ['biblioteca-consulta'])).not.toContain('DATOS-MAESTROS')
-      expect(renderAt(path, grants)).not.toContain('DATOS-MAESTROS')
+      expect(renderAt(path, grants)).toContain('DATOS-MAESTROS')
+      expect(renderAt(path, [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])).not.toContain('DATOS-MAESTROS')
       expect(renderAt(path, [])).not.toContain('DATOS-MAESTROS')
     }
   })
-  it('Super Admin entra a las pestañas nuevas sin paquetes', () => {
+  it('Super Admin entra a las pestañas nuevas sin asignaciones', () => {
     login(['Super Admin'])
     expect(renderAt('/commercial/library/update/import', [])).toContain('DATOS-IMPORTADOR-CATALOGO')
     expect(renderAt('/commercial/library/masters', [])).toContain('DATOS-MAESTROS')
@@ -107,13 +99,13 @@ describe('rutas administrativas con asignaciones expresas', () => {
 
   it('el editor de ficha monta con products:write, fuera del submenú de Biblioteca, y no abre sin esa acción', () => {
     const path = '/commercial/library/update/products/abc'
-    // El paquete aplicado concede Fichas y, con ellas, el editor.
-    const allowed = renderAt(path, [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }], false, ['biblioteca-fichas'])
+    const allowed = renderAt(path, [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }])
     expect(allowed).toContain('DATOS-EDITOR-FICHA')
     expect(allowed).not.toContain('Actualización')
     const denied = renderAt(path, [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])
     expect(denied).not.toContain('DATOS-EDITOR-FICHA')
-    expect(denied).toContain('Sin paneles asignados')
+    // Con solo Productos hay otra pestaña disponible: se le lleva allí en vez de mostrar un aviso.
+    expect(denied).not.toContain('Sin paneles asignados')
     // listas:read ya no concede ninguna pestaña de Biblioteca.
     const listsOnly = renderAt(path, [{ sourceId: 's1', actionId: 'listas:read', scope: 'global' }])
     expect(listsOnly).not.toContain('DATOS-EDITOR-FICHA')
@@ -130,22 +122,23 @@ describe('rutas administrativas con asignaciones expresas', () => {
       editor: ['/commercial/library/update/products/abc', 'DATOS-EDITOR-FICHA'],
       precios: ['/commercial/library/update', 'DATOS-PRECIOS'],
     } as const
-    const opens = (name: keyof typeof ROUTES, grants: AccessGrant[], packages: string[]) => renderAt(ROUTES[name][0], grants, false, packages).includes(ROUTES[name][1])
+    const opens = (name: keyof typeof ROUTES, grants: AccessGrant[]) => renderAt(ROUTES[name][0], grants, false).includes(ROUTES[name][1])
 
+    // «Ver productos» (products:read) es la acción de la pestaña Productos y también un requisito de Fichas y Precios.
     it.each([
-      ['solo Fichas', FICHAS, ['biblioteca-fichas'], { productos: false, fichas: true, editor: true, precios: false }],
-      ['solo Precios', PRECIOS, ['biblioteca-precios'], { productos: false, fichas: false, editor: false, precios: true }],
-      ['solo Productos', PRODUCTOS, ['biblioteca-consulta'], { productos: true, fichas: false, editor: false, precios: false }],
-      ['Fichas y Precios', [...FICHAS, ...PRECIOS], ['biblioteca-fichas', 'biblioteca-precios'], { productos: false, fichas: true, editor: true, precios: true }],
-      ['las tres', [...FICHAS, ...PRECIOS, ...PRODUCTOS], ['biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios'], { productos: true, fichas: true, editor: true, precios: true }],
-      ['paquete anterior Actualización', [...FICHAS, ...PRECIOS], ['biblioteca-actualizacion'], { productos: false, fichas: true, editor: true, precios: true }],
-    ] as Array<[string, AccessGrant[], string[], Record<keyof typeof ROUTES, boolean>]>)('%s', (_name, grants, packages, expected) => {
+      ['solo Fichas', FICHAS, { productos: true, fichas: true, editor: true, precios: false }],
+      ['solo Precios', PRECIOS, { productos: true, fichas: false, editor: false, precios: true }],
+      ['solo Productos', PRODUCTOS, { productos: true, fichas: false, editor: false, precios: false }],
+      ['Fichas y Precios', [...FICHAS, ...PRECIOS], { productos: true, fichas: true, editor: true, precios: true }],
+      ['las tres', [...FICHAS, ...PRECIOS, ...PRODUCTOS], { productos: true, fichas: true, editor: true, precios: true }],
+      ['Fichas sin ver productos', grantsOf('products:write'), { productos: false, fichas: true, editor: true, precios: false }],
+    ] as Array<[string, AccessGrant[], Record<keyof typeof ROUTES, boolean>]>)('%s', (_name, grants, expected) => {
       for (const name of Object.keys(ROUTES) as Array<keyof typeof ROUTES>) {
-        expect(opens(name, grants, packages), name).toBe(expected[name])
+        expect(opens(name, grants), name).toBe(expected[name])
       }
     })
     it('quien no tiene Productos pero sí otra pestaña no ve el aviso de acceso denegado: se le redirige', () => {
-      const html = renderAt('/commercial/products', FICHAS, false, ['biblioteca-fichas'])
+      const html = renderAt('/commercial/products', grantsOf('products:write'), false)
       expect(html).not.toContain('DATOS-BIBLIOTECA')
       expect(html).not.toContain('No tienes acceso a este apartado.')
     })
@@ -164,25 +157,15 @@ describe('rutas administrativas con asignaciones expresas', () => {
     expect(html).toContain('No tienes acceso a este apartado.')
   })
   it('retirar la última concesión conserva la identidad y retira la página', () => {
-    expect(renderAt('/commercial/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }], false, ['biblioteca-consulta'])).toContain('DATOS-BIBLIOTECA')
+    expect(renderAt('/commercial/products', [{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])).toContain('DATOS-BIBLIOTECA')
     expect(renderAt('/commercial/products', [])).not.toContain('DATOS-BIBLIOTECA')
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
   })
-  it('Fichas y Publicar en tienda no abren Productos aunque sus paquetes concedan products:read', () => {
-    const update = [
-      { sourceId: 's1', actionId: 'products:read', scope: 'global' as const },
-      { sourceId: 's1', actionId: 'products:write', scope: 'global' as const },
-    ]
-    const publication = [
-      { sourceId: 's1', actionId: 'products:read', scope: 'global' as const },
-      { sourceId: 's1', actionId: 'products:write', scope: 'global' as const },
-      { sourceId: 's1', actionId: 'products:publish', scope: 'global' as const },
-    ]
-    expect(renderAt('/commercial/products', update, false, ['biblioteca-fichas'])).not.toContain('DATOS-BIBLIOTECA')
-    expect(renderAt('/commercial/products', publication, false, ['biblioteca-publicacion'])).not.toContain('DATOS-BIBLIOTECA')
-    expect(renderAt('/commercial/products/p1', update, false, ['biblioteca-fichas'])).not.toContain('DATOS-DETALLE-PRODUCTO')
-    expect(renderAt('/commercial/products', update)).not.toContain('DATOS-BIBLIOTECA')
-    expect(renderAt('/commercial/library/update/products', update, false, ['biblioteca-fichas'])).toContain('DATOS-FICHAS')
+  it('Publicar en tienda por sí sola no abre Productos, Fichas ni sus detalles', () => {
+    const publishOnly = [{ sourceId: 's1', actionId: 'products:publish', scope: 'global' as const }]
+    expect(renderAt('/commercial/products', publishOnly)).not.toContain('DATOS-BIBLIOTECA')
+    expect(renderAt('/commercial/products/p1', publishOnly)).not.toContain('DATOS-DETALLE-PRODUCTO')
+    expect(renderAt('/commercial/library/update/products', publishOnly)).not.toContain('DATOS-FICHAS')
   })
   it('las rutas antiguas de Publicación redirigen a las fichas de Biblioteca', () => {
     const grants = [
@@ -191,12 +174,12 @@ describe('rutas administrativas con asignaciones expresas', () => {
       { sourceId: 's1', actionId: 'products:publish', scope: 'global' as const },
     ]
     for (const path of ['/catalog-management/publication', '/catalog-management/publication/products/p1']) {
-      const html = renderAt(path, grants, false, ['biblioteca-fichas', 'biblioteca-publicacion'])
+      const html = renderAt(path, grants, false)
       expect(html).toContain('Navegación de Biblioteca')
       expect(html).not.toContain('>Publicación<')
     }
   })
-  it('Super Admin conserva acceso a todas las pestañas y rutas sin paquetes aplicados', () => {
+  it('Super Admin conserva acceso a todas las pestañas y rutas sin asignaciones', () => {
     login(['Super Admin'])
     for (const [path, marker] of [
       ['/commercial/products', 'DATOS-BIBLIOTECA'],

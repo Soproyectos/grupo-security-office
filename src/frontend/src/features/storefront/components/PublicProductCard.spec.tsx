@@ -17,12 +17,12 @@ const product: PublicProductResult = {
   price: { value: 118258.8, currency: 'COP' },
 }
 
-function render(overrides: Partial<PublicProductResult> = {}): string {
+function render(overrides: Partial<PublicProductResult> = {}, assignedPrice: { value: number; currency: string } | null = null): string {
   return renderToStaticMarkup(
     createElement(
       MemoryRouter,
       null,
-      createElement('ul', null, createElement(PublicProductCard, { product: { ...product, ...overrides } })),
+      createElement('ul', null, createElement(PublicProductCard, { product: { ...product, ...overrides }, assignedPrice })),
     ),
   )
 }
@@ -120,5 +120,55 @@ describe('PublicProductCard', () => {
     const markup = render()
 
     expect(markup.split('<a ').length - 1).toBe(1)
+  })
+
+  it('con tarifa del cliente muestra ese valor y «Tu tarifa» en vez del precio público', () => {
+    const markup = render({}, { value: 98000, currency: 'COP' })
+
+    expect(markup).toContain('$ 98.000')
+    expect(markup).toContain('Tu tarifa')
+    expect(markup).not.toContain('$ 118.259')
+    expect(markup).not.toContain('IVA incluido')
+  })
+
+  it('con tarifa del cliente muestra su valor aunque el público no tenga precio, sin pedir cotizar', () => {
+    const markup = render({ price: null }, { value: 98000, currency: 'COP' })
+
+    expect(markup).toContain('$ 98.000')
+    expect(markup).not.toContain('Cotizar')
+  })
+
+  it('sin tarifa del cliente conserva el precio público', () => {
+    expect(render()).toContain('IVA incluido')
+  })
+})
+
+describe('PublicProductCard con cotización del cliente', () => {
+  const quoteAction = { inList: 0, add: () => true }
+  const renderWith = (overrides: Partial<PublicProductResult> = {}, props: Record<string, unknown> = {}): string =>
+    renderToStaticMarkup(
+      createElement(MemoryRouter, null, createElement('ul', null, createElement(PublicProductCard, { product: { ...product, ...overrides }, ...props }))),
+    )
+
+  it('un cliente activo ve «Agregar a mi cotización» fuera del enlace de la tarjeta y sin «Cotizar»', () => {
+    const markup = renderWith({ price: null }, { quoteAction })
+    expect(markup).toContain('Agregar a mi cotización')
+    expect(markup).toContain('Precio por confirmar')
+    expect(markup).not.toContain('>Cotizar<')
+    expect(markup.indexOf('</a>')).toBeLessThan(markup.indexOf('Agregar a mi cotización'))
+  })
+
+  it('muestra cuántas unidades lleva ya en su cotización', () => {
+    expect(renderWith({}, { quoteAction: { inList: 3, add: () => true } })).toContain('En tu cotización: 3 unidades')
+  })
+
+  it('sin sesión activa conserva «Cotizar» y no ofrece la lista', () => {
+    const markup = renderWith({ price: null })
+    expect(markup).toContain('Cotizar')
+    expect(markup).not.toContain('Agregar a mi cotización')
+  })
+
+  it('una ficha informativa no se agrega a la cotización', () => {
+    expect(renderWith({ isInformational: true, price: null }, { quoteAction })).not.toContain('Agregar a mi cotización')
   })
 })

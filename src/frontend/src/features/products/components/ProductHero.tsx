@@ -7,11 +7,16 @@ import { previewField } from '../preview/preview-fields';
 import type { DownloadHandler, ProductDetail } from '../types';
 import { cx } from '../styles';
 import { ChevronRightIcon, DownloadIcon, FeatureGlyph, HomeIcon } from './icons';
+import type { QuoteAction } from '../../storefront/components/AddToQuoteButton';
 import { ProductCtas, ProductPriceBlock, ProductTrustStrip } from './ProductPurchase';
 
 interface ProductHeroProps {
   product: ProductDetail;
   onDownload?: DownloadHandler;
+  /** Tarifa del cliente con sesión (solo se muestra, no altera los datos públicos). */
+  assignedPrice?: ProductDetail['price'];
+  /** Solo para un cliente con cuenta activa: «Agregar a mi cotización». */
+  quoteAction?: QuoteAction;
 }
 
 /**
@@ -119,7 +124,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
   );
 }
 
-export function ProductHero({ product, onDownload }: ProductHeroProps) {
+export function ProductHero({ product, onDownload, assignedPrice = null, quoteAction }: ProductHeroProps) {
   const datasheet = product.documents.find((d) => d.type === 'datasheet');
   const description = product.description?.trim();
 
@@ -160,7 +165,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
           {product.brand && <p className="mt-1 text-sm text-neutral-500" {...previewField('brand')}>Marca: {product.brand}</p>}
         </div>
 
-        <ProductPriceBlock price={product.price} isInformational={product.isInformational} discontinued={product.status === 'discontinued'} />
+        <ProductPriceBlock price={assignedPrice ?? product.price} assigned={assignedPrice !== null} isInformational={product.isInformational} discontinued={product.status === 'discontinued'} />
 
         {product.highlights.length > 0 ? (
           <ul className="space-y-2.5" {...previewField('highlights')}>
@@ -179,7 +184,7 @@ export function ProductHero({ product, onDownload }: ProductHeroProps) {
           )
         )}
 
-        <ProductCtas product={product} />
+        <ProductCtas product={product} quoteAction={quoteAction} />
 
         {datasheet && (
           <a

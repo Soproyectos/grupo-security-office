@@ -1,9 +1,24 @@
+/** Municipio de la lista fija (DIVIPOLA). */
+export interface PortalMunicipality {
+  code: string
+  name: string
+  departmentCode: string
+  department: string
+}
+
 export type PortalAccountType = 'FINAL_CUSTOMER' | 'INSTALLER'
 
 export interface PortalAccount {
   id: string
   email: string
   type: PortalAccountType
+  /** PENDING = en revisión por un asesor; solo ACTIVE ve precios y cotiza. */
+  state?: 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED' | null
+  city?: PortalMunicipality | null
+  /** Pending backend field: false when the account still lacks a linked company or advisor. */
+  canQuote?: boolean
+  /** Advisor in charge of the company (name only); null while none is assigned. */
+  advisor?: { name: string } | null
   contactName?: string
   companyName?: string
   tier?: { id: string; name: string; isActive: boolean } | null
@@ -18,6 +33,8 @@ export interface PortalAccount {
 
 export interface PortalProfileInput {
   companyName: string
+  /** Código DIVIPOLA del municipio. */
+  city?: string
   documentId?: string
   phone?: string
   acceptPrivacy?: true
@@ -49,16 +66,6 @@ export interface CatalogFilters {
   pageSize?: number
 }
 
-export interface PortalRegistration {
-  email: string
-  password: string
-  contactName: string
-  companyName: string
-  documentId?: string
-  phone?: string
-  type?: PortalAccountType
-}
-
 export interface PendingPortalAccount extends PortalAccount {
   contactName: string
   companyName: string
@@ -67,3 +74,44 @@ export interface PendingPortalAccount extends PortalAccount {
   state: 'PENDING'
   createdAt: string
 }
+
+export interface AdminTier {
+  id: string
+  name: string
+  description?: string | null
+  isActive: boolean
+  priceListId?: string | null
+  priceList?: { id: string; name: string; isActive: boolean } | null
+}
+
+export interface AdminPriceList { id: string; name: string; isActive: boolean }
+
+export interface AdminPortalAccount {
+  id: string
+  email: string
+  contactName: string
+  companyName: string
+  documentId?: string | null
+  phone?: string | null
+  state: PortalAdminAccountState
+  type?: PortalAccountType
+  /** Ciudad del registro, ya resuelta por el servidor (nombre y departamento). */
+  city?: PortalMunicipality | null
+  advisorId?: string | null
+  advisor?: { id: string; name: string } | null
+  customerId?: string | null
+  /** La tarifa es de la empresa: el nivel vive en el cliente vinculado. */
+  customer?: {
+    id: string; code: string; name: string; documentId?: string | null; email?: string | null
+    ownerId?: string | null; portalTierId?: string | null
+    portalTier?: { id: string; name: string; isActive: boolean } | null
+  } | null
+  privacyAcceptedAt?: string | null
+  deletionRequestedAt?: string | null
+  createdAt: string
+}
+
+/** Asesor que quien asigna puede elegir (GET admin/advisors). */
+export interface AdminAdvisor { id: string; name: string; zone: string | null }
+
+export interface AdminPriceMapping { id: string; type: PortalAccountType; priceListId: string; priceList?: AdminPriceList | null }

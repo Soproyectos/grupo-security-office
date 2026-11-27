@@ -4,9 +4,7 @@ import { createElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import CustomerAccountPage, { CustomerPortalShell } from './CustomerAccountPage'
-import ClientCatalogPage from './ClientCatalogPage'
 import CompleteProfilePage from './CompleteProfilePage'
-import PortalProductDetailPage from './PortalProductDetailPage'
 
 /**
  * Static render of the portal layout: the shell wraps every /clientes/* route in
@@ -22,7 +20,6 @@ const sessionMock = vi.hoisted(() => ({
 }))
 const logoutMock = vi.hoisted(() => ({ isPending: false, isError: false, mutateAsync: vi.fn() }))
 const profileMock = vi.hoisted(() => ({ isPending: false, isError: false, mutate: vi.fn() }))
-const productMock = vi.hoisted(() => ({ data: undefined as unknown, isLoading: false }))
 
 vi.mock('../hooks/useCustomerPortal', () => ({
   useCustomerPortalSession: () => sessionMock,
@@ -35,11 +32,6 @@ vi.mock('../hooks/usePortalProfile', () => ({
   useChangePortalPassword: () => profileMock,
   useChangePortalEmail: () => profileMock,
   useRefreshPortalSession: () => vi.fn(),
-}))
-vi.mock('../hooks/useCatalog', () => ({
-  useCustomerCatalog: () => ({ data: undefined, isLoading: false, isError: false }),
-  useCustomerCatalogProduct: () => productMock,
-  usePublicCatalogProduct: () => productMock,
 }))
 
 function renderPortal(path: string): string {
@@ -55,11 +47,6 @@ function renderPortal(path: string): string {
           createElement(Route, { index: true, element: createElement(CustomerAccountPage) }),
           createElement(Route, { path: 'perfil', element: createElement(CustomerAccountPage, { profile: true }) }),
           createElement(Route, { path: 'completar-perfil', element: createElement(CompleteProfilePage) }),
-          createElement(Route, { path: 'productos', element: createElement(ClientCatalogPage) }),
-          createElement(Route, {
-            path: 'productos/:productId',
-            element: createElement(PortalProductDetailPage, { privateCatalog: true }),
-          }),
         ),
       ),
   )
@@ -76,18 +63,11 @@ beforeEach(() => {
   sessionMock.data = { id: 'a1', email: 'ana@example.com', contactName: 'Ana Pérez', companyName: 'Seguridad SAS', type: 'CLIENT' }
   logoutMock.isPending = false
   logoutMock.isError = false
-  productMock.isLoading = false
-  productMock.data = {
-    id: 'p1', sku: 'CAM-4K', name: 'Cámara Domo 4K', description: null, image: null,
-    brand: { name: 'Hikvision' }, price: null,
-  }
 })
 
 describe.each([
   ['/clientes', 'Bienvenido, Ana Pérez'],
   ['/clientes/perfil', 'Mis datos'],
-  ['/clientes/productos', 'Catálogo para clientes'],
-  ['/clientes/productos/p1', 'Cámara Domo 4K'],
 ])('portal en %s', (path, title) => {
   it('tiene un solo <main>, un solo <h1> y la plantilla común', () => {
     const markup = renderPortal(path)
@@ -108,8 +88,39 @@ describe.each([
     expect(occurrences(markup, 'Cerrar sesión</button>')).toBe(1)
     expect(markup).toMatch(/id="storefront-account-menu"[^>]*hidden[^>]*>.*Cerrar sesión<\/button>/)
     expect(markup).toContain('aria-label="Mi cuenta de cliente"')
-    expect(markup).toContain('href="/clientes/productos"')
+    expect(markup).toContain('>Inicio</a>')
     expect(markup).toContain('href="/clientes/perfil"')
+  })
+})
+
+describe('inicio del portal', () => {
+  const ready = { id: 'a1', email: 'ana@example.com', contactName: 'Ana Pérez', companyName: 'Seguridad SAS', type: 'CLIENT', state: 'ACTIVE', canQuote: true, profileComplete: true, tier: { id: 't1', name: 'ORO', isActive: true } }
+
+  it('una cuenta lista ve sus pestañas de cotización, a su asesor y el botón al catálogo', () => {
+    sessionMock.data = { ...ready, advisor: { name: 'Carlos Ruiz' } }
+    const markup = renderPortal('/clientes')
+
+    expect(markup).toContain('>Mi cotización</a>')
+    expect(markup).toContain('>Mis cotizaciones</a>')
+    expect(markup).not.toContain('>Catálogo</a>')
+    expect(markup).toContain('Tu asesor')
+    expect(markup).toContain('Carlos Ruiz')
+    expect(markup).toContain('Escribir por WhatsApp')
+    expect(markup).toContain('Tu cotización está vacía')
+    expect(markup).toContain('href="/catalogo"')
+    expect(markup).toContain('ORO')
+  })
+
+  it('una cuenta en revisión no ve pestañas de cotización y se le explica qué pasa', () => {
+    sessionMock.data = { ...ready, state: 'PENDING', canQuote: false, advisor: null, tier: null }
+    const markup = renderPortal('/clientes')
+
+    expect(markup).not.toContain('>Mi cotización</a>')
+    expect(markup).not.toContain('>Mis cotizaciones</a>')
+    expect(markup).toContain('Tu cuenta está en revisión')
+    expect(markup).toContain('Un asesor se hará cargo de tu cuenta pronto')
+    expect(markup).toContain('Mientras tanto, mira el catálogo')
+    expect(markup).not.toContain('Tu clasificación comercial')
   })
 })
 

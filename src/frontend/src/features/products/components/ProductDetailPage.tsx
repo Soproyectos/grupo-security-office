@@ -8,6 +8,7 @@ import { ProductSpecs } from './ProductSpecs';
 import { ProductResources } from './ProductResources';
 import { ProductJsonLd } from './ProductJsonLd';
 import { ProductMobileBar } from './ProductPurchase';
+import type { QuoteAction } from '../../storefront/components/AddToQuoteButton';
 
 const SUBNAV_HEIGHT = 56;
 
@@ -17,6 +18,10 @@ interface ProductDetailPageProps {
   headerOffset?: number;
   onDownload?: DownloadHandler;
   licenseText?: ReactNode;
+  /** Tarifa del cliente con sesión; reemplaza solo lo que se muestra, no los datos estructurados públicos. */
+  assignedPrice?: ProductDetail['price'];
+  /** Solo para un cliente con cuenta activa: «Agregar a mi cotización». */
+  quoteAction?: QuoteAction;
 }
 
 /**
@@ -28,6 +33,8 @@ export function ProductDetailPage({
   headerOffset = 0,
   onDownload,
   licenseText,
+  assignedPrice = null,
+  quoteAction,
 }: ProductDetailPageProps) {
   const sections: SubnavSection[] = [];
   if (product.specGroups.length > 0) sections.push({ id: 'especificaciones', label: 'Especificaciones' });
@@ -42,7 +49,7 @@ export function ProductDetailPage({
 
       <div className={ui.container}>
         <ProductBreadcrumb items={product.breadcrumb} />
-        <ProductHero product={product} onDownload={onDownload} />
+        <ProductHero product={product} onDownload={onDownload} assignedPrice={assignedPrice} quoteAction={quoteAction} />
       </div>
 
       {sections.length > 0 && (
@@ -82,7 +89,7 @@ export function ProductDetailPage({
         </section>
       )}
 
-      <ProductMobileBar product={product} />
+      <ProductMobileBar product={product} assignedPrice={assignedPrice} quoteAction={quoteAction} />
     </div>
   );
 }
