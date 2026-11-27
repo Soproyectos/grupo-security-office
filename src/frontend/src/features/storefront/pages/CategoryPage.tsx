@@ -132,14 +132,14 @@ function Breadcrumb({ trail, className }: { trail: CategoryTrail; className?: st
  * the `CategoryIcon` mask because `currentColor` does not cross the `<img>`
  * boundary.
  */
-export function CategoryTile({ node, parentSlug }: { node: MenuCategory; parentSlug?: string }) {
+export function CategoryTile({ node, parentSlug, large = false }: { node: MenuCategory; parentSlug?: string; large?: boolean }) {
   const imageUrl = categoryImage(node)
   const [failedImage, setFailedImage] = useState<string | null>(null)
 
   return (
-    <li className="flex flex-col items-center gap-3 text-center">
+    <li className={`flex flex-col items-center gap-3 text-center ${large ? 'w-[8.5rem] sm:w-44' : ''}`}>
       <Link to={categoryNodeHref(node, parentSlug)} className="group flex flex-col items-center gap-3 text-center">
-        <span className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-security-500 bg-white transition group-hover:border-security-600 group-hover:shadow-lg">
+        <span className={`flex items-center justify-center overflow-hidden rounded-full border border-security-500 bg-white transition group-hover:border-security-600 group-hover:shadow-lg ${large ? 'h-28 w-28 sm:h-36 sm:w-36' : 'h-24 w-24'}`}>
           {imageUrl !== null && failedImage !== imageUrl ? (
             <img
               src={imageUrl}
@@ -158,7 +158,7 @@ export function CategoryTile({ node, parentSlug }: { node: MenuCategory; parentS
             </span>
           )}
         </span>
-        <span className="line-clamp-2 text-body-sm font-medium leading-tight text-ink-600 transition group-hover:text-security-500">
+        <span className={`line-clamp-2 leading-tight transition group-hover:text-security-500 ${large ? 'text-base font-semibold text-ink-900' : 'text-body-sm font-medium text-ink-600'}`}>
           {node.name}
         </span>
       </Link>

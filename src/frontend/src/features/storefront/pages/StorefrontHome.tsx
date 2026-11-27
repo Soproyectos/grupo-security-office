@@ -126,8 +126,9 @@ export default function StorefrontHome() {
                   to={categoryHref(slug)}
                   className={`group flex h-full flex-col overflow-hidden rounded-card border border-surface-200 hover:border-security-600 ${FOCUS}`}
                 >
-                  <span className="block aspect-[4/3] bg-white">
-                    <img src={`/images/home/tiles/${slug}.jpg`} alt="" loading="lazy" className="h-full w-full object-contain p-3" />
+                  {/* The photo is taken out of the flow so its own proportions cannot stretch the frame: all four tiles keep the same 4/3 box. */}
+                  <span className="relative block aspect-[4/3] shrink-0 overflow-hidden bg-white">
+                    <img src={`/images/home/tiles/${slug}.jpg`} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-contain p-3" />
                   </span>
                   <span className="flex min-h-12 flex-1 items-center justify-between gap-2 bg-surface-100 px-3 py-2 text-base font-bold text-storefront-ink group-hover:text-security-600 lg:text-lg">
                     {name}
