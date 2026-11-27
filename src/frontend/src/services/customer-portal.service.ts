@@ -1,6 +1,6 @@
 import axios from 'axios'
 import api from './api'
-import type { AdminAdvisor, AdminPortalAccount, AdminPriceList, AdminPriceMapping, AdminTier, PortalProfileInput, PendingPortalAccount, PortalAccount } from '../features/customer-portal/types/customer-portal.types'
+import type { AdminAdvisor, AdminPortalAccount, AdminPriceList, AdminPriceMapping, AdminTier, TariffOption, PortalProfileInput, PendingPortalAccount, PortalAccount } from '../features/customer-portal/types/customer-portal.types'
 
 export const portalApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -75,7 +75,16 @@ export async function fetchAdminPriceMappings() { return asList<AdminPriceMappin
 export async function saveAdminPriceMapping(priceListId: string) { return (await api.post('/customer-portal/admin/price-list-mappings', { type: 'FINAL_CUSTOMER', priceListId })).data }
 export async function fetchAdminAdvisors() { return asList<AdminAdvisor>((await api.get('/customer-portal/admin/advisors')).data) }
 export async function assignAccountAdvisor(id: string, advisorId: string) { return (await api.patch(`/customer-portal/admin/accounts/${id}/advisor`, { advisorId })).data }
-export async function assignAccountTier(id: string, tierId: string | null) { return (await api.patch(`/customer-portal/admin/accounts/${id}/tier`, { tierId })).data }
+/** Tarifas activas para elegir en una cuenta; solo id, nombre, código y moneda (nunca precios). */
+export async function fetchTariffOptions() { return asList<TariffOption>((await api.get('/customer-portal/admin/tariff-options')).data) }
+/**
+ * Pone la tarifa de una cuenta. Con el id de una tarifa (lista de precios) el servidor busca o crea el nivel que la sostiene;
+ * con null la cuenta vuelve a la tarifa general (se envía `tierId: null`; nunca se envían los dos campos).
+ */
+export async function assignAccountTier(id: string, priceListId: string | null) {
+  const body = priceListId ? { priceListId } : { tierId: null }
+  return (await api.patch(`/customer-portal/admin/accounts/${id}/tier`, body)).data
+}
 export async function linkAccountCustomer(id: string, customerId: string | null) { return (await api.patch(`/customer-portal/admin/accounts/${id}/customer`, { customerId })).data }
 export async function approveAdminAccount(id: string, customerId?: string) { return (await api.post(`/customer-portal/admin/accounts/${id}/approve`, customerId ? { customerId } : {})).data }
 export async function rejectAdminAccount(id: string, reason: string) { return (await api.post(`/customer-portal/admin/accounts/${id}/reject`, { reason })).data }

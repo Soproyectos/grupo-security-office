@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   approveAdminAccount, assignAccountAdvisor, assignAccountTier, fetchAdminAccounts, fetchAdminAdvisors, fetchAdminPriceMappings,
-  fetchAdminTiers, linkAccountCustomer, reactivatePortalAccount, rejectAdminAccount, suspendPortalAccount,
+  fetchTariffOptions, linkAccountCustomer, reactivatePortalAccount, rejectAdminAccount, suspendPortalAccount,
 } from '../../../services/customer-portal.service'
 import { useHasAssignedAction } from '../../users/access'
 import AdminAccountRow, { STATE_LABELS, type AccountActions } from './AdminAccountRow'
@@ -24,7 +24,8 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
   // The general tariff name is read with the same action that manages tariffs (Super Admin always).
   const canTariffs = useHasAssignedAction(['portalTariffs:manage'])
   const client = useQueryClient()
-  const tiers = useQuery({ queryKey: ['portal-admin-tiers'], enabled: canManage, queryFn: fetchAdminTiers })
+  // Active price lists to pick from (portalAccounts:manage): the server turns the chosen one into the account's tier.
+  const tariffOptions = useQuery({ queryKey: ['portal-tariff-options'], enabled: canManage, queryFn: fetchTariffOptions })
   const accounts = useQuery({ queryKey: ['portal-admin-accounts'], enabled: canRead, queryFn: fetchAdminAccounts })
   const advisors = useQuery({ queryKey: ['portal-admin-advisors'], enabled: canAssign, queryFn: fetchAdminAdvisors })
   const mappings = useQuery({ queryKey: ['portal-admin-mappings'], enabled: canTariffs, queryFn: fetchAdminPriceMappings })
@@ -38,7 +39,7 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
     setBusy(true); setMessage(''); setFailed(false)
     try {
       await fn()
-      await Promise.all(['portal-admin-tiers', 'portal-admin-accounts', 'portal-admin-mappings', 'portal-admin-advisors'].map(k => client.invalidateQueries({ queryKey: [k] })))
+      await Promise.all(['portal-tariff-options', 'portal-admin-accounts', 'portal-admin-mappings', 'portal-admin-advisors'].map(k => client.invalidateQueries({ queryKey: [k] })))
       setMessage(success)
     } catch (error) {
       const server = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message
@@ -48,7 +49,7 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
 
   const actions: AccountActions = {
     assignAdvisor: (id, advisorId) => void run(() => assignAccountAdvisor(id, advisorId), 'Asesor asignado.', 'No se pudo asignar el asesor. Inténtalo de nuevo.'),
-    assignTier: (id, tierId) => void run(() => assignAccountTier(id, tierId), 'Tarifa guardada para este cliente.'),
+    assignTier: (id, priceListId) => void run(() => assignAccountTier(id, priceListId), 'Tarifa guardada para este cliente.'),
     link: (id, customerId) => void run(() => linkAccountCustomer(id, customerId), customerId ? 'Cliente vinculado.' : 'Vínculo quitado.'),
     suspend: (id, reason) => void run(() => suspendPortalAccount(id, reason), 'Cuenta suspendida. Ya no puede ingresar.', 'No se pudo suspender la cuenta. Inténtalo de nuevo.'),
     reactivate: id => void run(() => reactivatePortalAccount(id), 'Cuenta reactivada.', 'No se pudo reactivar la cuenta. Inténtalo de nuevo.'),
@@ -67,12 +68,12 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
   }, [accounts.data, effective, search])
 
   if (!canRead) return <p>No tienes asignadas las solicitudes del portal. Pídele a tu administrador que te las asigne.</p>
-  const loadFailed = canManage && tiers.isError || accounts.isError || (canAssign && advisors.isError) || (canTariffs && mappings.isError)
+  const loadFailed = canManage && tariffOptions.isError || accounts.isError || (canAssign && advisors.isError) || (canTariffs && mappings.isError)
 
   return (
     <div className="space-y-4">
       {message && <p role={failed ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${failed ? 'bg-[var(--color-error-bg-subtle)] text-[var(--color-error-hover)]' : 'bg-[var(--color-success-bg-subtle)] text-[var(--color-success-hover)]'}`}>{message}</p>}
-      {loadFailed && <p role="alert" className="rounded-lg bg-[var(--color-error-bg-subtle)] p-3 text-sm text-[var(--color-error-hover)]">No se pudieron cargar todos los datos. <button type="button" className="min-h-11 font-medium underline" onClick={() => { void tiers.refetch(); void accounts.refetch(); void advisors.refetch(); void mappings.refetch() }}>Reintentar</button></p>}
+      {loadFailed && <p role="alert" className="rounded-lg bg-[var(--color-error-bg-subtle)] p-3 text-sm text-[var(--color-error-hover)]">No se pudieron cargar todos los datos. <button type="button" className="min-h-11 font-medium underline" onClick={() => { void tariffOptions.refetch(); void accounts.refetch(); void advisors.refetch(); void mappings.refetch() }}>Reintentar</button></p>}
 
       <section className={CARD} aria-labelledby="portal-requests-title">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -91,7 +92,7 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
         ) : !visible.length ? (
           <p className="mt-4 text-sm text-[var(--color-text-secondary)]">Ninguna cuenta coincide{effective ? ` con «${STATE_LABELS[effective] ?? 'Sin asesor'}»` : ''}. Cambia el filtro o la búsqueda.</p>
         ) : (
-          <ul className="mt-2 divide-y divide-[var(--color-divider)]">{visible.map(a => <AdminAccountRow key={a.id} account={a} tiers={tiers.data ?? []} advisors={advisors.data ?? []} generalListName={generalName} busy={busy} canAssign={canAssign} canManage={canManage} actions={actions} />)}</ul>
+          <ul className="mt-2 divide-y divide-[var(--color-divider)]">{visible.map(a => <AdminAccountRow key={a.id} account={a} tariffOptions={tariffOptions.data} advisors={advisors.data ?? []} generalListName={generalName} busy={busy} canAssign={canAssign} canManage={canManage} actions={actions} />)}</ul>
         )}
       </section>
     </div>

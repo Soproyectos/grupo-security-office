@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const portal = vi.hoisted(() => ({ patch: vi.fn(), post: vi.fn() }))
-const staff = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn() }))
+const staff = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn(), patch: vi.fn() }))
 
 vi.mock('axios', () => ({ default: { create: () => portal } }))
 vi.mock('./api', () => ({ default: staff }))
 
-import { fetchAdminPriceLists, fetchAdminTiers, createPortalPassword, reactivatePortalAccount, deletePortalAccount, suspendPortalAccount, updatePortalProfile } from './customer-portal.service'
+import { assignAccountTier, fetchAdminPriceLists, fetchAdminTiers, fetchTariffOptions, createPortalPassword, reactivatePortalAccount, deletePortalAccount, suspendPortalAccount, updatePortalProfile } from './customer-portal.service'
 
 describe('customer-portal.service: perfil y panel', () => {
-  beforeEach(() => { portal.patch.mockReset(); portal.post.mockReset(); staff.post.mockReset(); staff.get.mockReset() })
+  beforeEach(() => { portal.patch.mockReset(); portal.post.mockReset(); staff.post.mockReset(); staff.get.mockReset(); staff.patch.mockReset() })
 
   it('guarda el perfil y devuelve la cuenta', async () => {
     portal.patch.mockResolvedValue({ data: { account: { id: 'a1', profileComplete: true } } })
@@ -55,5 +55,21 @@ describe('customer-portal.service: perfil y panel', () => {
     expect(await fetchAdminPriceLists()).toEqual([])
     staff.get.mockResolvedValue({ data: [{ id: 't1', name: 'Oro', isActive: true }] })
     expect(await fetchAdminTiers()).toEqual([{ id: 't1', name: 'Oro', isActive: true }])
+  })
+
+  it('lee las tarifas que se pueden elegir en una cuenta', async () => {
+    staff.get.mockResolvedValue({ data: [{ id: 'pl-1', name: 'Instaladores', code: 'INST', currency: 'COP' }] })
+    expect(await fetchTariffOptions()).toEqual([{ id: 'pl-1', name: 'Instaladores', code: 'INST', currency: 'COP' }])
+    expect(staff.get).toHaveBeenCalledWith('/customer-portal/admin/tariff-options')
+    staff.get.mockResolvedValue({ data: null })
+    expect(await fetchTariffOptions()).toEqual([])
+  })
+
+  it('guarda la tarifa elegida con su id y la general con tierId null, nunca los dos campos', async () => {
+    staff.patch.mockResolvedValue({ data: { id: 'a1' } })
+    await assignAccountTier('a1', 'pl-1')
+    expect(staff.patch).toHaveBeenLastCalledWith('/customer-portal/admin/accounts/a1/tier', { priceListId: 'pl-1' })
+    await assignAccountTier('a1', null)
+    expect(staff.patch).toHaveBeenLastCalledWith('/customer-portal/admin/accounts/a1/tier', { tierId: null })
   })
 })

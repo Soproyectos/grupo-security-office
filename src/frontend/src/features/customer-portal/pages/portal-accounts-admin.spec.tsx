@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PortalAccountsSection from '../components/PortalAccountsSection'
+import { currentTariffValue, INACTIVE_TARIFF } from '../components/AdminAccountRow'
 import ZonesAdminSection, { searchMunicipalities } from '../components/ZonesAdminSection'
 import { whatsappUrl } from '../../quotes/lib/whatsapp'
 
@@ -40,11 +41,11 @@ const account = {
 const pending = { ...account, id: 'a2', email: 'luis@x.co', companyName: 'Pendiente SAS', state: 'PENDING', advisorId: null, advisor: null }
 const linked = {
   ...account, id: 'a3', companyName: 'Suspendida SAS', state: 'SUSPENDED', customerId: 'c1',
-  customer: { id: 'c1', code: 'CL-0001', name: 'Acme Ltda', ownerId: 'v1', portalTierId: 't1', portalTier: { id: 't1', name: 'Oro', isActive: true } },
+  customer: { id: 'c1', code: 'CL-0001', name: 'Acme Ltda', ownerId: 'v1', portalTierId: 't1', portalTier: { id: 't1', name: 'Oro', isActive: true, priceListId: 'l1' } },
 }
 const seed = {
   'portal-admin-accounts': [account, pending, linked],
-  'portal-admin-tiers': [{ id: 't1', name: 'Oro', isActive: true, priceListId: 'l1', priceList: { id: 'l1', name: 'Detalle', isActive: true } }],
+  'portal-tariff-options': [{ id: 'l1', name: 'Detalle', code: 'DET', currency: 'COP' }, { id: 'l2', name: 'Instaladores', code: 'INST', currency: 'COP' }],
   'portal-admin-price-lists': [{ id: 'l1', name: 'Detalle', isActive: true }],
   'portal-admin-mappings': [{ id: 'm1', type: 'FINAL_CUSTOMER', priceListId: 'l1', priceList: { id: 'l1', name: 'Detalle', isActive: true } }],
   'portal-admin-advisors': [{ id: 'v1', name: 'Vera Asesora', zone: 'Eje Cafetero' }, { id: 'v2', name: 'Raúl Asesor', zone: null }],
@@ -68,7 +69,7 @@ describe('PortalAccountsSection (pestaña Solicitudes de Comercial)', () => {
     expect(html).toContain('1 sin asesor')
     expect(html).toContain('<option value="NO_ADVISOR">Sin asesor (1)</option>')
     expect(html).toContain('Vinculado a Acme Ltda (CL-0001)')
-    expect(html).toContain('Tarifa: Nivel Oro')
+    expect(html).toContain('Tarifa: Oro')
     expect(html).toContain('Tarifa: Tarifa general')
     expect(html).not.toContain('tarifa de la empresa')
     expect(html).toContain('Aprobar cuenta') // la cuenta pendiente llega abierta
@@ -82,10 +83,66 @@ describe('PortalAccountsSection (pestaña Solicitudes de Comercial)', () => {
     expect(html).not.toMatch(/<select id="tier-a2"[^>]*\sdisabled=""/)
   })
 
+  describe('selector «Tarifa»: elige entre las tarifas activas', () => {
+    const open = (extra: Record<string, unknown> = {}, tier?: unknown) => render(['Super Admin'], { ...seed, 'portal-admin-accounts': [{ ...pending, ...(tier ? { tier, tierId: (tier as { id: string }).id } : {}) }], ...extra })
+
+    it('lista «Tarifa general (nombre)» y las tarifas activas por nombre, sin mostrar niveles', () => {
+      const html = open()
+      expect(html).toMatch(/<select id="tier-a2"[^>]*>/)
+      expect(html).toContain('<option value="" selected="">Tarifa general (Detalle)</option>')
+      expect(html).toContain('<option value="l1">Detalle</option>')
+      expect(html).toContain('<option value="l2">Instaladores</option>')
+      expect(html).not.toContain('Aún no hay tarifas activas')
+    })
+
+    it('marca la tarifa a la que apunta el nivel actual de la cuenta', () => {
+      const html = open({}, { id: 't9', name: 'Instaladores', isActive: true, priceListId: 'l2' })
+      expect(html).toContain('<option value="l2" selected="">Instaladores</option>')
+      expect(html).not.toContain('(inactiva)')
+    })
+
+    it('si el nivel actual apunta a una tarifa inactiva o desconocida, lo muestra como «(inactiva)» deshabilitado', () => {
+      const html = open({}, { id: 't9', name: 'Antigua', isActive: true, priceListId: 'l-vieja' })
+      expect(html).toContain(`<option value="${INACTIVE_TARIFF}" disabled="" selected="">Antigua (inactiva)</option>`)
+    })
+
+    it('sin tarifas activas deja solo «Tarifa general» y explica dónde crearlas', () => {
+      const html = open({ 'portal-tariff-options': [] })
+      expect(html).toContain('<option value="" selected="">Tarifa general (Detalle)</option>')
+      expect(html).not.toContain('<option value="l1">')
+      expect(html).toContain('Aún no hay tarifas activas. Créalas en Biblioteca &gt; Maestros &gt; Tarifas.')
+    })
+
+    it('mientras las tarifas cargan no afirma que no haya ninguna y bloquea el selector', () => {
+      const { 'portal-tariff-options': _omit, ...withoutOptions } = seed
+      const html = render(['Super Admin'], { ...withoutOptions, 'portal-admin-accounts': [pending] })
+      expect(html).not.toContain('Aún no hay tarifas activas')
+      expect(html).toMatch(/<select id="tier-a2"[^>]*\sdisabled=""/)
+    })
+
+    it('un asesor con «gestionar» elige tarifa; sin ese panel no hay selector', () => {
+      expect(render(['Vendedor'], seed, ['portalAccounts:read', 'portalAccounts:manage'])).toContain('Pendiente SAS')
+      const manage = render(['Vendedor'], { ...seed, 'portal-admin-accounts': [pending] }, ['portalAccounts:read', 'portalAccounts:manage'])
+      expect(manage).toContain('<option value="l2">Instaladores</option>')
+      const readOnly = render(['Vendedor'], { ...seed, 'portal-admin-accounts': [pending] }, ['portalAccounts:read'])
+      expect(readOnly).not.toContain('Guardar tarifa')
+    })
+
+    it('currentTariffValue: general, tarifa activa o inactiva', () => {
+      const options = [{ id: 'l1', name: 'Detalle', code: 'DET', currency: 'COP' }]
+      const base = { ...pending } as never
+      expect(currentTariffValue(base, options)).toBe('')
+      expect(currentTariffValue({ ...pending, tier: { id: 't', name: 'A', isActive: true, priceListId: 'l1' } } as never, options)).toBe('l1')
+      expect(currentTariffValue({ ...pending, tier: { id: 't', name: 'A', isActive: false, priceListId: 'l1' } } as never, options)).toBe(INACTIVE_TARIFF)
+      expect(currentTariffValue({ ...pending, tier: { id: 't', name: 'A', isActive: true, priceListId: null } } as never, options)).toBe(INACTIVE_TARIFF)
+      expect(currentTariffValue({ ...pending, tier: { id: 't', name: 'A', isActive: true, priceListId: 'l1' } } as never, undefined)).toBe(INACTIVE_TARIFF)
+    })
+  })
+
   it('si el cliente vinculado tiene su propia tarifa, se avisa que esa es la que se aplica', () => {
     const linkedPending = { ...pending, customerId: 'c9', customer: { id: 'c9', code: 'CL-0009', name: 'Acme Ltda', portalTierId: 't1', portalTier: { id: 't1', name: 'Oro', isActive: true } } }
     const html = render(['Super Admin'], { ...seed, 'portal-admin-accounts': [linkedPending] })
-    expect(html).toContain('El cliente vinculado ya tiene su propia tarifa (Nivel Oro): esa es la que se aplica.')
+    expect(html).toContain('El cliente vinculado ya tiene su propia tarifa (Oro): esa es la que se aplica.')
   })
 
   it('quien puede asignar elige entre los asesores disponibles con su zona', () => {
@@ -121,7 +178,7 @@ describe('PortalAccountsSection (pestaña Solicitudes de Comercial)', () => {
   })
 
   it('con listas vacías muestra guías, no una pantalla en blanco', () => {
-    const empty = { ...seed, 'portal-admin-accounts': [], 'portal-admin-tiers': [], 'portal-admin-zones': [] }
+    const empty = { ...seed, 'portal-admin-accounts': [], 'portal-tariff-options': [], 'portal-admin-zones': [] }
     expect(render(['Super Admin'], empty)).toContain('Todavía no hay clientes registrados')
     expect(renderZones(empty)).toContain('Todavía no hay zonas')
   })

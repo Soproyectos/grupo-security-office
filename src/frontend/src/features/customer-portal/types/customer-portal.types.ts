@@ -86,6 +86,9 @@ export interface AdminTier {
 
 export interface AdminPriceList { id: string; name: string; isActive: boolean }
 
+/** Tarifa activa que se puede elegir para una cuenta (sin precios). El servidor crea por detrás el nivel que la sostiene. */
+export interface TariffOption { id: string; name: string; code: string; currency: string }
+
 export interface AdminPortalAccount {
   id: string
   email: string
@@ -102,12 +105,12 @@ export interface AdminPortalAccount {
   customerId?: string | null
   /** Nivel de tarifa puesto directamente en la cuenta (no necesita cliente vinculado). */
   tierId?: string | null
-  tier?: { id: string; name: string; isActive: boolean } | null
+  tier?: { id: string; name: string; isActive: boolean; priceListId?: string | null } | null
   /** Si el cliente vinculado tiene su propio nivel, ese prevalece sobre el de la cuenta. */
   customer?: {
     id: string; code: string; name: string; documentId?: string | null; email?: string | null
     ownerId?: string | null; portalTierId?: string | null
-    portalTier?: { id: string; name: string; isActive: boolean } | null
+    portalTier?: { id: string; name: string; isActive: boolean; priceListId?: string | null } | null
   } | null
   privacyAcceptedAt?: string | null
   deletionRequestedAt?: string | null
