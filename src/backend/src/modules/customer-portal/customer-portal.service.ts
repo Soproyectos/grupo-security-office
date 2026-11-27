@@ -89,6 +89,15 @@ export class CustomerPortalService {
     return resolveCompanyTariff({prisma:this.prisma,db:this.db},type,tierId,true);
   }
 
+  /** True when the account (or the company chosen for it) has its own active tier with an active price list. */
+  private async hasActiveOwnTariff(accountTierId:string|null,customerId?:string|null) {
+    const customerTierId=customerId?(await this.prisma.customer.findUnique({where:{id:customerId},select:{portalTierId:true}}))?.portalTierId:null;
+    const tierId=customerTierId??accountTierId;
+    if(!tierId)return false;
+    try { return !!(await this.priceMapping('FINAL_CUSTOMER',tierId)); }
+    catch(error) { if(error instanceof BadRequestException)return false;throw error; }
+  }
+
   /** Same fields for the full list and the pending queue; city is resolved to its name and department. */
   private static readonly ACCOUNT_ADMIN_SELECT = {
     id:true,email:true,contactName:true,companyName:true,documentId:true,phone:true,type:true,state:true,
@@ -599,7 +608,11 @@ export class CustomerPortalService {
     const foundMapping = await this.prisma.portalPriceListMapping.findUnique({ where: { type: account.type } });
     const mappingList = foundMapping ? (await this.priceListsById([foundMapping.priceListId])).get(foundMapping.priceListId) : undefined;
     const mapping = foundMapping && mappingList ? { ...foundMapping, priceList: mappingList } : null;
-    if (!mapping || !mapping.priceList.isActive) throw new BadRequestException('Configure una tarifa activa para el tipo de cliente antes de aprobar');
+    // The account's own tariff (chosen in the selector) is enough: the general tariff of the type is only the fallback.
+    const hasGeneral = !!mapping && mapping.priceList.isActive;
+    if (!hasGeneral && !(await this.hasActiveOwnTariff(account.tierId, dto.customerId ?? account.customerId))) {
+      throw new BadRequestException('Elige y guarda una tarifa para esta cuenta, o configura la tarifa general, antes de aprobar');
+    }
     // Same reach rule as linking: only an active customer the caller can already reach (also when it was linked earlier).
     let target = dto.customerId ?? account.customerId ?? undefined;
     let found = false;
@@ -661,7 +674,7 @@ export class CustomerPortalService {
       }
       throw error;
     }
-    await this.audit.log({ userId: ctx.userId, action: 'approve', entity: 'PortalAccount', entityId: id, newValues: { customerId: result.customerId, advisorId: result.advisorId, type: account.type, priceListId: mapping.priceListId } });
+    await this.audit.log({ userId: ctx.userId, action: 'approve', entity: 'PortalAccount', entityId: id, newValues: { customerId: result.customerId, advisorId: result.advisorId, type: account.type, priceListId: mapping?.priceListId ?? null } });
     return { id, state: PortalAccountState.ACTIVE, customerId: result.customerId, advisorId: result.advisorId };
   }
 
