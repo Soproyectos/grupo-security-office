@@ -3,6 +3,7 @@ import {
   addQuoteItem,
   createQuote,
   removeQuoteItem,
+  setQuoteItemPrice,
   updateQuoteItem,
   updateQuoteItemDiscountInCache,
   updateQuoteStatusInCache,
@@ -91,6 +92,12 @@ export function useQuoteMutations() {
       updateQuoteItemDiscountInCache(queryClient, input),
   })
 
+  const setItemPrice = useMutation({
+    mutationFn: ({ quoteId, itemId, unitPrice }: { quoteId: string; itemId: string; unitPrice: number }) =>
+      setQuoteItemPrice(quoteId, itemId, unitPrice),
+    onSuccess: (_quote, vars) => invalidateQuote(vars.quoteId),
+  })
+
   const removeItem = useMutation({
     mutationFn: ({ quoteId, itemId }: { quoteId: string; itemId: string }) =>
       removeQuoteItem(quoteId, itemId),
@@ -114,5 +121,5 @@ export function useQuoteMutations() {
     }) => updateQuoteStatusInCache(queryClient, { quoteId, payload }),
   })
 
-  return { create, addItem, updateItem, updateItemDiscount, removeItem, updateStatus }
+  return { create, addItem, updateItem, updateItemDiscount, setItemPrice, removeItem, updateStatus }
 }

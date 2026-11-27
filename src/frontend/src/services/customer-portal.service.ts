@@ -1,6 +1,6 @@
 import axios from 'axios'
 import api from './api'
-import type { PortalProfileInput, CatalogFilters, CatalogProduct, CatalogResponse, PendingPortalAccount, PortalAccount, PortalRegistration } from '../features/customer-portal/types/customer-portal.types'
+import type { AdminAdvisor, AdminPortalAccount, AdminPriceList, AdminPriceMapping, AdminTier, PortalProfileInput, PendingPortalAccount, PortalAccount } from '../features/customer-portal/types/customer-portal.types'
 
 export const portalApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -13,39 +13,11 @@ function unwrap<T>(value: unknown): T {
   return value as T
 }
 
-function catalogParams(filters: CatalogFilters) {
-  const params = new URLSearchParams()
-  if (filters.search) params.set('search', filters.search)
-  if (filters.category) params.set('category', filters.category)
-  if (filters.brand) params.set('brand', filters.brand)
-  params.set('page', String(filters.page ?? 1))
-  params.set('pageSize', String(filters.pageSize ?? 24))
-  return params
-}
-
-export async function fetchPublicCatalog(filters: CatalogFilters): Promise<CatalogResponse> {
-  const response = await portalApi.get(`/customer-portal/catalog/products?${catalogParams(filters)}`)
-  return unwrap<CatalogResponse>(response.data)
-}
-
-export async function fetchCustomerCatalog(filters: CatalogFilters): Promise<CatalogResponse> {
-  const response = await portalApi.get(`/customer-portal/customer/catalog/products?${catalogParams(filters)}`)
-  return unwrap<CatalogResponse>(response.data)
-}
-
-export async function fetchPublicCatalogProduct(id: string): Promise<CatalogProduct> {
-  const response = await portalApi.get(`/customer-portal/catalog/products/${id}`)
-  return unwrap<CatalogProduct>(response.data)
-}
-
-export async function fetchCustomerCatalogProduct(id: string): Promise<CatalogProduct> {
-  const response = await portalApi.get(`/customer-portal/customer/catalog/products/${id}`)
-  return unwrap<CatalogProduct>(response.data)
-}
-
-export async function registerPortalAccount(payload: PortalRegistration) {
-  const response = await portalApi.post('/customer-portal/accounts/register', payload)
-  return unwrap<{ id: string; state: string; message: string }>(response.data)
+/** Precios de la tarifa del cliente para hasta 50 referencias; el servidor calcula todo y omite las que no tienen precio. */
+export async function fetchAssignedCatalogPrices(ids: readonly string[], signal?: AbortSignal): Promise<Array<{ productId: string; value: string; currency: string }>> {
+  const response = await portalApi.get('/customer-portal/customer/catalog/prices', { params: { ids: ids.join(',') }, signal })
+  const inner = unwrap<{ prices?: unknown }>(response.data)
+  return Array.isArray(inner?.prices) ? (inner.prices as Array<{ productId: string; value: string; currency: string }>) : []
 }
 
 export async function loginPortal(email: string, password: string): Promise<PortalAccount> {
@@ -90,6 +62,24 @@ export async function reactivatePortalAccount(id: string) {
   return response.data
 }
 
+function asList<T>(value: unknown): T[] {
+  const inner = unwrap<unknown>(value)
+  return Array.isArray(inner) ? (inner as T[]) : []
+}
+
+/** Panel: todas las lecturas pasan por asList porque algunos endpoints responden `{ data: [...] }` y otros una lista directa. */
+export async function fetchAdminAccounts() { return asList<AdminPortalAccount>((await api.get('/customer-portal/admin/accounts')).data) }
+export async function fetchAdminTiers() { return asList<AdminTier>((await api.get('/customer-portal/admin/tiers')).data) }
+export async function fetchAdminPriceLists() { return asList<AdminPriceList>((await api.get('/prices/lists')).data) }
+export async function fetchAdminPriceMappings() { return asList<AdminPriceMapping>((await api.get('/customer-portal/admin/price-list-mappings')).data) }
+export async function saveAdminPriceMapping(priceListId: string) { return (await api.post('/customer-portal/admin/price-list-mappings', { type: 'FINAL_CUSTOMER', priceListId })).data }
+export async function fetchAdminAdvisors() { return asList<AdminAdvisor>((await api.get('/customer-portal/admin/advisors')).data) }
+export async function assignAccountAdvisor(id: string, advisorId: string) { return (await api.patch(`/customer-portal/admin/accounts/${id}/advisor`, { advisorId })).data }
+export async function assignAccountTier(id: string, tierId: string | null) { return (await api.patch(`/customer-portal/admin/accounts/${id}/tier`, { tierId })).data }
+export async function linkAccountCustomer(id: string, customerId: string | null) { return (await api.patch(`/customer-portal/admin/accounts/${id}/customer`, { customerId })).data }
+export async function approveAdminAccount(id: string, customerId?: string) { return (await api.post(`/customer-portal/admin/accounts/${id}/approve`, customerId ? { customerId } : {})).data }
+export async function rejectAdminAccount(id: string, reason: string) { return (await api.post(`/customer-portal/admin/accounts/${id}/reject`, { reason })).data }
+
 export async function logoutPortal(): Promise<void> {
   await portalApi.post('/customer-portal/auth/logout')
 }
@@ -107,14 +97,4 @@ export async function approvePortalAccount(id: string, customerId?: string) {
 export async function rejectPortalAccount(id: string, reason: string) {
   const response = await portalApi.post(`/customer-portal/admin/accounts/${id}/reject`, { reason })
   return unwrap<{ id: string; state: string }>(response.data)
-}
-
-export async function requestPasswordReset(email: string) {
-  const response = await portalApi.post('/customer-portal/accounts/forgot-password', { email })
-  return unwrap<{ message: string }>(response.data)
-}
-
-export async function resetPassword(email: string, token: string, password: string) {
-  const response = await portalApi.post('/customer-portal/accounts/reset-password', { email, token, password })
-  return unwrap<{ message: string }>(response.data)
 }

@@ -202,3 +202,80 @@ describe('ACEPTACIÓN 3 (lado cliente) — ganada con UN pedido, sin duplicados'
     expect(html).not.toContain('Acciones de estado')
   })
 })
+
+describe('Cotización enviada desde la tienda', () => {
+  const portalAccount = { id: 'pa-1', contactName: 'Ana Pérez', email: 'ana@acme.co', phone: '300 123 4567' }
+
+  it('muestra el contacto, la nota de origen y el enlace de WhatsApp con prefijo 57 y solo dígitos', () => {
+    const html = render(seeded(quote({ portalAccount })))
+
+    expect(html).toContain('Enviada desde la tienda')
+    expect(html).toContain('Ana Pérez')
+    expect(html).toContain('ana@acme.co')
+    expect(html).toContain('href="https://wa.me/573001234567"')
+  })
+
+  it('sin teléfono válido no inventa un enlace de WhatsApp', () => {
+    const html = render(seeded(quote({ portalAccount: { ...portalAccount, phone: '123' } })))
+
+    expect(html).not.toContain('wa.me')
+    expect(html).toContain('No hay un teléfono válido para WhatsApp')
+  })
+
+  it('una cotización creada por el personal no muestra el bloque de la tienda', () => {
+    expect(render(seeded(quote()))).not.toContain('Enviada desde la tienda')
+  })
+})
+
+describe('Precio por confirmar', () => {
+  it('la línea sin precio dice «Por confirmar», ofrece «Poner precio» y avisa cuántas faltan', () => {
+    const html = render(seeded(quote({ items: [item({ unitPrice: null, lineTotal: '0' })] })))
+
+    expect(html).toContain('Por confirmar')
+    expect(html).toContain('Poner precio')
+    expect(html).toContain('Hay 1 producto con precio por confirmar')
+  })
+
+  it('en un estado que ya no se edita no ofrece poner precio', () => {
+    const html = render(seeded(quote({ status: 'ganada', items: [item({ unitPrice: null, lineTotal: '0' })] }), [salesOrder()]))
+
+    expect(html).toContain('Por confirmar')
+    expect(html).not.toContain('Poner precio')
+  })
+
+  it('las líneas con precio no cambian', () => {
+    const html = render(seeded(quote()))
+
+    expect(html).not.toContain('Por confirmar')
+    expect(html).not.toContain('Poner precio')
+  })
+})
+
+describe('Historial de estados', () => {
+  const events = [
+    { id: 'e1', fromStatus: null, toStatus: 'borrador', note: null, createdAt: '2026-11-20T15:00:00.000Z', actor: 'Cliente: Ana Pérez' },
+    { id: 'e2', fromStatus: 'borrador', toStatus: 'enviada', note: null, createdAt: '2026-11-20T15:05:00.000Z', actor: 'Vera Asesora' },
+  ]
+
+  it('con quotes:history (Super Admin) lista fecha, de a, y quién lo hizo, con estados en español', () => {
+    const client = seeded(quote())
+    client.setQueryData(['quotes', 'history', QUOTE_ID], events)
+    const html = render(client)
+
+    expect(html).toContain('Historial')
+    expect(html).toContain('Creada a Borrador')
+    expect(html).toContain('Borrador a Enviada')
+    expect(html).toContain('Cliente: Ana Pérez')
+    expect(html).toContain('Vera Asesora')
+  })
+
+  it('sin quotes:history no se pinta la sección ni se pide el historial', () => {
+    login(['Vendedor'])
+    const client = seeded(quote())
+    client.setQueryData(['quotes', 'history', QUOTE_ID], events)
+    const html = render(client)
+
+    expect(html).not.toContain('Historial')
+    expect(html).not.toContain('Vera Asesora')
+  })
+})

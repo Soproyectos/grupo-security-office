@@ -48,8 +48,8 @@ export interface QuoteItem {
   name: string
   listaId: string | null
   priceListId: string | null
-  /** Decimal serializado como string por el backend. */
-  unitPrice: string
+  /** Decimal serializado como string; null = «precio por confirmar» (lo completa el asesor). */
+  unitPrice: string | null
   currency: string
   quantity: number
   /** Decimal (0-100) serializado como string. */
@@ -65,8 +65,11 @@ export interface Quote {
   code: string
   customerId: string
   ownerId: string
-  listaId: string
+  /** Ya no se usa: las cotizaciones no dependen de Listas. */
+  listaId?: string | null
   priceListId: string | null
+  /** Quién la envió desde la tienda (null si la creó el personal). */
+  portalAccountId?: string | null
   status: QuoteEffectiveStatus
   currency: string
   /** Decimal como string. */
@@ -91,6 +94,18 @@ export interface Quote {
   lista?: { id: string; code: string; name: string; currency: string } | null
   priceList?: { id: string; code: string; name: string; currency: string } | null
   owner?: { id: string; name: string; email: string } | null
+  /** Persona del portal que la envió: sirve para contactarla. */
+  portalAccount?: { id: string; contactName: string; email: string; phone: string | null } | null
+}
+
+/** Un cambio de estado de la cotización (GET :id/history). */
+export interface QuoteStatusEvent {
+  id: string
+  fromStatus: string | null
+  toStatus: string
+  note: string | null
+  createdAt: string
+  actor: string | null
 }
 
 /** Fila del listado GET /api/commercial/quotes (sin items, con _count). */
@@ -119,7 +134,9 @@ export interface QuoteFilters {
 
 export interface CreateQuotePayload {
   customerId: string
-  listaId: string
+  /** Ya no se pide ni se usa. */
+  listaId?: string
+  /** Opcional: por defecto el servidor usa la tarifa de la empresa. */
   priceListId?: string
   validUntil?: string
   taxRate?: string

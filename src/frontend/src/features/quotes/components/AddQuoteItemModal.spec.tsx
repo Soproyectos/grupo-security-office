@@ -16,14 +16,12 @@ import type { Quote } from '../types/quote.types'
  *    mensaje del servidor (se acredita en quotes.service.spec.ts).
  */
 
-const LISTA_ID = 'lista-1'
-
 const QUOTE: Quote = {
   id: 'q-1',
   code: 'COT-0001',
   customerId: 'cust-1',
   ownerId: 'owner-1',
-  listaId: LISTA_ID,
+  listaId: null,
   priceListId: 'pl-1',
   status: 'borrador',
   currency: 'COP',
@@ -42,15 +40,8 @@ const QUOTE: Quote = {
   items: [],
 }
 
-const PRODUCTS = [
-  { id: 'prod-1', sku: 'SKU-COM03', name: 'Producto COM03' },
-  { id: 'prod-2', sku: 'SKU-OTRO', name: 'Otro producto' },
-]
-
 function seededClient() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  client.setQueryData(['listas', 'products', LISTA_ID], PRODUCTS)
-  return client
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
 
 function render(client: QueryClient) {
@@ -76,19 +67,13 @@ describe('AddQuoteItemModal — alta sin descuento (COM-03 §3)', () => {
     expect(html).not.toMatch(/discount/i)
   })
 
-  it('ofrece producto (de la lista) y cantidad — lo único que se envía', () => {
+  it('busca productos por nombre o SKU (sin Listas) y ofrece cantidad — lo único que se envía', () => {
     const html = render(client)
 
-    expect(html).toContain('Buscar en la lista')
-    expect(html).toContain('Producto COM03')
+    expect(html).toContain('Buscar producto')
+    expect(html).toContain('Busca por nombre o SKU')
+    expect(html).not.toContain('Buscar en la lista')
     expect(html).toContain('name="quantity"')
     expect(html).toContain('Agregar')
-  })
-
-  it('la lista de productos sale de la cotización (query keyed por su lista)', () => {
-    const html = render(client)
-
-    expect(html).toContain('SKU-COM03')
-    expect(html).toContain('SKU-OTRO')
   })
 })

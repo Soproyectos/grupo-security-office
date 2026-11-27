@@ -6,6 +6,8 @@ import QuoteItemsTable from '../features/quotes/components/QuoteItemsTable'
 import AddQuoteItemModal from '../features/quotes/components/AddQuoteItemModal'
 import SalesOrderSection from '../features/quotes/components/SalesOrderSection'
 import { useQuote } from '../features/quotes/hooks/useQuotes'
+import { PortalContactCard, QuoteHistoryCard } from '../features/quotes/components/QuoteHistoryAndContact'
+import { useHasAssignedAction } from '../features/users/access'
 import { useQuoteMutations } from '../features/quotes/hooks/useQuoteMutations'
 import { quoteErrorMessage } from '../services/quotes.service'
 import { formatMoney } from '../features/quotes/lib/money'
@@ -63,6 +65,7 @@ export default function QuoteDetailPage({
   const { quote, isLoading, error } = useQuote(id)
   const { updateStatus } = useQuoteMutations()
   const currentUser = useAuthStore((state) => state.user)
+  const canSeeHistory = useHasAssignedAction(['quotes:history'])
 
   const [statusError, setStatusError] = useState<string | null>(null)
   const [pendingStatus, setPendingStatus] = useState<QuoteStatus | null>(null)
@@ -101,6 +104,7 @@ export default function QuoteDetailPage({
   const transitions = allowedTransitions(quote.status)
     .filter(status => !personal || status !== 'ganada')
   const itemsEditable = areItemsEditable(quote.status)
+  const pendingPrices = (quote.items ?? []).filter((item) => item.unitPrice === null).length
   const currency = quote.currency
   // Criterio client-side (UX) del editor de descuento; el servidor manda
   // (`quotes:discount` resuelto por petición) y su 403 se pinta tal cual.
@@ -195,13 +199,14 @@ export default function QuoteDetailPage({
         )}
       </Card>
 
+      {quote.portalAccount && <PortalContactCard account={quote.portalAccount} />}
+
       {/* Datos generales */}
       <Card>
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-neutral-400">
           Datos de la cotización
         </h2>
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          <DetailRow label="Lista" value={quote.lista?.name ?? '—'} />
           <DetailRow
             label="Tarifa"
             value={quote.priceList?.name ?? '—'}
@@ -245,6 +250,12 @@ export default function QuoteDetailPage({
             </Button>
           )}
         </div>
+        {pendingPrices > 0 && (
+          <p className="mb-3 rounded-lg bg-[var(--color-warning-bg-subtle)] p-3 text-sm text-[var(--color-warning-hover)]" role="status">
+            {pendingPrices === 1 ? 'Hay 1 producto con precio por confirmar.' : `Hay ${pendingPrices} productos con precio por confirmar.`}
+            {' '}Ponle precio antes de marcar la cotización como ganada.
+          </p>
+        )}
         <QuoteItemsTable
           quote={quote}
           editable={itemsEditable}
@@ -264,7 +275,7 @@ export default function QuoteDetailPage({
             <dd>{formatMoney(quote.discount, currency)}</dd>
           </div>
           <div className="flex justify-between text-sm text-neutral-600">
-            <dt>Impuesto ({quote.taxRate}%)</dt>
+            <dt>IVA incluido ({quote.taxRate}%)</dt>
             <dd>{formatMoney(quote.taxAmount, currency)}</dd>
           </div>
           <div className="flex justify-between border-t border-neutral-200 pt-2 text-base font-semibold text-neutral-800">
@@ -273,6 +284,8 @@ export default function QuoteDetailPage({
           </div>
         </dl>
       </Card>
+
+      {canSeeHistory && <QuoteHistoryCard quoteId={quote.id} />}
 
       {/* Pedido (solo cuando la cotización está ganada) */}
       <SalesOrderSection

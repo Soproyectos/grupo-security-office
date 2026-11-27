@@ -6,6 +6,7 @@ import type {
   Quote,
   QuoteFilters,
   QuoteListResponse,
+  QuoteStatusEvent,
   UpdateQuoteItemPayload,
   UpdateQuoteStatusPayload,
 } from '../features/quotes/types/quote.types'
@@ -243,6 +244,31 @@ export const updateQuoteItemDiscount = async (
   } catch (error) {
     throw toQuoteError(error, DISCOUNT_FORBIDDEN_FALLBACK)
   }
+}
+
+/**
+ * Pone el precio de una línea «por confirmar» (`PATCH items/:itemId/price`, quotes:edit).
+ * Los errores 400/403/404/409 salen con el mensaje del servidor tal cual.
+ */
+export const setQuoteItemPrice = async (
+  quoteId: string,
+  itemId: string,
+  unitPrice: number
+): Promise<Quote> => {
+  try {
+    const res = await api.patch(`${BASE}/${quoteId}/items/${itemId}/price`, { unitPrice })
+    return res.data as Quote
+  } catch (error) {
+    throw toQuoteError(error)
+  }
+}
+
+/** Historial de estados (`quotes:history`); el servidor responde 403/404 fuera de alcance. */
+export const fetchQuoteHistory = async (id: string): Promise<QuoteStatusEvent[]> => {
+  const res = await api.get(`${BASE}/${id}/history`)
+  const body = res.data as unknown
+  const list = body && typeof body === 'object' && 'data' in body ? (body as { data: unknown }).data : body
+  return Array.isArray(list) ? (list as QuoteStatusEvent[]) : []
 }
 
 export const removeQuoteItem = async (
