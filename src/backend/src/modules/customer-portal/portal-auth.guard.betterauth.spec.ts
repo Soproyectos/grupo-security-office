@@ -1,13 +1,15 @@
 import 'reflect-metadata';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Reflector } from '@nestjs/core';
 import { PortalAuthGuard } from './portal-auth.guard';
+import { portalAccountView } from './portal-profile';
 
 describe('PortalAuthGuard with Better Auth', () => {
   const jwt = new JwtService({ secret: 'test-secret' });
   let prisma: any;
   let portalAuth: any;
-  const ctx = (req: any) => ({ switchToHttp: () => ({ getRequest: () => req }) }) as any;
+  const ctx = (req: any) => ({ switchToHttp: () => ({ getRequest: () => req }), getHandler: () => () => undefined, getClass: () => class {} }) as any;
   const baUser = { id: 'u1', email: 'a@b.co', emailVerified: false };
 
   beforeEach(() => {
@@ -19,7 +21,7 @@ describe('PortalAuthGuard with Better Auth', () => {
     portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', email: 'a@b.co', type: 'FINAL_CUSTOMER', state: 'ACTIVE', tier: null, tierId: null });
     const req: any = { headers: {}, cookies: {} };
-    expect(await new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx(req))).toBe(true);
+    expect(await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req))).toBe(true);
     expect(req.portalAccount).toMatchObject({ id: 'a1', jti: 's1', tier: null });
   });
   it('exposes profile fields on req.portalAccount', async () => {
@@ -27,8 +29,19 @@ describe('PortalAuthGuard with Better Auth', () => {
     const when = new Date();
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', email: 'a@b.co', type: 'FINAL_CUSTOMER', state: 'ACTIVE', tier: null, documentId: '9', phone: '3001234567', privacyAcceptedAt: when, deletionRequestedAt: null });
     const req: any = { headers: {}, cookies: {} };
-    await new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx(req));
+    await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req));
     expect(req.portalAccount).toMatchObject({ documentId: '9', phone: '3001234567', privacyAcceptedAt: when, deletionRequestedAt: null });
+  });
+  it('keeps the linked company (id, active, owner) so /auth/me reports canQuote', async () => {
+    portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
+    prisma.portalAccount.findUnique.mockResolvedValue({
+      id: 'a1', email: 'a@b.co', state: 'ACTIVE', companyName: 'ACME', privacyAcceptedAt: new Date(), advisorId: null, customerId: 'c1',
+      customer: { id: 'c1', isActive: true, ownerId: 'u9', portalTierId: 't1', portalTier: { id: 't1', name: 'Oro', isActive: true } },
+    });
+    const req: any = { headers: {}, cookies: {} };
+    await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req));
+    expect(req.portalAccount.customer).toEqual({ id: 'c1', isActive: true, ownerId: 'u9' });
+    expect(portalAccountView(req.portalAccount).canQuote).toBe(true);
   });
   it('derives hasPassword and linkedProviders from the SAME account query, without exposing hash or tokens', async () => {
     portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
@@ -37,7 +50,7 @@ describe('PortalAuthGuard with Better Auth', () => {
       authUser: { accounts: [{ providerId: 'google', password: null }, { providerId: 'credential', password: 'secret-hash' }] },
     });
     const req: any = { headers: {}, cookies: {} };
-    await new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx(req));
+    await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req));
     expect(req.portalAccount).toMatchObject({ hasPassword: true, linkedProviders: ['google', 'credential'] });
     expect(JSON.stringify(req.portalAccount)).not.toContain('secret-hash');
     expect(req.portalAccount).not.toHaveProperty('authUser');
@@ -48,26 +61,33 @@ describe('PortalAuthGuard with Better Auth', () => {
     portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', state: 'ACTIVE', authUserId: 'u1', authUser: { accounts: [{ providerId: 'google', password: null }] } });
     const req: any = { headers: {}, cookies: {} };
-    await new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx(req));
+    await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req));
     expect(req.portalAccount).toMatchObject({ hasPassword: false, linkedProviders: ['google'] });
   });
   it('rejects SUSPENDED accounts', async () => {
     portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', state: 'SUSPENDED' });
-    await expect(new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
   });
-  it.each(['PENDING', 'REJECTED'])('rejects %s accounts', async (state) => {
+  it('lets PENDING accounts in so they can see their own profile', async () => {
+    portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', state: 'PENDING', city: '05001' });
+    const req: any = { headers: {}, cookies: {} };
+    await expect(new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req))).resolves.toBe(true);
+    expect(req.portalAccount).toMatchObject({ id: 'a1', state: 'PENDING', city: '05001', tierId: null });
+  });
+  it.each(['REJECTED'])('rejects %s accounts', async (state) => {
     portalAuth.getSession.mockResolvedValue({ user: baUser, session: { id: 's1' } });
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', state });
-    await expect(new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
   });
   it('falls back to legacy flow without BA session (no token -> 401)', async () => {
     portalAuth.getSession.mockResolvedValue(null);
-    await expect(new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toThrow('Sesión de cliente requerida');
+    await expect(new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toThrow('Sesión de cliente requerida');
   });
   it('treats a failing BA session lookup as no session', async () => {
     portalAuth.getSession.mockRejectedValue(new Error('bad'));
-    await expect(new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx({ headers: {}, cookies: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prisma.portalAccount.findUnique).not.toHaveBeenCalled();
   });
   it('creates the missing PortalAccount lazily on first access', async () => {
@@ -79,7 +99,7 @@ describe('PortalAuthGuard with Better Auth', () => {
       .mockResolvedValueOnce({ id: 'a9', state: 'ACTIVE', type: 'FINAL_CUSTOMER', tier: null });
     prisma.portalAccount.create.mockResolvedValue({ id: 'a9' });
     const req: any = { headers: {}, cookies: {} };
-    expect(await new PortalAuthGuard(jwt, prisma, portalAuth).canActivate(ctx(req))).toBe(true);
+    expect(await new PortalAuthGuard(jwt, prisma, portalAuth, new Reflector()).canActivate(ctx(req))).toBe(true);
     expect(req.portalAccount.id).toBe('a9');
   });
 });

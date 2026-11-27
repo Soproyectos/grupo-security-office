@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsAbsent } from './absent.decorator';
 
@@ -21,6 +21,7 @@ export class UpdateQuoteItemDto {
   @ApiPropertyOptional({ example: 10 })
   @IsInt()
   @Min(1)
+  @Max(9999)
   @IsOptional()
   quantity?: number;
 

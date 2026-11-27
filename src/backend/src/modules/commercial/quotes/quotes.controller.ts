@@ -17,6 +17,7 @@ import { CreateQuoteDto } from './dto/create-quote.dto';
 import { AddQuoteItemDto } from './dto/add-quote-item.dto';
 import { UpdateQuoteItemDto } from './dto/update-quote-item.dto';
 import { UpdateQuoteItemDiscountDto } from './dto/update-quote-item-discount.dto';
+import { UpdateQuoteItemPriceDto } from './dto/update-quote-item-price.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -49,9 +50,16 @@ export class QuotesController {
     return this.quotesService.findOne(id, this.ctx(user));
   }
 
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Historial de estados de la cotización (quotes:history en su alcance)' })
+  @ApiResponse({ status: 403, description: 'Sin quotes:history sobre la cotización' })
+  history(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.quotesService.history(id, this.ctx(user));
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Crear cotización en borrador (requiere customerId + listaId)' })
+  @ApiOperation({ summary: 'Crear cotización en borrador (requiere customerId; usa la tarifa de la empresa si no se indica otra)' })
   create(@CurrentUser() user: any, @Body() dto: CreateQuoteDto) {
     return this.quotesService.create(dto, this.ctx(user));
   }
@@ -62,8 +70,8 @@ export class QuotesController {
     summary: 'Agregar ítem (snapshot del precio vigente en la tarifa; sin descuento)',
   })
   @ApiResponse({ status: 400, description: 'discountPct no permitido en el alta' })
-  @ApiResponse({ status: 403, description: 'Producto o Lista sin nivel view_prices' })
-  @ApiResponse({ status: 409, description: 'Sin precio vigente para el producto (409 con SKU)' })
+  @ApiResponse({ status: 403, description: 'Sin products:read para cotizar el producto' })
+  @ApiResponse({ status: 404, description: 'Producto no encontrado' })
   addItem(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -101,6 +109,22 @@ export class QuotesController {
     @Body() dto: UpdateQuoteItemDiscountDto,
   ) {
     return this.quotesService.updateItemDiscount(id, itemId, dto, this.ctx(user));
+  }
+
+  @Patch(':id/items/:itemId/price')
+  @ApiOperation({
+    summary: 'Poner el precio de una línea (completa un «precio por confirmar»; quotes:edit)',
+  })
+  @ApiResponse({ status: 403, description: 'Sin quotes:edit sobre la cotización' })
+  @ApiResponse({ status: 404, description: 'Cotización fuera de scope o ítem ajeno' })
+  @ApiResponse({ status: 409, description: 'Ítems no editables en el estado actual' })
+  setItemPrice(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateQuoteItemPriceDto,
+  ) {
+    return this.quotesService.setItemPrice(id, itemId, dto, this.ctx(user));
   }
 
   @Delete(':id/items/:itemId')

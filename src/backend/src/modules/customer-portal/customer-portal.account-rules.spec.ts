@@ -13,13 +13,16 @@ const prisma: any = {
 };
 const config: any = { get: jest.fn() };
 const audit: any = { log: jest.fn() };
+const ADMIN = { userId: 'admin1', roles: ['Super Admin'] };
+// The scope rules have their own spec (portal-account-access.service.spec.ts); here the person always reaches the account.
+const access: any = { assertAccount: jest.fn().mockResolvedValue({}), requireScope: jest.fn().mockResolvedValue('global'), readWhere: jest.fn().mockResolvedValue({}) };
 
 describe('CustomerPortalService account rules', () => {
   let service: CustomerPortalService;
   beforeEach(() => {
     jest.clearAllMocks();
     config.get.mockImplementation(() => undefined);
-    service = new CustomerPortalService(prisma, {} as any, config, audit, {} as any);
+    service = new CustomerPortalService(prisma, {} as any, config, audit, undefined, access);
   });
 
   describe('updateProfile', () => {
@@ -68,7 +71,7 @@ describe('CustomerPortalService account rules', () => {
   describe('suspend / reactivate', () => {
     it('suspends an ACTIVE account, deletes Better Auth sessions, revokes legacy ones and audits', async () => {
       prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', state: 'ACTIVE', authUserId: 'u1' });
-      const result = await service.suspend('a1', ' fraude ', 'admin1');
+      const result = await service.suspend('a1', ' fraude ', ADMIN);
       expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'a1' }, data: { state: 'SUSPENDED' } });
       expect(prisma.portalAuthSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } });
       expect(prisma.portalSession.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'a1', revokedAt: null } }));
@@ -77,40 +80,52 @@ describe('CustomerPortalService account rules', () => {
     });
     it('suspend errors: 404, already suspended, not active', async () => {
       prisma.portalAccount.findUnique.mockResolvedValueOnce(null);
-      await expect(service.suspend('x', 'motivo', 'adm')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.suspend('x', 'motivo', ADMIN)).rejects.toBeInstanceOf(NotFoundException);
       prisma.portalAccount.findUnique.mockResolvedValueOnce({ id: 'a1', state: 'SUSPENDED' });
-      await expect(service.suspend('a1', 'motivo', 'adm')).rejects.toThrow('La cuenta ya está suspendida');
+      await expect(service.suspend('a1', 'motivo', ADMIN)).rejects.toThrow('La cuenta ya está suspendida');
       prisma.portalAccount.findUnique.mockResolvedValueOnce({ id: 'a1', state: 'PENDING' });
-      await expect(service.suspend('a1', 'motivo', 'adm')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.suspend('a1', 'motivo', ADMIN)).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.portalAuthSession.deleteMany).not.toHaveBeenCalled();
     });
     it('reactivates only from SUSPENDED', async () => {
       prisma.portalAccount.findUnique.mockResolvedValueOnce({ id: 'a1', state: 'ACTIVE' });
-      await expect(service.reactivate('a1', 'adm')).rejects.toThrow('Solo se pueden reactivar cuentas suspendidas');
+      await expect(service.reactivate('a1', ADMIN)).rejects.toThrow('Solo se pueden reactivar cuentas suspendidas');
       prisma.portalAccount.findUnique.mockResolvedValueOnce({ id: 'a1', state: 'SUSPENDED' });
-      expect(await service.reactivate('a1', 'adm')).toEqual({ id: 'a1', state: 'ACTIVE' });
+      expect(await service.reactivate('a1', ADMIN)).toEqual({ id: 'a1', state: 'ACTIVE' });
       expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'a1' }, data: { state: 'ACTIVE' } });
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'reactivate' }));
     });
   });
 });
 
-describe('Customer catalog profile gate', () => {
-  const portal: any = { getCatalog: jest.fn(() => 'catalog'), getProductDetail: jest.fn(() => 'detail') };
+describe('Customer prices profile gate', () => {
+  const portal: any = { getCatalogPrices: jest.fn(() => ({ prices: [] })) };
   const controller = new CustomerPortalController(portal, { get: jest.fn() } as any);
-  const incomplete: any = { portalAccount: { companyName: '(sin empresa)', privacyAcceptedAt: null, type: 'FINAL_CUSTOMER', tierId: null } };
-  const complete: any = { portalAccount: { companyName: 'ACME', privacyAcceptedAt: new Date(), type: 'FINAL_CUSTOMER', tierId: null } };
+  const incomplete: any = { portalAccount: { companyName: '(sin empresa)', privacyAcceptedAt: null, type: 'FINAL_CUSTOMER', tierId: null, customerId: 'c1' } };
+  const res0: any = { setHeader: jest.fn() };
 
-  it.each([
-    ['list', (req: any) => controller.customerCatalog({} as any, req)],
-    ['detail', (req: any) => controller.customerProductDetail('p1', req)],
-  ])('%s answers 403 PROFILE_INCOMPLETE when the profile is incomplete', (_n, call) => {
-    try { call(incomplete); fail('should throw'); } catch (e: any) {
-      expect(e).toBeInstanceOf(ForbiddenException);
-      expect(e.getResponse()).toEqual({ code: 'PROFILE_INCOMPLETE', message: 'Completa tus datos para continuar' });
-    }
+  it('prices answer 403 PROFILE_INCOMPLETE when the profile is incomplete', async () => {
+    const error: any = await controller.customerPrices({ ids: ['p1'] } as any, incomplete, res0).catch((e) => e);
+    expect(error).toBeInstanceOf(ForbiddenException);
+    expect(error.getResponse()).toEqual({ code: 'PROFILE_INCOMPLETE', message: 'Completa tus datos para continuar' });
+    expect(portal.getCatalogPrices).not.toHaveBeenCalled();
   });
-  it('serves the catalog when the profile is complete', () => {
-    expect(controller.customerCatalog({} as any, complete)).toBe('catalog');
+
+  describe('company pricing', () => {
+    const prices = jest.fn(() => ({ prices: [{ productId: 'p1' }] }));
+    const pricedPortal: any = { getCatalogPrices: prices };
+    const priced = new CustomerPortalController(pricedPortal, { get: jest.fn() } as any);
+    const res: any = { setHeader: jest.fn() };
+    const account = (over: any = {}) => ({ portalAccount: { companyName: 'ACME', privacyAcceptedAt: new Date(), type: 'FINAL_CUSTOMER', state: 'ACTIVE', customerId: 'c1', tierId: 'gold', ...over } }) as any;
+    beforeEach(() => jest.clearAllMocks());
+
+    it('prices use the company tier of the linked customer', async () => {
+      await priced.customerPrices({ ids: ['p1'] } as any, account(), res);
+      expect(prices).toHaveBeenCalledWith(['p1'], 'FINAL_CUSTOMER', 'gold');
+    });
+    it('an account without a linked customer gets no prices and the service is not asked', async () => {
+      expect(await priced.customerPrices({ ids: ['p1'] } as any, account({ customerId: null, tierId: null }), res)).toEqual({ prices: [] });
+      expect(prices).not.toHaveBeenCalled();
+    });
   });
 });

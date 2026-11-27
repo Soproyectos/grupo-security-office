@@ -12,9 +12,11 @@ export class CreateQuoteDto {
   @IsUUID()
   customerId: string;
 
-  @ApiProperty({ example: '7c3d5e8f-...' })
+  /** Deprecated: quotes no longer use Listas. Accepted for old clients and ignored. */
+  @ApiPropertyOptional({ deprecated: true, description: 'Ignorado: las cotizaciones ya no usan Listas' })
   @IsUUID()
-  listaId: string;
+  @IsOptional()
+  listaId?: string;
 
   @ApiPropertyOptional({ example: 'b2a1c0d4-...' })
   @IsUUID()
