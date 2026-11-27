@@ -1,10 +1,10 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { resolveAssetUrl } from '../../../services/api'
 import type { PublicPrice, PublicProductResult } from '../types/publicProduct'
 import { formatCop } from '../utils/formatCop'
 import { productHref } from './mega-menu/menu-model'
 import { ProductSpecLabel } from './ProductMedia'
+import ProductImageStage, { PRODUCT_STAGE_BORDER, PRODUCT_STAGE_TITLE_BORDER } from './ProductImageStage'
 import AddToQuoteButton, { type QuoteAction } from './AddToQuoteButton'
 
 /**
@@ -18,30 +18,25 @@ import AddToQuoteButton, { type QuoteAction } from './AddToQuoteButton'
  */
 export default function PublicProductCard({ product, eagerImage = false, compact = false, assignedPrice = null, quoteAction }: { product: PublicProductResult; eagerImage?: boolean; compact?: boolean; assignedPrice?: PublicPrice | null; /** Present only for a signed-in client with an active account. */ quoteAction?: QuoteAction }) {
   const imageSrc = product.imageUrl ? resolveAssetUrl(product.imageUrl) : null
-  const [failedImage, setFailedImage] = useState<string | null>(null)
-  const showImage = imageSrc !== null && failedImage !== imageSrc
 
   const canQuote = quoteAction !== undefined && !product.isInformational
   return (
     <li className={canQuote ? 'flex h-full flex-col gap-2' : undefined}>
       <Link
         to={productHref(product.id)}
-        className={`group flex flex-col overflow-hidden rounded-card border border-surface-200 bg-white transition-colors duration-150 hover:border-storefront-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500 ${canQuote ? 'flex-1' : 'h-full'}`}
+        className={`group flex flex-col overflow-hidden rounded-card border ${PRODUCT_STAGE_BORDER} bg-white transition-colors duration-150 hover:border-storefront-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500 ${canQuote ? 'flex-1' : 'h-full'}`}
       >
-        <span className="block aspect-[var(--product-card-media-ratio,4/3)] w-full overflow-hidden bg-white p-3">
-          {showImage ? (
-            <img
-              src={imageSrc ?? undefined}
-              alt=""
-              loading={eagerImage ? 'eager' : 'lazy'}
-              onError={() => imageSrc !== null && setFailedImage(imageSrc)}
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <ProductSpecLabel name={product.name} sku={product.sku} categorySlug={product.categorySlug} />
+        <ProductImageStage
+          src={imageSrc}
+          eager={eagerImage}
+          sizeClass="aspect-[var(--product-card-media-ratio,4/3)] w-full"
+          fallback={(
+            <span className="absolute inset-0 block p-3">
+              <ProductSpecLabel name={product.name} sku={product.sku} categorySlug={product.categorySlug} />
+            </span>
           )}
-        </span>
-        <span className={`flex flex-1 flex-col gap-1.5 ${compact ? 'p-3' : 'p-4'}`}>
+        />
+        <span className={`flex flex-1 flex-col gap-1.5 border-t ${PRODUCT_STAGE_TITLE_BORDER} ${compact ? 'p-3' : 'p-4'}`}>
           {product.brandName !== null && product.brandName !== '' && (
             <span className="text-eyebrow uppercase text-security-500">{product.brandName}</span>
           )}

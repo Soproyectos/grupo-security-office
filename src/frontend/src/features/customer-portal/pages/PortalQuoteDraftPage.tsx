@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { resolveAssetUrl } from '../../../services/api'
+import ProductImageStage, { PRODUCT_STAGE_BORDER } from '../../storefront/components/ProductImageStage'
 import QuantityStepper from '../../storefront/components/QuantityStepper'
 import { productHref } from '../../storefront/components/mega-menu/menu-model'
 import { useAssignedProductPrices } from '../../storefront/hooks/useAssignedProductPrices'
@@ -18,13 +19,8 @@ export const ESTIMATE_CAPTION = 'Valor estimado con tu tarifa; tu asesor confirm
 export const PRICE_PENDING = 'Precio por confirmar'
 
 function Thumb({ item }: { item: QuoteListItem }) {
-  const [failed, setFailed] = useState(false)
   const src = item.imageUrl ? resolveAssetUrl(item.imageUrl) : null
-  return (
-    <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-control border border-surface-200 bg-white p-1">
-      {src && !failed ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} className="h-full w-full object-contain" /> : null}
-    </span>
-  )
+  return <ProductImageStage src={src} sizeClass="h-16 w-16" padding="p-1" className={`rounded-control border ${PRODUCT_STAGE_BORDER}`} />
 }
 
 /** "Mi cotización": the list the client built in the store, reviewed before sending it to the advisor. */
