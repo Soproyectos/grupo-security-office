@@ -1,7 +1,7 @@
 import { evaluatePortalRequestRules, isPortalEmailRegistered } from './portal-auth.rules';
 
 const signUp = (over: Record<string, unknown> = {}) => ({
-  name: 'Ana Perez', email: 'ana@acme.co', password: 'Tr0ub4dor&Zebra!x', acceptPrivacy: true, ...over,
+  name: 'Ana Perez', email: 'ana@acme.co', password: 'Tr0ub4dor&Zebra!x', acceptPrivacy: true, city: '05001', ...over,
 });
 
 describe('evaluatePortalRequestRules', () => {
@@ -11,6 +11,13 @@ describe('evaluatePortalRequestRules', () => {
   it.each([undefined, false, 'true', 1, null])('rejects sign-up when acceptPrivacy is %p', (value) => {
     expect(evaluatePortalRequestRules('/sign-up/email', signUp({ acceptPrivacy: value })))
       .toEqual({ code: 'PRIVACY_NOT_ACCEPTED', message: 'Debes aceptar la política de tratamiento de datos' });
+  });
+  it.each([undefined, '', '99999', '5001', 5001, null])('rejects sign-up with an invalid city (%p)', (city) => {
+    expect(evaluatePortalRequestRules('/sign-up/email', signUp({ city })))
+      .toEqual({ code: 'INVALID_CITY', message: 'Elige tu ciudad de la lista' });
+  });
+  it('does not ask for a city outside email sign-up (Google gives it when completing the profile)', () => {
+    expect(evaluatePortalRequestRules('/sign-in/email', { email: 'a@b.co', password: 'x' })).toBeNull();
   });
   it('rejects weak sign-up passwords with WEAK_PASSWORD', () => {
     const v = evaluatePortalRequestRules('/sign-up/email', signUp({ password: 'short' }));
@@ -50,6 +57,13 @@ describe('isPortalEmailRegistered', () => {
   it('finds an email in a legacy PortalAccount without authUserId', async () => {
     expect(await isPortalEmailRegistered(db(null, { id: 'a1' }), 'ana@acme.co')).toBe(true);
   });
+  it.each(['/reset-password', '/change-password'])('rejects a new password that contains the owner name or email on %s', (path) => {
+    const identity = { email: 'laura.gomez@acme.co', name: 'Laura Gómez' };
+    expect(evaluatePortalRequestRules(path, { newPassword: 'Laura-Zebra-77!x' }, false, identity)?.code).toBe('WEAK_PASSWORD');
+    expect(evaluatePortalRequestRules(path, { newPassword: 'My.laura.gomez-9X!' }, false, identity)?.code).toBe('WEAK_PASSWORD');
+    expect(evaluatePortalRequestRules(path, { newPassword: 'Tr0ub4dor&Zebra!x' }, false, identity)).toBeNull();
+  });
+
   it('lets a new email through', async () => {
     expect(await isPortalEmailRegistered(db(null, null), 'nuevo@acme.co')).toBe(false);
     expect(await isPortalEmailRegistered(db(null, null), undefined)).toBe(false);

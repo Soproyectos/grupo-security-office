@@ -103,7 +103,7 @@ describe('formulario de inicio de sesión: clave', () => {
   it('usa el campo con botón Mostrar', () => {
     const markup = render(ClientLoginPage, '/clientes/login')
     expect(markup).toContain('aria-controls="login-password"')
-    expect(markup).toContain('>Mostrar</button>')
+    expect(markup).toMatch(/aria-label="Mostrar [^"]+"/)
   })
 })
 

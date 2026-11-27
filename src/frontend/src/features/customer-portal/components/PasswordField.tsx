@@ -30,7 +30,7 @@ const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(function 
           type={visible ? 'text' : 'password'}
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy}
-          className={`min-h-12 w-full rounded-control border border-surface-300 bg-white py-0 pl-3 pr-24 ${FOCUS}`}
+          className={`min-h-12 w-full rounded-control border border-surface-300 bg-white py-0 pl-3 pr-12${FOCUS}`}
         />
         <button
           type="button"
@@ -39,9 +39,13 @@ const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(function 
           aria-label={`${visible ? 'Ocultar' : 'Mostrar'} ${label.toLowerCase()}`}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setVisible((current) => !current)}
-          className={`absolute inset-y-0 right-0 min-h-11 min-w-11 rounded-control px-3 text-sm font-semibold !text-security-600 hover:underline ${FOCUS}`}
+          className={`absolute inset-y-0 right-0 min-h-11 min-w-11 rounded-control px-3 !text-security-600 hover:bg-surface-100 ${FOCUS}`}
         >
-          {visible ? 'Ocultar' : 'Mostrar'}
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+            <circle cx="12" cy="12" r="3" />
+            {visible && <path d="M4 20L20 4" />}
+          </svg>
         </button>
       </div>
       {error && <span id={errorId} role="alert" className="mt-1 block text-xs text-security-600">{error}</span>}

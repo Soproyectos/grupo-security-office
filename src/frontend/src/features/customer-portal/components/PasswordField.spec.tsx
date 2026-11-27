@@ -14,7 +14,7 @@ describe('PasswordField', () => {
     expect(markup).toContain('type="button"')
     expect(markup).toContain('aria-pressed="false"')
     expect(markup).toContain('aria-controls="pw"')
-    expect(markup).toContain('>Mostrar</button>')
+    expect(markup).toMatch(/aria-label="Mostrar [^"]+"/)
     expect(markup).toContain('min-h-11')
   })
 

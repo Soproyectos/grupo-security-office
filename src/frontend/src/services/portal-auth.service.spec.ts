@@ -15,15 +15,15 @@ describe('portal-auth.service', () => {
     expect(post).toHaveBeenCalledWith('/portal-auth/sign-in/email', { email: 'a@b.co', password: 'clave-larga-123' })
   })
   it('registra con el cuerpo de Better Auth, sin pedir sesión (primero se confirma el correo)', async () => {
-    await signUpPortal({ name: 'Ana', email: 'a@b.co', password: 'clave-larga-123', companyName: 'ACME', acceptPrivacy: true })
-    expect(post).toHaveBeenCalledWith('/portal-auth/sign-up/email', expect.objectContaining({ companyName: 'ACME', acceptPrivacy: true, callbackURL: '/clientes' }))
+    await signUpPortal({ name: 'Ana', email: 'a@b.co', password: 'clave-larga-123', companyName: 'ACME', city: '66001', acceptPrivacy: true })
+    expect(post).toHaveBeenCalledWith('/portal-auth/sign-up/email', expect.objectContaining({ companyName: 'ACME', city: '66001', acceptPrivacy: true, callbackURL: '/clientes' }))
     expect(getPortalSession).not.toHaveBeenCalled()
   })
   it('manda el token del captcha en x-captcha-response al entrar, registrar y pedir enlace', async () => {
     getPortalSession.mockResolvedValue({ id: 'a1' })
     const headers = { headers: { 'x-captcha-response': 'tok-captcha' } }
     await signInPortal('a@b.co', 'clave-larga-123', 'tok-captcha')
-    await signUpPortal({ name: 'Ana', email: 'a@b.co', password: 'x', companyName: 'ACME', acceptPrivacy: true }, 'tok-captcha')
+    await signUpPortal({ name: 'Ana', email: 'a@b.co', password: 'x', companyName: 'ACME', city: '66001', acceptPrivacy: true }, 'tok-captcha')
     await requestPortalPasswordReset('a@b.co', 'tok-captcha')
     expect(post).toHaveBeenCalledWith('/portal-auth/sign-in/email', { email: 'a@b.co', password: 'clave-larga-123' }, headers)
     expect(post).toHaveBeenCalledWith('/portal-auth/sign-up/email', expect.objectContaining({ acceptPrivacy: true }), headers)

@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
+import MunicipalityPicker from '../components/MunicipalityPicker'
 import { useUpdatePortalProfile } from '../hooks/usePortalProfile'
-import { PRIVACY_POLICY_PATH, PRIVACY_REQUIRED_MESSAGE, readAuthError } from '../utils/auth-errors'
+import { INVALID_CITY_CODE, INVALID_CITY_MESSAGE, PRIVACY_POLICY_PATH, PRIVACY_REQUIRED_MESSAGE, readAuthError } from '../utils/auth-errors'
 import type { PortalAccount, PortalProfileInput } from '../types/customer-portal.types'
 
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
@@ -15,6 +16,7 @@ export function CompleteProfileForm({ account, onSaved }: { account: PortalAccou
   const [companyName, setCompanyName] = useState(account.companyName ?? '')
   const [documentId, setDocumentId] = useState(account.documentId ?? '')
   const [phone, setPhone] = useState(account.phone ?? '')
+  const [city, setCity] = useState(account.city?.code ?? '')
   const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState('')
   const busy = update.isPending
@@ -24,17 +26,19 @@ export function CompleteProfileForm({ account, onSaved }: { account: PortalAccou
     if (busy) return
     const company = companyName.trim()
     if (company.length < 2) { setError('Escribe el nombre de tu empresa o nombre comercial.'); return }
+    if (!city) { setError(INVALID_CITY_MESSAGE); return }
     if (needsPrivacy && !accepted) { setError(PRIVACY_REQUIRED_MESSAGE); return }
     setError('')
     const input: PortalProfileInput = {
       companyName: company,
+      city,
       ...(documentId.trim() ? { documentId: documentId.trim() } : {}),
       ...(phone.trim() ? { phone: phone.trim() } : {}),
       ...(needsPrivacy ? { acceptPrivacy: true as const } : {}),
     }
     update.mutate(input, {
       onSuccess: () => onSaved?.(),
-      onError: (cause) => setError(readAuthError(cause).code === 'PRIVACY_NOT_ACCEPTED' ? PRIVACY_REQUIRED_MESSAGE : 'No pudimos guardar tus datos. Revisa los campos e inténtalo de nuevo.'),
+      onError: (cause) => { const { code, message } = readAuthError(cause); setError(code === 'PRIVACY_NOT_ACCEPTED' ? PRIVACY_REQUIRED_MESSAGE : code === INVALID_CITY_CODE || message === INVALID_CITY_MESSAGE ? INVALID_CITY_MESSAGE : 'No pudimos guardar tus datos. Revisa los campos e inténtalo de nuevo.') },
     })
   }
 
@@ -48,6 +52,7 @@ export function CompleteProfileForm({ account, onSaved }: { account: PortalAccou
         <label className="block text-sm font-medium">Empresa o nombre comercial
           <input name="companyName" required minLength={2} maxLength={160} autoComplete="organization" value={companyName} onChange={(event) => setCompanyName(event.target.value)} className={INPUT} />
         </label>
+        <MunicipalityPicker value={city} onChange={setCity} initial={account.city ?? null} invalid={Boolean(error) && !city} />
         <label className="block text-sm font-medium">NIT o documento (opcional)
           <input name="documentId" maxLength={40} value={documentId} onChange={(event) => setDocumentId(event.target.value)} className={INPUT} />
         </label>

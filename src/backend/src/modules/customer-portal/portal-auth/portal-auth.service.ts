@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -7,6 +7,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { StorefrontMailService } from '../../storefront/storefront-mail.service';
 import { hashPortalPassword, verifyPortalPassword } from './portal-auth.hash';
 import { ensurePortalAccountSafe } from './portal-account-sync';
+import { PortalAdvisorAssignmentService } from './portal-advisor-assignment.service';
+import { isValidCity } from '../../../common/geo/municipalities';
 import { DEFAULT_PRIVACY_POLICY_VERSION, evaluatePortalRequestRules, isPortalEmailRegistered } from './portal-auth.rules';
 import { mapSetPasswordError } from './portal-auth.set-password';
 import { evaluateEmailChangeRequest, notifyPreviousEmail, readEmailChange, syncPortalAccountEmail } from './portal-auth.email-change';
@@ -39,6 +41,7 @@ export class PortalAuthService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly mail: StorefrontMailService,
+    @Optional() private readonly assignment?: PortalAdvisorAssignmentService,
   ) {
     const env = (key: string) => this.config.get<string>(key) || undefined;
     const isProd = env('NODE_ENV') === 'production';
@@ -59,6 +62,28 @@ export class PortalAuthService {
     const { betterAuth, prismaAdapter, APIError, createAuthMiddleware, getSessionFromCtx, captcha, haveIBeenPwned } = this.lib;
     const privacyVersion = env('PRIVACY_POLICY_VERSION') || DEFAULT_PRIVACY_POLICY_VERSION;
     const db = this.prisma;
+
+    /** Who owns the password being set (session for change, reset token for reset), so name/email can be rejected. */
+    const resolvePasswordOwner = async (ctx: any): Promise<{ email?: string; name?: string }> => {
+      try {
+        let userId: string | undefined;
+        if (ctx.path === '/change-password') {
+          userId = (await getSessionFromCtx(ctx))?.user?.id;
+        } else {
+          const token = ctx.body?.token || ctx.query?.token;
+          if (typeof token === 'string' && token) {
+            const verification = await ctx.context.internalAdapter.findVerificationValue(`reset-password:${token}`);
+            userId = verification?.value;
+          }
+        }
+        if (!userId) return {};
+        const user = await db.portalAuthUser.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+        return user ? { email: user.email, name: user.name } : {};
+      } catch {
+        // The library still rejects bad tokens and missing sessions by itself.
+        return {};
+      }
+    };
 
     this.auth = betterAuth({
       baseURL,
@@ -92,12 +117,13 @@ export class PortalAuthService {
       },
       verification: { modelName: 'portalAuthVerification', storeIdentifier: 'hashed' },
       hooks: {
-        before: createAuthMiddleware(async (ctx: { path?: string; body?: unknown }) => {
+        before: createAuthMiddleware(async (ctx: any) => {
           // Runs before Better Auth's generic duplicate handling, so the page can say the email exists.
           const emailExists = ctx.path === '/sign-up/email'
             ? await isPortalEmailRegistered(db, (ctx.body as { email?: unknown } | undefined)?.email)
             : false;
-          const violation = evaluatePortalRequestRules(ctx.path, ctx.body, emailExists);
+          const identity = ctx.path === '/reset-password' || ctx.path === '/change-password' ? await resolvePasswordOwner(ctx) : {};
+          const violation = evaluatePortalRequestRules(ctx.path, ctx.body, emailExists, identity);
           if (violation) {
             throw new APIError(violation.code === 'EMAIL_ALREADY_REGISTERED' ? 'CONFLICT' : 'BAD_REQUEST', { message: violation.message, code: violation.code });
           }
@@ -164,10 +190,15 @@ export class PortalAuthService {
               }
               return { data: { ...user, type: 'FINAL_CUSTOMER', email: String(user.email).trim().toLowerCase() } };
             },
-            after: async (user: any, ctx?: { path?: string; body?: { acceptPrivacy?: unknown } }) => {
+            after: async (user: any, ctx?: { path?: string; body?: { acceptPrivacy?: unknown; city?: unknown } }) => {
               // The policy version comes from the server; Google sign-ups carry no consent (null).
               const accepted = ctx?.path === '/sign-up/email' && ctx.body?.acceptPrivacy === true;
-              await ensurePortalAccountSafe(db, user, accepted ? { privacyVersion } : {});
+              // The city travels in the sign-up body (validated in the before hook); Google sign-ups give it later.
+              const city = ctx?.path === '/sign-up/email' && isValidCity(ctx.body?.city) ? ctx.body.city : undefined;
+              await ensurePortalAccountSafe(db, user, {
+                ...(accepted ? { privacyVersion } : {}),
+                ...(city ? { city, onCreated: (accountId: string) => this.assignment?.assignForAccount(accountId) ?? Promise.resolve(null) } : {}),
+              });
             },
           },
           update: {

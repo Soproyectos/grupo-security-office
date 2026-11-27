@@ -20,7 +20,9 @@ export function readAuthError(error: unknown): { status?: number; code: string; 
 }
 
 const isPwned = (code: string) => code.includes('PWNED') || code.includes('COMPROMISED')
-const KNOWN_SIGNUP_CODES = ['PRIVACY_NOT_ACCEPTED', 'WEAK_PASSWORD', EMAIL_ALREADY_REGISTERED_CODE]
+export const INVALID_CITY_CODE = 'INVALID_CITY'
+export const INVALID_CITY_MESSAGE = 'Elige tu ciudad de la lista'
+const KNOWN_SIGNUP_CODES = ['PRIVACY_NOT_ACCEPTED', 'WEAK_PASSWORD', EMAIL_ALREADY_REGISTERED_CODE, INVALID_CITY_CODE]
 
 /** Captcha failed: explicit CAPTCHA code, or a bare 403 with no other code. */
 export function isCaptchaError(error: unknown): boolean {
@@ -42,6 +44,7 @@ export function signupErrorMessage(error: unknown): string {
   const { status, code, message } = readAuthError(error)
   if (code === EMAIL_ALREADY_REGISTERED_CODE) return EMAIL_ALREADY_REGISTERED_MESSAGE
   if (code === 'PRIVACY_NOT_ACCEPTED') return PRIVACY_REQUIRED_MESSAGE
+  if (code === INVALID_CITY_CODE) return INVALID_CITY_MESSAGE
   if (code === 'WEAK_PASSWORD') return message || 'Tu contraseña no cumple los requisitos. Revisa la lista.'
   if (isPwned(code)) return PWNED_MESSAGE
   if (code.includes('CAPTCHA') || (status === 403 && !KNOWN_SIGNUP_CODES.includes(code))) return CAPTCHA_FAILED_MESSAGE

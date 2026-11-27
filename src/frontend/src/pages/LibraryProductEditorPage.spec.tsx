@@ -99,12 +99,6 @@ function render({ data = product(), permissions = ALL, hash = '' }: { data?: Pro
   const client = new QueryClient()
   client.setQueryData(['user-access', 'u1'], {
     grants: permissions.map((actionId) => ({ actionId, scope: 'global' })),
-    packages: [
-      { id: 'biblioteca-consulta', applied: permissions.includes('products:read') },
-      { id: 'biblioteca-fichas', applied: permissions.includes('products:write') },
-      { id: 'biblioteca-precios', applied: permissions.includes('prices:preview') },
-      { id: 'biblioteca-publicacion', applied: permissions.includes('products:publish') },
-    ],
   })
   if (data) {
     client.setQueryData(['product', 'p1'], data)

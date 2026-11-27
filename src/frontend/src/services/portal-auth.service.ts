@@ -6,6 +6,8 @@ export type PortalSignUp = {
   email: string
   password: string
   companyName: string
+  /** Código DIVIPOLA del municipio, de la lista fija. */
+  city: string
   documentId?: string
   phone?: string
   acceptPrivacy: true
