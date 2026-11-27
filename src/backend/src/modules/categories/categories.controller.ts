@@ -3,10 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AllowMastersWrite, RolesOrMastersWriteGuard } from '../masters/masters-write';
 import { SetActiveDto } from '../masters/dto/set-active.dto';
 import { RequireGrant } from '../../common/security/require-grant';
 import { CatalogRead } from '../../common/security/throttle-policy';
@@ -16,13 +13,12 @@ type ActorRequest = { user?: { sub?: string; name?: string } };
 @ApiTags('Categories')
 @ApiBearerAuth()
 @Controller('api/categories')
-@UseGuards(JwtAuthGuard, RolesOrMastersWriteGuard)
+@UseGuards(JwtAuthGuard)
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @CatalogRead()
   @Get()
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar categorías' })
   findAll() {
     return this.categoriesService.findAll();
@@ -30,7 +26,6 @@ export class CategoriesController {
 
   @CatalogRead()
   @Get('tree')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener árbol de categorías' })
   findTree() {
     return this.categoriesService.findTree();
@@ -38,7 +33,6 @@ export class CategoriesController {
 
   @CatalogRead()
   @Get('classification-tree')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Categorías principales con sus subcategorías activas (selector de clasificación)' })
   classificationTree() {
     return this.categoriesService.classificationTree();
@@ -54,15 +48,13 @@ export class CategoriesController {
 
   @CatalogRead()
   @Get(':id')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener categoría por ID' })
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
   }
 
   @Post()
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Crear categoría' })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
   create(@Body() dto: CreateCategoryDto, @Req() req: ActorRequest) {
@@ -70,8 +62,7 @@ export class CategoriesController {
   }
 
   @Put(':id')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Actualizar categoría' })
   update(@Param('id') id: string, @Body() dto: UpdateCategoryDto, @Req() req: ActorRequest) {
     return this.categoriesService.update(id, dto, { id: req.user?.sub, name: req.user?.name });
@@ -85,8 +76,7 @@ export class CategoriesController {
   }
 
   @Delete(':id')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Eliminar categoría' })
   remove(@Param('id') id: string, @Req() req: ActorRequest) {
     return this.categoriesService.remove(id, { id: req.user?.sub, name: req.user?.name });

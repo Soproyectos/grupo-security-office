@@ -27,10 +27,9 @@ export interface AccountActions {
 
 type Mode = null | 'suspend' | 'reject'
 
-/** Texto de la tarifa de la empresa: el nivel del cliente vinculado, o la tarifa general. */
-export function companyTariffLabel(account: AdminPortalAccount, generalListName: string | null) {
-  if (!account.customerId) return 'Sin tarifa: primero vincula un cliente'
-  const tier = account.customer?.portalTier
+/** Tarifa que se aplica: el nivel propio del cliente vinculado (prevalece), si no el de la cuenta, si no la general. */
+export function accountTariffLabel(account: AdminPortalAccount, generalListName: string | null) {
+  const tier = account.customer?.portalTier ?? account.tier
   if (tier) return `Nivel ${tier.name}${tier.isActive ? '' : ' (inactivo)'}`
   return generalListName ? `Tarifa general: ${generalListName}` : 'Tarifa general'
 }
@@ -52,7 +51,8 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
   const [open, setOpen] = useState(account.state === 'PENDING')
   const [mode, setMode] = useState<Mode>(null)
   const [reason, setReason] = useState('')
-  const currentTier = account.customer?.portalTierId ?? ''
+  const currentTier = account.tierId ?? ''
+  const customerTier = account.customer?.portalTier ?? null
   const [tierId, setTierId] = useState(currentTier)
   const [advisorId, setAdvisorId] = useState('')
   const [search, setSearch] = useState('')
@@ -63,9 +63,8 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
     queryFn: () => fetchCustomers({ search: term }, 1, 6),
   })
   const reasonOk = reason.trim().length >= 3 && reason.trim().length <= 300
-  const tarifa = companyTariffLabel(account, generalListName)
+  const tarifa = accountTariffLabel(account, generalListName)
   const isActive = account.state === 'ACTIVE'
-  const linked = !!account.customerId
   const canTariff = canManage && account.state !== 'REJECTED'
   const noAdvisor = !account.advisorId
   const cityText = account.city ? `${account.city.name} · ${account.city.department}` : 'Sin ciudad'
@@ -84,7 +83,7 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
           <p className="text-sm text-[var(--color-text-secondary)]">Ciudad: {cityText}</p>
           <p className="text-sm text-[var(--color-text-secondary)]">Asesor: {account.advisor?.name ?? 'Sin asesor'}</p>
           <p className="text-sm text-[var(--color-text-secondary)]">{account.customer ? `Vinculado a ${account.customer.name} (${account.customer.code})` : 'Sin cliente vinculado'}</p>
-          <p className="text-sm text-[var(--color-text-secondary)]">Tarifa de la empresa: {tarifa}</p>
+          <p className="text-sm text-[var(--color-text-secondary)]">Tarifa: {tarifa}</p>
         </div>
         {(canManage || canAssign) && <button type="button" className={BUTTON} aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? 'Cerrar' : 'Gestionar'}<span className="sr-only"> la cuenta de {account.companyName}</span></button>}
       </div>
@@ -118,14 +117,18 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
 
           {canTariff && (
             <div>
-              <label className="block text-sm font-medium" htmlFor={`tier-${account.id}`}>Tarifa de la empresa</label>
-              <p className="text-xs text-[var(--color-text-secondary)]">{linked ? 'Aplica a todas las personas de esta empresa.' : 'Primero vincula la cuenta a un cliente.'}</p>
+              <label className="block text-sm font-medium" htmlFor={`tier-${account.id}`}>Tarifa</label>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                {customerTier
+                  ? `El cliente vinculado ya tiene su propia tarifa (Nivel ${customerTier.name}): esa es la que se aplica. La de esta cuenta queda guardada por si se quita.`
+                  : 'Es la tarifa con la que esta cuenta ve sus precios.'}
+              </p>
               <div className="flex flex-wrap gap-2">
-                <select id={`tier-${account.id}`} className={`${FIELD} max-w-sm flex-1`} value={tierId} disabled={!linked || busy} onChange={e => setTierId(e.target.value)}>
+                <select id={`tier-${account.id}`} className={`${FIELD} max-w-sm flex-1`} value={tierId} disabled={busy} onChange={e => setTierId(e.target.value)}>
                   <option value="">{generalListName ? `Tarifa general (${generalListName})` : 'Tarifa general'}</option>
                   {tiers.filter(t => t.isActive || t.id === currentTier).map(t => <option key={t.id} value={t.id} disabled={!t.isActive}>{t.name}{t.isActive ? '' : ' (inactivo)'}</option>)}
                 </select>
-                <button type="button" className={`${BUTTON} mt-1 w-full sm:w-auto`} disabled={busy || !linked || tierId === currentTier} onClick={() => actions.assignTier(account.id, tierId || null)}>Guardar tarifa</button>
+                <button type="button" className={`${BUTTON} mt-1 w-full sm:w-auto`} disabled={busy || tierId === currentTier} onClick={() => actions.assignTier(account.id, tierId || null)}>Guardar tarifa</button>
               </div>
             </div>
           )}

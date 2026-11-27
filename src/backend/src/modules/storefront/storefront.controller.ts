@@ -20,9 +20,8 @@ import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { CustomerAccount } from "@prisma/client";
 import { Public } from "../../common/decorators/public.decorator";
-import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { RolesGuard } from "../../common/guards/roles.guard";
+import { RequireGrant } from "../../common/security/require-grant";
 import { StorefrontService } from "./storefront.service";
 import { CustomerSessionGuard } from "./customer-session.guard";
 import {
@@ -168,8 +167,8 @@ export class CustomerAccessController {
 
 @ApiTags("Commercial - Storefront")
 @Controller("api/commercial/storefront")
-@UseGuards(RolesGuard)
-@Roles("Super Admin", "Admin Comercial")
+// Se protege con la acción asignable `storefront:manage` (global); Super Admin conserva su excepción.
+@RequireGrant("storefront:manage")
 export class StorefrontAdminController {
   constructor(private readonly storefront: StorefrontService) {}
   @Get() overview(@Query() query: StorefrontAdminQueryDto) {

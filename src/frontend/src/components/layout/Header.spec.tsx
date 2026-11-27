@@ -63,6 +63,28 @@ describe('menú principal por trabajo asignado', () => {
     expect(commercial).toContain('Panel Comercial')
     expect(commercial).not.toContain('>Biblioteca<')
   })
+  it('el cargo Vendedor no oculta nada: ve Comercial, Marketing, Usuarios y Auditoría solo si se los asignaron', () => {
+    const asSeller = (grants: AccessGrant[]) => {
+      useAuthStore.setState({ user: { id: 'u1', name: 'Prueba', email: 'prueba@example.invalid', roles: ['Compras', 'Vendedor'], permissions: [] } })
+      return render(grants)
+    }
+    const granted = asSeller([
+      { sourceId: 's1', actionId: 'customers:read', scope: 'own' },
+      { sourceId: 's1', actionId: 'marketing:read', scope: 'global' },
+      { sourceId: 's1', actionId: 'users:read', scope: 'global' },
+      { sourceId: 's1', actionId: 'audit:read', scope: 'global' },
+    ])
+    expect(granted).toContain('Panel Comercial')
+    expect(granted).toContain('Marketing y mercadeo')
+    expect(granted).toContain('>Usuarios<')
+    expect(granted).toContain('>Auditoría<')
+
+    const empty = asSeller([])
+    expect(empty).not.toContain('Panel Comercial')
+    expect(empty).not.toContain('Marketing y mercadeo')
+    expect(empty).not.toContain('>Usuarios<')
+    expect(empty).not.toContain('>Auditoría<')
+  })
   it('Productos y búsqueda aparecen con la acción de ver productos', () => {
     const html = render([{ sourceId: 's1', actionId: 'products:read', scope: 'global' }])
     expect(html).toContain('>Biblioteca<')

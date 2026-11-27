@@ -1,33 +1,37 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SalesOrdersService } from './sales-orders.service';
 import { createPrismaMock } from '../../../__test__/mocks/prisma.mock';
 
 describe('SalesOrdersService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
-  let acl: { isListasAdmin: jest.Mock };
   let hierarchy: { getSubordinateIds: jest.Mock };
   let audit: { log: jest.Mock };
+  let grants: { grantsForUser: jest.Mock };
   let service: SalesOrdersService;
 
   const adminCtx = { userId: 'admin-1', roles: ['Super Admin'] };
+  // Sin cargo especial: todo lo que puede hacer viene de las acciones asignadas.
   const operadorCtx = { userId: 'op-1', roles: ['Operador'] };
+  const grant = (actionId: string, scope: string) => ({ sourceId: 's1', actionId, scope });
+  const teamGrants = [grant('salesOrders:read', 'team'), grant('salesOrders:invoice', 'team')];
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    acl = { isListasAdmin: jest.fn().mockReturnValue(false) };
     hierarchy = {
-      getSubordinateIds: jest.fn().mockResolvedValue(['op-1', 'sub-1']),
+      getSubordinateIds: jest.fn().mockImplementation(async (_id: string, opts?: { includeSelf?: boolean }) =>
+        opts?.includeSelf ? ['op-1', 'sub-1'] : ['sub-1']),
     };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
+    grants = { grantsForUser: jest.fn().mockResolvedValue(teamGrants) };
     service = new SalesOrdersService(
       prisma as any,
-      acl as any,
       hierarchy as any,
       audit as any,
+      grants as any,
     );
   });
 
-  it('findAll aplica scope de jerarquía (self + subordinados) para no-admin', async () => {
+  it('findAll aplica scope de jerarquía (self + subordinados) con la acción en alcance de equipo', async () => {
     prisma.salesOrder.findMany.mockResolvedValue([]);
     prisma.salesOrder.count.mockResolvedValue(0);
 
@@ -43,8 +47,32 @@ describe('SalesOrdersService', () => {
     );
   });
 
-  it('findAll sin filtro de scope para admin de Listas (GLOBAL)', async () => {
-    acl.isListasAdmin.mockReturnValue(true);
+  it('findAll con alcance propio solo ve los pedidos de la persona', async () => {
+    grants.grantsForUser.mockResolvedValue([grant('salesOrders:read', 'own')]);
+    prisma.salesOrder.findMany.mockResolvedValue([]);
+    prisma.salesOrder.count.mockResolvedValue(0);
+
+    await service.findAll({}, operadorCtx);
+
+    expect(prisma.salesOrder.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { AND: [{ ownerId: { in: ['op-1'] } }] } }),
+    );
+  });
+
+  it('findAll sin filtro de scope con la acción en alcance global', async () => {
+    grants.grantsForUser.mockResolvedValue([grant('salesOrders:read', 'global')]);
+    prisma.salesOrder.findMany.mockResolvedValue([]);
+    prisma.salesOrder.count.mockResolvedValue(0);
+
+    await service.findAll({}, operadorCtx);
+
+    expect(prisma.salesOrder.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {} }),
+    );
+  });
+
+  it('findAll sin filtro de scope para Super Admin, aunque no tenga concesiones', async () => {
+    grants.grantsForUser.mockResolvedValue([]);
     prisma.salesOrder.findMany.mockResolvedValue([]);
     prisma.salesOrder.count.mockResolvedValue(0);
 
@@ -54,6 +82,64 @@ describe('SalesOrdersService', () => {
     expect(prisma.salesOrder.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: {} }),
     );
+  });
+
+  it('findAll y findOne sin la acción salesOrders:read responden 403 (el cargo no basta)', async () => {
+    grants.grantsForUser.mockResolvedValue([grant('quotes:read', 'global')]);
+    const ctx = { userId: 'op-1', roles: ['Admin Comercial', 'Supervisor'] };
+
+    await expect(service.findAll({}, ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.findOne('so-1', ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.salesOrder.findMany).not.toHaveBeenCalled();
+  });
+
+  it('updateInvoice sin salesOrders:invoice responde 403 aunque pueda leer, y no persiste', async () => {
+    grants.grantsForUser.mockResolvedValue([grant('salesOrders:read', 'global')]);
+
+    await expect(
+      service.updateInvoice('so-1', { externalInvoiceNumber: 'FE-1' }, operadorCtx),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.salesOrder.update).not.toHaveBeenCalled();
+  });
+
+  it('updateInvoice: salesOrders:invoice sin salesOrders:read (dependencia) responde 403', async () => {
+    grants.grantsForUser.mockResolvedValue([grant('salesOrders:invoice', 'global')]);
+
+    await expect(
+      service.updateInvoice('so-1', { externalInvoiceNumber: 'FE-1' }, operadorCtx),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.salesOrder.update).not.toHaveBeenCalled();
+  });
+
+  it('updateInvoice: el alcance de facturar limita los pedidos (leer global, facturar propio)', async () => {
+    grants.grantsForUser.mockResolvedValue([
+      grant('salesOrders:read', 'global'),
+      grant('salesOrders:invoice', 'own'),
+    ]);
+    prisma.salesOrder.findUnique.mockResolvedValue({ id: 'so-1', ownerId: 'otro-owner' });
+
+    await expect(
+      service.updateInvoice('so-1', { externalInvoiceNumber: 'FE-1' }, operadorCtx),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.salesOrder.update).not.toHaveBeenCalled();
+  });
+
+  it('updateInvoice: Super Admin registra la factura sin concesiones', async () => {
+    grants.grantsForUser.mockResolvedValue([]);
+    prisma.salesOrder.findUnique.mockResolvedValue({
+      id: 'so-1',
+      ownerId: 'otro-owner',
+      externalInvoiceNumber: null,
+      externalInvoiceDate: null,
+    });
+    prisma.salesOrder.update.mockResolvedValue({ id: 'so-1', externalInvoiceNumber: 'FE-9', externalInvoiceDate: null });
+
+    await service.updateInvoice('so-1', { externalInvoiceNumber: 'FE-9' }, adminCtx);
+
+    expect(prisma.salesOrder.update).toHaveBeenCalledWith({
+      where: { id: 'so-1' },
+      data: { externalInvoiceNumber: 'FE-9' },
+    });
   });
 
   it('findOne fuera de scope lanza NotFoundException (404, no 403)', async () => {

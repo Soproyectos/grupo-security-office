@@ -4,7 +4,6 @@ import {
   approveAdminAccount, assignAccountAdvisor, assignAccountTier, fetchAdminAccounts, fetchAdminAdvisors, fetchAdminPriceMappings,
   fetchAdminTiers, linkAccountCustomer, reactivatePortalAccount, rejectAdminAccount, suspendPortalAccount,
 } from '../../../services/customer-portal.service'
-import { useAuthStore } from '../../../stores/auth.store'
 import { useHasAssignedAction } from '../../users/access'
 import AdminAccountRow, { STATE_LABELS, type AccountActions } from './AdminAccountRow'
 
@@ -22,12 +21,13 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
   const canRead = useHasAssignedAction(['portalAccounts:read'])
   const canAssign = useHasAssignedAction(['portalAccounts:assign'])
   const canManage = useHasAssignedAction(['portalAccounts:manage'])
-  const isSuperAdmin = useAuthStore(st => st.user?.roles?.includes('Super Admin')) ?? false
+  // The general tariff name is read with the same action that manages tariffs (Super Admin always).
+  const canTariffs = useHasAssignedAction(['portalTariffs:manage'])
   const client = useQueryClient()
   const tiers = useQuery({ queryKey: ['portal-admin-tiers'], enabled: canManage, queryFn: fetchAdminTiers })
   const accounts = useQuery({ queryKey: ['portal-admin-accounts'], enabled: canRead, queryFn: fetchAdminAccounts })
   const advisors = useQuery({ queryKey: ['portal-admin-advisors'], enabled: canAssign, queryFn: fetchAdminAdvisors })
-  const mappings = useQuery({ queryKey: ['portal-admin-mappings'], enabled: isSuperAdmin, queryFn: fetchAdminPriceMappings })
+  const mappings = useQuery({ queryKey: ['portal-admin-mappings'], enabled: canTariffs, queryFn: fetchAdminPriceMappings })
   const [message, setMessage] = useState(''), [failed, setFailed] = useState(false), [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState(initialFilter), [search, setSearch] = useState('')
 
@@ -67,7 +67,7 @@ export default function PortalAccountsSection({ initialFilter = '' }: { initialF
   }, [accounts.data, effective, search])
 
   if (!canRead) return <p>No tienes asignadas las solicitudes del portal. Pídele a tu administrador que te las asigne.</p>
-  const loadFailed = canManage && tiers.isError || accounts.isError || (canAssign && advisors.isError) || (isSuperAdmin && mappings.isError)
+  const loadFailed = canManage && tiers.isError || accounts.isError || (canAssign && advisors.isError) || (canTariffs && mappings.isError)
 
   return (
     <div className="space-y-4">

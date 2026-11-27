@@ -29,11 +29,11 @@ import {
   canDeleteBrands,
   canDeleteCategories,
   canDeletePrices,
-  canViewAudit,
   hasPermission,
   hasRole,
 } from '../lib/rbac'
 import { ROLES } from '../lib/roles'
+import { useHasAssignedAction } from '../features/users/access'
 import { getApiErrorMessage } from '../lib/apiError'
 import { Button } from '../components/ui'
 import { categoryRows } from './category-tree'
@@ -1130,7 +1130,7 @@ function HistoryTab() {
   const [userId, setUserId] = useState('')
   const [page, setPage] = useState(1)
 
-  const canReadAudit = canViewAudit()
+  const canReadAudit = useHasAssignedAction(['audit:read'])
   const isSuperAdmin = hasRole(ROLES.SUPER_ADMIN)
 
   const usersQuery = useQuery({
@@ -1164,7 +1164,7 @@ function HistoryTab() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <p className="text-neutral-500 font-medium">Sin acceso al historial de auditoría</p>
-        <p className="text-neutral-400 text-sm mt-1">Solo Super Admin, Supervisor y Admin Comercial pueden consultarlo.</p>
+        <p className="text-neutral-400 text-sm mt-1">Pídele a tu administrador que te asigne la consulta de Auditoría.</p>
       </div>
     )
   }

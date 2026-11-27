@@ -123,9 +123,13 @@ describe('Customer prices profile gate', () => {
       await priced.customerPrices({ ids: ['p1'] } as any, account(), res);
       expect(prices).toHaveBeenCalledWith(['p1'], 'FINAL_CUSTOMER', 'gold');
     });
-    it('an account without a linked customer gets no prices and the service is not asked', async () => {
-      expect(await priced.customerPrices({ ids: ['p1'] } as any, account({ customerId: null, tierId: null }), res)).toEqual({ prices: [] });
-      expect(prices).not.toHaveBeenCalled();
+    it('an approved account without a linked customer still gets prices with its own tier', async () => {
+      await priced.customerPrices({ ids: ['p1'] } as any, account({ customerId: null, tierId: 'gold' }), res);
+      expect(prices).toHaveBeenCalledWith(['p1'], 'FINAL_CUSTOMER', 'gold');
+    });
+    it('without any tier the general tariff is asked for (tier null)', async () => {
+      await priced.customerPrices({ ids: ['p1'] } as any, account({ customerId: null, tierId: null }), res);
+      expect(prices).toHaveBeenCalledWith(['p1'], 'FINAL_CUSTOMER', null);
     });
   });
 });

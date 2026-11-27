@@ -1,26 +1,24 @@
-import { Controller, ForbiddenException, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuditService, normalizeEntity } from './audit.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { assertGlobalGrant, hasGlobalGrant } from '../../common/security/require-grant';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
 @Controller('api/audit')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class AuditController {
   constructor(
     private readonly auditService: AuditService,
     private readonly grants: AccessAssignmentsService,
   ) {}
 
+  /** Auditoría: Super Admin o quien tenga la acción `audit:read` (global) en «Asignar paneles». */
   @Get()
-  @Roles('Super Admin', 'Admin Comercial')
-  @ApiOperation({ summary: 'Listar logs de auditoría' })
+  @ApiOperation({ summary: 'Listar logs de auditoría (requiere la acción audit:read)' })
   @ApiQuery({ name: 'skip', required: false, type: Number })
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'entity', required: false, type: String })
@@ -37,6 +35,7 @@ export class AuditController {
     @CurrentUser() user?: any,
   ) {
     const ctx = { roles: user?.roles ?? [], userId: user?.sub ?? user?.id };
+    await assertGlobalGrant(this.grants, 'audit:read', ctx);
     const libraryWrite = await hasGlobalGrant(this.grants, 'products:write', ctx)
       && await hasGlobalGrant(this.grants, 'products:notes', ctx);
     return this.auditService.findAll(
@@ -55,21 +54,22 @@ export class AuditController {
   /**
    * El historial de Biblioteca puede incluir notas y requiere la pestaña Fichas con notas.
    * Ningún cargo la reemplaza; Super Admin conserva su excepción. Las entidades operativas
-   * conservan su protección de siempre (Super Admin o Admin Comercial).
+   * requieren la acción `audit:read` (Super Admin la tiene siempre).
    */
   @Get(':entity/:entityId')
-  @ApiOperation({ summary: 'Obtener auditoría: Biblioteca requiere Fichas con notas; entidades operativas requieren Super Admin o Admin Comercial' })
+  @ApiOperation({ summary: 'Obtener auditoría: Biblioteca requiere Fichas con notas; entidades operativas requieren audit:read' })
   async findByEntity(
     @Param('entity') entity: string,
     @Param('entityId') entityId: string,
     @CurrentUser() user?: any,
   ) {
     const roles: string[] = user?.roles ?? [];
+    const ctx = { userId: user?.sub ?? user?.id, roles, userName: user?.name ?? null };
     if (['Product', 'ProductImage', 'Category', 'Brand', 'Price', 'PriceList', 'LISTA'].includes(normalizeEntity(entity) ?? '')) {
-      await assertGlobalGrant(this.grants, 'products:write', { userId: user?.sub ?? user?.id, roles, userName: user?.name ?? null });
-      await assertGlobalGrant(this.grants, 'products:notes', { userId: user?.sub ?? user?.id, roles, userName: user?.name ?? null });
-    } else if (!roles.some((role) => role === 'Super Admin' || role === 'Admin Comercial')) {
-      throw new ForbiddenException('Sin permiso para consultar esta auditoría');
+      await assertGlobalGrant(this.grants, 'products:write', ctx);
+      await assertGlobalGrant(this.grants, 'products:notes', ctx);
+    } else {
+      await assertGlobalGrant(this.grants, 'audit:read', ctx);
     }
     return this.auditService.findByEntity(entity, entityId, {
       roles,

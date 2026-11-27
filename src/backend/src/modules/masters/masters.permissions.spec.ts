@@ -17,9 +17,10 @@ describe('master catalogs: new endpoints use panel grants, existing ones keep th
     expect(meta(REQUIRED_GRANTS_KEY, BrandsController, 'usage')).toEqual(['masters:read']);
   });
 
-  it('existing category and brand writes keep their role check', () => {
+  it('category and brand writes require the assigned action masters:write, with no role check', () => {
     for (const [cls, name] of [[CategoriesController, 'create'], [CategoriesController, 'remove'], [BrandsController, 'update'], [BrandsController, 'remove']] as const) {
-      expect(meta(ROLES_KEY, cls, name)).toEqual(expect.arrayContaining(['Super Admin', 'Admin Comercial']));
+      expect(meta(REQUIRED_GRANTS_KEY, cls, name)).toEqual(['masters:write']);
+      expect(meta(ROLES_KEY, cls, name)).toBeUndefined();
     }
   });
 });

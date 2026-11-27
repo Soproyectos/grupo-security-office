@@ -3,17 +3,15 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AssignmentsService } from './assignments.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { AccessContext } from '../../common/acl/acl.service';
 
 @ApiTags('Assignments')
 @ApiBearerAuth()
 @Controller('api/assignments')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class AssignmentsController {
   constructor(private readonly assignmentsService: AssignmentsService) {}
 
@@ -22,7 +20,6 @@ export class AssignmentsController {
   }
 
   @Get()
-  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({ summary: 'Listar asignaciones (filtros: userId, resourceType)' })
   findAll(
     @CurrentUser() user: any,
@@ -33,7 +30,6 @@ export class AssignmentsController {
   }
 
   @Get('matrix')
-  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({ summary: 'Matriz de accesos por entidad (LISTA|PRODUCT)' })
   @ApiResponse({ status: 200, description: 'Matriz de asignaciones y acciones del viewer' })
   matrix(@CurrentUser() user: any, @Query('entity') entity: string) {
@@ -41,7 +37,6 @@ export class AssignmentsController {
   }
 
   @Get('preview')
-  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({
     summary: 'Vista previa de reglas efectivas de un usuario/rol sobre una entidad (no persiste)',
   })
@@ -57,7 +52,6 @@ export class AssignmentsController {
 
   @Post()
   @Permissions('assignments:manage')
-  @Roles('Super Admin', 'Admin Comercial')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear o reactivar una asignación' })
   @ApiResponse({ status: 201, description: 'Asignación creada o reactivada' })
@@ -70,7 +64,6 @@ export class AssignmentsController {
 
   @Patch(':id')
   @Permissions('assignments:manage')
-  @Roles('Super Admin', 'Admin Comercial')
   @ApiOperation({ summary: 'Actualizar level y/o isActive de una asignación' })
   update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateAssignmentDto) {
     return this.assignmentsService.update(id, dto, this.ctx(user));
@@ -78,7 +71,6 @@ export class AssignmentsController {
 
   @Delete(':id')
   @Permissions('assignments:manage')
-  @Roles('Super Admin', 'Admin Comercial')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Desactivar lógicamente una asignación' })
   @ApiResponse({ status: 204, description: 'Asignación desactivada' })

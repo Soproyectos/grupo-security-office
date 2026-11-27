@@ -68,16 +68,24 @@ describe('PortalAccountsSection (pestaña Solicitudes de Comercial)', () => {
     expect(html).toContain('1 sin asesor')
     expect(html).toContain('<option value="NO_ADVISOR">Sin asesor (1)</option>')
     expect(html).toContain('Vinculado a Acme Ltda (CL-0001)')
-    expect(html).toContain('Tarifa de la empresa: Nivel Oro')
-    expect(html).toContain('Tarifa de la empresa: Sin tarifa: primero vincula un cliente')
+    expect(html).toContain('Tarifa: Nivel Oro')
+    expect(html).toContain('Tarifa: Tarifa general')
+    expect(html).not.toContain('tarifa de la empresa')
     expect(html).toContain('Aprobar cuenta') // la cuenta pendiente llega abierta
     expect(html).toContain('Asigna un asesor antes de activar')
   })
 
-  it('la tarifa queda deshabilitada con su pista mientras la cuenta no tiene cliente vinculado', () => {
+  it('la tarifa se puede elegir aunque la cuenta no tenga cliente vinculado', () => {
     const html = render(['Super Admin'], { ...seed, 'portal-admin-accounts': [pending] })
-    expect(html).toContain('Primero vincula la cuenta a un cliente.')
-    expect(html).toMatch(/<select id="tier-a2"[^>]*disabled/)
+    expect(html).not.toContain('Primero vincula la cuenta a un cliente.')
+    expect(html).toContain('Es la tarifa con la que esta cuenta ve sus precios.')
+    expect(html).not.toMatch(/<select id="tier-a2"[^>]*\sdisabled=""/)
+  })
+
+  it('si el cliente vinculado tiene su propia tarifa, se avisa que esa es la que se aplica', () => {
+    const linkedPending = { ...pending, customerId: 'c9', customer: { id: 'c9', code: 'CL-0009', name: 'Acme Ltda', portalTierId: 't1', portalTier: { id: 't1', name: 'Oro', isActive: true } } }
+    const html = render(['Super Admin'], { ...seed, 'portal-admin-accounts': [linkedPending] })
+    expect(html).toContain('El cliente vinculado ya tiene su propia tarifa (Nivel Oro): esa es la que se aplica.')
   })
 
   it('quien puede asignar elige entre los asesores disponibles con su zona', () => {

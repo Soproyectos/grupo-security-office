@@ -21,6 +21,7 @@ interface ProfileSource {
 export const PORTAL_ACCOUNT_INCLUDE = {
   customer: { select: { id: true, isActive: true, ownerId: true, owner: { select: { name: true } }, portalTierId: true, portalTier: { select: { id: true, name: true, isActive: true } } } },
   advisor: { select: { name: true } },
+  tier: { select: { id: true, name: true, isActive: true } },
   authUser: { select: { accounts: { select: { providerId: true, password: true } } } },
 };
 

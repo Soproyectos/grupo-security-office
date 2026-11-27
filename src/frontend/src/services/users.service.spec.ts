@@ -83,7 +83,7 @@ describe('users.service — concesiones por acción (COM-01)', () => {
     expect(api.put).toHaveBeenCalledWith('/users/user-1/access', {
       grants: [{ actionId: 'customers:read', scope: 'own' }],
       expectedVersion: 5,
-      expectedCatalogVersion: 'panels-20261125-1',
+      expectedCatalogVersion: 'panels-20261127-1',
     })
   })
 

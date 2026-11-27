@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../services/api'
-import { canViewAudit } from '../lib/rbac'
+import { useHasAssignedAction } from '../features/users/access'
 import { SearchFilterBar, type SearchFilterChip } from '../components/filters/SearchFilterBar'
 import {
   describeAuditEntry,
@@ -124,9 +124,12 @@ export default function AuditPage() {
   const [action, setAction] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 100
+  // Auditoría es una acción asignable (Super Admin siempre); el servidor la vuelve a exigir.
+  const canReadAudit = useHasAssignedAction(['audit:read'])
 
   const { data: logs, isLoading, error } = useQuery({
     queryKey: ['audit', entity, action, page],
+    enabled: canReadAudit,
     queryFn: async () => {
       const params = new URLSearchParams()
       params.set('take', String(PAGE_SIZE))
@@ -164,7 +167,7 @@ export default function AuditPage() {
     setPage(1)
   }
 
-  if (!canViewAudit()) {
+  if (!canReadAudit) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <svg aria-hidden="true" className="w-16 h-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

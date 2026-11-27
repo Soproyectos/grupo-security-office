@@ -15,7 +15,6 @@ import { BulkTransitionProductDto } from './dto/bulk-transition.dto';
 import { DeleteProductDto } from './dto/delete-product.dto';
 import { BulkSchedulePublicationDto } from './dto/bulk-schedule-publication.dto';
 import { SchedulePublicationDto } from './dto/schedule-publication.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RequireGrant } from '../../common/security/require-grant';
 import { RedactInternalNotesInterceptor } from '../../common/security/internal-notes.interceptor';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -375,7 +374,7 @@ export class ProductsController {
 @ApiTags('Listas')
 @ApiBearerAuth()
 @Controller('api/listas')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class ListasPublicationController {
   constructor(private readonly productsService: ProductsService) {}
 
@@ -384,8 +383,7 @@ export class ListasPublicationController {
   }
 
   @Post(':id/publication/publish')
-  @Permissions('listas:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Publicar todos los productos elegibles de una Lista' })
   @ApiResponse({ status: 200, description: 'Resultado consolidado', type: Object })
@@ -394,8 +392,7 @@ export class ListasPublicationController {
   }
 
   @Post(':id/publication/schedule')
-  @Permissions('listas:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Programar publicacion de una Lista completa' })
   @ApiResponse({ status: 200, description: 'Resultado consolidado', type: Object })
@@ -404,8 +401,7 @@ export class ListasPublicationController {
   }
 
   @Post(':id/publication/cancel')
-  @Permissions('listas:publish')
-  @Roles('Super Admin', 'Admin Comercial')
+  @RequireGrant('products:publish')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancelar programaciones pendientes de una Lista' })
   @ApiResponse({ status: 200, description: 'Resultado consolidado', type: Object })

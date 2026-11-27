@@ -4,7 +4,7 @@ jest.mock('bcrypt', () => ({ compare: jest.fn(), hash: jest.fn() }));
 import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { CustomerPortalService } from './customer-portal.service';
+import { CustomerPortalService, portalPricing } from './customer-portal.service';
 
 const prisma: any = {
   portalAccount: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
@@ -332,44 +332,55 @@ describe('CustomerPortalService', () => {
     expect(audit.log).not.toHaveBeenCalled();
   });
 
-  describe('tarifa de la empresa', () => {
-    it('exige un cliente vinculado antes de asignar un nivel', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', customerId: null, customer: null });
-      await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow('Primero vincula la cuenta a un cliente');
+  describe('tarifa de la cuenta', () => {
+    it('se puede asignar a una cuenta sin cliente vinculado y se guarda en la cuenta', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', tierId: null, customerId: null, customer: null });
+      prisma.portalTier.findUnique.mockResolvedValue({ isActive: true });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: 'gold' });
+      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toEqual({ id: 'p1', customerId: null, tierId: 'gold', customerTierId: null, effectiveTierId: 'gold' });
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: 'gold' } });
       expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entity: 'PortalAccount', entityId: 'p1', newValues: { tierId: 'gold' } }));
     });
-    it('requires active tiers when assigning to a company', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: null } });
+    it('requires active tiers', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', tierId: null, customerId: null, customer: null });
       prisma.portalTier.findUnique.mockResolvedValue({ isActive: false });
       await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow(BadRequestException);
-      expect(prisma.customer.update).not.toHaveBeenCalled();
-    });
-    it('guarda el nivel en el cliente (la empresa), no en la persona, y lo audita', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', customerId: 'c1', customer: { id: 'c1', portalTierId: null } });
-      prisma.portalTier.findUnique.mockResolvedValue({ isActive: true });
-      prisma.customer.update.mockResolvedValue({ id: 'c1', portalTierId: 'gold' });
-      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toEqual({ id: 'p1', customerId: 'c1', tierId: 'gold' });
-      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { portalTierId: 'gold' } });
       expect(prisma.portalAccount.update).not.toHaveBeenCalled();
-      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entity: 'Customer', entityId: 'c1' }));
     });
-    it('null devuelve a la empresa a la tarifa general', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: 'gold' } });
-      prisma.customer.update.mockResolvedValue({ id: 'c1', portalTierId: null });
-      await service.assignTier('p1', { tierId: null }, ADMIN);
-      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { portalTierId: null } });
-    });
-    it('403 when the company owner is outside the caller manage scope', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: null, ownerId: 'other' } });
-      access.ownerInScope.mockResolvedValueOnce(false);
-      await expect(service.assignTier('p1', { tierId: 'gold' }, { userId: 'v1', roles: [] })).rejects.toThrow('Esta empresa no está en tu alcance');
-      expect(access.ownerInScope).toHaveBeenCalledWith('portalAccounts:manage', { userId: 'v1', roles: [] }, 'other');
+    it('si el cliente vinculado ya tiene su propia tarifa, esa prevalece (y se avisa cuál se aplica)', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', tierId: null, customerId: 'c1', customer: { portalTierId: 'platinum' } });
+      prisma.portalTier.findUnique.mockResolvedValue({ isActive: true });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: 'gold' });
+      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toMatchObject({ tierId: 'gold', customerTierId: 'platinum', effectiveTierId: 'platinum' });
       expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('null devuelve la cuenta a la tarifa general', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', tierId: 'gold', customerId: null, customer: null });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: null });
+      await service.assignTier('p1', { tierId: null }, ADMIN);
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: null } });
+    });
+    it('rechaza una solicitud rechazada', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'REJECTED', tierId: null, customerId: null, customer: null });
+      await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow('rechazada');
     });
     it('checks the scope of the person on that account first', async () => {
       access.assertAccount.mockRejectedValueOnce(new ForbiddenException('Esta cuenta no está en tu alcance'));
       await expect(service.assignTier('p1', { tierId: 'gold' }, { userId: 'v1', roles: [] })).rejects.toThrow(ForbiddenException);
-      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('portalPricing', () => {
+    it('da precios con la tarifa de la cuenta aunque no tenga cliente vinculado', () => {
+      expect(portalPricing({ type: 'FINAL_CUSTOMER', tierId: 'gold', customerId: null })).toEqual({ type: 'FINAL_CUSTOMER', tierId: 'gold' });
+    });
+    it('con cliente y sin nivel usa la tarifa general', () => {
+      expect(portalPricing({ type: 'FINAL_CUSTOMER', tierId: null, customerId: 'c1' })).toEqual({ type: 'FINAL_CUSTOMER', tierId: null });
+    });
+    it('sin nivel y sin cliente se aplica la tarifa general', () => {
+      expect(portalPricing({ type: 'FINAL_CUSTOMER', tierId: null, customerId: null })).toEqual({ type: 'FINAL_CUSTOMER', tierId: null });
     });
   });
 

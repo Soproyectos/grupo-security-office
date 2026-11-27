@@ -53,7 +53,7 @@ export const updateUserSupervisor = async (userId: string, supervisorId: string 
 // ---------------------------------------------------------------------------
 
 /** Versión del catálogo con la que el servidor sirve hoy las acciones. */
-export const ACCESS_CATALOG_VERSION = 'panels-20261125-1'
+export const ACCESS_CATALOG_VERSION = 'panels-20261127-1'
 
 export type AccessScope = 'own' | 'team' | 'list' | 'product' | 'global'
 

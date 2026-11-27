@@ -100,7 +100,10 @@ export interface AdminPortalAccount {
   advisorId?: string | null
   advisor?: { id: string; name: string } | null
   customerId?: string | null
-  /** La tarifa es de la empresa: el nivel vive en el cliente vinculado. */
+  /** Nivel de tarifa puesto directamente en la cuenta (no necesita cliente vinculado). */
+  tierId?: string | null
+  tier?: { id: string; name: string; isActive: boolean } | null
+  /** Si el cliente vinculado tiene su propio nivel, ese prevalece sobre el de la cuenta. */
   customer?: {
     id: string; code: string; name: string; documentId?: string | null; email?: string | null
     ownerId?: string | null; portalTierId?: string | null

@@ -1,4 +1,3 @@
-import { workspaceForRoles } from '../../lib/workspace'
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
@@ -52,7 +51,6 @@ export default function Header() {
   const allowed = (action: string) => hasAssignedAction({ roles: user?.roles, grants: access?.grants, status }, [action])
   // The Marketing entry shows with any of its tabs (Banners, Promociones internas, Gestionar avisos).
   const marketingVisible = visibleMarketingPages({ roles: user?.roles, grants: access?.grants, status }).length > 0
-  const isSeller = workspaceForRoles(user?.roles ?? []) === 'sales'
   const isSuperAdmin = canAdministerAccess(user?.roles)
 
   // Notificaciones: fetch automático + refetch al abrir dropdown
@@ -422,7 +420,7 @@ export default function Header() {
             </div>
             <div className="flex-shrink-0"><NavItem to="/agenda" label="Agenda y tareas" /></div>
             {catalog.tabs[0] && <div className="flex-shrink-0"><NavItem to={catalog.tabs[0].to} label="Biblioteca" active={isCatalogPath(location.pathname)} /></div>}
-            {!isSeller && commercial.tabs[0] && <div className="relative flex-shrink-0">
+            {commercial.tabs[0] && <div className="relative flex-shrink-0">
               <div ref={commercialButtonRef} className="flex items-center">
                 <NavLink
                   to={commercial.tabs[0]?.to ?? '/commercial/customers'}
@@ -462,18 +460,18 @@ export default function Header() {
               </div>
             </div>}
             {isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /></div>}
-            {!isSeller && marketingVisible && (
+            {marketingVisible && (
               <div className="flex-shrink-0">
                 <NavItem to={MARKETING_PATH} label={MARKETING_PANEL_LABEL} active={location.pathname.startsWith('/marketing')} />
               </div>
             )}
             {/* «Usuarios» also leads to «Asignar paneles» (tab inside the panel), so Super Admin keeps it even with a sales role. */}
-            {(isSuperAdmin || (!isSeller && allowed('users:read'))) && (
+            {(isSuperAdmin || allowed('users:read')) && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
               </div>
             )}
-            {!isSeller && allowed('audit:read') && (
+            {allowed('audit:read') && (
               <div className="flex-shrink-0">
                 <NavItem to="/audit" label="Auditoría" />
               </div>
@@ -481,7 +479,7 @@ export default function Header() {
           </div>
         </div>
 
-        {!isSeller && commercialOpen && commercial.hasAnyPanel && (
+        {commercialOpen && commercial.hasAnyPanel && (
           <div
             ref={commercialMenuRef}
             id="comercial-menu"

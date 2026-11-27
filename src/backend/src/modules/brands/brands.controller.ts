@@ -4,10 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody
 import { BrandsService } from './brands.service';
 import { CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { ALL_ROLES } from '../../common/rbac/roles.constants';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AllowMastersWrite, RolesOrMastersWriteGuard } from '../masters/masters-write';
 import { RequireGrant } from '../../common/security/require-grant';
 import { CatalogRead } from '../../common/security/throttle-policy';
 
@@ -17,13 +14,12 @@ const actorFrom = (req: ActorRequest) => ({ id: req.user?.sub, name: req.user?.n
 @ApiTags('Brands')
 @ApiBearerAuth()
 @Controller('api/brands')
-@UseGuards(JwtAuthGuard, RolesOrMastersWriteGuard)
+@UseGuards(JwtAuthGuard)
 export class BrandsController {
   constructor(private readonly brandsService: BrandsService) {}
 
   @CatalogRead()
   @Get()
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Listar marcas' })
   findAll() {
     return this.brandsService.findAll();
@@ -39,15 +35,13 @@ export class BrandsController {
 
   @CatalogRead()
   @Get(':id')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Obtener marca por ID' })
   findOne(@Param('id') id: string) {
     return this.brandsService.findOne(id);
   }
 
   @Post()
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Crear marca' })
   @ApiResponse({ status: 201, description: 'Marca creada' })
   create(@Body() dto: CreateBrandDto, @Req() req: ActorRequest) {
@@ -55,16 +49,14 @@ export class BrandsController {
   }
 
   @Put(':id')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Actualizar marca' })
   update(@Param('id') id: string, @Body() dto: UpdateBrandDto, @Req() req: ActorRequest) {
     return this.brandsService.update(id, dto, actorFrom(req));
   }
 
   @Patch(':id/toggle-active')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Alternar estado activo de la marca' })
   @ApiResponse({ status: 200, description: 'Marca actualizada' })
   toggleActive(@Param('id') id: string, @Req() req: ActorRequest) {
@@ -72,8 +64,7 @@ export class BrandsController {
   }
 
   @Post(':id/logo')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Subir logo de la marca' })
   @ApiConsumes('multipart/form-data')
@@ -93,8 +84,7 @@ export class BrandsController {
   }
 
   @Delete(':id')
-  @Roles('Super Admin', 'Admin Comercial')
-  @AllowMastersWrite()
+  @RequireGrant('masters:write')
   @ApiOperation({ summary: 'Eliminar marca' })
   remove(@Param('id') id: string, @Req() req: ActorRequest) {
     return this.brandsService.remove(id, actorFrom(req));

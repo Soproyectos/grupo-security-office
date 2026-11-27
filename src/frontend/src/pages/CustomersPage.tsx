@@ -13,6 +13,7 @@ import { formatCustomerDocument, isMunicipalityCode } from '../features/customer
 import { fetchUsers } from '../services/users.service'
 import { toCustomerEditPayload, type ReassignCustomerPayload } from '../services/customers.service'
 import { useAuthStore } from '../stores/auth.store'
+import { hasAssignedAction, useOwnUserAccess } from '../features/users/access'
 import {
   CUSTOMER_STATUSES,
   CUSTOMER_STATUS_LABELS,
@@ -34,10 +35,11 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
   const [reassigning, setReassigning] = useState<Customer | null>(null)
 
   const currentUser = useAuthStore((state) => state.user)
-  // Criterio mínimo documentado en `features/customers/access.ts`: el rol solo
-  // decide qué se OFRECE; si el servidor no lo concede responde 403 con su
-  // mensaje (fuente de verdad, aceptación 2).
-  const { showOwnerColumn, canReassign } = customersAccess(currentUser, personal)
+  // Se ofrece por la acción asignada (`customers:reassign`), no por el rol; si el servidor no lo concede
+  // responde 403 con su mensaje (fuente de verdad).
+  const { access, status: accessStatus } = useOwnUserAccess()
+  const reassignGranted = hasAssignedAction({ roles: currentUser?.roles, grants: access?.grants, status: accessStatus }, ['customers:reassign'])
+  const { showOwnerColumn, canReassign } = customersAccess(reassignGranted, personal)
 
   const filters: CustomerFilters = useMemo(
     () => ({ search: search || undefined, status: statusFilter, ownerId: personal ? currentUser?.id : undefined }),
