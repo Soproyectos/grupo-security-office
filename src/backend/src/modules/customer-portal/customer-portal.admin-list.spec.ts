@@ -29,7 +29,8 @@ describe('CustomerPortalService admin lists (scoped)', () => {
     expect(args.where).toEqual({ OR: [{ advisorId: { in: ['v1'] } }, { customer: { ownerId: { in: ['v1'] } } }] });
     expect(args.select).toMatchObject({
       advisor: { select: { id: true, name: true } },
-      customer: { select: expect.objectContaining({ portalTierId: true, portalTier: { select: { id: true, name: true, isActive: true } } }) },
+      customer: { select: expect.objectContaining({ portalTierId: true, portalTier: { select: { id: true, name: true, isActive: true, priceListId: true } } }) },
+      tier: { select: { id: true, name: true, isActive: true, priceListId: true } },
     });
     expect(rows[0].city).toEqual({ code: '11001', name: 'Bogotá, D.C.', departmentCode: '11', department: 'Bogotá, D.C.' });
     expect(rows[0].advisor).toEqual({ id: 'v1', name: 'Vera' });
@@ -74,5 +75,28 @@ describe('CustomerPortalService admin lists (scoped)', () => {
     expect(prisma.portalTier.findMany).toHaveBeenCalledWith({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { id: true, name: true, description: true, isActive: true } });
     grantsService.grantsForUser.mockResolvedValue([grant('portalAccounts:read', 'own')]);
     await expect(service.listTiersFor({ userId: 'v1', roles: ['Vendedor'] })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  describe('tariff options (price lists to pick for an account)', () => {
+    beforeEach(() => {
+      prisma.priceList = { findMany: jest.fn().mockResolvedValue([{ id: 'pl-1', name: 'Instaladores', code: 'INST', currency: 'COP' }]) };
+    });
+
+    it('with portalAccounts:manage: active lists by name, only id, name, code and currency', async () => {
+      grantsService.grantsForUser.mockResolvedValue([grant('portalAccounts:read', 'own'), grant('portalAccounts:manage', 'own')]);
+      const rows = await service.listTariffOptions({ userId: 'v1', roles: ['Vendedor'] });
+      expect(prisma.priceList.findMany).toHaveBeenCalledWith({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { id: true, name: true, code: true, currency: true } });
+      expect(rows).toEqual([{ id: 'pl-1', name: 'Instaladores', code: 'INST', currency: 'COP' }]);
+    });
+
+    it('Super Admin passes without grants', async () => {
+      await expect(service.listTariffOptions({ userId: 'root', roles: ['Super Admin'] })).resolves.toHaveLength(1);
+    });
+
+    it('without portalAccounts:manage it is a 403 and nothing is queried', async () => {
+      grantsService.grantsForUser.mockResolvedValue([grant('portalAccounts:read', 'global'), grant('portalTariffs:manage', 'global')]);
+      await expect(service.listTariffOptions({ userId: 'v1', roles: ['Vendedor'] })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.priceList.findMany).not.toHaveBeenCalled();
+    });
   });
 });

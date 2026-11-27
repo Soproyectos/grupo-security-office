@@ -186,6 +186,9 @@ export class CustomerPortalController {
   /** Super Admin: full tiers. Advisors with portalAccounts:manage: active tiers only, to pick one for a company. */
   @Get('admin/tiers') @UseGuards(JwtAuthGuard)
   tiers(@CurrentUser() user:any) {return this.portal.listTiersFor(this.adminCtx(user));}
+  /** Active price lists to pick a tariff for an account (portalAccounts:manage). Only id, name, code and currency: never prices. */
+  @Get('admin/tariff-options') @UseGuards(JwtAuthGuard)
+  tariffOptions(@CurrentUser() user:any) {return this.portal.listTariffOptions(this.adminCtx(user));}
   @Post('admin/tiers') @UseGuards(JwtAuthGuard)
   async createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {await this.portal.requireTariffAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id);}
   @Patch('admin/tiers/:id') @UseGuards(JwtAuthGuard)
@@ -194,7 +197,7 @@ export class CustomerPortalController {
   suspend(@Param('id') id:string,@Body() dto:SuspendPortalAccountDto,@CurrentUser() user:any) {return this.portal.suspend(id,dto.reason,this.adminCtx(user));}
   @Post('admin/accounts/:id/reactivate') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard)
   reactivate(@Param('id') id:string,@CurrentUser() user:any) {return this.portal.reactivate(id,this.adminCtx(user));}
-  /** Company tariff: sets the tier of the customer linked to the account. */
+  /** Sets the tariff of the account: a price list (the server finds or creates its tier), a tier, or null for the general tariff. */
   @Patch('admin/accounts/:id/tier') @UseGuards(JwtAuthGuard)
   assignTier(@Param('id') id:string,@Body() dto:AssignPortalTierDto,@CurrentUser() user:any) {return this.portal.assignTier(id,dto,this.adminCtx(user));}
   @Patch('admin/accounts/:id/customer') @UseGuards(JwtAuthGuard)

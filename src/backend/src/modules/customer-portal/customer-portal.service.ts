@@ -94,8 +94,8 @@ export class CustomerPortalService {
     id:true,email:true,contactName:true,companyName:true,documentId:true,phone:true,type:true,state:true,
     privacyAcceptedAt:true,deletionRequestedAt:true,city:true,createdAt:true,
     advisorId:true,advisor:{select:{id:true,name:true}},
-    tierId:true,tier:{select:{id:true,name:true,isActive:true}},
-    customerId:true,customer:{select:{id:true,code:true,name:true,documentId:true,email:true,ownerId:true,portalTierId:true,portalTier:{select:{id:true,name:true,isActive:true}}}},
+    tierId:true,tier:{select:{id:true,name:true,isActive:true,priceListId:true}},
+    customerId:true,customer:{select:{id:true,code:true,name:true,documentId:true,email:true,ownerId:true,portalTierId:true,portalTier:{select:{id:true,name:true,isActive:true,priceListId:true}}}},
   } satisfies Prisma.PortalAccountSelect;
 
   private withCity<T extends {city:string|null}>(row:T) { return {...row,city:findMunicipality(row.city)}; }
@@ -121,6 +121,11 @@ export class CustomerPortalService {
     await this.acl.requireScope(PORTAL_ACTIONS.manage,ctx);
     return this.prisma.portalTier.findMany({where:{isActive:true},orderBy:{name:'asc'},select:{id:true,name:true,description:true,isActive:true}});
   }
+  /** Active price lists an advisor can pick for an account (portalAccounts:manage). Only id, name, code and currency: never prices. */
+  async listTariffOptions(ctx:PortalAdminContext) {
+    await this.acl.requireScope(PORTAL_ACTIONS.manage,ctx);
+    return this.db.priceList.findMany({where:{isActive:true},orderBy:{name:'asc'},select:{id:true,name:true,code:true,currency:true}});
+  }
   async saveTier(dto:PortalTierDto,actorId:string,id?:string) {
     if(id&&!await this.prisma.portalTier.findUnique({where:{id}}))throw new NotFoundException('Escalafón no encontrado');
     const duplicate=await this.prisma.portalTier.findFirst({where:{name:{equals:dto.name,mode:'insensitive'},...(id?{id:{not:id}}:{})}});
@@ -139,18 +144,54 @@ export class CustomerPortalService {
    */
   async assignTier(id:string,dto:AssignPortalTierDto,ctx:PortalAdminContext) {
     await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
-    if(dto.tierId===undefined)throw new BadRequestException('Indica el escalafón o null para usar la tarifa general');
+    if(dto.tierId===undefined&&dto.priceListId===undefined)throw new BadRequestException('Indica la tarifa o null para usar la tarifa general');
+    if(dto.tierId!==undefined&&dto.priceListId!==undefined)throw new BadRequestException('Indica la tarifa o el escalafón, no los dos');
     const account=await this.prisma.portalAccount.findUnique({where:{id},select:{id:true,state:true,tierId:true,customerId:true,customer:{select:{portalTierId:true}}}});
     if(!account)throw new NotFoundException('Cuenta no encontrada');
     if(account.state==='REJECTED')throw new BadRequestException('La solicitud de esta cuenta fue rechazada');
-    if(dto.tierId) {
+    let tierId:string|null=null;
+    let priceListId:string|null=null;
+    if(dto.priceListId) {
+      // Whoever manages the account (portalAccounts:manage) may trigger the automatic tier; portalTariffs:manage is not needed for it.
+      const tier=await this.tierForPriceList(dto.priceListId,ctx.userId);
+      tierId=tier.id;priceListId=tier.priceListId??null;
+    } else if(dto.tierId) {
       const tier=await this.prisma.portalTier.findUnique({where:{id:dto.tierId}});
       if(!tier?.isActive)throw new BadRequestException('Selecciona un escalafón activo');
+      tierId=dto.tierId;priceListId=tier.priceListId??null;
     }
-    const updated=await this.prisma.portalAccount.update({where:{id},data:{tierId:dto.tierId}});
+    const updated=await this.prisma.portalAccount.update({where:{id},data:{tierId}});
     await this.audit.log({userId:ctx.userId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{tierId:account.tierId??null},newValues:{tierId:updated.tierId??null}});
     const customerTierId=account.customer?.portalTierId??null;
-    return {id:account.id,customerId:account.customerId??null,tierId:updated.tierId??null,customerTierId,effectiveTierId:customerTierId??updated.tierId??null};
+    return {id:account.id,customerId:account.customerId??null,tierId:updated.tierId??null,priceListId,customerTierId,effectiveTierId:customerTierId??updated.tierId??null};
+  }
+  /**
+   * The tier behind a price list picked for an account: the oldest active tier of that list, or a new one named after the list
+   * (with its code when the name is taken). The tier is an internal detail; the panel only shows tariffs.
+   */
+  private async tierForPriceList(priceListId:string,actorId:string) {
+    const list=await this.db.priceList.findUnique({where:{id:priceListId}});
+    if(!list?.isActive)throw new BadRequestException('Selecciona una tarifa activa');
+    const findExisting=()=>this.prisma.portalTier.findFirst({where:{priceListId,isActive:true},orderBy:{createdAt:'asc'}});
+    const existing=await findExisting();
+    if(existing)return existing;
+    let name:string|null=null;
+    for(const candidate of [list.name,`${list.name} (${list.code})`]) {
+      if(!await this.prisma.portalTier.findFirst({where:{name:{equals:candidate,mode:'insensitive'}}})){name=candidate;break;}
+    }
+    if(!name)throw new ConflictException('Ya existe un escalafón con el nombre de esta tarifa. Cámbiale el nombre en Comercial > Portal de clientes');
+    try {
+      const tier=await this.prisma.portalTier.create({data:{name,priceListId,isActive:true,description:'Creado al asignar esta tarifa a una cuenta'}});
+      await this.audit.log({userId:actorId,action:'create',entity:'PortalTier',entityId:tier.id,newValues:{name:tier.name,priceListId:tier.priceListId,isActive:tier.isActive}});
+      return tier;
+    } catch(e) {
+      // Two people picking the same tariff at once: the other one created the tier first, reuse it.
+      if((e as {code?:string})?.code==='P2002') {
+        const raced=await findExisting();
+        if(raced)return raced;
+      }
+      throw e;
+    }
   }
 
   /**

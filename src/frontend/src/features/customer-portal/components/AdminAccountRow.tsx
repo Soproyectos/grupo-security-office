@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCustomers } from '../../../services/customers.service'
-import type { AdminAdvisor, AdminPortalAccount, AdminTier } from '../types/customer-portal.types'
+import type { AdminAdvisor, AdminPortalAccount, TariffOption } from '../types/customer-portal.types'
 
 export const STATE_LABELS: Record<string, string> = { ACTIVE: 'Activa', PENDING: 'Pendiente', REJECTED: 'Rechazada', SUSPENDED: 'Suspendida' }
 const STATE_STYLE: Record<string, string> = {
@@ -17,7 +17,8 @@ const FIELD = 'mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border
 
 export interface AccountActions {
   assignAdvisor: (id: string, advisorId: string) => void
-  assignTier: (id: string, tierId: string | null) => void
+  /** priceListId: la tarifa elegida; null devuelve la cuenta a la tarifa general. */
+  assignTier: (id: string, priceListId: string | null) => void
   link: (id: string, customerId: string | null) => void
   suspend: (id: string, reason: string) => void
   reactivate: (id: string) => void
@@ -30,14 +31,30 @@ type Mode = null | 'suspend' | 'reject'
 /** Tarifa que se aplica: el nivel propio del cliente vinculado (prevalece), si no el de la cuenta, si no la general. */
 export function accountTariffLabel(account: AdminPortalAccount, generalListName: string | null) {
   const tier = account.customer?.portalTier ?? account.tier
-  if (tier) return `Nivel ${tier.name}${tier.isActive ? '' : ' (inactivo)'}`
+  if (tier) return `${tier.name}${tier.isActive ? '' : ' (inactivo)'}`
   return generalListName ? `Tarifa general: ${generalListName}` : 'Tarifa general'
 }
 
+/** Valor del selector cuando el nivel actual de la cuenta ya no corresponde a una tarifa activa. */
+export const INACTIVE_TARIFF = '__inactive__'
+
+/**
+ * Qué muestra el selector «Tarifa» para el nivel propio de la cuenta: '' = tarifa general, el id de la tarifa activa
+ * a la que apunta su nivel, o INACTIVE_TARIFF cuando ese nivel o su tarifa están inactivos o ya no existen.
+ * Con las tarifas todavía sin cargar (undefined) solo se reconoce la general.
+ */
+export function currentTariffValue(account: AdminPortalAccount, options: TariffOption[] | undefined) {
+  const tier = account.tier
+  if (!tier) return ''
+  const listId = tier.priceListId
+  return tier.isActive && listId && options?.some(o => o.id === listId) ? listId : INACTIVE_TARIFF
+}
+
 /** Fila de una cuenta del portal con todo lo que el personal puede decidir sobre ella. */
-export default function AdminAccountRow({ account, tiers, advisors, generalListName, busy, canAssign, canManage, actions }: {
+export default function AdminAccountRow({ account, tariffOptions, advisors, generalListName, busy, canAssign, canManage, actions }: {
   account: AdminPortalAccount
-  tiers: AdminTier[]
+  /** Tarifas activas que se pueden elegir; undefined mientras cargan. */
+  tariffOptions: TariffOption[] | undefined
   advisors: AdminAdvisor[]
   /** Nombre de la tarifa general que usan las empresas sin nivel (o null si no se conoce). */
   generalListName: string | null
@@ -51,9 +68,11 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
   const [open, setOpen] = useState(account.state === 'PENDING')
   const [mode, setMode] = useState<Mode>(null)
   const [reason, setReason] = useState('')
-  const currentTier = account.tierId ?? ''
+  const currentTariff = currentTariffValue(account, tariffOptions)
   const customerTier = account.customer?.portalTier ?? null
-  const [tierId, setTierId] = useState(currentTier)
+  // null = la persona aún no eligió: se muestra la tarifa actual (que puede llegar después de montar la fila).
+  const [choice, setChoice] = useState<string | null>(null)
+  const tariff = choice ?? currentTariff
   const [advisorId, setAdvisorId] = useState('')
   const [search, setSearch] = useState('')
   const term = search.trim()
@@ -120,16 +139,18 @@ export default function AdminAccountRow({ account, tiers, advisors, generalListN
               <label className="block text-sm font-medium" htmlFor={`tier-${account.id}`}>Tarifa</label>
               <p className="text-xs text-[var(--color-text-secondary)]">
                 {customerTier
-                  ? `El cliente vinculado ya tiene su propia tarifa (Nivel ${customerTier.name}): esa es la que se aplica. La de esta cuenta queda guardada por si se quita.`
+                  ? `El cliente vinculado ya tiene su propia tarifa (${customerTier.name}): esa es la que se aplica. La de esta cuenta queda guardada por si se quita.`
                   : 'Es la tarifa con la que esta cuenta ve sus precios.'}
               </p>
               <div className="flex flex-wrap gap-2">
-                <select id={`tier-${account.id}`} className={`${FIELD} max-w-sm flex-1`} value={tierId} disabled={busy} onChange={e => setTierId(e.target.value)}>
+                <select id={`tier-${account.id}`} className={`${FIELD} max-w-sm flex-1`} value={tariff} disabled={busy || !tariffOptions} onChange={e => setChoice(e.target.value)}>
                   <option value="">{generalListName ? `Tarifa general (${generalListName})` : 'Tarifa general'}</option>
-                  {tiers.filter(t => t.isActive || t.id === currentTier).map(t => <option key={t.id} value={t.id} disabled={!t.isActive}>{t.name}{t.isActive ? '' : ' (inactivo)'}</option>)}
+                  {currentTariff === INACTIVE_TARIFF && account.tier && <option value={INACTIVE_TARIFF} disabled>{account.tier.name} (inactiva)</option>}
+                  {(tariffOptions ?? []).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
-                <button type="button" className={`${BUTTON} mt-1 w-full sm:w-auto`} disabled={busy || tierId === currentTier} onClick={() => actions.assignTier(account.id, tierId || null)}>Guardar tarifa</button>
+                <button type="button" className={`${BUTTON} mt-1 w-full sm:w-auto`} disabled={busy || !tariffOptions || tariff === currentTariff} onClick={() => actions.assignTier(account.id, tariff && tariff !== INACTIVE_TARIFF ? tariff : null)}>Guardar tarifa</button>
               </div>
+              {tariffOptions && !tariffOptions.length && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Aún no hay tarifas activas. Créalas en Biblioteca &gt; Maestros &gt; Tarifas.</p>}
             </div>
           )}
 

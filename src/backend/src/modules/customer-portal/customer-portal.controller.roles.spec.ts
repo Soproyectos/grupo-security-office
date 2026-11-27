@@ -22,7 +22,7 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
 
   // ---------- Cuentas del portal: acción de panel con alcance (ya no solo Super Admin) ----------
 
-  const PANEL_ROUTES = ['pending', 'approve', 'reject', 'accounts', 'tiers', 'suspend', 'reactivate', 'assignTier', 'linkCustomer', 'assignAdvisor'];
+  const PANEL_ROUTES = ['pending', 'approve', 'reject', 'accounts', 'tiers', 'tariffOptions', 'suspend', 'reactivate', 'assignTier', 'linkCustomer', 'assignAdvisor'];
 
   it('las rutas de cuentas del portal no fijan roles: el servicio exige la acción de panel y su alcance', () => {
     for (const name of PANEL_ROUTES) expect(rolesOf(proto[name])).toEqual([]);
@@ -39,13 +39,13 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
 
   it('cada ruta pasa la identidad de la sesión (nunca del cuerpo) al servicio', async () => {
     const portal: any = {
-      listPending: jest.fn(), approve: jest.fn(), reject: jest.fn(), listAccounts: jest.fn(), listTiersFor: jest.fn(), suspend: jest.fn(),
+      listPending: jest.fn(), approve: jest.fn(), reject: jest.fn(), listAccounts: jest.fn(), listTiersFor: jest.fn(), listTariffOptions: jest.fn(), suspend: jest.fn(),
       reactivate: jest.fn(), assignTier: jest.fn(), linkCustomer: jest.fn(), assignAdvisor: jest.fn(),
     };
     const controller = new CustomerPortalController(portal, { get: jest.fn() } as any);
     const user = { sub: 'u1', roles: ['Vendedor'], jti: 'j1' };
     const ctx = { userId: 'u1', roles: ['Vendedor'], jti: 'j1' };
-    controller.pending(user); controller.accounts(user); controller.tiers(user);
+    controller.pending(user); controller.accounts(user); controller.tiers(user); controller.tariffOptions(user);
     controller.approve('a1', {} as any, user); controller.reject('a1', { reason: 'xxx' } as any, user);
     controller.suspend('a1', { reason: 'xxx' } as any, user); controller.reactivate('a1', user);
     controller.assignTier('a1', { tierId: null } as any, user); controller.linkCustomer('a1', { customerId: 'c1' } as any, user);
@@ -53,6 +53,7 @@ describe('CustomerPortalController — matriz de autorización (contrato)', () =
     expect(portal.listPending).toHaveBeenCalledWith(ctx);
     expect(portal.listAccounts).toHaveBeenCalledWith(ctx);
     expect(portal.listTiersFor).toHaveBeenCalledWith(ctx);
+    expect(portal.listTariffOptions).toHaveBeenCalledWith(ctx);
     expect(portal.approve).toHaveBeenCalledWith('a1', {}, ctx);
     expect(portal.reject).toHaveBeenCalledWith('a1', { reason: 'xxx' }, ctx);
     expect(portal.suspend).toHaveBeenCalledWith('a1', 'xxx', ctx);

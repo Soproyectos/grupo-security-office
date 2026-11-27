@@ -337,7 +337,7 @@ describe('CustomerPortalService', () => {
       prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', tierId: null, customerId: null, customer: null });
       prisma.portalTier.findUnique.mockResolvedValue({ isActive: true });
       prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: 'gold' });
-      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toEqual({ id: 'p1', customerId: null, tierId: 'gold', customerTierId: null, effectiveTierId: 'gold' });
+      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toEqual({ id: 'p1', customerId: null, tierId: 'gold', priceListId: null, customerTierId: null, effectiveTierId: 'gold' });
       expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: 'gold' } });
       expect(prisma.customer.update).not.toHaveBeenCalled();
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entity: 'PortalAccount', entityId: 'p1', newValues: { tierId: 'gold' } }));
@@ -364,6 +364,84 @@ describe('CustomerPortalService', () => {
     it('rechaza una solicitud rechazada', async () => {
       prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'REJECTED', tierId: null, customerId: null, customer: null });
       await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow('rechazada');
+    });
+    it('sin tarifa ni escalafón en el cuerpo responde 400', async () => {
+      await expect(service.assignTier('p1', {}, ADMIN)).rejects.toThrow(BadRequestException);
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+
+    describe('al elegir una tarifa (lista de precios)', () => {
+      const LIST = { id: 'pl-1', name: 'Instaladores', code: 'INST', currency: 'COP', isActive: true };
+      beforeEach(() => {
+        prisma.portalAccount.findUnique.mockReset().mockResolvedValue({ id: 'p1', state: 'ACTIVE', tierId: null, customerId: null, customer: null });
+        prisma.portalAccount.update.mockReset().mockResolvedValue({ id: 'p1', tierId: 'tier-new' });
+        prisma.priceList.findUnique.mockReset().mockResolvedValue(LIST);
+        prisma.portalTier.findFirst.mockReset().mockResolvedValue(null);
+        prisma.portalTier.create.mockReset().mockResolvedValue({ id: 'tier-new', name: 'Instaladores', priceListId: 'pl-1', isActive: true });
+      });
+
+      it('crea el escalafón de esa tarifa cuando no existe, lo audita y lo asigna a la cuenta', async () => {
+        const result = await service.assignTier('p1', { priceListId: 'pl-1' }, ADMIN);
+        expect(prisma.portalTier.create).toHaveBeenCalledWith({ data: expect.objectContaining({ name: 'Instaladores', priceListId: 'pl-1', isActive: true }) });
+        expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ userId: 'staff-1', action: 'create', entity: 'PortalTier', entityId: 'tier-new', newValues: { name: 'Instaladores', priceListId: 'pl-1', isActive: true } }));
+        expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: 'tier-new' } });
+        expect(result).toEqual({ id: 'p1', customerId: null, tierId: 'tier-new', priceListId: 'pl-1', customerTierId: null, effectiveTierId: 'tier-new' });
+      });
+      it('reutiliza el escalafón activo más antiguo de esa tarifa sin crear otro', async () => {
+        prisma.portalTier.findFirst.mockResolvedValueOnce({ id: 'tier-old', name: 'Instaladores', priceListId: 'pl-1', isActive: true });
+        prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: 'tier-old' });
+        const result = await service.assignTier('p1', { priceListId: 'pl-1' }, ADMIN);
+        expect(prisma.portalTier.findFirst).toHaveBeenCalledWith({ where: { priceListId: 'pl-1', isActive: true }, orderBy: { createdAt: 'asc' } });
+        expect(prisma.portalTier.create).not.toHaveBeenCalled();
+        expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: 'tier-old' } });
+        expect(result).toMatchObject({ tierId: 'tier-old', priceListId: 'pl-1' });
+      });
+      it('si el nombre de la tarifa ya lo usa otro escalafón, agrega el código al nombre', async () => {
+        prisma.portalTier.findFirst
+          .mockResolvedValueOnce(null) // no tier for this list yet
+          .mockResolvedValueOnce({ id: 'other', name: 'Instaladores' }) // name taken
+          .mockResolvedValueOnce(null); // name with code is free
+        await service.assignTier('p1', { priceListId: 'pl-1' }, ADMIN);
+        expect(prisma.portalTier.create).toHaveBeenCalledWith({ data: expect.objectContaining({ name: 'Instaladores (INST)' }) });
+      });
+      it('si otra persona creó el escalafón al mismo tiempo (P2002), reutiliza ese', async () => {
+        prisma.portalTier.findFirst
+          .mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: 'tier-raced', priceListId: 'pl-1', isActive: true });
+        prisma.portalTier.create.mockRejectedValueOnce({ code: 'P2002' });
+        prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: 'tier-raced' });
+        expect(await service.assignTier('p1', { priceListId: 'pl-1' }, ADMIN)).toMatchObject({ tierId: 'tier-raced' });
+      });
+      it.each([
+        ['inactiva', { ...LIST, isActive: false }],
+        ['inexistente', null],
+      ])('una tarifa %s responde 400 y no crea ni asigna nada', async (_label, list) => {
+        prisma.priceList.findUnique.mockResolvedValue(list);
+        await expect(service.assignTier('p1', { priceListId: 'pl-1' }, ADMIN)).rejects.toThrow('Selecciona una tarifa activa');
+        expect(prisma.portalTier.create).not.toHaveBeenCalled();
+        expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      });
+      it('tierId y priceListId juntos responden 400', async () => {
+        await expect(service.assignTier('p1', { tierId: 'gold', priceListId: 'pl-1' }, ADMIN)).rejects.toThrow(BadRequestException);
+        await expect(service.assignTier('p1', { tierId: null, priceListId: 'pl-1' }, ADMIN)).rejects.toThrow(BadRequestException);
+        expect(prisma.portalTier.create).not.toHaveBeenCalled();
+        expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      });
+      it('priceListId null (o tierId null) devuelve la cuenta a la tarifa general sin tocar escalafones', async () => {
+        prisma.portalAccount.update.mockResolvedValue({ id: 'p1', tierId: null });
+        const result = await service.assignTier('p1', { priceListId: null }, ADMIN);
+        expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { tierId: null } });
+        expect(prisma.priceList.findUnique).not.toHaveBeenCalled();
+        expect(prisma.portalTier.create).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ tierId: null, priceListId: null, effectiveTierId: null });
+      });
+      it('crear el escalafón automático solo exige portalAccounts:manage sobre la cuenta (no portalTariffs:manage)', async () => {
+        const person = { userId: 'v1', roles: ['Vendedor'] };
+        await service.assignTier('p1', { priceListId: 'pl-1' }, person);
+        expect(access.assertAccount).toHaveBeenCalledWith('portalAccounts:manage', person, 'p1');
+        expect(prisma.portalTier.create).toHaveBeenCalled();
+        expect(access.requireScope).not.toHaveBeenCalledWith('portalTariffs:manage', expect.anything());
+      });
     });
     it('checks the scope of the person on that account first', async () => {
       access.assertAccount.mockRejectedValueOnce(new ForbiddenException('Esta cuenta no está en tu alcance'));
