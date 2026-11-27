@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
+  COMMERCIAL_PORTAL_PATH,
+  COMMERCIAL_ZONES_PATH,
   isCatalogPath,
   LIBRARY_IMPORTS_PATH,
   LIBRARY_MASTERS_PATH,
@@ -9,6 +11,7 @@ import {
   NO_PANELS_MESSAGE,
   usePanelAccess,
 } from '../../features/users/access'
+import WorkspaceTabs, { type WorkspaceRouteTab } from './WorkspaceTabs'
 import './library-workspace.css'
 
 /** Cada pestaña de Biblioteca se muestra solo si la persona la tiene asignada. */
@@ -18,6 +21,16 @@ const libraryIcons: Readonly<Record<string, string>> = {
   [LIBRARY_PRICES_PATH]: 'M12 15V3m-4 4 4-4 4 4M4 14v6h16v-6',
   [LIBRARY_IMPORTS_PATH]: 'M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3',
   [LIBRARY_MASTERS_PATH]: 'M4 6h16M4 12h16M4 18h10',
+}
+
+/** Icon and help text of each Comercial tab, by route. Tabs without an entry still render (without icon path or help). */
+const commercialMeta: Readonly<Record<string, { icon: string; hint: string }>> = {
+  '/commercial/customers': { icon: 'M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 20v-2a4 4 0 0 0-3-3.9', hint: 'Los clientes que puedes consultar.' },
+  [COMMERCIAL_PORTAL_PATH]: { icon: 'M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z', hint: 'Cuentas creadas en la tienda: aprobar, asesor, cliente vinculado y tarifa.' },
+  [COMMERCIAL_ZONES_PATH]: { icon: 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z', hint: 'Ciudades que reparten los registros nuevos entre asesores.' },
+  '/commercial/quotes': { icon: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h6', hint: 'Las cotizaciones que puedes consultar y su estado.' },
+  '/targets': { icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 12h.01', hint: 'Metas por integrante y periodo.' },
+  '/reports': { icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2', hint: 'Resumen de ventas y actividad del equipo.' },
 }
 
 /**
@@ -85,30 +98,13 @@ export default function CommercialLayout() {
     )
   }
 
+  const tabs: WorkspaceRouteTab[] = access.tabs.map((tab) => ({ id: tab.to, to: tab.to, end: tab.end, label: tab.label, icon: commercialMeta[tab.to]?.icon ?? '', hint: commercialMeta[tab.to]?.hint ?? '' }))
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       <div className="w-full px-4">
-        <h1 className="py-3 text-xl font-semibold">Comercial</h1>
-        <div className="border-b border-[var(--color-border)]">
-          <div className="flex items-center overflow-x-auto scrollbar-thin">
-            {access.tabs.map((tab) => (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  `px-3 py-2.5 text-sm font-condensed font-semibold whitespace-nowrap transition-all tracking-wider border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] ${
-                    isActive
-                      ? 'text-[var(--color-primary)] border-[var(--color-primary)]'
-                      : 'text-[var(--color-text-secondary)] border-transparent hover:text-[var(--color-primary)]'
-                  }`
-                }
-              >
-                {tab.label}
-              </NavLink>
-            ))}
-          </div>
-        </div>
+        {tabs.length > 0
+          ? <WorkspaceTabs mode="route" variant="standalone" title="Comercial" navLabel="Navegación de Comercial" tabs={tabs} />
+          : <h1 className="sr-only">Comercial</h1>}
 
         <main className="py-6">
           {access.hasAnyPanel ? (

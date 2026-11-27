@@ -17,8 +17,9 @@ import {
   type Role,
   type RolePayload,
 } from '../services/roles.service'
-import { Modal } from '../components/ui'
-import UserAccessManager from '../features/users/components/UserAccessManager'
+import { fetchZones } from '../services/zones.service'
+import { StaffPasswordStrengthMeter } from '../features/customer-portal/components/PasswordStrengthMeter'
+import PasswordField from '../features/customer-portal/components/PasswordField'
 
 interface User {
   id: string
@@ -26,6 +27,8 @@ interface User {
   email: string
   isActive: boolean
   supervisorId?: string | null
+  zoneId?: string | null
+  zone?: { id: string; name: string } | null
   roles: { id: string; name: string }[]
 }
 
@@ -78,9 +81,7 @@ function UserCard({
   user,
   allUsers,
   isSelected,
-  isAccessSelected,
   onToggleSelect,
-  onSelectForAccess,
   onEdit,
   onToggleActive,
   onDelete,
@@ -89,16 +90,14 @@ function UserCard({
   user: User
   allUsers: User[]
   isSelected: boolean
-  isAccessSelected: boolean
   onToggleSelect: () => void
-  onSelectForAccess: () => void
   onEdit: () => void
   onToggleActive: () => void
   onDelete: () => void
   canAssignSupervisor: boolean
 }) {
   return (
-    <div className={`bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-shadow ${isAccessSelected ? 'ring-2 ring-security-500' : ''}`}>
+    <div className={`bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-shadow`}>
       <div className="flex items-center gap-3">
         {hasRole(ROLES.SUPER_ADMIN) && (
           <input
@@ -134,6 +133,12 @@ function UserCard({
         </div>
       )}
 
+      {user.zone && (
+        <p className="mt-3 text-xs font-medium text-gray-500">
+          Zona: <span className="text-gray-700">{user.zone.name}</span>
+        </p>
+      )}
+
       <div className="mt-3 flex items-center justify-between">
         <div className="flex gap-1.5 flex-wrap">
           {user.roles?.map((role) => (
@@ -149,16 +154,6 @@ function UserCard({
 
       {hasRole(ROLES.SUPER_ADMIN) && (
         <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
-          <button
-            onClick={onSelectForAccess}
-            className={`text-xs font-medium px-2 py-1 rounded transition-colors ${
-              isAccessSelected
-                ? 'bg-security-50 text-security-700'
-                : 'text-security-600 hover:bg-security-50'
-            }`}
-          >
-            {isAccessSelected ? 'Gestionando accesos' : 'Gestionar accesos'}
-          </button>
           <button
             onClick={onEdit}
             className="text-xs text-security-600 hover:text-security-800 font-medium"
@@ -239,7 +234,10 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
     password: '',
     roleIds: user?.roles?.map(r => r.id) || [] as string[],
     isActive: user?.isActive ?? true,
+    zoneId: user?.zoneId ?? user?.zone?.id ?? '',
   })
+  const canPickZone = hasRole(ROLES.SUPER_ADMIN)
+  const zones = useQuery({ queryKey: ['zones'], queryFn: fetchZones, enabled: canPickZone })
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) => {
@@ -250,10 +248,15 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
         roleIds: data.roleIds,
       }
       if (data.password) payload.password = data.password
+      if (canPickZone) { if (user || data.zoneId) payload.zoneId = data.zoneId || null }
       return user ? api.put(`/users/${user.id}`, payload) : api.post('/users', payload)
     },
     onSuccess,
   })
+  // The server also treats a user who is currently Super Admin as privileged, even if the role is being removed now.
+  const privilegedSelected =
+    Boolean(user?.roles.some((role) => role.name === ROLES.SUPER_ADMIN)) ||
+    roles.some((role) => role.name === ROLES.SUPER_ADMIN && form.roleIds.includes(role.id))
   const errorMessage = mutation.isError
     ? getApiErrorMessage(mutation.error, user ? 'No se pudo actualizar el usuario' : 'No se pudo crear el usuario')
     : null
@@ -261,8 +264,8 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl">
-        <div className="px-6 py-4 border-b border-gray-200 bg-security-700 rounded-t-xl">
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl">
+        <div className="shrink-0 px-6 py-3 border-b border-gray-200 bg-security-700 rounded-t-xl">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-white">{user ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
             <button onClick={onClose} className="p-2 text-security-200 hover:text-white hover:bg-security-600 rounded-lg transition-colors">
@@ -272,7 +275,8 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
             </button>
           </div>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form) }} className="p-6 space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form) }} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 content-start">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre</label>
             <input
@@ -294,28 +298,52 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              {user ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
-            </label>
-            <input
-              type="password"
+            <PasswordField
+              id="user-password"
+              label={user ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+              autoComplete="new-password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
               {...(!user ? { required: true, minLength: 12 } : { minLength: 12 })}
+              maxLength={72}
               placeholder={user ? '••••••••' : 'Mínimo 12 caracteres'}
               aria-describedby="user-password-hint"
             />
-            <p id="user-password-hint" className="mt-1.5 text-xs text-gray-500">
-              Mínimo 12 caracteres y difícil de adivinar. Una frase de varias palabras funciona bien
-              (ej. Camara-Roja-Puerta-2026!). No uses el nombre ni el email. Los roles con privilegios exigen una contraseña más fuerte.
-            </p>
+            {(!user || form.password) && (
+              <div
+                id="user-password-hint"
+                className="mt-2"
+                title="Mínimo 12 caracteres y difícil de adivinar. Una frase de varias palabras funciona bien (ej. Camara-Roja-Puerta-2026!). No uses el nombre ni el email. Los roles con privilegios exigen una contraseña más fuerte."
+              >
+                <StaffPasswordStrengthMeter password={form.password} email={form.email} name={form.name} privileged={privilegedSelected} />
+                <p className="mt-1 text-xs text-gray-500">Entre 12 y 72 caracteres. Una frase funciona bien.</p>
+              </div>
+            )}
           </div>
-          <div>
+          {canPickZone && (
+            <div>
+              <label htmlFor="user-zone" className="block text-sm font-medium text-gray-700 mb-1.5">Zona del asesor</label>
+              <select
+                id="user-zone"
+                value={form.zoneId}
+                onChange={(e) => setForm({ ...form, zoneId: e.target.value })}
+                disabled={zones.isPending}
+                className="min-h-11 w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary disabled:opacity-60"
+              >
+                <option value="">Sin zona</option>
+                {(zones.data ?? []).filter((z) => z.isActive || z.id === form.zoneId).map((z) => (
+                  <option key={z.id} value={z.id} disabled={!z.isActive}>{z.name}{z.isActive ? '' : ' (inactiva)'}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">Recibe los registros nuevos de la tienda de las ciudades de esta zona.</p>
+              {zones.isError && <p role="alert" className="mt-1 text-xs text-red-600">No se pudieron cargar las zonas. Cierra y vuelve a abrir el formulario.</p>}
+            </div>
+          )}
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Roles</label>
-            <div className="space-y-2">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6">
               {roles.map((role) => (
-                <label key={role.id} className="flex items-center gap-3 cursor-pointer">
+                <label key={role.id} className="flex min-h-11 items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.roleIds.includes(role.id)}
@@ -333,8 +361,8 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
               ))}
             </div>
           </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer">
+          <div className="md:col-span-2">
+            <label className="flex min-h-11 items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.isActive}
@@ -345,7 +373,7 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
             </label>
           </div>
           {errorMessage && (
-            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <div role="alert" className="md:col-span-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
               <p className="font-medium">{errorMessage}</p>
               {errorFeedback.length > 0 && (
                 <ul className="mt-1 list-disc pl-5 space-y-0.5">
@@ -354,7 +382,8 @@ function UserModal({ user, roles, onClose, onSuccess }: { user?: User; roles: Ro
               )}
             </div>
           )}
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
+          </div>
+          <div className="shrink-0 flex gap-3 justify-end px-6 py-3 border-t border-gray-200">
             <button type="button" onClick={onClose} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors">
               Cancelar
             </button>
@@ -764,8 +793,6 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<'usuarios' | 'roles'>('usuarios')
-  // Usuario seleccionado para gestión de accesos (panel derecho)
-  const [accessUserId, setAccessUserId] = useState<string | null>(null)
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users', search],
@@ -827,14 +854,6 @@ export default function UsersPage() {
   const canManageRoles = hasRole(ROLES.SUPER_ADMIN)
   const canAssignSupervisor = hasRole(ROLES.SUPER_ADMIN) || hasRole(ROLES.ADMIN_COMERCIAL)
 
-  const handleSelectForAccess = (userId: string) => {
-    setAccessUserId(userId)
-  }
-
-  const handleCloseAccess = () => {
-    setAccessUserId(null)
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -857,7 +876,7 @@ export default function UsersPage() {
 
       <div className="flex gap-1 border-b border-gray-200">
         <button
-          onClick={() => { setActiveTab('usuarios'); setAccessUserId(null); }}
+          onClick={() => setActiveTab('usuarios')}
           className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-semibold transition-colors ${
             activeTab === 'usuarios'
               ? 'border-security-600 text-security-700'
@@ -868,7 +887,7 @@ export default function UsersPage() {
         </button>
         {canManageRoles && (
           <button
-            onClick={() => { setActiveTab('roles'); setAccessUserId(null); }}
+            onClick={() => setActiveTab('roles')}
             className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-semibold transition-colors ${
               activeTab === 'roles'
                 ? 'border-security-600 text-security-700'
@@ -919,9 +938,9 @@ export default function UsersPage() {
             </div>
           )}
 
-          {/* Layout de dos paneles: lista de usuarios + gestor de accesos */}
-          <div className="grid lg:grid-cols-[1fr_480px] gap-4">
-            {/* Panel izquierdo: lista de usuarios */}
+          {/* Lista de usuarios (los accesos se asignan en «Asignar paneles») */}
+          <div className="grid gap-4">
+            {/* Lista de usuarios */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 {isLoading ? (
@@ -953,9 +972,7 @@ export default function UsersPage() {
                         user={user}
                         allUsers={users?.data ?? []}
                         isSelected={selectedUserIds.has(user.id)}
-                        isAccessSelected={accessUserId === user.id}
                         onToggleSelect={() => toggleSelectUser(user.id)}
-                        onSelectForAccess={() => handleSelectForAccess(user.id)}
                         onEdit={() => setEditingUser(user)}
                         onToggleActive={() => toggleActive.mutate(user)}
                         onDelete={() => {
@@ -969,37 +986,6 @@ export default function UsersPage() {
               </div>
             </div>
 
-            {/* Panel derecho: gestor de accesos */}
-            {accessUserId && (
-              <div className="lg:col-span-1 hidden lg:block">
-                <div className="sticky top-6 h-[calc(100vh-200px)] min-h-[500px]">
-                  <UserAccessManager
-                    userId={accessUserId}
-                    userName={users?.data?.find((u: User) => u.id === accessUserId)?.name ?? ''}
-                    userEmail={users?.data?.find((u: User) => u.id === accessUserId)?.email ?? ''}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* En móvil: modal para accesos */}
-            {accessUserId && (
-              <div className="lg:hidden">
-                <Modal
-                  open
-                  onClose={handleCloseAccess}
-                  title="Gestionar accesos"
-                  size="full"
-                >
-                  <UserAccessManager
-                    userId={accessUserId}
-                    userName={users?.data?.find((u: User) => u.id === accessUserId)?.name ?? ''}
-                    userEmail={users?.data?.find((u: User) => u.id === accessUserId)?.email ?? ''}
-                    onClose={handleCloseAccess}
-                  />
-                </Modal>
-              </div>
-            )}
           </div>
 
           {showCreateModal && (

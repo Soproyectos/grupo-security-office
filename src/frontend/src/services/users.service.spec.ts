@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './api'
 import {
-  applyUserPackage,
   fetchUserAccess,
   fetchUsers,
   fetchUsersPage,
-  removeUserPackage,
   setUserAccessGrants,
   setUserLibrarySelection,
   UserAccessServiceError,
@@ -26,30 +24,11 @@ const ACCESS = {
   sources: [
     {
       id: 'src-1',
-      kind: 'template',
-      templateId: 'vendedor',
+      kind: 'manual',
+      templateId: null,
       catalogVersion: 'panels-20261019-3',
       grantedById: 'admin-1',
-      reason: 'template-applied',
-    },
-  ],
-  packages: [
-    {
-      id: 'vendedor',
-      name: 'Vendedor',
-      selections: [
-        { actionId: 'customers:read', scope: 'own' },
-        { actionId: 'products:read', scope: 'global' },
-      ],
-      applied: true,
-      sourceId: 'src-1',
-    },
-    {
-      id: 'supervisor-comercial',
-      name: 'Supervisor comercial',
-      selections: [{ actionId: 'teamInsights:read', scope: 'team' }],
-      applied: false,
-      sourceId: null,
+      reason: null,
     },
   ],
 }
@@ -85,42 +64,13 @@ describe('users.service — concesiones por acción (COM-01)', () => {
     expect(access.catalogVersion).toBe('panels-20261019-3')
     expect(access.accessVersion).toBe(3)
     expect(access.grants).toHaveLength(2)
-    expect(access.sources[0]?.kind).toBe('template')
-    expect(access.packages.map((pkg) => pkg.id)).toEqual(['vendedor', 'supervisor-comercial'])
-    expect(access.packages[0]?.applied).toBe(true)
-    expect(access.packages[0]?.sourceId).toBe('src-1')
-    expect(access.packages[0]?.selections).toEqual([
-      { actionId: 'customers:read', scope: 'own' },
-      { actionId: 'products:read', scope: 'global' },
-    ])
+    expect(access.sources[0]?.kind).toBe('manual')
+    expect(access).not.toHaveProperty('packages')
   })
 
-  it('applyUserPackage envía modo paquete con la versión OCC y la del catálogo', async () => {
-    vi.mocked(api.put).mockResolvedValue({
-      data: { userId: 'user-1', sourceId: 'src-1', accessVersion: 4, changed: true, grants: [] },
-    })
-
-    const receipt = await applyUserPackage('user-1', 'vendedor', 3, { catalogVersion: 'panels-20261019-3' })
-
-    expect(api.put).toHaveBeenCalledWith('/users/user-1/access', {
-      packageId: 'vendedor',
-      grants: [],
-      expectedVersion: 3,
-      expectedCatalogVersion: 'panels-20261019-3',
-    })
-    expect(receipt.accessVersion).toBe(4)
-  })
-
-  it('removeUserPackage retira solo la fuente del paquete con expectedVersion en query', async () => {
-    vi.mocked(api.delete).mockResolvedValue({
-      data: { userId: 'user-1', sourceId: 'src-1', accessVersion: 5, changed: true, grants: [] },
-    })
-
-    await removeUserPackage('user-1', 'vendedor', 4)
-
-    expect(api.delete).toHaveBeenCalledWith('/users/user-1/access/packages/vendedor', {
-      params: { expectedVersion: 4 },
-    })
+  it('el módulo ya no ofrece llamadas de paquetes: todo se asigna acción por acción', async () => {
+    const service = await import('./users.service')
+    expect(Object.keys(service).filter((name) => /package|paquete/i.test(name))).toEqual([])
   })
 
   it('setUserAccessGrants envía modo grants con la versión OCC', async () => {
@@ -133,7 +83,7 @@ describe('users.service — concesiones por acción (COM-01)', () => {
     expect(api.put).toHaveBeenCalledWith('/users/user-1/access', {
       grants: [{ actionId: 'customers:read', scope: 'own' }],
       expectedVersion: 5,
-      expectedCatalogVersion: 'panels-20261104-1',
+      expectedCatalogVersion: 'panels-20261125-1',
     })
   })
 
@@ -166,7 +116,7 @@ describe('users.service — concesiones por acción (COM-01)', () => {
       }),
     )
 
-    const failure = await applyUserPackage('user-1', 'vendedor', 1).catch((error: unknown) => error)
+    const failure = await setUserAccessGrants('user-1', [], 1).catch((error: unknown) => error)
 
     expect(failure).toBeInstanceOf(UserAccessServiceError)
     expect((failure as UserAccessServiceError).code).toBe('conflict')
@@ -181,7 +131,7 @@ describe('users.service — concesiones por acción (COM-01)', () => {
       }),
     )
 
-    const failure = await applyUserPackage('user-1', 'vendedor', 0).catch((error: unknown) => error)
+    const failure = await setUserAccessGrants('user-1', [], 0).catch((error: unknown) => error)
 
     expect(userAccessErrorMessage(failure)).toBe('expectedCatalogVersion debe ser "panels-20261019-3". Revisar.')
   })

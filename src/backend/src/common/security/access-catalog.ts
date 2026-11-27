@@ -28,7 +28,7 @@ export interface ActionDefinition {
 }
 
 /** Versión del catálogo con la que se resuelve y con la que se asigna (§4). */
-export const ACCESS_CATALOG_VERSION = 'panels-20261104-1';
+export const ACCESS_CATALOG_VERSION = 'panels-20261125-1';
 
 const ACTION_ID_PATTERN = /^[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9-]*$/;
 
@@ -38,9 +38,20 @@ export function isActionIdFormat(id: string): boolean {
   return ACTION_ID_PATTERN.test(id);
 }
 
+/**
+ * Data with an owner, an author or a team relation (customers, quotes, targets,
+ * portal accounts, agenda, notices, team summary, reassignments): the three
+ * levels mean something and the server enforces each one. `own` = what the
+ * person owns or created; `team` = the person and their reporting team;
+ * `global` = everything.
+ */
 const COMMERCIAL_SCOPES: readonly AccessScope[] = ['own', 'team', 'global'];
-/** Agenda: `own` (backend-propias) + `team` (backend-equipo, §4-§5). */
-const AGENDA_SCOPES: readonly AccessScope[] = ['own', 'team'];
+/**
+ * Shared data with no owner (products, prices, imports, master catalogs,
+ * providers, banners, library stats). `own` and `team` have no real meaning
+ * there, so only `global` is offered. `portalZones:manage` also stays here until
+ * zones get an owner (needs a schema change).
+ */
 const CATALOG_SCOPES: readonly AccessScope[] = ['global'];
 const LISTA_SCOPES: readonly AccessScope[] = ['list', 'global'];
 
@@ -73,11 +84,18 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   // COM-03 §3 (DISENO:189 «Descuentos de cotización: quotes:discount, además de
   // edición de la cotización»): operación SENSIBLE separada de `quotes:edit`.
   // Dependencia `quotes:edit` (el resolver la exige además de la concesión
-  // propia). Ningún `PACKAGE_TEMPLATES` la asigna → F1 (COM-03 §8): mientras
+  // propia). Nadie la tiene por defecto → F1 (COM-03 §8): mientras
   // el coordinador no la conceda explícitamente solo Super Admin puede usarla
   // (excepción EXPLÍCITA del resolver, no un permiso global inventado).
   action('quotes:discount', 'Aplicar descuento', 'Aplicar el descuento porcentual de una línea de cotización.', COMMERCIAL_SCOPES, ['quotes:edit']),
   action('quotes:status', 'Cambiar estado', 'Mover una cotización por transiciones legales.', COMMERCIAL_SCOPES, ['quotes:read']),
+  // Portal de clientes: estados e historial de cotizaciones, con el alcance concedido.
+  action('quotes:history', 'Ver historial de cotizaciones', 'Ver los estados y el historial de cada cotización en el alcance concedido.', COMMERCIAL_SCOPES, ['quotes:read']),
+  // Portal de clientes: cuentas web registradas. «Propio» = el asesor es la persona o es dueña del cliente vinculado.
+  action('portalAccounts:read', 'Ver cuentas del portal', 'Ver los registros y cuentas web de clientes en el alcance concedido.', COMMERCIAL_SCOPES),
+  action('portalAccounts:assign', 'Asignar asesor del portal', 'Asignar o reasignar el asesor de una cuenta web (y de su cliente vinculado).', COMMERCIAL_SCOPES, ['portalAccounts:read']),
+  action('portalAccounts:manage', 'Gestionar cuentas del portal', 'Vincular cliente, asignar tarifa, activar, rechazar, suspender y reactivar cuentas web.', COMMERCIAL_SCOPES, ['portalAccounts:read']),
+  action('portalZones:manage', 'Gestionar zonas de asesores', 'Crear, editar, activar y eliminar las zonas que reparten los registros nuevos entre asesores.', CATALOG_SCOPES, ['portalAccounts:read']),
   action('erpSales:read', 'Consultar ventas ERP', 'Ver ventas y facturas del ERP.', COMMERCIAL_SCOPES, [], false),
   action('targets:read', 'Consultar metas', 'Ver metas comerciales en el alcance concedido.', COMMERCIAL_SCOPES),
   action('stockRequests:read', 'Consultar pedidos por stock', 'Ver solicitudes por falta de stock.', COMMERCIAL_SCOPES, [], false),
@@ -86,17 +104,17 @@ export const ACCESS_CATALOG: readonly ActionDefinition[] = Object.freeze([
   action('stockRequests:cancel', 'Cancelar pedido por stock', 'Cancelar una solicitud abierta.', COMMERCIAL_SCOPES, [], false),
   // BASE-03 backend-equipo: `team` llega con *-equipo (contrato §4-§5);
   // `own` se conserva de backend-propias.
-  action('activities:read', 'Consultar agenda', 'Ver actividades en el alcance concedido.', AGENDA_SCOPES),
-  action('activities:create', 'Crear actividad', 'Crear actividad propia o de equipo.', AGENDA_SCOPES),
+  action('activities:read', 'Consultar agenda', 'Ver actividades en el alcance concedido.', COMMERCIAL_SCOPES),
+  action('activities:create', 'Crear actividad', 'Crear actividad propia o de equipo.', COMMERCIAL_SCOPES),
   action('activities:complete', 'Completar actividad', 'Marcar actividad como terminada.', COMMERCIAL_SCOPES, ['activities:read']),
   action('commercialPromotions:read', 'Consultar avisos internos', 'Ver promociones y avisos internos.', COMMERCIAL_SCOPES),
 
   // — BASE-02 §3.2 hijo Supervisor comercial —
-  action('teamInsights:read', 'Consultar equipo', 'Ver resumen y consulta del equipo (solo lectura).', ['team', 'global']),
-  action('activities:assign', 'Asignar actividades', 'Asignar trabajo del equipo sin conceder completar ajenas.', ['team', 'global'], ['activities:read']),
+  action('teamInsights:read', 'Consultar equipo', 'Ver resumen y consulta del equipo (solo lectura).', COMMERCIAL_SCOPES),
+  action('activities:assign', 'Asignar actividades', 'Asignar trabajo del equipo sin conceder completar ajenas.', COMMERCIAL_SCOPES, ['activities:read']),
 
   // — BASE-02 §3.3 hijo Gestión comercial —
-  action('customers:reassign', 'Reasignar cartera', 'Cambiar responsable de clientes del equipo.', ['team', 'global'], ['customers:read']),
+  action('customers:reassign', 'Reasignar responsable del cliente', 'Cambiar el responsable de un cliente, uno a uno.', COMMERCIAL_SCOPES, ['customers:read']),
   action('targets:edit', 'Editar metas', 'Crear o actualizar metas de objetivos.', COMMERCIAL_SCOPES, ['targets:read']),
   action('commercialPromotions:create', 'Crear aviso', 'Preparar aviso interno nuevo.', COMMERCIAL_SCOPES, ['commercialPromotions:read']),
   action('commercialPromotions:edit', 'Editar aviso', 'Modificar un aviso sin publicarlo.', COMMERCIAL_SCOPES, ['commercialPromotions:read']),
@@ -204,272 +222,4 @@ export function getActionDefinition(id: string): ActionDefinition | undefined {
 export function isAssignableAction(id: string): boolean {
   return !id.startsWith('listas:') && id !== 'assignments:manage'
     && getActionDefinition(id)?.enabled === true;
-}
-
-/**
- * COM-01 §3 — paquete de trabajo: `{ id, nombre, catalogVersion, selections }`
- * donde cada selección es una concreción `{ actionId, scope, resourceId? }`
- * del catálogo. Paquete ≠ rol (ficha regla 1): es una preselección que Super
- * Admin revisa casilla a casilla antes de guardar; su aplicación es
- * idempotente y no migra cuentas existentes por silencio (E2 resuelta como
- * mapa constante en el catálogo — los writePaths de esta ficha no añaden
- * tabla AccessPackage).
- */
-export interface AssignmentSelection {
-  readonly actionId: string;
-  readonly scope: AccessScope;
-  readonly resourceId?: string;
-}
-
-export interface PackageTemplate {
-  readonly id: string;
-  readonly name: string;
-  readonly catalogVersion: string;
-  readonly selections: readonly AssignmentSelection[];
-  readonly assignable?: boolean;
-  /**
-   * Acciones de las que dependen las selecciones del paquete y que deben llegar
-   * de OTRA fuente vigente (complemento). Se exigen al asignar
-   * (assertDependencies), no dentro del propio paquete.
-   */
-  readonly externalDependencies?: readonly string[];
-}
-
-function selection(actionId: string, scope: AccessScope): AssignmentSelection {
-  return Object.freeze({ actionId, scope });
-}
-
-function packageTemplate(
-  id: string,
-  name: string,
-  selections: readonly AssignmentSelection[],
-  assignable = true,
-  externalDependencies: readonly string[] = [],
-): PackageTemplate {
-  return Object.freeze({
-    id,
-    name,
-    catalogVersion: ACCESS_CATALOG_VERSION,
-    assignable,
-    externalDependencies: Object.freeze([...externalDependencies]),
-    selections: Object.freeze([...selections]),
-  });
-}
-
-/**
- * Los tres paquetes de COM-01 §3.1, con sus acciones y alcances LITERALES del
- * contrato. Solo acciones `enabled:true`: un paquete con acciones bloqueadas
- * (erpSales:read B1, stockRequests:* B2, commercialSettings:* sin módulo,
- * listas:link/unlink C4) produciría 400 de `validateGrants` al aplicarse
- * (COM-01 §11). Donde §3.1 anota un par de alcances (`team/global`) elige el
- * más estrecho; Super Admin lo amplía en la revisión casilla a casilla.
- *
- * - Vendedor: todo `own` («Mis …»); la consulta del catálogo usa `global`
- *   porque `list`/`product` exigen resourceId concreto y el paquete es
- *   estático (E3: `prices:read` no existe en el catálogo, no se inventa).
- * - Supervisor comercial: todo `team` (resumen/consulta del equipo).
- * - Gestión comercial: `team`, con las dependencias `:read` incluidas dentro
- *   de la selección (el paquete se aplica como UNA fuente vía replaceSource;
- *   assertDependencies BASE-02 §5.3 las exigiría igualmente).
- */
-export const PACKAGE_TEMPLATES: readonly PackageTemplate[] = Object.freeze([
-  // Biblioteca = 3 pestañas independientes = 3 paquetes seleccionables (global),
-  // por separado o juntos. Sin Listas: todo permiso sale de la asignación del
-  // panel. Otorgar el panel por defecto equivale a «Productos» (solo consulta).
-  packageTemplate('biblioteca-consulta', 'Productos', [
-    selection('products:read', 'global'),
-    selection('prices:read', 'global'),
-  ]),
-  // Pestaña Fichas: crear y editar fichas, borrar, validar y notas internas.
-  // `prices:read` permite ver (solo lectura) la sección de precios del editor.
-  packageTemplate('biblioteca-fichas', 'Fichas', [
-    selection('products:read', 'global'),
-    selection('products:write', 'global'),
-    selection('products:delete', 'global'),
-    selection('products:validate', 'global'),
-    selection('products:notes', 'global'),
-    selection('prices:read', 'global'),
-  ]),
-  // Pestaña Precios: revisar archivos de precios, guardar/aplicar revisiones y
-  // perfiles de proveedor. No concede edición de fichas.
-  packageTemplate('biblioteca-precios', 'Precios', [
-    selection('products:read', 'global'),
-    selection('prices:read', 'global'),
-    selection('prices:preview', 'global'),
-    selection('prices:save', 'global'),
-    selection('prices:apply', 'global'),
-    selection('providers:read', 'global'),
-    selection('providers:write', 'global'),
-  ]),
-  // Complemento de Fichas: no concede edición; `products:write` debe venir del
-  // paquete Fichas (assertDependencies lo exige al asignar).
-  packageTemplate('biblioteca-publicacion', 'Publicar en tienda', [
-    selection('products:read', 'global'),
-    selection('prices:read', 'global'),
-    selection('products:validate', 'global'),
-    selection('products:publish', 'global'),
-  ], true, ['products:write']),
-  // Pestaña Importaciones: complemento de Fichas, `products:write` debe venir de ese
-  // paquete (assertDependencies lo exige al asignar). No se concede nada por defecto.
-  packageTemplate('biblioteca-importaciones', 'Importaciones', [
-    selection('products:read', 'global'),
-    selection('imports:read', 'global'),
-    selection('imports:run', 'global'),
-  ], true, ['products:write']),
-  // Pestaña Catálogos maestros. Aprobar moldes (`products:approveSpecs`) NO va aquí:
-  // se marca aparte en la selección de Biblioteca.
-  packageTemplate('biblioteca-maestros', 'Catálogos maestros', [
-    selection('products:read', 'global'),
-    selection('masters:read', 'global'),
-    selection('masters:write', 'global'),
-  ]),
-  // Antes «Actualización» (fichas + precios juntos). Ya no se puede asignar:
-  // se conserva para que quien lo tiene siga viéndolo y pueda retirarlo.
-  packageTemplate('biblioteca-actualizacion', 'Actualización (anterior)', [
-    selection('products:read', 'global'),
-    selection('products:write', 'global'),
-    selection('products:delete', 'global'),
-    selection('products:validate', 'global'),
-    selection('products:notes', 'global'),
-    selection('prices:read', 'global'),
-    selection('prices:preview', 'global'),
-    selection('prices:save', 'global'),
-    selection('prices:apply', 'global'),
-    selection('providers:read', 'global'),
-    selection('providers:write', 'global'),
-  ], false),
-  // Paquetes anteriores: se conservan para que las asignaciones existentes
-  // sigan visibles y retirables.
-  packageTemplate('gestion-listas-precios', 'Listas y precios (anterior)', [
-    selection('listas:read', 'global'),
-    selection('listas:create', 'global'),
-    selection('listas:update', 'global'),
-    selection('listas:archive', 'global'),
-    selection('prices:read', 'global'),
-    selection('prices:preview', 'global'),
-    selection('prices:save', 'global'),
-    selection('prices:apply', 'global'),
-    selection('providers:read', 'global'),
-    selection('providers:write', 'global'),
-  ], false),
-  packageTemplate('biblioteca-productos', 'Biblioteca de productos (anterior)', [
-    selection('products:read', 'global'),
-    selection('products:write', 'global'),
-    selection('products:validate', 'global'),
-  ], false),
-  packageTemplate('publicacion-catalogo', 'Publicación del catálogo (anterior)', [
-    selection('products:read', 'global'),
-    selection('products:validate', 'global'),
-    selection('products:publish', 'global'),
-  ], false, ['products:write']),
-  packageTemplate('vendedor', 'Vendedor', [
-    // Mis clientes y prospectos
-    selection('customers:read', 'own'),
-    selection('customers:create', 'own'),
-    selection('customers:edit', 'own'),
-    // Mis cotizaciones
-    selection('quotes:read', 'own'),
-    selection('quotes:create', 'own'),
-    selection('quotes:edit', 'own'),
-    selection('quotes:status', 'own'),
-    // Biblioteca se asigna por separado mediante sus propios paquetes.
-    // Mi agenda
-    selection('activities:read', 'own'),
-    selection('activities:create', 'own'),
-    selection('activities:complete', 'own'),
-    // Metas (lectura)
-    selection('targets:read', 'own'),
-    // Promociones internas
-    selection('commercialPromotions:read', 'own'),
-  ]),
-  packageTemplate('supervisor-comercial', 'Supervisor comercial', [
-    // Resumen/consulta del equipo
-    selection('teamInsights:read', 'team'),
-    // Clientes y cotizaciones del equipo (lectura no amplía edición)
-    selection('customers:read', 'team'),
-    selection('quotes:read', 'team'),
-    // Agenda del equipo
-    selection('activities:read', 'team'),
-    selection('activities:assign', 'team'),
-    // Metas del equipo
-    selection('targets:read', 'team'),
-  ]),
-  // Paquete de jefe de equipo: solo agenda. Sirve para cualquier rol interno
-  // (no depende del rol) porque el alcance `team` sale de la jerarquía
-  // `supervisorId`, no del nombre del rol. Distinto de `supervisor-comercial`,
-  // que además abre clientes, cotizaciones y metas del equipo.
-  packageTemplate('jefe-de-equipo', 'Jefe de equipo', [
-    selection('activities:read', 'team'),
-    selection('activities:assign', 'team'),
-    selection('activities:complete', 'team'),
-  ]),
-  packageTemplate('gestion-comercial', 'Gestión comercial', [
-    // Cartera (depende de customers:read)
-    selection('customers:read', 'team'),
-    selection('customers:reassign', 'team'),
-    // Metas (targets:edit depende de targets:read)
-    selection('targets:read', 'team'),
-    selection('targets:edit', 'team'),
-    // Avisos internos (create/edit/publish/withdraw dependen de :read)
-    selection('commercialPromotions:read', 'team'),
-    selection('commercialPromotions:create', 'team'),
-    selection('commercialPromotions:edit', 'team'),
-    selection('commercialPromotions:publish', 'team'),
-    selection('commercialPromotions:withdraw', 'team'),
-  ]),
-  // Panel «Marketing y mercadeo» (pestaña Banners). Tres paquetes que se pueden
-  // combinar: cada uno es su propia fuente y todos incluyen `marketing:read`,
-  // que es la acción que abre el panel. Preparar no publica; publicar y retirar
-  // es un paquete aparte para poder separar quien diseña de quien aprueba.
-  packageTemplate('marketing-consulta', 'Ver banners y pop-ups', [
-    selection('marketing:read', 'global'),
-  ]),
-  packageTemplate('marketing-edicion', 'Preparar banners y pop-ups', [
-    selection('marketing:read', 'global'),
-    selection('marketing:create', 'global'),
-    selection('marketing:edit', 'global'),
-    selection('marketing:delete', 'global'),
-  ]),
-  packageTemplate('marketing-publicacion', 'Publicar y retirar banners', [
-    selection('marketing:read', 'global'),
-    selection('marketing:publish', 'global'),
-  ]),
-]);
-
-/** Autochequeo al cargar: un paquete tóxico no arranca el servidor (COM-01 §11). */
-for (const pkg of PACKAGE_TEMPLATES) {
-  const granted = new Set(pkg.selections.map((s) => s.actionId));
-  for (const item of pkg.selections) {
-    const definition = CATALOG_BY_ID.get(item.actionId);
-    if (!definition) {
-      throw new Error(`Package ${pkg.id} references unknown action: ${item.actionId}`);
-    }
-    if (!definition.enabled) {
-      throw new Error(`Package ${pkg.id} references disabled action: ${item.actionId}`);
-    }
-    if (!definition.allowedScopes.includes(item.scope)) {
-      throw new Error(
-        `Package ${pkg.id} grants ${item.actionId} with disallowed scope: ${item.scope}`,
-      );
-    }
-    for (const dependency of definition.dependencies) {
-      if (!granted.has(dependency) && !pkg.externalDependencies?.includes(dependency)) {
-        throw new Error(
-          `Package ${pkg.id} is not self-contained: ${item.actionId} requires ${dependency}`,
-        );
-      }
-    }
-  }
-}
-
-const PACKAGES_BY_ID: ReadonlyMap<string, PackageTemplate> = (() => {
-  const map = new Map<string, PackageTemplate>();
-  for (const pkg of PACKAGE_TEMPLATES) {
-    map.set(pkg.id, pkg);
-  }
-  return map;
-})();
-
-export function getPackageTemplate(id: string): PackageTemplate | undefined {
-  return PACKAGES_BY_ID.get(id);
 }

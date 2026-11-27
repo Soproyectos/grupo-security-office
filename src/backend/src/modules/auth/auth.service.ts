@@ -12,6 +12,7 @@ import { MfaService } from '../../common/security/mfa.service';
 import { SessionService } from '../../common/security/session.service';
 import { UserPermissionsService } from '../../common/security/user-permissions.service';
 import { ACCESS_CATALOG } from '../../common/security/access-catalog';
+import { GRANTING_SOURCE_WHERE } from '../../common/security/granting-sources';
 import { resolveAccess } from '../../common/security/data-scope';
 
 const isLibraryPermission = (permission: string) => /^(products|prices|providers):/.test(permission);
@@ -85,7 +86,7 @@ export class AuthService {
     const granted = await this.userPermissions.effectivePermissionsFor(user.id);
     const superAdmin = user.roles.some((entry) => entry.role.name === 'Super Admin');
     const rows = superAdmin ? [] : (await this.prisma.accessGrant.findMany({
-      where: { source: { userId: user.id }, scopeKind: 'global' },
+      where: { source: { userId: user.id, ...GRANTING_SOURCE_WHERE }, scopeKind: 'global' },
       select: { sourceId: true, actionId: true },
     })) ?? [];
     const libraryGrants = rows.filter((row) => isLibraryPermission(row.actionId))

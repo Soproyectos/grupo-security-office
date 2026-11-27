@@ -301,4 +301,58 @@ describe('UsersService', () => {
       expect(result.password).toBeUndefined();
     });
   });
+
+  describe('zona del asesor', () => {
+    it('crea un usuario con una zona activa y la devuelve como {id,name}', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.zone.findUnique.mockResolvedValue({ id: 'z1', isActive: true });
+      (bcrypt.hash as jest.Mock).mockResolvedValue('$2b$10$hashedpassword');
+      mockPrisma.user.create.mockResolvedValue({ ...mockCreatedUser, zoneId: 'z1', zone: { id: 'z1', name: 'Antioquia' } });
+
+      const result = await service.create({ email: 'new@test.com', name: 'New User', password: 'SecurePass123', zoneId: 'z1' });
+
+      expect(mockPrisma.user.create.mock.calls[0][0].data.zoneId).toBe('z1');
+      expect(mockPrisma.user.create.mock.calls[0][0].include.zone).toEqual({ select: { id: true, name: true } });
+      expect(result.zone).toEqual({ id: 'z1', name: 'Antioquia' });
+    });
+
+    it('rechaza una zona inexistente o inactiva al crear, sin crear el usuario', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.zone.findUnique.mockResolvedValueOnce(null);
+      await expect(service.create({ email: 'n@test.com', name: 'N N', password: 'SecurePass123', zoneId: 'nope' })).rejects.toThrow('La zona elegida no existe');
+      mockPrisma.zone.findUnique.mockResolvedValueOnce({ id: 'z1', isActive: false });
+      await expect(service.create({ email: 'n@test.com', name: 'N N', password: 'SecurePass123', zoneId: 'z1' })).rejects.toThrow('La zona elegida no está activa');
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('asigna, cambia y quita la zona al editar', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.update.mockResolvedValue(mockUserWithRoles);
+      mockPrisma.zone.findUnique.mockResolvedValue({ id: 'z2', isActive: true });
+      await service.update('user-1', { zoneId: 'z2' });
+      expect(mockPrisma.user.update.mock.calls[0][0].data.zone).toEqual({ connect: { id: 'z2' } });
+      await service.update('user-1', { zoneId: null });
+      expect(mockPrisma.user.update.mock.calls[1][0].data.zone).toEqual({ disconnect: true });
+    });
+
+    it('rechaza una zona inactiva al editar y no toca la zona si no se envía', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.zone.findUnique.mockResolvedValue({ id: 'z2', isActive: false });
+      await expect(service.update('user-1', { zoneId: 'z2' })).rejects.toThrow('La zona elegida no está activa');
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      mockPrisma.user.update.mockResolvedValue(mockUserWithRoles);
+      await service.update('user-1', { name: 'Solo nombre' });
+      expect(mockPrisma.user.update.mock.calls[0][0].data).not.toHaveProperty('zone');
+    });
+
+    it('la lista y el detalle piden la zona del usuario', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([mockUserWithRoles]);
+      mockPrisma.user.count.mockResolvedValue(1);
+      await service.findAll();
+      expect(mockPrisma.user.findMany.mock.calls[0][0].include.zone).toEqual({ select: { id: true, name: true } });
+      mockPrisma.user.findUnique.mockResolvedValue(mockUserWithRoles);
+      await service.findOne('user-1');
+      expect(mockPrisma.user.findUnique.mock.calls[0][0].include.zone).toEqual({ select: { id: true, name: true } });
+    });
+  });
 });

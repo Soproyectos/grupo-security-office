@@ -19,6 +19,7 @@ import { MfaVerifyDto, MfaEnrollConfirmDto, MfaCodeDto } from './dto/mfa.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { TurnstileGuard } from '../../common/security/turnstile.guard';
 import { MfaService } from '../../common/security/mfa.service';
 import { SessionService } from '../../common/security/session.service';
 
@@ -72,6 +73,7 @@ export class AuthController {
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UseGuards(TurnstileGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Paso 1: credenciales' })

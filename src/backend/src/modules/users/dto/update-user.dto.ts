@@ -38,4 +38,11 @@ export class UpdateUserDto {
   @IsUUID()
   @IsOptional()
   supervisorId?: string | null;
+
+  /** Advisor zone; `null` clears it. Only Super Admin reaches this endpoint. */
+  @ApiPropertyOptional({ example: 'zone-id-1', nullable: true })
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID('all', { message: 'La zona elegida no es válida' })
+  @IsOptional()
+  zoneId?: string | null;
 }

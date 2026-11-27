@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsBoolean, IsOptional, IsArray } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsBoolean, IsOptional, IsArray, IsUUID, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateUserDto {
@@ -25,4 +25,11 @@ export class CreateUserDto {
   @IsArray()
   @IsOptional()
   roleIds?: string[];
+
+  /** Advisor zone (used to auto-assign web registrations by city). Create/update are Super Admin only. */
+  @ApiPropertyOptional({ example: 'zone-id-1', nullable: true })
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID('all', { message: 'La zona elegida no es válida' })
+  @IsOptional()
+  zoneId?: string | null;
 }

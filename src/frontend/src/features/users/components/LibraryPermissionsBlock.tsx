@@ -63,12 +63,6 @@ export function LibraryPermissionsBlock({ userId, access, embedded = false, onDi
   const changes = selectionChanges(initial, draft)
   const shownTabs = visibleTabs(draft)
   const notice = accessActionNotice(mutation.error)
-  const replacesPrevious = access.sources.some(
-    (source) => source.templateId !== null && ['biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios', 'biblioteca-actualizacion'].includes(source.templateId),
-  ) || access.grants.some((grant) =>
-    /^(products|prices|providers|listas|imports|masters):/.test(grant.actionId) &&
-    access.sources.some((source) => source.id === grant.sourceId && (source.kind === 'manual' || (source.templateId !== null && ['gestion-listas-precios', 'biblioteca-productos', 'publicacion-catalogo'].includes(source.templateId)))),
-  )
   const disabled = mutation.isPending || busy
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(mutation.isPending) }, [mutation.isPending, onBusyChange])
@@ -146,9 +140,6 @@ export function LibraryPermissionsBlock({ userId, access, embedded = false, onDi
             {changes.added.length > 0 && <>Se agrega: {changes.added.map(actionDisplayName).join(', ')}. </>}
             {changes.removed.length > 0 && <>Se quita: {changes.removed.map(actionDisplayName).join(', ')}.</>}
           </p>
-        )}
-        {replacesPrevious && (
-          <p className="text-[var(--color-text-secondary)]">Al guardar, esta selección reemplaza los paquetes y asignaciones anteriores de Biblioteca. Los accesos comerciales no cambian.</p>
         )}
       </div>
       </details>

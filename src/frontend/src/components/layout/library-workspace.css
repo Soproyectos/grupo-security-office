@@ -39,6 +39,8 @@
 .biblioteca-workspace__hint { margin: 0 0 0 auto; color: var(--library-muted); font-size: 12px; text-align: right; }
 .biblioteca-workspace__nav { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; min-width: 0; }
 .biblioteca-workspace__destination { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 6px 10px; color: var(--library-muted); border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500; transition: background-color 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out; }
+button.biblioteca-workspace__destination { background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; }
+button.biblioteca-workspace__destination.is-active { border-bottom-color: var(--library-header); }
 .biblioteca-workspace__destination svg { width: 18px; height: 18px; flex-shrink: 0; }
 .biblioteca-workspace__destination:hover { color: var(--library-ink); background: var(--library-ground); }
 .biblioteca-workspace__destination.is-active { color: var(--library-action); border-bottom-color: var(--library-header); }
@@ -96,6 +98,14 @@
   .biblioteca-workspace .product-prices__scroll-hint { display: block; }
 }
 @media (prefers-reduced-motion: reduce) { .biblioteca-workspace__destination { transition: none; } }
+
+/* WorkspaceTabs outside the Biblioteca page: the bar keeps its look but not the page offset, card background or rounded top. */
+.biblioteca-workspace--standalone { margin-top: 0; background: transparent; border-radius: 0; }
+.biblioteca-workspace--standalone .biblioteca-workspace__bar { border-radius: 0; }
+/* Inside an app header that already draws the bottom line. */
+.biblioteca-workspace--header .biblioteca-workspace__bar { border-bottom: 0; }
+/* The sticky header must stay short on a phone: the active tab already tells where the person is. */
+@media (max-width: 600px) { .biblioteca-workspace--header .biblioteca-workspace__hint { display: none; } }
 
 /* Use the project's established heading family; keep controls and body in Roboto. */
 .biblioteca-workspace :where(h1, h2, h3, h4) { font-family: 'Roboto Condensed', 'Roboto', sans-serif; }

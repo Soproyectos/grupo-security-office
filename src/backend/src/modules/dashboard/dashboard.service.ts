@@ -19,6 +19,7 @@ import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { resolveAccess } from '../../common/security/data-scope';
 import { concessionCanAction } from '../../common/security/d5-action';
+import { BASE_ACCESS_ROLES } from '../../common/security/base-access';
 import type { AccessIdentity } from '../../common/security/data-scope';
 
 /** Stable error codes returned with the 403s of the personal dashboard endpoints. */
@@ -41,6 +42,8 @@ export const WORKSPACE_COMMERCIAL_ACTIONS = [
 ] as const;
 
 export const MY_LISTAS_DEFAULT_TAKE = 12;
+/** Cap of the team block when the person sees every salesperson (`teamInsights:read` global). */
+export const TEAM_GLOBAL_MEMBER_LIMIT = 300;
 export const RECENT_ACTIVITY_TAKE = 10;
 export const RECENT_ACTIVITY_WINDOW_DAYS = 30;
 
@@ -179,20 +182,23 @@ export class DashboardService {
   /**
    * COM-05 §4 / decisión H3: ver bloques o datos de equipo exige la acción
    * `teamInsights:read` cuando el usuario YA tiene concesiones en el sistema.
-   * Usuarios LEGADOS sin ninguna concesión conservan la capa rol+jerarquía
-   * vigente (transición BASE-01 §8 / D5): la jerarquía acota a subordinados y
-   * la ruta ya pasó `@Roles`. Super Admin es excepción EXPLÍCITA dentro de
-   * `resolveAccess` (patrón `permissions.guard.ts:60`). La identidad se arma
-   * con los flags que `JwtStrategy` atestigua en cada petición (patrón
-   * COM-02/COM-03); no resources → basta la concesión de la acción.
+   * Devuelve el alcance concedido (`own` = solo su propio resumen, `team` = su
+   * equipo por jerarquía, `global` = todo el personal comercial) o `null` si
+   * no tiene la acción. Usuarios LEGADOS sin ninguna concesión conservan la
+   * capa rol+jerarquía vigente (transición BASE-01 §8 / D5): equivale a
+   * `team`. Super Admin es excepción EXPLÍCITA dentro de `resolveAccess`
+   * (patrón `permissions.guard.ts:60`) y para su propio resumen se mantiene la
+   * vista por jerarquía (`team`). La identidad se arma con los flags que
+   * `JwtStrategy` atestigua en cada petición (patrón COM-02/COM-03); sin
+   * recurso concreto basta la concesión de la acción.
    */
-  private async canSeeTeam(
+  private async teamInsightsLevel(
     userId: string | undefined,
     roles: string[],
-  ): Promise<boolean> {
-    if (!userId) return false;
+  ): Promise<'own' | 'team' | 'global' | null> {
+    if (!userId) return null;
     const grants = (await this.grants?.grantsForUser(userId)) ?? [];
-    if (grants.length === 0) return true; // transición D5: capa rol+jerarquía
+    if (grants.length === 0) return 'team'; // transición D5: capa rol+jerarquía
     const identity: AccessIdentity = {
       userId,
       verified: true,
@@ -201,8 +207,10 @@ export class DashboardService {
       sessionUserId: userId,
       superAdmin: roles.includes('Super Admin'),
     };
-    return resolveAccess({ identity, actionId: 'teamInsights:read', grants })
-      .allowed;
+    const decision = resolveAccess({ identity, actionId: 'teamInsights:read', grants });
+    if (!decision.allowed) return null;
+    if (identity.superAdmin) return 'team';
+    return decision.scope === 'own' || decision.scope === 'global' ? decision.scope : 'team';
   }
 
   /**
@@ -590,12 +598,33 @@ export class DashboardService {
   ): Promise<MyTeamBlock | undefined> {
     if (!userId) return undefined;
 
-    const subordinateIds = await this.hierarchy.getSubordinateIds(userId);
-    if (subordinateIds.length === 0) return undefined;
-
     // COM-05 §4/H3: sin `teamInsights:read` vigente (cuando hay concesiones)
     // el bloque se OMITE — no se consulta ningún dato de equipo.
-    if (!(await this.canSeeTeam(userId, roles))) return undefined;
+    const level = await this.teamInsightsLevel(userId, roles);
+    if (!level) return undefined;
+
+    // own = solo el propio resumen; team = subordinados por jerarquía;
+    // global = todo el personal comercial activo (sin contar al propio usuario).
+    let subordinateIds: string[];
+    let preloadedUsers: Array<{ id: string; name: string }> | undefined;
+    if (level === 'own') {
+      subordinateIds = [userId];
+    } else if (level === 'global') {
+      preloadedUsers = await this.prisma.user.findMany({
+        where: {
+          isActive: true,
+          id: { not: userId },
+          roles: { some: { role: { name: { in: [...BASE_ACCESS_ROLES] } } } },
+        },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+        take: TEAM_GLOBAL_MEMBER_LIMIT,
+      });
+      subordinateIds = preloadedUsers.map((user) => user.id);
+    } else {
+      subordinateIds = await this.hierarchy.getSubordinateIds(userId);
+    }
+    if (subordinateIds.length === 0) return undefined;
 
     const range = currentMonthRangeBogota();
     const { year, month } = bogotaYearMonth();
@@ -606,7 +635,7 @@ export class DashboardService {
     // 7 queries fijas — ninguna por miembro.
     const [users, targets, invoicedOrders, openQuotes, customersByStatus, quotesByStatus] =
       await Promise.all([
-        this.prisma.user.findMany({
+        preloadedUsers ?? this.prisma.user.findMany({
           where: { id: { in: subordinateIds } },
           select: { id: true, name: true },
         }),
@@ -773,15 +802,19 @@ export class DashboardService {
     ctx: AccessContext,
     targetUserId: string,
   ): Promise<MyCommercialWorkspace> {
-    await this.hierarchy.assertCanViewUser(ctx, targetUserId);
-    // COM-05 §4: jerarquía + `teamInsights:read` (concesión cuando existe;
-    // capa rol+jerarquía en usuarios legados — transición D5). Super Admin
-    // pasa por la excepción explícita de resolveAccess.
-    if (!(await this.canSeeTeam(ctx.userId, ctx.roles))) {
+    // COM-05 §4: `teamInsights:read` (concesión cuando existe; capa
+    // rol+jerarquía en usuarios legados — transición D5) y su alcance:
+    // own = solo uno mismo, team = jerarquía, global = cualquier persona.
+    const level = await this.teamInsightsLevel(ctx.userId, ctx.roles);
+    if (!level) {
       throw new ForbiddenException(
         'Sin permiso teamInsights:read sobre datos de equipo',
       );
     }
+    if (level === 'own' && targetUserId !== ctx.userId) {
+      throw new ForbiddenException('Solo puedes ver tu propio resumen');
+    }
+    if (level !== 'global') await this.hierarchy.assertCanViewUser(ctx, targetUserId);
     // El scope ASSIGNED es una propiedad del caller, no del objetivo: aquí
     // pedimos el bloque del USUARIO OBJETIVO sin importar el scope del viewer.
     const block = await this.getCommercialBlock(targetUserId, 'ASSIGNED');

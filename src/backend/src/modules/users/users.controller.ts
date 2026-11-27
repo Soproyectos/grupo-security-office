@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Req, UseGuards, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException, Sse, MessageEvent } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, Equals, IsArray, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf } from 'class-validator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -19,20 +19,18 @@ import { AssignAccessDto } from './dto/assign-access.dto';
 import { AccessAssignmentsService } from '../../common/security/access-assignments.service';
 import { LiveAdminIdentityService } from '../../common/security/live-admin-identity.service';
 import type { PassportSessionUser } from '../../common/security/live-admin-identity.service';
-import { ACCESS_CATALOG, ACCESS_CATALOG_VERSION, PACKAGE_TEMPLATES, isAssignableAction } from '../../common/security/access-catalog';
+import { ACCESS_CATALOG, ACCESS_CATALOG_VERSION, isAssignableAction } from '../../common/security/access-catalog';
 import { teamAgendaGrantsForRoles } from '../../common/security/base-access';
 import { Observable, Subject, interval } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 /**
- * COM-01 backend (E1 — DESVIACIÓN AUTORIZADA): cuerpo del PUT de concesiones.
- *
- * Amplía el DTO `AssignAccessDto` de BASE-04 con la versión OCC del destinatario
- * (obligatoria para `replaceSource`) y el modo paquete. En modo paquete se
- * envía `grants: []` (el array sigue obligatorio por el DTO padre); `packageId`
- * y grants no-empty son excluyentes. `expectedCatalogVersion` lo valida el DTO
- * a 400; el servicio responde además 409 `catalog-version-conflict` cuando se
- * lo invoca directamente con un catálogo desactualizado.
+ * Body of PUT /api/users/:id/access: the action-by-action grants (manual
+ * source) plus the OCC version of the recipient. Work packages no longer
+ * exist, so there is no package mode: an empty `grants` list clears the
+ * manual block. `expectedCatalogVersion` is validated by the DTO (400); the
+ * service also answers 409 `catalog-version-conflict` when called directly
+ * with an outdated catalog.
  */
 export class PutUserAccessDto extends AssignAccessDto {
   @ApiProperty({ description: 'Versión OCC vigente del estado de concesiones del destinatario' })
@@ -41,16 +39,10 @@ export class PutUserAccessDto extends AssignAccessDto {
   @Min(0)
   expectedVersion: number;
 
-  @ApiPropertyOptional({
-    description: 'Id de paquete del catálogo (modo paquete); excluyente con grants',
-    example: 'vendedor',
-  })
-  @IsOptional()
-  @IsString()
-  @Matches(/^[a-z][a-z0-9-]*$/, {
-    message: 'packageId debe ser un id kebab-case del catálogo de paquetes (p. ej. vendedor).',
-  })
-  packageId?: string;
+  // Rejected on purpose: the global ValidationPipe only strips unknown fields, so
+  // an old client sending `packageId` would silently get `grants` applied.
+  @Equals(undefined, { message: 'Los paquetes de paneles ya no existen; envíe las acciones una por una en grants.' })
+  packageId?: undefined;
 }
 
 /** Cuerpo del PUT de la selección de casillas de Biblioteca (Productos / Fichas / Precios). */
@@ -283,12 +275,12 @@ export class UsersController {
   /**
    * COM-01 backend (E1) — concesiones por acción+alcance de un usuario.
    *
-   * Devuelve las concesiones vigentes, su procedencia (fuente manual o
-   * paquete) y el estado de los paquetes del catálogo, con la versión OCC y
-   * el catálogo con el que se sirven (el navegador la ecoa al asignar).
+   * Devuelve las concesiones vigentes y su procedencia (asignación manual o
+   * selección directa de Biblioteca), con la versión OCC y el catálogo con el
+   * que se sirven (el navegador la ecoa al asignar). Ya no hay paquetes.
    */
   @Get(':id/access')
-  @ApiOperation({ summary: 'Concesiones por acción, procedencia y paquetes de un usuario (COM-01)' })
+  @ApiOperation({ summary: 'Concesiones por acción y procedencia de un usuario (COM-01)' })
   async getUserAccess(@Param('id') id: string, @CurrentUser() user: PassportSessionUser) {
     const actor = this.ctx(user);
     if (!actor.userId) throw new UnauthorizedException('Se requiere una sesión vigente');
@@ -312,25 +304,12 @@ export class UsersController {
       grants: [...grants, ...derivedTeamGrants],
       derivedGrants: derivedTeamGrants,
       sources,
-      packages: PACKAGE_TEMPLATES.map((pkg) => {
-        const applied = sources.find(
-          (source) => source.kind === 'template' && source.templateId === pkg.id,
-        );
-        return {
-          id: pkg.id,
-          name: pkg.name,
-          assignable: pkg.assignable !== false,
-          selections: pkg.selections,
-          applied: Boolean(applied),
-          sourceId: applied?.id ?? null,
-        };
-      }),
     };
   }
 
   /**
-   * Asigna concesiones por acción (modo grants, fuente manual) o aplica un
-   * paquete del catálogo (modo packageId, fuente template). La identidad del
+   * Asigna concesiones por acción (fuente manual): el cuerpo es el conjunto
+   * completo; una lista vacía lo deja sin concesiones manuales. La identidad del
    * administrador se reconstruye en servidor por petición (LiveAdminIdentity):
    * el cuerpo nunca aporta userId, roles ni scope. La revocación refleja en la
    * siguiente petición (lectura viva del GET); revalidar AccessGrant dentro
@@ -338,7 +317,7 @@ export class UsersController {
    */
   @Put(':id/access')
   @Roles('Super Admin')
-  @ApiOperation({ summary: 'Asigna concesiones por acción o aplica un paquete (COM-01)' })
+  @ApiOperation({ summary: 'Asigna concesiones por acción, una por una (COM-01)' })
   async setUserAccess(
     @Param('id') id: string,
     @Body() dto: PutUserAccessDto,
@@ -346,23 +325,6 @@ export class UsersController {
   ) {
     const actor = await this.liveIdentity.fromRequest(req);
 
-    if (dto.packageId) {
-      if (dto.grants.length > 0) {
-        throw new BadRequestException('Envíe packageId o grants, no ambos.');
-      }
-      const receipt = await this.accessAssignments.applyPackage(actor, id, dto.packageId, {
-        expectedVersion: dto.expectedVersion,
-        catalogVersion: dto.expectedCatalogVersion,
-        ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
-        ...(dto.reason ? { reason: dto.reason } : {}),
-      });
-      this.notifyAccessChanged(id);
-      return receipt;
-    }
-
-    if (dto.grants.length === 0) {
-      throw new BadRequestException('Envíe al menos un grant o un packageId.');
-    }
     const receipt = await this.accessAssignments.replaceManualSource(actor, id, {
       expectedVersion: dto.expectedVersion,
       catalogVersion: dto.expectedCatalogVersion,
@@ -377,7 +339,7 @@ export class UsersController {
   /**
    * Guarda la selección de casillas de Biblioteca como UNA fuente por usuario.
    * El servidor valida el conjunto permitido y calcula el cierre de
-   * dependencias; reemplaza los paquetes Productos/Fichas/Precios/anterior.
+   * dependencias; solo reemplaza esas casillas, nunca otras concesiones.
    */
   @Put(':id/access/library')
   @Roles('Super Admin')
@@ -399,32 +361,10 @@ export class UsersController {
     return receipt;
   }
 
-  /**
-   * Retira la fuente template del paquete indicado; las demás fuentes del
-   * usuario se conservan (COM-01 §3: si otra concede la misma acción, el
-   * acceso permanece con su alcance).
-   */
-  @Delete(':id/access/packages/:packageId')
-  @Roles('Super Admin')
-  @ApiOperation({ summary: 'Retira un paquete aplicado conservando las demás fuentes (COM-01)' })
-  async deleteUserPackage(
-    @Param('id') id: string,
-    @Param('packageId') packageId: string,
-    @Query('expectedVersion') expectedVersion: string,
-    @Req() req: { user?: PassportSessionUser },
-  ) {
-    const actor = await this.liveIdentity.fromRequest(req);
-    const receipt = await this.accessAssignments.removePackage(actor, id, packageId, {
-      expectedVersion: Number(expectedVersion),
-    });
-    this.notifyAccessChanged(id);
-    return receipt;
-  }
-
   /** Retira una fuente manual completa; permite dejar al usuario sin paneles. */
   @Delete(':id/access/manual/:sourceId')
   @Roles('Super Admin')
-  @ApiOperation({ summary: 'Retira una asignación manual conservando otros paquetes' })
+  @ApiOperation({ summary: 'Retira una asignación manual' })
   async deleteManualAccess(
     @Param('id') id: string,
     @Param('sourceId') sourceId: string,

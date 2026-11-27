@@ -11,7 +11,7 @@ export default function AdminLayout() {
   // COM-01 §4: el shell monta el acceso real de la identidad UNA vez con la
   // MISMA queryKey que CommercialLayout y el panel de concesiones
   // (`features/users/access.ts`). Así el menú y la fuente de datos comparten
-  // caché: el refetch tras aplicar/retirar un paquete actualiza la
+  // caché: el refetch tras cambiar las acciones asignadas actualiza la
   // navegación en la misma sesión, sin cerrarla.
   useOwnUserAccess()
 

@@ -5,8 +5,9 @@ import { getActionDefinition } from './access-catalog';
  * Selección de casillas de Biblioteca (Productos / Fichas / Precios).
  *
  * Se guarda como UNA fuente `template` por usuario con este id reservado y
- * alcance global. No es un paquete del catálogo (no está en PACKAGE_TEMPLATES):
- * su contenido es la selección guardada.
+ * alcance global. Ya no existen los paquetes; esto NO es uno:
+ * su contenido es la selección que el Super Admin marcó casilla a casilla, y
+ * por eso sigue concediendo acceso.
  */
 export const LIBRARY_SELECTION_TEMPLATE_ID = 'biblioteca-seleccion';
 

@@ -73,14 +73,26 @@ export class WorkflowService {
   if(!this.decision(current,actionId,ownerId).allowed) throw new ForbiddenException(`Sin permiso ${actionId} sobre el alcance solicitado`);
   return current;
  }
+ /** `global` agenda grant held by the person for an action (stored grants only: the role-derived
+  *  ones are never wider than team). It lifts the team-membership limit for that one action. */
+ private hasGlobalGrant(state:AccessState,actionId:string):boolean {
+  return state.grants.some(g=>g.actionId===actionId&&g.scope==='global');
+ }
+ /** Any agenda action held at `global` level: the person may reach people outside their team, but
+  *  `requireAction` still decides action by action (global read does not grant completing, etc.). */
+ private hasAnyGlobalAgenda(state:AccessState):boolean {
+  return state.grants.some(g=>g.actionId.startsWith('activities:')&&g.scope==='global');
+ }
  private async requireTeamMember(ctx:Context,ownerId:string,state:AccessState,hideExistence=false) {
-  if(!this.admin(ctx)&&!state.teamOwnerIds.includes(ownerId)) {
+  if(!this.admin(ctx)&&!state.teamOwnerIds.includes(ownerId)&&!this.hasAnyGlobalAgenda(state)) {
    if(hideExistence) throw new NotFoundException('Actividad no encontrada');
    throw new ForbiddenException('Solo puedes trabajar con actividades propias o de tu equipo');
   }
  }
+ /** Owners whose activities the person can use with the action. `undefined` = everybody (Super Admin or a
+  *  `global` grant for that action); otherwise the person and team members the decision covers. */
  private async visibleOwnerIds(ctx:Context,state:AccessState,actionId:string):Promise<string[]|undefined> {
-  if(this.admin(ctx)) return undefined;
+  if(this.admin(ctx)||this.hasGlobalGrant(state,actionId)) return undefined;
   const candidates=state.teamOwnerIds;
   return candidates.filter(ownerId=>this.decision(state,actionId,ownerId).allowed);
  }
@@ -101,7 +113,9 @@ export class WorkflowService {
   if(!hasTeamGrant) throw new ForbiddenException({code:'TEAM_DIRECTORY_FORBIDDEN',message:'No tienes permiso para ver a tu equipo.'});
   const assignable=await this.visibleOwnerIds(ctx,state,'activities:assign');
   const readable=await this.visibleOwnerIds(ctx,state,'activities:read');
-  const ids=[...new Set([...(assignable??[]),...(readable??[])])];
+  // A `global` grant on either action lists all the internal staff, like Super Admin.
+  if(assignable===undefined||readable===undefined) return this.prisma.user.findMany({where:{isActive:true,roles:{some:{role:{name:{in:[...BASE_ACCESS_ROLES]}}}}},select:people,orderBy:{name:'asc'}});
+  const ids=[...new Set([...assignable,...readable])];
   return this.prisma.user.findMany({where:{isActive:true,id:{in:ids}},select:people,orderBy:{name:'asc'}});
  }
  async activities(ctx:Context) {

@@ -66,8 +66,6 @@ const mockAccessAssignments = {
   accessVersionFor: jest.fn(),
   replaceManualSource: jest.fn(),
   replaceLibrarySelection: jest.fn(),
-  applyPackage: jest.fn(),
-  removePackage: jest.fn(),
   removeSource: jest.fn(),
 };
 const mockLiveIdentity = { fromRequest: jest.fn() };
@@ -144,12 +142,6 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
     mockAccessAssignments.replaceLibrarySelection.mockResolvedValue({
       userId: 'user-1', sourceId: 'sel-1', accessVersion: 1, changed: true, grants: [],
     });
-    mockAccessAssignments.applyPackage.mockResolvedValue({
-      userId: 'user-1', sourceId: 'src-1', accessVersion: 1, changed: true, grants: [],
-    });
-    mockAccessAssignments.removePackage.mockResolvedValue({
-      userId: 'user-1', sourceId: 'src-1', accessVersion: 2, changed: true, grants: [],
-    });
     mockAccessAssignments.removeSource.mockResolvedValue({
       userId: 'user-1', sourceId: 'manual-1', accessVersion: 2, changed: true, grants: [],
     });
@@ -160,14 +152,14 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
   });
 
   describe('GET /api/users/:id/access', () => {
-    it('Super Admin recibe grants, fuentes, versión y los 3 paquetes con su estado', async () => {
+    it('Super Admin recibe grants, fuentes, versión y acciones; ya no hay paquetes', async () => {
       mockAccessAssignments.grantsForUser.mockResolvedValue([
-        { sourceId: 'src-tpl', actionId: 'customers:read', scope: 'own' },
+        { sourceId: 'src-man', actionId: 'customers:read', scope: 'own' },
       ]);
       mockAccessAssignments.sourcesFor.mockResolvedValue([
         {
-          id: 'src-tpl', kind: 'template', templateId: 'vendedor',
-          catalogVersion: ACCESS_CATALOG_VERSION, grantedById: 'admin-1', reason: 'template-applied',
+          id: 'src-man', kind: 'manual', templateId: null,
+          catalogVersion: ACCESS_CATALOG_VERSION, grantedById: 'admin-1', reason: 'manual-assignment',
         },
       ]);
       mockAccessAssignments.accessVersionFor.mockResolvedValue(3);
@@ -180,29 +172,8 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
       expect(res.body.accessVersion).toBe(3);
       expect(res.body.grants).toHaveLength(1);
       expect(res.body.sources).toHaveLength(1);
-      expect(res.body.packages.map((p: { id: string }) => p.id)).toEqual([
-        'biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios', 'biblioteca-publicacion',
-        'biblioteca-importaciones', 'biblioteca-maestros',
-        'biblioteca-actualizacion', 'gestion-listas-precios', 'biblioteca-productos', 'publicacion-catalogo',
-        'vendedor', 'supervisor-comercial', 'jefe-de-equipo', 'gestion-comercial',
-        'marketing-consulta', 'marketing-edicion', 'marketing-publicacion',
-      ]);
-      const vendedor = res.body.packages.find((p: { id: string }) => p.id === 'vendedor');
-      expect(vendedor.applied).toBe(true);
-      expect(vendedor.sourceId).toBe('src-tpl');
-      expect(vendedor.selections.length).toBeGreaterThan(0);
-      expect(vendedor.selections.some((selection: { actionId: string }) => selection.actionId.startsWith('products:'))).toBe(false);
+      expect(res.body).not.toHaveProperty('packages');
       expect(res.body.actions.some((action: { id: string }) => action.id.startsWith('listas:') || action.id === 'assignments:manage')).toBe(false);
-      expect(res.body.packages.find((pkg: { id: string }) => pkg.id === 'gestion-listas-precios').assignable).toBe(false);
-      expect(res.body.packages.find((pkg: { id: string }) => pkg.id === 'biblioteca-actualizacion')).toMatchObject({ assignable: false, name: 'Actualización (anterior)' });
-      for (const id of ['biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios', 'biblioteca-publicacion', 'biblioteca-importaciones', 'biblioteca-maestros']) {
-        expect(res.body.packages.find((pkg: { id: string }) => pkg.id === id).assignable).toBe(true);
-      }
-      const supervisor = res.body.packages.find((p: { id: string }) => p.id === 'supervisor-comercial');
-      expect(supervisor.applied).toBe(false);
-      for (const id of ['marketing-consulta', 'marketing-edicion', 'marketing-publicacion']) {
-        expect(res.body.packages.find((pkg: { id: string }) => pkg.id === id)).toMatchObject({ assignable: true, applied: false });
-      }
       expect(res.body.actions.filter((action: { id: string }) => action.id.startsWith('marketing:')).map((action: { id: string }) => action.id)).toEqual([
         'marketing:read', 'marketing:create', 'marketing:edit', 'marketing:publish', 'marketing:delete',
       ]);
@@ -226,7 +197,7 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
     });
   });
 
-  describe('PUT /api/users/:id/access — modo grants (manual)', () => {
+  describe('PUT /api/users/:id/access — acciones una por una (manual)', () => {
     const validBody = {
       grants: [{ actionId: 'customers:read', scope: 'team' }],
       expectedCatalogVersion: ACCESS_CATALOG_VERSION,
@@ -251,7 +222,6 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
         }),
       );
       expect(res.body).toMatchObject({ sourceId: 'src-1', accessVersion: 1 });
-      expect(mockAccessAssignments.applyPackage).not.toHaveBeenCalled();
     });
 
     it('acción deshabilitada → 400 (DTO BASE-04) sin llegar al servicio', async () => {
@@ -285,16 +255,16 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
         .expect(400);
     });
 
-    it('sin packageId ni grants → 400', async () => {
+    it('una lista vacía es válida: deja al usuario sin concesiones manuales', async () => {
       await request(app.getHttpServer())
         .put('/api/users/user-1/access')
-        .send({
-          grants: [],
-          expectedCatalogVersion: ACCESS_CATALOG_VERSION,
-          expectedVersion: 0,
-        })
-        .expect(400);
-      expect(mockAccessAssignments.replaceManualSource).not.toHaveBeenCalled();
+        .send({ grants: [], expectedCatalogVersion: ACCESS_CATALOG_VERSION, expectedVersion: 2 })
+        .expect(200);
+      expect(mockAccessAssignments.replaceManualSource).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1' }),
+        'user-1',
+        expect.objectContaining({ expectedVersion: 2, grants: [] }),
+      );
     });
 
     it('no-SuperAdmin → 403 (RolesGuard)', async () => {
@@ -349,85 +319,35 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
     });
   });
 
-  describe('PUT /api/users/:id/access — modo paquete', () => {
-    it('delega en applyPackage con templateId y versión', async () => {
+  describe('los paquetes de paneles ya no existen', () => {
+    it('PUT con packageId → 400 y no aplica nada, ni siquiera las acciones del cuerpo', async () => {
       const res = await request(app.getHttpServer())
         .put('/api/users/user-1/access')
         .send({
           packageId: 'vendedor',
-          grants: [], // el DTO padre exige el array; en modo paquete va vacío
+          grants: [],
           expectedCatalogVersion: ACCESS_CATALOG_VERSION,
           expectedVersion: 2,
         })
-        .expect(200);
-
-      expect(mockAccessAssignments.applyPackage).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1', superAdmin: true }),
-        'user-1',
-        'vendedor',
-        expect.objectContaining({ expectedVersion: 2, catalogVersion: ACCESS_CATALOG_VERSION }),
-      );
-      expect(res.body).toMatchObject({ sourceId: 'src-1' });
+        .expect(400);
+      expect(JSON.stringify(res.body)).toContain('Los paquetes de paneles ya no existen');
       expect(mockAccessAssignments.replaceManualSource).not.toHaveBeenCalled();
     });
 
-    it('packageId y grants a la vez → 400 (ambiguo)', async () => {
-      await request(app.getHttpServer())
-        .put('/api/users/user-1/access')
-        .send({
-          packageId: 'vendedor',
-          grants: [{ actionId: 'customers:read', scope: 'team' }],
-          expectedCatalogVersion: ACCESS_CATALOG_VERSION,
-          expectedVersion: 0,
-        })
-        .expect(400);
-      expect(mockAccessAssignments.applyPackage).not.toHaveBeenCalled();
-      expect(mockAccessAssignments.replaceManualSource).not.toHaveBeenCalled();
-    });
-
-    it('paquete desconocido al servicio → 400 propagada', async () => {
-      mockAccessAssignments.applyPackage.mockRejectedValue(
-        new BadRequestException('El paquete "no-existe" no existe.'),
-      );
-      await request(app.getHttpServer())
-        .put('/api/users/user-1/access')
-        .send({
-          packageId: 'no-existe',
-          grants: [],
-          expectedCatalogVersion: ACCESS_CATALOG_VERSION,
-          expectedVersion: 0,
-        })
-        .expect(400);
-    });
-  });
-
-  describe('DELETE /api/users/:id/access/packages/:packageId', () => {
-    it('delega en removePackage con la versión de la query', async () => {
-      const res = await request(app.getHttpServer())
-        .delete('/api/users/user-1/access/packages/vendedor?expectedVersion=4')
-        .expect(200);
-
-      expect(mockAccessAssignments.removePackage).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1', superAdmin: true }),
-        'user-1',
-        'vendedor',
-        expect.objectContaining({ expectedVersion: 4 }),
-      );
-      expect(res.body).toMatchObject({ accessVersion: 2 });
-    });
-
-    it('paquete no aplicado → 404 propagada; no-SuperAdmin → 403', async () => {
-      mockAccessAssignments.removePackage.mockRejectedValue(
-        new NotFoundException('El usuario user-1 no tiene aplicado el paquete "vendedor".'),
-      );
+    it('DELETE access/packages/:packageId ya no es una ruta', async () => {
       await request(app.getHttpServer())
         .delete('/api/users/user-1/access/packages/vendedor?expectedVersion=4')
         .expect(404);
+      expect(mockAccessAssignments.removeSource).not.toHaveBeenCalled();
+    });
 
-      sessionUser = { sub: 'user-1', roles: ['Operador'], permissions: [] };
-      await request(app.getHttpServer())
-        .delete('/api/users/user-1/access/packages/vendedor?expectedVersion=4')
-        .expect(403);
+    it('el controlador no tiene operaciones de paquete', () => {
+      expect((UsersController.prototype as unknown as Record<string, unknown>).deleteUserPackage).toBeUndefined();
+      const routes = Object.getOwnPropertyNames(UsersController.prototype)
+        .map((name) => (UsersController.prototype as any)[name])
+        .filter((handler) => typeof handler === 'function')
+        .map((handler) => String(Reflect.getMetadata('path', handler) ?? ''));
+      expect(routes.some((path) => path.includes('packages'))).toBe(false);
     });
   });
 
@@ -442,12 +362,11 @@ describe('UsersController — concesiones por acción (COM-01 E1)', () => {
       expect(otherEvents).toEqual([{ type: 'access-changed' }]);
 
       await controller.setUserAccess('user-1', { grants: [{ actionId: 'customers:read', scope: 'team' }], expectedVersion: 0 } as any, { user: sessionUser as any });
-      await controller.setUserAccess('user-1', { packageId: 'vendedor', grants: [], expectedVersion: 1 } as any, { user: sessionUser as any });
-      await controller.deleteUserPackage('user-1', 'vendedor', '2', { user: sessionUser as any });
+      await controller.setUserAccess('user-1', { grants: [], expectedVersion: 1 } as any, { user: sessionUser as any });
       mockAccessAssignments.sourcesFor.mockResolvedValue([{ id: 'manual-1', kind: 'manual' }]);
       await controller.deleteManualAccess('user-1', 'manual-1', '3', { user: sessionUser as any });
 
-      expect(targetEvents).toHaveLength(5);
+      expect(targetEvents).toHaveLength(4);
       expect(otherEvents).toHaveLength(1);
       targetSub.unsubscribe();
       otherSub.unsubscribe();

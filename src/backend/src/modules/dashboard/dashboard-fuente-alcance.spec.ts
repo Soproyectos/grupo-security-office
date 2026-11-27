@@ -22,7 +22,7 @@ const SUPER = { userId: 'admin-1', roles: ['Super Admin'] };
 const DEFAULT_GRANTS = [
   { sourceId: 'd1', actionId: 'quotes:read', scope: 'global' },
   { sourceId: 'd2', actionId: 'targets:read', scope: 'global' },
-  { sourceId: 'd3', actionId: 'teamInsights:read', scope: 'global' },
+  { sourceId: 'd3', actionId: 'teamInsights:read', scope: 'team' },
 ];
 
 const INVOICE_SOURCE = 'invoice-reference-manual';
@@ -229,6 +229,76 @@ describe('COM-05 backend — fuente visible y alcance de equipo', () => {
       prisma.salesTarget.findUnique.mockResolvedValue(null);
       const block = await service.getTeamMemberCommercial(VENDEDOR, 'com-1');
       expect(block).toBeDefined();
+    });
+  });
+  describe('teamInsights:read — propio / equipo / global', () => {
+    const grantAt = (scope: 'own' | 'team' | 'global') => grants.grantsForUser.mockResolvedValue([
+      { sourceId: 's1', actionId: 'teamInsights:read', scope },
+    ]);
+
+    it('propio: el resumen es solo de la persona, aunque tenga subordinados', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue(['com-1', 'com-2']);
+      grantAt('own');
+      prisma.user.findMany.mockResolvedValue([{ id: VENDEDOR.userId, name: 'Yo' }]);
+      const res = await service.getMyWorkspace(VENDEDOR);
+      expect(res.team!.members.map((m) => m.userId)).toEqual([VENDEDOR.userId]);
+      expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: [VENDEDOR.userId] } } }),
+      );
+    });
+
+    it('equipo: solo las personas a su cargo', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue(['com-1']);
+      grantAt('team');
+      prisma.user.findMany.mockResolvedValue([{ id: 'com-1', name: 'Com 1' }]);
+      const res = await service.getMyWorkspace(VENDEDOR);
+      expect(res.team!.members.map((m) => m.userId)).toEqual(['com-1']);
+    });
+
+    it('global: todo el personal comercial activo, sin contar a la propia persona, y con tope', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue([]);
+      grantAt('global');
+      prisma.user.findMany.mockResolvedValue([
+        { id: 'com-1', name: 'Com 1' },
+        { id: 'otro-equipo', name: 'Otro equipo' },
+      ]);
+      const res = await service.getMyWorkspace(VENDEDOR);
+      expect(res.team!.members.map((m) => m.userId)).toEqual(['com-1', 'otro-equipo']);
+      expect(hierarchy.getSubordinateIds).not.toHaveBeenCalled();
+      const query = prisma.user.findMany.mock.calls[0][0];
+      expect(query.where).toMatchObject({ isActive: true, id: { not: VENDEDOR.userId } });
+      expect(query.take).toBe(300);
+      // The names come from that same query: no second lookup.
+      expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('Super Admin conserva la vista por jerarquía en su propio resumen', async () => {
+      hierarchy.getSubordinateIds.mockResolvedValue([]);
+      grantAt('global');
+      const res = await service.getMyWorkspace(SUPER);
+      expect(res.team).toBeUndefined();
+      expect(hierarchy.getSubordinateIds).toHaveBeenCalledWith(SUPER.userId);
+    });
+
+    it('drill-down propio: puede ver su propio bloque y nunca el de otra persona', async () => {
+      grantAt('own');
+      prisma.salesTarget.findUnique.mockResolvedValue(null);
+      await expect(service.getTeamMemberCommercial(VENDEDOR, VENDEDOR.userId)).resolves.toBeDefined();
+      await expect(service.getTeamMemberCommercial(VENDEDOR, 'com-1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('drill-down de equipo: respeta la jerarquía', async () => {
+      grantAt('team');
+      hierarchy.assertCanViewUser.mockRejectedValueOnce(new ForbiddenException('fuera de la rama'));
+      await expect(service.getTeamMemberCommercial(VENDEDOR, 'ajeno')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('drill-down global: cualquier persona, sin pasar por la jerarquía', async () => {
+      grantAt('global');
+      prisma.salesTarget.findUnique.mockResolvedValue(null);
+      await expect(service.getTeamMemberCommercial(VENDEDOR, 'cualquiera')).resolves.toBeDefined();
+      expect(hierarchy.assertCanViewUser).not.toHaveBeenCalled();
     });
   });
 });

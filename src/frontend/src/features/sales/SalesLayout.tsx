@@ -1,19 +1,21 @@
 import SalesPromotionsPanel from '../promotions/SalesPromotionsPanel'
-import { NavLink, Outlet, Link, useLocation } from 'react-router-dom'
+import { Outlet, Link } from 'react-router-dom'
+import { MARKETING_PROMOTIONS_PATH } from '../marketing/marketing-access'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/auth.store'
 import { useQuoteBuilderStore } from '../quotes/store/quote-builder.store'
+import WorkspaceTabs, { WorkspaceTabIcon, type WorkspaceRouteTab } from '../../components/layout/WorkspaceTabs'
 
-const navigation = [
-  { to: '/sales', label: 'Mi espacio', end: true },
-  { to: '/sales/agenda', label: 'Mi agenda', end: false },
-  { to: '/sales/customers', label: 'Mis clientes', end: false },
-  { to: '/sales/promotions', label: 'Promociones', end: false },
-  { to: '/sales/quotes', label: 'Mis cotizaciones', end: false },
+const navigation: readonly WorkspaceRouteTab[] = [
+  { id: 'home', to: '/sales', end: true, label: 'Mi espacio', icon: 'M3 11l9-8 9 8M5 10v10h14V10', hint: 'Tu resumen de ventas y lo que tienes pendiente.' },
+  { id: 'agenda', to: '/sales/agenda', label: 'Mi agenda', icon: 'M7 3v3m10-3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z', hint: 'Tus actividades por fecha.' },
+  { id: 'customers', to: '/sales/customers', label: 'Mis clientes', icon: 'M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 20v-2a4 4 0 0 0-3-3.9', hint: 'Los clientes que tienes asignados.' },
+  { id: 'promotions', to: MARKETING_PROMOTIONS_PATH, label: 'Promociones', icon: 'M3 12V4h8l10 10-8 8L3 12zM7.5 8.5h.01', hint: 'Avisos vigentes de tu equipo y generales.' },
+  { id: 'quotes', to: '/sales/quotes', label: 'Mis cotizaciones', icon: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h6', hint: 'Las cotizaciones que creaste y su estado.' },
 ]
+const CATALOG_ICON = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'
 
 export default function SalesLayout() {
-  const location = useLocation()
   const { user, logout } = useAuthStore()
   const queryClient = useQueryClient()
 
@@ -64,30 +66,19 @@ export default function SalesLayout() {
             </div>
           </div>
         </div>
-        <nav aria-label="Mi espacio de ventas" className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)]">
-          <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 scrollbar-thin">
-          {navigation.map(item => (
-            <NavLink key={item.to} to={item.to} end={item.end}
-              className={({ isActive }) => `shrink-0 whitespace-nowrap rounded border-b-2 px-3 py-1.5 font-condensed text-sm font-semibold tracking-wider transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] ${isActive
-                ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
-                : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'}`}>
-              {item.label}
-            </NavLink>
-          ))}
-          <Link to="/catalogo" target="_blank" rel="noopener noreferrer"
-            className="relative shrink-0 whitespace-nowrap rounded border-b-2 border-transparent px-3 py-1.5 font-condensed text-sm font-semibold tracking-wider text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-primary)]">
-            Consultar catálogo
-            <span className="sr-only"> (abre en otra pestaña)</span>
-          </Link>
-          </div>
-        </nav>
+        <div className="border-t border-[var(--color-border)]"><div className="mx-auto max-w-7xl">
+          <WorkspaceTabs mode="route" variant="header" navLabel="Mi espacio de ventas" tabs={navigation} trailing={
+            <Link to="/catalogo" target="_blank" rel="noopener noreferrer" className="biblioteca-workspace__destination">
+              <WorkspaceTabIcon path={CATALOG_ICON} />
+              Consultar catálogo
+              <span className="sr-only"> (abre en otra pestaña)</span>
+            </Link>
+          } />
+        </div></div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">
-        {location.pathname === '/sales/promotions' && <div className="mb-5">
-          <h1 className="text-2xl font-semibold">Mis promociones</h1>
-          <p className="mt-1 text-sm">Consulta los avisos de tu equipo y los generales antes de cotizar.</p>
-        </div>}
-        <SalesPromotionsPanel showPanel={location.pathname === '/sales/promotions'} /><Outlet />
+        {/* The promotions page now lives in the Marketing panel; here only the pop-up with the current flyer stays. */}
+        <SalesPromotionsPanel /><Outlet />
       </main>
     </div>
   )

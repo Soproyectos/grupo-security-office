@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
 import { useAuthStore } from '../../stores/auth.store'
-import { fetchUserAccess, type UserAccessState } from '../../services/users.service'
+import { fetchUserAccess, removeManualAccessSource, setUserAccessGrants, type UserAccessState } from '../../services/users.service'
 import {
   actionLabel,
-  applyPackageInCache,
   fetchOwnAccessWithProfile,
   commercialAccess,
   COMMERCIAL_TABS,
@@ -17,7 +16,6 @@ import {
   isCatalogPath,
   NO_PANELS_MESSAGE,
   refreshSessionAfterAccessChange,
-  revokePackageInCache,
   saveLibrarySelectionInCache,
   subscribeOwnAccessEvents,
   userAccessKey,
@@ -45,7 +43,6 @@ function accessState(partial: Partial<UserAccessState> = {}): UserAccessState {
       { sourceId: 'src-2', actionId: 'customers:read', scope: 'team' },
     ],
     sources: [],
-    packages: [],
     ...partial,
   }
 }
@@ -55,60 +52,82 @@ describe('navegación por asignaciones individuales', () => {
     const grants = [...accessState().grants, { sourceId: 'src-1', actionId: 'products:write', scope: 'global' as const }]
     const input = {
       roles: ['Admin Comercial'], grants, status: 'ready' as const,
-      packages: [
-        { id: 'biblioteca-consulta', applied: true },
-        { id: 'biblioteca-fichas', applied: true },
-      ],
     }
     expect(commercialAccess(input).tabs.map(tab => tab.to)).toEqual(['/commercial/customers'])
     expect(panelAccess(input, 'catalog').tabs.map(tab => tab.to)).toEqual(['/commercial/products', '/commercial/library/update/products'])
   })
 
-  it('cada pestaña requiere su paquete exacto aplicado y su acción necesaria', () => {
-    const input = (actionId: string, packageId: string, applied = true) => ({
-      roles: ['Consulta'],
-      grants: [{ sourceId: 's1', actionId, scope: 'global' as const }],
-      packages: [{ id: packageId, applied }],
-      status: 'ready' as const,
-    })
-    expect(hasAssignedLibraryPanel(input('products:read', 'biblioteca-fichas'), 'biblioteca-consulta')).toBe(false)
-    expect(hasAssignedLibraryPanel(input('products:write', 'biblioteca-fichas'), 'biblioteca-fichas')).toBe(true)
-    expect(hasAssignedLibraryPanel(input('prices:preview', 'biblioteca-precios'), 'biblioteca-precios')).toBe(true)
-    // Cada pestaña exige su propio paquete: el de la otra no la abre aunque el permiso exista.
-    expect(hasAssignedLibraryPanel(input('products:write', 'biblioteca-precios'), 'biblioteca-fichas')).toBe(false)
-    expect(hasAssignedLibraryPanel(input('prices:preview', 'biblioteca-fichas'), 'biblioteca-precios')).toBe(false)
-    expect(hasAssignedLibraryPanel(input('products:read', 'biblioteca-consulta', false), 'biblioteca-consulta')).toBe(false)
-    expect(hasAssignedLibraryPanel(input('products:read', 'biblioteca-consulta'), 'biblioteca-consulta')).toBe(true)
-    expect(hasAssignedLibraryPanel(input('products:publish', 'biblioteca-publicacion'), 'biblioteca-publicacion')).toBe(true)
-    expect(hasAssignedLibraryPanel({ ...input('products:read', 'biblioteca-consulta'), grants: [] }, 'biblioteca-consulta')).toBe(false)
+  it('Solicitudes y Zonas de Comercial salen de portalAccounts:read y portalZones:manage, cada una por separado', () => {
+    const tabsFor = (...actionIds: string[]) => commercialAccess({
+      roles: ['Consulta'], status: 'ready' as const,
+      grants: actionIds.map((actionId) => ({ sourceId: 's1', actionId, scope: 'team' as const })),
+    }).tabs.map(tab => tab.to)
+    expect(tabsFor('portalAccounts:read')).toEqual(['/commercial/portal'])
+    expect(tabsFor('portalAccounts:assign')).toEqual([])
+    expect(tabsFor('portalZones:manage')).toEqual(['/commercial/zones'])
+    expect(tabsFor('customers:read', 'portalAccounts:read', 'portalZones:manage')).toEqual(['/commercial/customers', '/commercial/portal', '/commercial/zones'])
+    expect(COMMERCIAL_TABS.map(tab => tab.label)).toEqual(['Clientes', 'Solicitudes', 'Cotizaciones', 'Metas', 'Resumen del equipo', 'Zonas'])
   })
 
-  it('dependencias products:read de Fichas/Publicar en tienda no conceden la pestaña Productos', () => {
+  it('Promociones internas y Gestionar avisos ya no son pestañas de Comercial: las acciones sueltas no abren nada ahí', () => {
+    const input = {
+      roles: ['Consulta'], status: 'ready' as const,
+      grants: ['commercialPromotions:read', 'commercialPromotions:create'].map((actionId) => ({ sourceId: 's1', actionId, scope: 'team' as const })),
+    }
+    expect(commercialAccess(input).tabs).toEqual([])
+    expect(commercialAccess(input).hasAnyPanel).toBe(false)
+    expect(COMMERCIAL_TABS.map(tab => tab.to)).not.toContain('/promotions')
+    expect(COMMERCIAL_TABS.map(tab => tab.to)).not.toContain('/sales/promotions')
+  })
+
+  it('cada pestaña se abre solo con su acción asignada con alcance global', () => {
+    const input = (actionId: string, scope: 'global' | 'team' = 'global') => ({
+      roles: ['Consulta'],
+      grants: [{ sourceId: 's1', actionId, scope }],
+      status: 'ready' as const,
+    })
+    expect(hasAssignedLibraryPanel(input('products:read'), 'biblioteca-consulta')).toBe(true)
+    expect(hasAssignedLibraryPanel(input('products:write'), 'biblioteca-fichas')).toBe(true)
+    expect(hasAssignedLibraryPanel(input('prices:preview'), 'biblioteca-precios')).toBe(true)
+    expect(hasAssignedLibraryPanel(input('products:publish'), 'biblioteca-publicacion')).toBe(true)
+    // La acción de otra pestaña no la abre aunque el permiso exista.
+    expect(hasAssignedLibraryPanel(input('products:write'), 'biblioteca-precios')).toBe(false)
+    expect(hasAssignedLibraryPanel(input('prices:preview'), 'biblioteca-fichas')).toBe(false)
+    expect(hasAssignedLibraryPanel(input('products:read', 'team'), 'biblioteca-consulta')).toBe(false)
+    expect(hasAssignedLibraryPanel({ ...input('products:read'), grants: [] }, 'biblioteca-consulta')).toBe(false)
+  })
+
+  it('no importa de qué fuente venga la acción: solo cuenta que esté asignada', () => {
+    const input = (sourceId: string) => ({
+      roles: ['Consulta'], status: 'ready' as const,
+      grants: [{ sourceId, actionId: 'products:write', scope: 'global' as const }],
+    })
+    for (const sourceId of ['manual-1', 'biblioteca-seleccion', 'cualquier-fuente']) {
+      expect(panelAccess(input(sourceId), 'catalog').tabs.map(tab => tab.label)).toEqual(['Fichas'])
+    }
+  })
+
+  it('Fichas y Publicar en tienda traen products:read, que abre Productos porque es su propia acción', () => {
     const updateOnly = {
       roles: ['Consulta'], status: 'ready' as const,
       grants: [
         { sourceId: 's1', actionId: 'products:read', scope: 'global' as const },
         { sourceId: 's1', actionId: 'products:write', scope: 'global' as const },
       ],
-      packages: [{ id: 'biblioteca-fichas', applied: true }],
     }
     const publicationOnly = {
       roles: ['Consulta'], status: 'ready' as const,
-      grants: [
-        { sourceId: 's1', actionId: 'products:read', scope: 'global' as const },
-        { sourceId: 's1', actionId: 'products:publish', scope: 'global' as const },
-      ],
-      packages: [{ id: 'biblioteca-publicacion', applied: true }],
+      grants: [{ sourceId: 's1', actionId: 'products:publish', scope: 'global' as const }],
     }
-    expect(panelAccess(updateOnly, 'catalog').tabs.map(tab => tab.to)).toEqual(['/commercial/library/update/products'])
+    expect(panelAccess(updateOnly, 'catalog').tabs.map(tab => tab.to)).toEqual(['/commercial/products', '/commercial/library/update/products'])
     expect(panelAccess(publicationOnly, 'catalog').tabs.map(tab => tab.to)).toEqual([])
-    expect(panelAccess({ roles: ['Super Admin'], grants: [], packages: [], status: 'unavailable' }, 'catalog').tabs)
+    expect(panelAccess({ roles: ['Super Admin'], grants: [], status: 'unavailable' }, 'catalog').tabs)
       .toEqual(CATALOG_TABS)
   })
 
   it('listas:read ya no concede ninguna pestaña de Biblioteca', () => {
     const catalogTabs = panelAccess(
-      { roles: ['Admin Comercial'], grants: [{ sourceId: 's1', actionId: 'listas:read', scope: 'global' }], packages: [], status: 'ready' },
+      { roles: ['Admin Comercial'], grants: [{ sourceId: 's1', actionId: 'listas:read', scope: 'global' }], status: 'ready' },
       'catalog',
     ).tabs.map(tab => tab.to)
     expect(catalogTabs).toEqual([])
@@ -125,90 +144,76 @@ describe('navegación por asignaciones individuales', () => {
   })
 
   describe('combinaciones de pestañas de Biblioteca', () => {
-    const GRANTS = {
-      'biblioteca-consulta': ['products:read', 'prices:read'],
-      'biblioteca-fichas': ['products:read', 'products:write', 'products:delete', 'products:validate', 'products:notes', 'prices:read'],
-      'biblioteca-precios': ['products:read', 'prices:read', 'prices:preview', 'prices:save', 'prices:apply', 'providers:read', 'providers:write'],
-      'biblioteca-actualizacion': ['products:read', 'products:write', 'products:delete', 'products:validate', 'products:notes', 'prices:read', 'prices:preview', 'prices:save', 'prices:apply', 'providers:read', 'providers:write'],
+    const ACTIONS = {
+      productos: ['products:read', 'prices:read'],
+      fichas: ['products:read', 'products:write', 'products:delete', 'products:validate', 'products:notes', 'prices:read'],
+      precios: ['products:read', 'prices:read', 'prices:preview', 'prices:save', 'prices:apply', 'providers:read', 'providers:write'],
     } as const
-    const inputFor = (packageIds: Array<keyof typeof GRANTS>) => ({
+    const inputFor = (tabs: Array<keyof typeof ACTIONS>) => ({
       roles: ['Consulta'], status: 'ready' as const,
-      grants: [...new Set(packageIds.flatMap((id) => GRANTS[id]))].map((actionId) => ({ sourceId: 's1', actionId, scope: 'global' as const })),
-      packages: packageIds.map((id) => ({ id, applied: true })),
+      grants: [...new Set(tabs.flatMap((id) => ACTIONS[id]))].map((actionId) => ({ sourceId: 's1', actionId, scope: 'global' as const })),
     })
-    const labels = (packageIds: Array<keyof typeof GRANTS>) => panelAccess(inputFor(packageIds), 'catalog').tabs.map((tab) => tab.label)
+    const labels = (tabs: Array<keyof typeof ACTIONS>) => panelAccess(inputFor(tabs), 'catalog').tabs.map((tab) => tab.label)
 
     it.each([
-      [['biblioteca-consulta'], ['Productos']],
-      [['biblioteca-fichas'], ['Fichas']],
-      [['biblioteca-precios'], ['Precios']],
-      [['biblioteca-consulta', 'biblioteca-fichas'], ['Productos', 'Fichas']],
-      [['biblioteca-consulta', 'biblioteca-precios'], ['Productos', 'Precios']],
-      [['biblioteca-fichas', 'biblioteca-precios'], ['Fichas', 'Precios']],
-      [['biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios'], ['Productos', 'Fichas', 'Precios']],
-    ] as Array<[Array<keyof typeof GRANTS>, string[]]>)('paquetes %j muestran solo %j', (packageIds, expected) => {
-      expect(labels(packageIds)).toEqual(expected)
+      [['productos'], ['Productos']],
+      [['fichas'], ['Productos', 'Fichas']],
+      [['precios'], ['Productos', 'Precios']],
+      [['productos', 'fichas'], ['Productos', 'Fichas']],
+      [['fichas', 'precios'], ['Productos', 'Fichas', 'Precios']],
+      [['productos', 'fichas', 'precios'], ['Productos', 'Fichas', 'Precios']],
+    ] as Array<[Array<keyof typeof ACTIONS>, string[]]>)('acciones de %j muestran las pestañas %j', (tabs, expected) => {
+      expect(labels(tabs)).toEqual(expected)
     })
 
-    it('el paquete anterior Actualización conserva Fichas y Precios, pero no abre Productos', () => {
-      expect(labels(['biblioteca-actualizacion'])).toEqual(['Fichas', 'Precios'])
-      expect(labels(['biblioteca-consulta', 'biblioteca-actualizacion'])).toEqual(['Productos', 'Fichas', 'Precios'])
-    })
-
-    it('retirar un paquete no deja pestañas por permisos sueltos', () => {
-      const withoutPackage = { ...inputFor(['biblioteca-fichas', 'biblioteca-precios']), packages: [{ id: 'biblioteca-fichas', applied: true }] }
-      expect(panelAccess(withoutPackage, 'catalog').tabs.map((tab) => tab.label)).toEqual(['Fichas'])
+    it('quitar una acción quita su pestaña', () => {
+      const full = inputFor(['fichas', 'precios'])
+      const withoutPrices = { ...full, grants: full.grants.filter((grant) => grant.actionId !== 'prices:preview') }
+      expect(panelAccess(withoutPrices, 'catalog').tabs.map((tab) => tab.label)).toEqual(['Productos', 'Fichas'])
     })
 
     it('firstAssignedLibraryPath lleva a la primera pestaña asignada o a ninguna', () => {
-      expect(firstAssignedLibraryPath(inputFor(['biblioteca-precios']))).toBe('/commercial/library/update')
-      expect(firstAssignedLibraryPath(inputFor(['biblioteca-fichas', 'biblioteca-precios']))).toBe('/commercial/library/update/products')
-      expect(firstAssignedLibraryPath(inputFor(['biblioteca-consulta', 'biblioteca-precios']))).toBe('/commercial/products')
-      expect(firstAssignedLibraryPath({ roles: ['Consulta'], grants: [], packages: [], status: 'ready' })).toBeNull()
+      expect(firstAssignedLibraryPath({ ...inputFor(['precios']), grants: [{ sourceId: 's1', actionId: 'prices:preview', scope: 'global' }] })).toBe('/commercial/library/update')
+      expect(firstAssignedLibraryPath(inputFor(['fichas', 'precios']))).toBe('/commercial/products')
+      expect(firstAssignedLibraryPath({ roles: ['Consulta'], grants: [{ sourceId: 's1', actionId: 'products:write', scope: 'global' }], status: 'ready' })).toBe('/commercial/library/update/products')
+      expect(firstAssignedLibraryPath({ roles: ['Consulta'], grants: [], status: 'ready' })).toBeNull()
     })
   })
 
   describe('Importaciones y Catálogos maestros', () => {
-    const withPackage = (packageId: string, actionIds: string[], applied = true) => ({
+    const withActions = (actionIds: string[], scope: 'global' | 'team' = 'global') => ({
       roles: ['Admin Comercial'], status: 'ready' as const,
-      grants: actionIds.map((actionId) => ({ sourceId: 's1', actionId, scope: 'global' as const })),
-      packages: [{ id: packageId, applied }],
+      grants: actionIds.map((actionId) => ({ sourceId: 's1', actionId, scope })),
     })
-    const labels = (input: ReturnType<typeof withPackage>) => panelAccess(input, 'catalog').tabs.map((tab) => tab.label)
+    const labels = (input: ReturnType<typeof withActions>) => panelAccess(input, 'catalog').tabs.map((tab) => tab.label)
 
-    it('cada pestaña se abre solo con su paquete y su acción global', () => {
-      expect(labels(withPackage('biblioteca-importaciones', ['products:read', 'imports:read', 'imports:run']))).toEqual(['Importaciones'])
-      expect(labels(withPackage('biblioteca-maestros', ['products:read', 'masters:read', 'masters:write']))).toEqual(['Catálogos maestros'])
+    it('cada pestaña se abre solo con su acción global', () => {
+      expect(labels(withActions(['products:read', 'imports:read', 'imports:run']))).toEqual(['Productos', 'Importaciones'])
+      expect(labels(withActions(['products:read', 'masters:read', 'masters:write']))).toEqual(['Productos', 'Catálogos maestros'])
+      expect(labels(withActions(['imports:read']))).toEqual(['Importaciones'])
+      expect(labels(withActions(['masters:read']))).toEqual(['Catálogos maestros'])
     })
 
     it('pertenecer a Biblioteca o tener Fichas no abre Importaciones ni Catálogos maestros', () => {
-      expect(labels(withPackage('biblioteca-fichas', ['products:read', 'products:write']))).toEqual(['Fichas'])
-      expect(labels(withPackage('biblioteca-consulta', ['products:read', 'prices:read']))).toEqual(['Productos'])
+      expect(labels(withActions(['products:read', 'products:write']))).toEqual(['Productos', 'Fichas'])
+      expect(labels(withActions(['products:read', 'prices:read']))).toEqual(['Productos'])
     })
 
-    it('sin el paquete aplicado o con la acción fuera de alcance global no hay pestaña', () => {
-      expect(labels(withPackage('biblioteca-importaciones', ['imports:read'], false))).toEqual([])
-      const limited = { ...withPackage('biblioteca-maestros', ['masters:read']), grants: [{ sourceId: 's1', actionId: 'masters:read', scope: 'team' }] }
-      expect(labels(limited as never)).toEqual([])
+    it('con la acción fuera de alcance global no hay pestaña', () => {
+      expect(labels(withActions(['masters:read'], 'team'))).toEqual([])
+      expect(labels(withActions(['imports:read'], 'team'))).toEqual([])
     })
 
-    it('la selección por casillas abre las pestañas nuevas solo con su acción de apertura', () => {
-      const sel = { id: 'sel', kind: 'template' as const, templateId: 'biblioteca-seleccion' }
-      const base = (actionIds: string[]) => ({
-        roles: ['Admin Comercial'], status: 'ready' as const, packages: [], sources: [sel],
-        grants: actionIds.map((actionId) => ({ sourceId: 'sel', actionId, scope: 'global' as const })),
-      })
-      expect(labels(base(['products:read', 'products:approveSpecs']) as never)).toEqual(['Productos'])
-      expect(labels(base(['products:read', 'imports:read']) as never)).toEqual(['Productos', 'Importaciones'])
-      expect(labels(base(['products:read', 'masters:read', 'masters:write']) as never)).toEqual(['Productos', 'Catálogos maestros'])
-      expect(labels(base(['products:read', 'masters:write']) as never)).toEqual(['Productos'])
+    it('las acciones de edición sin la de apertura no abren pestaña', () => {
+      expect(labels(withActions(['products:read', 'products:approveSpecs']))).toEqual(['Productos'])
+      expect(labels(withActions(['products:read', 'masters:write']))).toEqual(['Productos'])
     })
 
     it('firstAssignedLibraryPath y hasAssignedAction reconocen las acciones nuevas solo con alcance global', () => {
-      expect(firstAssignedLibraryPath(withPackage('biblioteca-importaciones', ['imports:read']))).toBe('/commercial/library/update/import')
-      expect(firstAssignedLibraryPath(withPackage('biblioteca-maestros', ['masters:read']))).toBe('/commercial/library/masters')
-      expect(hasAssignedAction(withPackage('biblioteca-maestros', ['masters:write']), ['masters:write'])).toBe(true)
-      expect(hasAssignedAction({ ...withPackage('biblioteca-maestros', []), grants: [{ sourceId: 's1', actionId: 'imports:run', scope: 'own' }] }, ['imports:run'])).toBe(false)
+      expect(firstAssignedLibraryPath(withActions(['imports:read']))).toBe('/commercial/library/update/import')
+      expect(firstAssignedLibraryPath(withActions(['masters:read']))).toBe('/commercial/library/masters')
+      expect(hasAssignedAction(withActions(['masters:write']), ['masters:write'])).toBe(true)
+      expect(hasAssignedAction(withActions(['imports:run'], 'team'), ['imports:run'])).toBe(false)
     })
 
     it('isCatalogPath cubre las rutas nuevas', () => {
@@ -451,44 +456,35 @@ describe('refreshSessionAfterAccessChange — revocación sin cerrar sesión (ac
     })
   }
 
-  it('tras quitar un paquete refetchea el acceso y la identidad en la MISMA sesión', async () => {
+  it('tras quitar una asignación refetchea el acceso y la identidad en la MISMA sesión', async () => {
     const client = new QueryClient()
     const userId = 'admin-1'
     useAuthStore.getState().login({ ...ADMIN, permissions: ['products:write', 'products:delete'] })
     await seedMountedAccess(
       client,
       userId,
-      accessState({
-        grants: [{ sourceId: 'src-1', actionId: 'products:read', scope: 'global' }],
-        packages: [
-          { id: 'vendedor', name: 'Vendedor', selections: [], applied: true, sourceId: 'src-1' },
-        ],
-        accessVersion: 4,
-      }),
+      accessState({ grants: [{ sourceId: 'src-1', actionId: 'products:read', scope: 'global' }], accessVersion: 4 }),
     )
 
     vi.mocked(api.delete).mockResolvedValue({
       data: { userId, sourceId: 'src-1', accessVersion: 5, changed: true, grants: [] },
     })
-    const revoked = accessState({
-      grants: [],
-      packages: [{ id: 'vendedor', name: 'Vendedor', selections: [], applied: false, sourceId: null }],
-      accessVersion: 5,
-    })
+    const revoked = accessState({ grants: [], accessVersion: 5 })
     vi.mocked(api.get).mockImplementation(async (path: string) => {
       if (path === `/users/${userId}/access`) return { data: revoked }
       if (path === '/auth/profile') return { data: { ...ADMIN, roles: ['Vendedor'], permissions: [] } }
       throw new Error(`ruta inesperada: ${path}`)
     })
 
-    await revokePackageInCache(client, userId, 'vendedor', 4)
+    await removeManualAccessSource(userId, 'src-1', 4)
+    await refreshSessionAfterAccessChange(client, userId)
 
-    expect(api.delete).toHaveBeenCalledWith(`/users/${userId}/access/packages/vendedor`, {
+    expect(api.delete).toHaveBeenCalledWith(`/users/${userId}/access/manual/src-1`, {
       params: { expectedVersion: 4 },
     })
     const after = client.getQueryData<UserAccessState>(userAccessKey(userId))
     expect(after?.accessVersion).toBe(5)
-    expect(after?.packages[0]?.applied).toBe(false)
+    expect(after?.grants).toEqual([])
     // La identidad se refetchea y se re-escribe sin cerrar sesión.
     expect(api.get).toHaveBeenCalledWith('/auth/profile')
     expect(useAuthStore.getState().user?.roles).toEqual(['Vendedor'])
@@ -497,7 +493,7 @@ describe('refreshSessionAfterAccessChange — revocación sin cerrar sesión (ac
     expect(client.getQueryState(userAccessKey(userId))?.isInvalidated).toBe(false)
   })
 
-  it('aplicar un paquete también refetchea la caché compartida del menú', async () => {
+  it('guardar acciones sueltas también refetchea la caché compartida del menú', async () => {
     const client = new QueryClient()
     const userId = 'admin-1'
     useAuthStore.getState().login({ ...ADMIN, permissions: [] })
@@ -513,11 +509,11 @@ describe('refreshSessionAfterAccessChange — revocación sin cerrar sesión (ac
       throw new Error(`ruta inesperada: ${path}`)
     })
 
-    await applyPackageInCache(client, userId, 'vendedor', 0, initialAccess.catalogVersion)
+    await setUserAccessGrants(userId, [{ actionId: 'customers:read', scope: 'own' }], 0, { catalogVersion: initialAccess.catalogVersion })
+    await refreshSessionAfterAccessChange(client, userId)
 
     expect(api.put).toHaveBeenCalledWith(`/users/${userId}/access`, {
-      packageId: 'vendedor',
-      grants: [],
+      grants: [{ actionId: 'customers:read', scope: 'own' }],
       expectedVersion: 0,
       expectedCatalogVersion: initialAccess.catalogVersion,
     })
@@ -545,17 +541,13 @@ describe('refreshSessionAfterAccessChange — revocación sin cerrar sesión (ac
 })
 
 describe('Biblioteca por casillas: pestañas según los permisos concedidos', () => {
-  const sel = { id: 'sel', kind: 'template', templateId: 'biblioteca-seleccion' }
-  const manual = { id: 'man', kind: 'manual', templateId: null }
-  const input = (sourceId: string, actionIds: string[], sources = [sel, manual]) => ({
+  const input = (sourceId: string, actionIds: string[]) => ({
     roles: ['Consulta'],
     status: 'ready' as const,
-    packages: [],
-    sources,
     grants: actionIds.map((actionId) => ({ sourceId, actionId, scope: 'global' as const })),
   })
 
-  it('la selección por casillas abre solo las pestañas que da (Productos / Fichas / Precios)', () => {
+  it('las casillas abren solo las pestañas que dan (Productos / Fichas / Precios)', () => {
     expect(panelAccess(input('sel', ['products:read']), 'catalog').tabs.map((tab) => tab.to)).toEqual(['/commercial/products'])
     expect(panelAccess(input('sel', ['products:read', 'products:write']), 'catalog').tabs.map((tab) => tab.to))
       .toEqual(['/commercial/products', '/commercial/library/update/products'])
@@ -564,10 +556,10 @@ describe('Biblioteca por casillas: pestañas según los permisos concedidos', ()
     expect(panelAccess(input('sel', ['products:read', 'prices:read', 'prices:preview', 'products:write']), 'catalog').tabs).toHaveLength(3)
   })
 
-  it('permisos sueltos sin pestaña no la abren, y los de una fuente manual tampoco', () => {
+  it('permisos sueltos sin acción de apertura no abren pestaña; sí la abre la acción asignada en cualquier fuente', () => {
     expect(panelAccess(input('sel', ['prices:read']), 'catalog').hasAnyPanel).toBe(false)
     expect(panelAccess(input('sel', ['prices:read', 'prices:apply']), 'catalog').hasAnyPanel).toBe(false)
-    expect(panelAccess(input('man', ['products:read', 'products:write', 'prices:preview']), 'catalog').hasAnyPanel).toBe(false)
+    expect(panelAccess(input('man', ['products:read', 'products:write', 'prices:preview']), 'catalog').tabs).toHaveLength(3)
   })
 
   it('redirige a la primera pestaña que sí tiene; sin ninguna, nada', () => {
@@ -575,17 +567,6 @@ describe('Biblioteca por casillas: pestañas según los permisos concedidos', ()
     expect(firstAssignedLibraryPath(input('sel', []))).toBeNull()
     expect(hasAssignedLibraryPanel(input('sel', ['products:read']), 'biblioteca-fichas')).toBe(false)
     expect(hasAssignedLibraryPanel(input('sel', ['products:write']), 'biblioteca-fichas')).toBe(true)
-  })
-
-  it('no rompe los paquetes vigentes ni el paquete anterior', () => {
-    const packaged = (id: string, actionId: string) => ({
-      roles: ['Consulta'], status: 'ready' as const, sources: [],
-      grants: [{ sourceId: 's', actionId, scope: 'global' as const }],
-      packages: [{ id, applied: true }],
-    })
-    expect(hasAssignedLibraryPanel(packaged('biblioteca-actualizacion', 'products:write'), 'biblioteca-fichas')).toBe(true)
-    expect(hasAssignedLibraryPanel(packaged('biblioteca-actualizacion', 'prices:preview'), 'biblioteca-precios')).toBe(true)
-    expect(hasAssignedLibraryPanel(packaged('biblioteca-consulta', 'products:read'), 'biblioteca-consulta')).toBe(true)
   })
 
   it('Super Admin ve las cinco; mientras carga o falla, nadie las ve por rol', () => {
