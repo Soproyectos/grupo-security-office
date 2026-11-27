@@ -25,6 +25,7 @@ Orden de autoridad: (1) decisión explícita del usuario; (2) manual de marca (b
 - Contraste de texto ≥4.5:1; objetivos táctiles ≥44px en móvil; sin scroll horizontal de página a 375px (tablas anchas con scroll propio).
 - Movimiento de 150–250 ms solo para comunicar estado; respetar `prefers-reduced-motion`.
 - Prohibido: etiqueta superior (eyebrow/kicker) sobre títulos, tarjetas anidadas, texto con degradado, borde lateral de color >1px como acento, modal como primera opción, emoji o unicode como iconos, rejillas de tarjetas icono+título+texto como estructura de página.
+- Panel con varias páginas → usar `WorkspaceTabs`/patrón de pestañas de Biblioteca (icono, nombre corto y ayuda a la derecha); ver `docs/PATRON-PANELES-CON-PESTANAS.md`.
 - Rige `AGENTS.md`: ningún commit, push, despliegue, migración ni cambio de contenedores sin aprobación explícita del usuario.
 
 ## Decision Gates

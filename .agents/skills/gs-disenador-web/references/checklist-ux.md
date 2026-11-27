@@ -22,6 +22,7 @@ Marcar cada ítem como cumplido, fallido u omitido (con motivo). Superficie en m
 - [ ] Radios coherentes: paneles 12–16px, controles 7–9px; píldoras solo en controles pequeños y estados.
 - [ ] Separaciones tomadas de los tokens `--spacing-*`; alineación consistente.
 - [ ] Menús y popovers no se recortan por el `overflow` de su contenedor.
+- [ ] Panel con varias páginas → usa `WorkspaceTabs`/patrón de pestañas de Biblioteca; ver `docs/PATRON-PANELES-CON-PESTANAS.md`.
 
 ## Tipografía
 - [ ] Roboto en cuerpo y controles; Roboto Condensed solo en títulos; ninguna fuente nueva.
