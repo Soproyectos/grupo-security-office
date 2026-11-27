@@ -1,4 +1,3 @@
-import { workspaceForRoles } from '../lib/workspace'
 import { agendaActivitiesKey, fetchAgendaActivities } from '../services/agenda.service'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -46,7 +45,11 @@ function StatCard({ label, value }: { label: string; value: ReactNode }) {
  */
 export function AssignedHome() {
   const user = useAuthStore((state) => state.user)
-  if (user && workspaceForRoles(user.roles ?? []) === 'sales') {
+  const commercial = usePanelAccess('commercial')
+  const catalog = usePanelAccess('catalog')
+  // What the person sees depends on the panels ASSIGNED to them, never on their role: with no commercial or
+  // library panel there is only the agenda summary; with any panel, each block shows by its own action.
+  if (user && !commercial.hasAnyPanel && !catalog.hasAnyPanel) {
     return <SellerHome userId={user.id} roles={user.roles} />
   }
   return <ManagementSummary />

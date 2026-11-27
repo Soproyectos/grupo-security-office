@@ -10,6 +10,13 @@ const { get, post, patch, del, put } = vi.hoisted(() => ({
   put: vi.fn(),
 }))
 
+// The page asks for the grants of the signed-in person; each test decides which ones they have.
+const accessMock = vi.hoisted(() => ({ grants: [] as { actionId: string; scope: string }[] }))
+vi.mock('../features/users/access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/users/access')>()),
+  useOwnUserAccess: () => ({ access: { grants: accessMock.grants }, status: 'ready' }),
+}))
+
 vi.mock('../services/api', () => ({
   default: { get, post, patch, put, delete: del },
   resolveAssetUrl: (path?: string) => path ?? '',
@@ -157,8 +164,10 @@ describe('filas devueltas por el servidor (ACEPTACIÓN 2 — lectura no gating d
   })
 })
 
-describe('criterio de visibilidad por rol (punto de extensión a concesiones)', () => {
-  it('Vendedor: sin columna Responsable ni botón Reasignar, pero la fila editable sigue visible', () => {
+describe('criterio de visibilidad: manda la acción asignada, no el rol', () => {
+  beforeEach(() => { accessMock.grants = [] })
+
+  it('Vendedor sin la acción: sin columna Responsable ni botón Reasignar, pero la fila editable sigue visible', () => {
     login(['Vendedor'])
     const html = render(seededClient())
 
@@ -168,12 +177,27 @@ describe('criterio de visibilidad por rol (punto de extensión a concesiones)', 
     expect(html).toContain('Cliente Del Equipo')
   })
 
-  it('Supervisor: sí se le ofrece reasignar (el 403 del servidor sigue mandando)', () => {
-    login(['Supervisor'])
+  it('Vendedor con customers:reassign asignada: se le ofrece reasignar', () => {
+    accessMock.grants = [{ actionId: 'customers:reassign', scope: 'own' }]
+    login(['Vendedor'])
     const html = render(seededClient())
 
     expect(html).toContain('Reasignar')
     expect(html).toContain('Responsable')
+  })
+
+  it('Supervisor sin la acción asignada: el rol no decide, no se le ofrece', () => {
+    login(['Supervisor'])
+    const html = render(seededClient())
+
+    expect(html).not.toContain('Reasignar')
+  })
+
+  it('Super Admin lo ve todo', () => {
+    login(['Super Admin'])
+    const html = render(seededClient())
+
+    expect(html).toContain('Reasignar')
   })
 })
 
