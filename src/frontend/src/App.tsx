@@ -1,14 +1,15 @@
 import CustomerAccountPage, { CustomerPortalShell } from './features/customer-portal/pages/CustomerAccountPage'
 import CompleteProfilePage from './features/customer-portal/pages/CompleteProfilePage'
-import PortalAccountsAdminPage from './features/customer-portal/pages/PortalAccountsAdminPage'
+import PortalQuoteDraftPage from './features/customer-portal/pages/PortalQuoteDraftPage'
+import { PortalMyQuotesPage, PortalQuoteDetailPage } from './features/customer-portal/pages/PortalMyQuotesPage'
+import PortalAccountsSection from './features/customer-portal/components/PortalAccountsSection'
+import ZonesAdminSection from './features/customer-portal/components/ZonesAdminSection'
 import ClientLoginPage from './features/storefront/pages/ClientLoginPage'
 import PrivacyPolicyPage from './features/storefront/pages/PrivacyPolicyPage'
 import AccessRequestPage from './features/storefront/pages/AccessRequestPage'
 import ClientForgotPasswordPage from './features/storefront/pages/ClientForgotPasswordPage'
 import ClientResetPasswordPage from './features/storefront/pages/ClientResetPasswordPage'
 import PasswordResetSuccessPage from './features/storefront/pages/PasswordResetSuccessPage'
-import ClientCatalogPage from './features/customer-portal/pages/ClientCatalogPage'
-import PortalProductDetailPage from './features/customer-portal/pages/PortalProductDetailPage'
 import AgendaCalendarPage from './features/agenda/AgendaCalendarPage'
 import { baseAgendaGrants } from './features/agenda/agenda-access'
 import TeamWorkflowPage from './features/supervisor/TeamWorkflowPage'
@@ -49,6 +50,7 @@ import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import UsersPage from './pages/UsersPage'
 import UserAccessAssignments from './features/users/components/UserAccessAssignments'
+import UsersLayout from './features/users/components/UsersLayout'
 import AssignedTargetsPage from './pages/AssignedTargetsPage'
 import AssignedHome from './pages/AssignedHome'
 import AssignedReportsPage from './pages/AssignedReportsPage'
@@ -58,7 +60,7 @@ import SalesPromotionsPanel from './features/promotions/SalesPromotionsPanel'
 import MarketingLayout from './features/marketing/MarketingLayout'
 import BannersTab from './features/marketing/BannersTab'
 import MarketingIndex from './features/marketing/MarketingIndex'
-import { hasMarketingAction } from './features/marketing/marketing-access'
+import { hasMarketingAction, MARKETING_NOTICES_PATH, MARKETING_PROMOTIONS_PATH } from './features/marketing/marketing-access'
 import { canAdministerAccess, firstAssignedLibraryPath, hasAssignedAction, hasAssignedLibraryPanel, NO_PANELS_MESSAGE, useOwnUserAccess, type LibraryPanelId } from './features/users/access'
 
 function ProtectedRoute({
@@ -76,7 +78,7 @@ export function AccessBoundary({ children, actions = [], libraryPanel, marketing
   children: React.ReactNode
   actions?: readonly string[]
   libraryPanel?: LibraryPanelId
-  /** Exige el panel «Marketing y mercadeo» asignado por paquete, no solo la acción suelta. */
+  /** Exige la acción de marketing asignada (ver banners y ventanas emergentes). */
   marketingPanel?: boolean
   adminOnly?: boolean
 }) {
@@ -85,7 +87,7 @@ export function AccessBoundary({ children, actions = [], libraryPanel, marketing
   if (canAdministerAccess(roles)) return <>{children}</>
   if (status === 'loading') return <p role="status">Cargando tus accesos…</p>
   if (status === 'unavailable') return <div role="alert"><p>No pudimos comprobar tus accesos.</p><button type="button" onClick={() => void refetch()}>Reintentar</button></div>
-  const input = { roles, grants: access?.grants ?? [], packages: access?.packages ?? [], sources: access?.sources ?? [], status }
+  const input = { roles, grants: access?.grants ?? [], status }
   // Nivel 0 por rol: la agenda propia cuenta como acceso, sin contar como panel asignado.
   const withBase = { ...input, grants: [...input.grants, ...baseAgendaGrants(roles)] }
   const allowed = !adminOnly && (libraryPanel
@@ -139,6 +141,9 @@ function App() {
           <Route path="lists" element={<Navigate to="/commercial/products" replace />} />
           <Route path="lists/:id" element={<Navigate to="/commercial/products" replace />} />
           <Route path="customers" element={<AccessBoundary actions={['customers:read']}><CustomersPage /></AccessBoundary>} />
+          {/* Portal tabs of Comercial: same actions as the tabs in COMMERCIAL_TABS; the server checks them again. */}
+          <Route path="portal" element={<AccessBoundary actions={['portalAccounts:read']}><PortalAccountsSection /></AccessBoundary>} />
+          <Route path="zones" element={<AccessBoundary actions={['portalZones:manage']}><ZonesAdminSection /></AccessBoundary>} />
           <Route path="quotes" element={<AccessBoundary actions={['quotes:read']}><QuotesPage /></AccessBoundary>} />
           <Route path="quotes/:id" element={<AccessBoundary actions={['quotes:read']}><QuoteDetailPage /></AccessBoundary>} />
           <Route path="lists/:listaId/products/:productId" element={<Navigate to="/commercial/products" replace />} />
@@ -150,10 +155,11 @@ function App() {
           <Route path="publication/products/:productId" element={<Navigate to="/commercial/library/update/products" replace />} />
         </Route>
         <Route path="products" element={<Navigate to="/commercial/products" replace />} />
-        <Route path="users" element={<AccessBoundary actions={['users:read']}><UsersPage /></AccessBoundary>} />
-        {/* COM-01 frontend: panel de paquetes de acceso fuera de UsersPage
-            (writePath propio; la página de Usuarios no se toca). */}
-        <Route path="users/access" element={<AccessBoundary adminOnly><UserAccessAssignments /></AccessBoundary>} />
+        {/* Panel «Usuarios»: barra de pestañas por ruta (UsersLayout); cada ruta conserva su propio guarda. */}
+        <Route path="users" element={<UsersLayout />}>
+          <Route index element={<AccessBoundary actions={['users:read']}><UsersPage /></AccessBoundary>} />
+          <Route path="access" element={<AccessBoundary adminOnly><UserAccessAssignments /></AccessBoundary>} />
+        </Route>
         {/* COM-04 frontend: metas por integrante/periodo. Fuera del bloque
             Comercial (writePath propio, patrón /users/access de COM-01): el
             servidor autoriza por petición (roles + targets:edit/alcance). */}
@@ -161,14 +167,19 @@ function App() {
         <Route path="home" element={<AccessBoundary><AssignedHome /></AccessBoundary>} />
         <Route path="agenda" element={<AccessBoundary actions={['activities:read']}><AgendaCalendarPage /></AccessBoundary>} />
         <Route path="reports" element={<AccessBoundary actions={['teamInsights:read']}><AssignedReportsPage /></AccessBoundary>} />
-        <Route path="customer-accounts" element={<AccessBoundary adminOnly><PortalAccountsAdminPage /></AccessBoundary>} />
+        {/* Former «Clientes del portal» panel: now the «Solicitudes» tab of Comercial. Kept for saved links. */}
+        <Route path="customer-accounts" element={<Navigate to="/commercial/portal" replace />} />
         <Route path="team-requests" element={<AccessBoundary adminOnly><TeamWorkflowPage kind="requests" key="admin-requests" /></AccessBoundary>} />
         <Route path="audit" element={<AccessBoundary actions={['audit:read']}><AuditPage /></AccessBoundary>} />
-        <Route path="promotions" element={<AccessBoundary actions={['commercialPromotions:create', 'commercialPromotions:edit', 'commercialPromotions:publish', 'commercialPromotions:withdraw']}><PromotionManagerPage /></AccessBoundary>} />
-        {/* Panel «Marketing y mercadeo»: índice de páginas; hoy solo Banners. «Campañas» se añadirá después. */}
-        <Route path="marketing" element={<AccessBoundary marketingPanel actions={['marketing:read']}><MarketingLayout /></AccessBoundary>}>
+        {/* Former Comercial tab «Gestionar avisos»; kept for saved links. */}
+        <Route path="promotions" element={<Navigate to={MARKETING_NOTICES_PATH} replace />} />
+        {/* Panel «Marketing y mercadeo»: barra de pestañas por ruta (MarketingLayout). El layout muestra solo las
+            pestañas permitidas y cada ruta conserva su propio guarda con la acción que ya exigía. «Campañas» se añadirá después. */}
+        <Route path="marketing" element={<MarketingLayout />}>
           <Route index element={<MarketingIndex />} />
-          <Route path="banners" element={<BannersTab />} />
+          <Route path="banners" element={<AccessBoundary marketingPanel actions={['marketing:read']}><BannersTab /></AccessBoundary>} />
+          <Route path="promotions" element={<AccessBoundary actions={['commercialPromotions:read']}><SalesPromotionsPanel showPanel /></AccessBoundary>} />
+          <Route path="notices" element={<AccessBoundary actions={['commercialPromotions:create', 'commercialPromotions:edit', 'commercialPromotions:publish', 'commercialPromotions:withdraw']}><PromotionManagerPage /></AccessBoundary>} />
         </Route>
 
       </Route>
@@ -179,7 +190,8 @@ function App() {
         <Route index element={<AccessBoundary><AssignedHome /></AccessBoundary>} />
         <Route path="customers" element={<AccessBoundary actions={['customers:read']}><CustomersPage personal /></AccessBoundary>} />
         <Route path="agenda" element={<AccessBoundary actions={['activities:read']}><AgendaCalendarPage /></AccessBoundary>} />
-        <Route path="promotions" element={<AccessBoundary actions={['commercialPromotions:read']}><SalesPromotionsPanel showPanel /></AccessBoundary>} />
+        {/* Former «Promociones internas» page of Comercial; kept for saved links. */}
+        <Route path="promotions" element={<Navigate to={MARKETING_PROMOTIONS_PATH} replace />} />
         <Route path="quotes" element={<AccessBoundary actions={['quotes:read']}><QuotesPage personal quotesPath="/sales/quotes" /></AccessBoundary>} />
         <Route path="quotes/:id" element={<AccessBoundary actions={['quotes:read']}><QuoteDetailPage personal quotesPath="/sales/quotes" /></AccessBoundary>} />
         <Route path="*" element={<Navigate to="/sales" replace />} />
@@ -200,7 +212,7 @@ function App() {
       <Route path="/clientes/recuperar/satisfecho" element={<PasswordResetSuccessPage />} />
       <Route path="/clientes/restablecer" element={<ClientResetPasswordPage />} />
       <Route path="/recuperar-contrasena" element={<Navigate to="/login" replace />} />
-      <Route path="/clientes" element={<CustomerPortalShell />}><Route index element={<CustomerAccountPage />} /><Route path="perfil" element={<CustomerAccountPage profile />} /><Route path="completar-perfil" element={<CompleteProfilePage />} /><Route path="productos" element={<ClientCatalogPage />} /><Route path="productos/:productId" element={<PortalProductDetailPage privateCatalog />} /></Route>
+      <Route path="/clientes" element={<CustomerPortalShell />}><Route index element={<CustomerAccountPage />} /><Route path="perfil" element={<CustomerAccountPage profile />} /><Route path="completar-perfil" element={<CompleteProfilePage />} /><Route path="cotizacion" element={<PortalQuoteDraftPage />} /><Route path="cotizaciones" element={<PortalMyQuotesPage />} /><Route path="cotizaciones/:id" element={<PortalQuoteDetailPage />} /><Route path="productos/*" element={<Navigate to="/catalogo" replace />} /></Route>
       <Route path="/tienda" element={<StorefrontHome />} />
       <Route path="/soluciones" element={<SolutionsPage />} />
       <Route path="/nosotros" element={<AboutPage />} />

@@ -6,13 +6,13 @@ const makePrisma = () => ({
 const user = { id: 'u1', email: ' Ana@Test.CO ', name: 'Ana', emailVerified: false, companyName: 'ACME', documentId: '1', phone: '2' };
 
 describe('ensurePortalAccount', () => {
-  it('creates ACTIVE FINAL_CUSTOMER without tier, even if INSTALLER was requested', async () => {
+  it('creates PENDING FINAL_CUSTOMER without tier, even if INSTALLER was requested', async () => {
     const p = makePrisma();
     p.portalAccount.findUnique.mockResolvedValue(null);
     p.portalAccount.create.mockResolvedValue({ id: 'a1' });
     await ensurePortalAccount(p, { ...user, type: 'INSTALLER' } as any);
     const data = p.portalAccount.create.mock.calls[0][0].data;
-    expect(data).toMatchObject({ email: 'ana@test.co', state: 'ACTIVE', type: 'FINAL_CUSTOMER', authUserId: 'u1', companyName: 'ACME', passwordHash: '!better-auth' });
+    expect(data).toMatchObject({ email: 'ana@test.co', state: 'PENDING', type: 'FINAL_CUSTOMER', authUserId: 'u1', companyName: 'ACME', passwordHash: '!better-auth' });
     expect(data.tierId).toBeUndefined();
   });
   it('uses placeholder when company is empty', async () => {
@@ -34,6 +34,34 @@ describe('ensurePortalAccount', () => {
     const google = p.portalAccount.create.mock.calls[1][0].data;
     expect(google.privacyAcceptedAt).toBeUndefined();
     expect(google.privacyVersion).toBeUndefined();
+  });
+  it('stores the city and runs onCreated once with the new id (only when the row is created)', async () => {
+    const p = makePrisma();
+    p.portalAccount.findUnique.mockResolvedValue(null);
+    p.portalAccount.create.mockResolvedValue({ id: 'a1' });
+    const onCreated = jest.fn().mockResolvedValue(null);
+    await ensurePortalAccount(p, user, { city: '05001', onCreated });
+    expect(p.portalAccount.create.mock.calls[0][0].data.city).toBe('05001');
+    expect(onCreated).toHaveBeenCalledWith('a1');
+    // Existing account: nothing created, nothing assigned.
+    const q = makePrisma();
+    q.portalAccount.findUnique.mockResolvedValueOnce({ id: 'a1' });
+    const again = jest.fn();
+    await ensurePortalAccount(q, user, { city: '05001', onCreated: again });
+    expect(again).not.toHaveBeenCalled();
+  });
+  it('a failing onCreated never loses the account', async () => {
+    const p = makePrisma();
+    p.portalAccount.findUnique.mockResolvedValue(null);
+    p.portalAccount.create.mockResolvedValue({ id: 'a1' });
+    expect(await ensurePortalAccount(p, user, { city: '05001', onCreated: async () => { throw new Error('boom'); } })).toBe('a1');
+  });
+  it('without a city the account is created without one', async () => {
+    const p = makePrisma();
+    p.portalAccount.findUnique.mockResolvedValue(null);
+    p.portalAccount.create.mockResolvedValue({ id: 'a1' });
+    await ensurePortalAccount(p, user);
+    expect(p.portalAccount.create.mock.calls[0][0].data).not.toHaveProperty('city');
   });
   it('is idempotent', async () => {
     const p = makePrisma();

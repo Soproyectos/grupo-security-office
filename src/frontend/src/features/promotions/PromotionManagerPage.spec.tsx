@@ -48,7 +48,7 @@ function render(actions: string[] = ['read', 'create', 'edit', 'publish', 'withd
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(MANAGE_KEY, PAYLOAD)
   client.setQueryData(['user-access', SUPERVISOR.id], {
-    catalogVersion: 'panels-20261019-3', accessVersion: 1, sources: [], packages: [],
+    catalogVersion: 'panels-20261019-3', accessVersion: 1, sources: [],
     grants: actions.map(action => ({
       sourceId: 'test-source', actionId: `commercialPromotions:${action}`, scope: 'team',
     })),

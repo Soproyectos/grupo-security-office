@@ -10,3 +10,9 @@ export class PortalTierDto {
 export class AssignPortalTierDto {
  @IsOptional() @IsUUID() tierId?: string | null;
 }
+export class LinkPortalCustomerDto {
+ @IsOptional() @IsUUID() customerId?: string | null;
+}
+export class AssignPortalAdvisorDto {
+ @IsUUID('all',{message:'El asesor indicado no es válido'}) advisorId: string;
+}

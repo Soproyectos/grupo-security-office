@@ -13,6 +13,10 @@ export class UpdatePortalProfileDto {
   @IsOptional() @Transform(trim) @IsString() @Length(7, 30, { message: 'El teléfono debe tener entre 7 y 30 caracteres' })
   phone?: string;
 
+  /** DIVIPOLA municipality code; the service checks it against the fixed catalog. */
+  @IsOptional() @Transform(trim) @IsString({ message: 'Elige tu ciudad de la lista' }) @Length(5, 5, { message: 'Elige tu ciudad de la lista' })
+  city?: string;
+
   @IsOptional() @IsBoolean({ message: 'Valor inválido para la política de datos' })
   acceptPrivacy?: boolean;
 }

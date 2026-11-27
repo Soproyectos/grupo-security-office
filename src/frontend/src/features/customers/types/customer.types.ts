@@ -32,6 +32,8 @@ export interface Customer {
   name: string
   documentType: string | null
   documentId: string | null
+  /** Check digit of a NIT, calculated by the server (read only); null when not a NIT. */
+  documentDv?: number | null
   email: string | null
   phone: string | null
   city: string | null

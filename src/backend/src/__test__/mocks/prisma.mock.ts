@@ -18,6 +18,14 @@ export const createPrismaMock = () => ({
     deleteMany: jest.fn(),
     count: jest.fn(),
   },
+  zone: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
   role: {
     findUnique: jest.fn(),
     findMany: jest.fn(),
@@ -204,6 +212,22 @@ export const createPrismaMock = () => ({
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+  },
+  quoteStatusEvent: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+  },
+  portalAccount: {
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+  },
+  portalTier: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  portalPriceListMapping: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   importSession: {
     findUnique: jest.fn(),

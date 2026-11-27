@@ -4,6 +4,7 @@ import api, { resolveAssetUrl } from '../../../services/api'
 import type { Product, Category, Brand, ProductPayload } from '../types/product.types'
 import { usePriceLists } from '../hooks/usePriceLists'
 import { SpecEditor, type SpecField, deserializeSpecFields, serializeSpecFields } from './SpecEditor'
+import PasswordField from '../../customer-portal/components/PasswordField'
 
 interface ProductFormModalProps {
   product: Product | null
@@ -691,17 +692,7 @@ const [form, setForm] = useState({
 
           {product && claveRequired && (
             <div className="px-6 pt-4">
-              <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-                Clave del usuario
-              </label>
-              <input
-                type="password"
-                value={clave}
-                onChange={(e) => setClave(e.target.value)}
-                autoComplete="current-password"
-                placeholder="Ingresa tu clave para guardar los cambios"
-                className={inputClass}
-              />
+              <PasswordField id="product-form-clave" label="Clave del usuario" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" placeholder="Ingresa tu clave para guardar los cambios" />
               <p className="text-xs text-neutral-500 mt-1.5">
                 Tu usuario tiene clave configurada. Ingrésala para confirmar la modificación.
               </p>

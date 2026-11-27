@@ -6,7 +6,7 @@ import { UserAccessPanel } from './UserAccessAssignments'
 import { accessActionNotice, userAccessKey } from '../access'
 import {
   UserAccessServiceError,
-  type AccessPackage,
+  type AccessActionDefinition,
   type UserAccessState,
 } from '../../../services/users.service'
 import { useAuthStore } from '../../../stores/auth.store'
@@ -17,13 +17,15 @@ import UserAccessAssignments from './UserAccessAssignments'
  * render de servidor con la caché de react-query SEMBRADA (mismo patrón que
  * AgendaCalendarPage.spec.tsx). Los clicks viven en el recorrido HTTP real
  * (e2e sobre 5180/3001) y en la spec de `features/users/access.ts`
- * (`applyPackageInCache`/`revokePackageInCache` con la API mockeada).
+ * (`refreshSessionAfterAccessChange` con la API mockeada).
  */
 
 const TARGET = { id: 'user-1', name: 'Vendedor de prueba' }
 
-function packageOf(over: Partial<AccessPackage> & { id: string; name: string }): AccessPackage {
-  return { selections: [], applied: false, sourceId: null, ...over }
+const MANUAL_SOURCE = { id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }
+
+function actionOf(id: string, label: string, over: Partial<AccessActionDefinition> = {}): AccessActionDefinition {
+  return { id, label, purpose: `Permite: ${label}`, allowedScopes: ['global'], dependencies: [], enabled: true, ...over }
 }
 
 function accessState(partial: Partial<UserAccessState> = {}): UserAccessState {
@@ -31,108 +33,35 @@ function accessState(partial: Partial<UserAccessState> = {}): UserAccessState {
     catalogVersion: 'panels-20261019-3',
     accessVersion: 7,
     grants: [],
-    sources: [
-      {
-        id: 'src-1',
-        kind: 'template',
-        templateId: 'vendedor',
-        catalogVersion: 'panels-20261019-3',
-        grantedById: 'admin-1',
-        reason: 'template-applied',
-      },
-    ],
-    packages: [
-      packageOf({
-        id: 'vendedor',
-        name: 'Vendedor',
-        applied: true,
-        sourceId: 'src-1',
-        selections: [
-          { actionId: 'customers:read', scope: 'own' },
-          { actionId: 'customers:edit', scope: 'own' },
-          { actionId: 'products:read', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'supervisor-comercial',
-        name: 'Supervisor comercial',
-        selections: [{ actionId: 'teamInsights:read', scope: 'team' }],
-      }),
-      packageOf({
-        id: 'gestion-comercial',
-        name: 'Gestión comercial',
-        selections: [{ actionId: 'customers:reassign', scope: 'team' }],
-      }),
-      packageOf({
-        id: 'biblioteca-consulta',
-        name: 'Productos',
-        selections: [
-          { actionId: 'products:read', scope: 'global' },
-          { actionId: 'prices:read', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'biblioteca-fichas',
-        name: 'Fichas',
-        selections: [
-          { actionId: 'products:read', scope: 'global' },
-          { actionId: 'products:write', scope: 'global' },
-          { actionId: 'products:delete', scope: 'global' },
-          { actionId: 'products:validate', scope: 'global' },
-          { actionId: 'products:notes', scope: 'global' },
-          { actionId: 'prices:read', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'biblioteca-precios',
-        name: 'Precios',
-        selections: [
-          { actionId: 'products:read', scope: 'global' },
-          { actionId: 'prices:read', scope: 'global' },
-          { actionId: 'prices:preview', scope: 'global' },
-          { actionId: 'prices:save', scope: 'global' },
-          { actionId: 'prices:apply', scope: 'global' },
-          { actionId: 'providers:read', scope: 'global' },
-          { actionId: 'providers:write', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'biblioteca-publicacion',
-        name: 'Publicar en tienda',
-        selections: [
-          { actionId: 'products:read', scope: 'global' },
-          { actionId: 'products:validate', scope: 'global' },
-          { actionId: 'products:publish', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'biblioteca-actualizacion',
-        name: 'Actualización (anterior)',
-        assignable: false,
-        selections: [
-          { actionId: 'products:read', scope: 'global' },
-          { actionId: 'products:write', scope: 'global' },
-          { actionId: 'products:delete', scope: 'global' },
-          { actionId: 'products:validate', scope: 'global' },
-          { actionId: 'products:notes', scope: 'global' },
-          { actionId: 'prices:read', scope: 'global' },
-          { actionId: 'prices:preview', scope: 'global' },
-          { actionId: 'prices:save', scope: 'global' },
-          { actionId: 'prices:apply', scope: 'global' },
-          { actionId: 'providers:read', scope: 'global' },
-          { actionId: 'providers:write', scope: 'global' },
-        ],
-      }),
-      packageOf({ id: 'gestion-listas-precios', name: 'Listas y precios (anterior)', applied: true, selections: [{ actionId: 'listas:read', scope: 'global' }] }),
-      packageOf({ id: 'biblioteca-productos', name: 'Biblioteca de productos (anterior)', applied: true, selections: [{ actionId: 'products:read', scope: 'global' }] }),
-      packageOf({ id: 'publicacion-catalogo', name: 'Publicación del catálogo (anterior)', applied: true, selections: [{ actionId: 'products:publish', scope: 'global' }] }),
-    ],
+    sources: [],
     actions: [
       { id: 'customers:read', label: 'Consultar clientes', purpose: 'Consultar cartera', allowedScopes: ['own', 'team', 'global'], dependencies: [], enabled: true },
       { id: 'listas:read', label: 'Consultar listas', purpose: 'Consultar una lista', allowedScopes: ['list'], dependencies: [], enabled: true },
     ],
     ...partial,
   }
+}
+
+/** Catálogo con acciones de los tres paneles, para comprobar que ninguna casilla se bloquea. */
+const FULL_ACTIONS: AccessActionDefinition[] = [
+  actionOf('customers:read', 'Consultar clientes', { allowedScopes: ['own', 'team', 'global'] }),
+  actionOf('customers:edit', 'Editar clientes', { allowedScopes: ['own', 'team', 'global'], dependencies: ['customers:read'] }),
+  actionOf('quotes:read', 'Consultar cotizaciones', { allowedScopes: ['own', 'team', 'global'] }),
+  actionOf('marketing:read', 'Ver campañas'),
+  actionOf('marketing:edit', 'Editar campaña', { dependencies: ['marketing:read'] }),
+  actionOf('marketing:publish', 'Publicar y retirar campañas', { dependencies: ['marketing:read'] }),
+  actionOf('commercialPromotions:read', 'Consultar avisos internos', { allowedScopes: ['team', 'global'] }),
+  actionOf('products:publish', 'Publicar producto', { dependencies: ['products:read', 'products:write'] }),
+  actionOf('libraryStats:products', 'Estadísticas de Productos', { dependencies: ['products:read'] }),
+]
+
+function manualState(grants: UserAccessState['grants'], over: Partial<UserAccessState> = {}): UserAccessState {
+  return accessState({
+    sources: [{ ...MANUAL_SOURCE }],
+    grants,
+    actions: FULL_ACTIONS,
+    ...over,
+  })
 }
 
 function render(client: QueryClient) {
@@ -169,6 +98,9 @@ function countOf(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1
 }
 
+const checkboxesOf = (html: string) => html.match(/<input[^>]*type="checkbox"[^>]*>/g) ?? []
+const isDisabled = (input: string) => /\sdisabled(?:=|\s|\/?>)/.test(input)
+
 function loginSuperAdmin() {
   const session = {
     isAuthenticated: true,
@@ -188,16 +120,25 @@ beforeEach(() => {
   loginSuperAdmin()
 })
 
-describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', () => {
-  it('no presenta Marketing como habilitado con acciones sueltas sin paquete', () => {
+describe('UserAccessPanel — acciones asignadas una a una, sin paquetes', () => {
+  it('Marketing se muestra disponible con solo su acción asignada, sin ningún paquete', () => {
     const html = renderWorkspace(seeded(accessState({
-      packages: [],
-      sources: [{ id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }],
+      sources: [{ ...MANUAL_SOURCE }],
       grants: [{ sourceId: 'manual-1', actionId: 'marketing:read', scope: 'global' }],
-      actions: [{ id: 'marketing:read', label: 'Consultar Marketing', purpose: 'Consultar contenido', enabled: true, allowedScopes: ['global'], dependencies: [] }],
+      actions: [actionOf('marketing:read', 'Consultar Marketing')],
     })), ['Operador'])
     expect(html).toContain('Marketing y mercadeo')
-    expect(html).toContain('No habilitado · revisa los paquetes')
+    expect(html).toMatch(/<span>Marketing y mercadeo<\/span><span class="access-panel-summary">Disponible · 1 acciones concedidas/)
+  })
+
+  it('una acción de marketing con un alcance que no abre Banners avisa que aún no abre ninguna pestaña', () => {
+    const html = renderWorkspace(seeded(accessState({
+      sources: [{ ...MANUAL_SOURCE }],
+      grants: [{ sourceId: 'manual-1', actionId: 'marketing:read', scope: 'own' }],
+      actions: [actionOf('marketing:read', 'Consultar Marketing')],
+    })), ['Operador'])
+    expect(html).toContain('Aún no abre ninguna pestaña · revisa las acciones')
+    expect(html).not.toMatch(/paquete/i)
   })
 
   it('activa el árbol del workspace y conserva montados los paneles ocultos', () => {
@@ -215,9 +156,9 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
 
   it('permite editar las acciones de Marketing directamente, conservando su alcance', () => {
     const html = render(seeded(accessState({
-      sources: [{ id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }],
+      sources: [{ ...MANUAL_SOURCE }],
       grants: [{ sourceId: 'manual-1', actionId: 'marketing:edit', scope: 'global' }],
-      actions: [{ id: 'marketing:edit', label: 'Editar contenido', purpose: 'Preparar piezas', enabled: true, allowedScopes: ['global'], dependencies: [] }],
+      actions: [actionOf('marketing:edit', 'Editar contenido', { purpose: 'Preparar piezas' })],
     })))
     const marketing = sectionOf(html, 'Marketing y mercadeo')
     expect(marketing).toContain('aria-label="Contenido"')
@@ -228,117 +169,99 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(marketing).toContain('Global')
   })
 
+  it('los avisos internos se asignan en Marketing y mercadeo y ya no en Comercial', () => {
+    const promotionActions = ['read', 'create', 'edit', 'publish', 'withdraw'].map((action) => ({
+      id: `commercialPromotions:${action}`, label: `Aviso ${action}`, purpose: 'Avisos', enabled: true, allowedScopes: ['team' as const], dependencies: [],
+    }))
+    const html = render(seeded(accessState({
+      actions: [{ id: 'customers:read', label: 'Consultar clientes', purpose: 'Clientes', enabled: true, allowedScopes: ['own'], dependencies: [] }, ...promotionActions],
+    })))
+    const marketing = sectionOf(html, 'Marketing y mercadeo')
+    expect(marketing).toContain('aria-label="Avisos internos"')
+    expect(marketing).toContain('aria-label="Aviso read"')
+    expect(marketing).toContain('Promociones internas')
+    expect(marketing).toContain('Gestionar avisos')
+    const commercial = sectionOf(html, 'Comercial')
+    expect(commercial).not.toContain('aria-label="Avisos internos"')
+    expect(commercial).not.toContain('aria-label="Aviso read"')
+  })
+
+  it('quien tiene solo avisos internos ve Marketing como disponible', () => {
+    const html = renderWorkspace(seeded(accessState({
+      sources: [{ ...MANUAL_SOURCE }],
+      grants: [{ sourceId: 'manual-1', actionId: 'commercialPromotions:read', scope: 'team' }],
+      actions: [{ id: 'commercialPromotions:read', label: 'Consultar avisos', purpose: 'Avisos', enabled: true, allowedScopes: ['team'], dependencies: [] }],
+    })), ['Operador'])
+    expect(html).toMatch(/<span>Marketing y mercadeo<\/span><span class="access-panel-summary">Disponible · 1 acciones concedidas/)
+  })
+
   it('impide sustituir varias fuentes manuales mediante una selección ambigua', () => {
     const html = render(seeded(accessState({
       sources: ['m1', 'm2'].map((id) => ({ id, kind: 'manual', templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null })),
       grants: [{ sourceId: 'm1', actionId: 'customers:read', scope: 'own' }, { sourceId: 'm2', actionId: 'customers:read', scope: 'team' }],
     })))
-    expect(html).toContain('Hay varias asignaciones manuales.')
+    expect(html).toContain('varias asignaciones manuales antiguas')
     const save = html.match(/<button[^>]*>Guardar acciones individuales<\/button>/)?.[0] ?? ''
     expect(save).toMatch(/\sdisabled(?:=|\s|\/?>)/)
   })
 
-  it('presenta los paneles y selecciones plegados y permite asignar paquetes sin abrir su detalle', () => {
-    const html = render(seeded(accessState()))
-    expect(html).not.toMatch(/<details[^>]*\bopen(?:=|\s|>)/)
-    const commercial = sectionOf(html, 'Comercial')
-    expect(commercial).toContain('1 de 3 paquetes asignados')
-    expect(commercial.indexOf('type="checkbox"')).toBeLessThan(commercial.indexOf('Ver 3 acciones de Vendedor'))
-    expect(html).toContain('0 acciones asignadas')
+  it('ninguna pantalla habla de paquetes ni de accesos anteriores', () => {
+    const state = manualState([
+      { sourceId: 'manual-1', actionId: 'customers:read', scope: 'own' },
+      { sourceId: 'manual-1', actionId: 'marketing:read', scope: 'global' },
+    ])
+    for (const html of [render(seeded(state)), renderWorkspace(seeded(state), ['Operador']), render(seeded(accessState()))]) {
+      expect(html).not.toMatch(/paquete/i)
+      expect(html).not.toContain('Accesos anteriores')
+      expect(html).not.toContain('Acceso anterior')
+      expect(html).not.toContain('Fuente:')
+      expect(html).not.toContain('Gestionar accesos')
+    }
   })
 
-  it('agrupa los nueve paquetes por panel y muestra acciones y alcances del servidor', () => {
-    const html = render(seeded(accessState()))
-
-    expect(html).toContain('Vendedor')
-    expect(html).toContain('Supervisor comercial')
-    expect(html).toContain('Gestión comercial')
-    expect(html).toContain('Comercial')
-    expect(html).toContain('aria-label="Biblioteca"')
-    expect(html).toContain('aria-label="Accesos anteriores"')
-    // Biblioteca vigente: Productos / Fichas / Precios, con Publicar en tienda como complemento.
-    expect(html).toContain('Productos')
-    expect(html).toContain('Fichas')
-    expect(html).toContain('Precios')
-    expect(html).toContain('Publicar en tienda')
-    expect(html).toContain('Guardar Biblioteca')
-    // Paquetes anteriores: siguen listados para conservar accesos retirables.
-    expect(html).toContain('Acceso anterior')
-    // Selecciones concretas y versionadas, no un «habilitar acceso» genérico.
-    expect(html).toContain('customers:edit')
-    expect(html).toContain('alcance Propio')
-    expect(html).toContain('Consultar clientes')
-    expect(html).toContain('teamInsights:read')
-    expect(html).toContain('alcance Equipo')
-    expect(html).toContain('panels-20261019-3')
-    expect(html).toContain('type="checkbox"')
-    expect(html).toContain('Asignar paquete')
+  it('toda casilla se puede marcar y desmarcar siempre: ninguna viene bloqueada', () => {
+    const html = render(seeded(manualState([
+      { sourceId: 'manual-1', actionId: 'customers:read', scope: 'own' },
+      { sourceId: 'manual-1', actionId: 'customers:edit', scope: 'own' },
+      { sourceId: 'manual-1', actionId: 'marketing:read', scope: 'global' },
+      { sourceId: 'manual-1', actionId: 'marketing:edit', scope: 'global' },
+    ])))
+    for (const label of ['Consultar clientes', 'Editar clientes', 'Consultar cotizaciones', 'Ver campañas', 'Editar campaña', 'Publicar y retirar campañas']) {
+      const box = html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? ''
+      expect(box, label).not.toBe('')
+      expect(isDisabled(box), label).toBe(false)
+    }
+    expect(html.match(/<input[^>]*aria-label="Editar clientes"[^>]*>/)?.[0]).toMatch(/\schecked(?:=|\s|\/?>)/)
+    expect(html.match(/<input[^>]*aria-label="Consultar cotizaciones"[^>]*>/)?.[0]).not.toMatch(/\schecked(?:=|\s|\/?>)/)
+    // Las casillas de grupo («marcar o desmarcar todo») tampoco están bloqueadas.
+    const groupBoxes = checkboxesOf(html).filter((input) => input.includes('marcar o desmarcar todo'))
+    expect(groupBoxes.length).toBeGreaterThan(0)
+    expect(groupBoxes.some(isDisabled)).toBe(false)
   })
 
-  it('Marketing y mercadeo es un panel asignable con sus tres paquetes y etiquetas legibles', () => {
-    const base = accessState()
-    const marketing = [
-      packageOf({ id: 'marketing-consulta', name: 'Ver banners y pop-ups', selections: [{ actionId: 'marketing:read', scope: 'global' }] }),
-      packageOf({
-        id: 'marketing-edicion',
-        name: 'Preparar banners y pop-ups',
-        selections: [
-          { actionId: 'marketing:read', scope: 'global' },
-          { actionId: 'marketing:create', scope: 'global' },
-          { actionId: 'marketing:edit', scope: 'global' },
-          { actionId: 'marketing:delete', scope: 'global' },
-        ],
-      }),
-      packageOf({
-        id: 'marketing-publicacion',
-        name: 'Publicar y retirar banners',
-        selections: [{ actionId: 'marketing:read', scope: 'global' }, { actionId: 'marketing:publish', scope: 'global' }],
-      }),
-    ]
-    const html = render(seeded(accessState({ packages: [...base.packages, ...marketing] })))
-    const section = sectionOf(html, 'Marketing y mercadeo')
-
-    expect(section).toContain('Marketing y mercadeo')
-    for (const name of ['Ver banners y pop-ups', 'Preparar banners y pop-ups', 'Publicar y retirar banners']) expect(section).toContain(name)
-    for (const label of ['Crear', 'Editar', 'Publicar y retirar', 'Eliminar']) expect(section).toContain(`<span>${label}</span>`)
-    expect(countOf(section, 'Asignar paquete')).toBe(3)
-    expect(section).toContain('alcance Global')
+  it('cada acción asignada ofrece su alcance, con las opciones que dicta el catálogo', () => {
+    const html = render(seeded(manualState([{ sourceId: 'manual-1', actionId: 'customers:read', scope: 'team' }])))
+    const options = [...(html.match(/<select[^>]*aria-label="Alcance customers:read"[^>]*>(.*?)<\/select>/)?.[1] ?? '').matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((match) => match[1])
+    expect(options).toEqual(['Propio', 'Equipo', 'Global'])
   })
 
-  it('sin paquetes de marketing en el catálogo no pinta la sección', () => {
-    expect(render(seeded(accessState()))).not.toContain('aria-label="Marketing y mercadeo"')
-  })
-
-  it('muestra el estado applied y la fuente del paquete aplicado', () => {
-    const html = render(seeded(accessState()))
-
-    expect(html).toContain('Aplicado')
-    expect(html).toContain('Fuente: paquete (template-applied)')
-    expect(html).toContain('Sin aplicar')
-    expect(html).toContain('Paquete asignado')
-    expect(html).toContain('Asignar paquete')
-  })
-
-  it('sin concesiones el panel sigue mostrando el catálogo de paquetes (sin migración silenciosa)', () => {
-    const html = render(
-      seeded(
-        accessState({
-          grants: [],
-          sources: [],
-          packages: accessState().packages.map((pkg) => ({ ...pkg, applied: false, sourceId: null })),
-        }),
-      ),
-    )
-
-    expect(html).toContain('Asignar paquete')
-    expect(html).not.toContain('Paquete asignado')
-    expect(html).toContain('Versión de concesiones: 7')
+  it('un permiso que llega de un cálculo automático (personas a cargo) se ve marcado y no se puede cambiar aquí', () => {
+    const html = render(seeded(accessState({
+      sources: [],
+      grants: [{ sourceId: 'derived:team-hierarchy', actionId: 'customers:read', scope: 'team' }],
+    })))
+    const box = html.match(/<input[^>]*aria-label="Consultar clientes"[^>]*>/)?.[0] ?? ''
+    expect(box).toMatch(/\schecked(?:=|\s|\/?>)/)
+    expect(isDisabled(box)).toBe(true)
+    expect(html).toContain('por personas a cargo')
+    expect(html).not.toMatch(/paquete/i)
   })
 
   it('expone la versión OCC que los botones envían al servidor', () => {
     const html = render(seeded(accessState({ accessVersion: 12 })))
 
     expect(html).toContain('Versión de concesiones: 12')
+    expect(html).toContain('panels-20261019-3')
   })
 
   it('presenta acciones individuales agrupadas como checklist', () => {
@@ -348,8 +271,11 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(html).toContain('Guardar acciones individuales')
     expect(html).toContain('Consultar clientes')
     expect(html).toContain('customers:read')
-    expect(html).toContain('Vendedor')
     expect(html).toContain('type="checkbox"')
+  })
+
+  it('sin acciones de Marketing en el catálogo no pinta la sección', () => {
+    expect(render(seeded(accessState()))).not.toContain('aria-label="Marketing y mercadeo"')
   })
 
   it('las estadísticas de Biblioteca en Mi resumen aparecen como casillas con su etiqueta', () => {
@@ -373,39 +299,10 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     }
   })
 
-  it('muestra el acceso anterior aplicado solo como revocable, sin revelar su procedencia', () => {
-    const base = accessState()
-    const html = render(seeded(accessState({
-      grants: [],
-      sources: [{
-        id: 'src-legacy', kind: 'template', templateId: 'biblioteca-productos', catalogVersion: 'panels-20261026-1', grantedById: 'admin-1', reason: 'template-applied',
-      }],
-      packages: base.packages.map((pkg) => pkg.id === 'biblioteca-productos'
-        ? { ...pkg, applied: true, sourceId: 'src-legacy' }
-        : { ...pkg, applied: false, sourceId: null }),
-    })))
-
-    const nameAt = html.indexOf('<label', html.indexOf('aria-label="Accesos anteriores"'))
-    const block = html.slice(nameAt, html.indexOf('</details>', nameAt))
-    const checkbox = block.match(/<input[^>]*>/)?.[0] ?? ''
-
-    expect(block).not.toContain('Fuente: paquete')
-    expect(block).toContain('Retirar acceso anterior')
-    expect(checkbox).toMatch(/\bchecked\b/)
-    expect(checkbox).not.toMatch(/\sdisabled(?:=|\s|\/?>)/)
-  })
-
-  it('oculta los paquetes anteriores que no están aplicados', () => {
-    const html = render(seeded(accessState({
-      packages: accessState().packages.map((pkg) => ({ ...pkg, applied: false, sourceId: null })),
-    })))
-    expect(sectionOf(html, 'Accesos anteriores')).toBe('')
-  })
-
-  it('Biblioteca suma Importaciones y Catálogos maestros con 16 casillas y Aprobar datos clave aparte', () => {
+  it('Biblioteca se asigna por pestaña: Productos, Fichas, Precios, Importaciones y Catálogos maestros, con 16 casillas y Aprobar datos clave aparte', () => {
     const html = render(seeded(accessState()))
     const biblioteca = sectionOf(html, 'Biblioteca')
-    for (const tab of ['Importaciones', 'Catálogos maestros']) {
+    for (const tab of ['Productos', 'Fichas', 'Precios', 'Importaciones', 'Catálogos maestros']) {
       expect(countOf(biblioteca, `<fieldset aria-label="${tab}"`)).toBe(1)
     }
     for (const label of ['Ver importaciones', 'Importar datos', 'Ver catálogos maestros', 'Editar catálogos maestros', 'Aprobar datos clave']) {
@@ -417,10 +314,9 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(biblioteca).not.toMatch(/imports:|masters:|approveSpecs/)
   })
 
-  it('Biblioteca es un solo bloque con tres secciones y casillas por permiso, un único botón Guardar', () => {
+  it('Biblioteca es un solo bloque con casillas por permiso y un único botón Guardar', () => {
     const html = render(seeded(accessState()))
     const biblioteca = sectionOf(html, 'Biblioteca')
-    const anteriores = sectionOf(html, 'Accesos anteriores')
 
     expect(countOf(html, 'aria-label="Biblioteca"')).toBe(1)
     for (const tab of ['Productos', 'Fichas', 'Precios']) {
@@ -434,78 +330,50 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(countOf(biblioteca, 'Guardar Biblioteca')).toBe(1)
     // Sin ids técnicos ni jerga visibles.
     expect(biblioteca).not.toMatch(/products:|prices:|providers:|ACL|scope/i)
-    // Publicar en tienda es un complemento aparte, no una casilla del bloque.
-    expect(biblioteca).not.toContain('Publicar en tienda')
-    expect(html).toContain('aria-label="Complemento de Fichas"')
-    // Los paquetes de Biblioteca ya no se asignan uno a uno.
-    expect(html).not.toContain('Actualización (anterior)')
-    expect(anteriores).toContain('<span>Acceso anterior</span>')
-    expect(anteriores).not.toContain('listas:read')
-    expect(anteriores).not.toContain('Listas y precios')
-    expect(countOf(anteriores, '<span>Acceso anterior</span>')).toBe(3)
+    expect(html).not.toContain('Complemento de Fichas')
   })
 
-  it('el paquete anterior Actualización aparece con sus casillas marcadas y sin botón propio', () => {
-    const base = accessState()
+  it('Biblioteca: ninguna casilla de las pestañas viene bloqueada, vengan las acciones de donde vengan', () => {
     const html = render(seeded(accessState({
-      sources: [...base.sources, {
-        id: 'src-update', kind: 'template', templateId: 'biblioteca-actualizacion', catalogVersion: 'panels-20261028-1', grantedById: 'admin-1', reason: 'template-applied',
-      }],
+      sources: [{ id: 'sel', kind: 'template', templateId: 'biblioteca-seleccion', catalogVersion: 'test', grantedById: 'admin-1', reason: null }],
       grants: [
-        { sourceId: 'src-update', actionId: 'products:read', scope: 'global' },
-        { sourceId: 'src-update', actionId: 'products:write', scope: 'global' },
-        { sourceId: 'src-update', actionId: 'prices:read', scope: 'global' },
-        { sourceId: 'src-update', actionId: 'prices:preview', scope: 'global' },
+        { sourceId: 'sel', actionId: 'products:read', scope: 'global' },
+        { sourceId: 'sel', actionId: 'products:write', scope: 'global' },
+        { sourceId: 'otra-fuente', actionId: 'prices:preview', scope: 'global' },
       ],
-      packages: base.packages.map((pkg) => pkg.id === 'biblioteca-actualizacion'
-        ? { ...pkg, applied: true, sourceId: 'src-update' }
-        : pkg),
     })))
     const biblioteca = sectionOf(html, 'Biblioteca')
-
-    expect(html).not.toContain('Retirar paquete anterior')
-    expect(biblioteca).toContain('reemplaza los paquetes y asignaciones anteriores de Biblioteca')
+    const boxes = checkboxesOf(biblioteca)
+    expect(boxes.length).toBe(18 + 5)
+    expect(boxes.some(isDisabled)).toBe(false)
     expect(biblioteca).toContain('Verá las pestañas: Productos, Fichas, Precios.')
-    // Mientras lo tenga, Publicar en tienda se puede asignar (el permiso de editar fichas ya existe).
-    const complement = sectionOf(html, 'Complemento de Fichas')
-    expect(complement.match(/<input[^>]*>/)?.[0] ?? '').not.toMatch(/disabled/)
   })
 
-  it('Publicar en tienda queda bloqueado mientras no se haya guardado «Editar fichas»', () => {
-    const html = render(seeded(accessState()))
-    const complement = sectionOf(html, 'Complemento de Fichas')
-    expect(complement.match(/<input[^>]*>/)?.[0] ?? '').toMatch(/disabled/)
-    expect(complement).toContain('Marca y guarda primero')
+  it('«Publicar en tienda» es una acción más de Biblioteca, con su propia casilla y sin paquete', () => {
+    const html = renderWorkspace(seeded(manualState([
+      { sourceId: 'manual-1', actionId: 'products:publish', scope: 'global' },
+    ])), ['Operador'])
+    const biblioteca = sectionOf(html, 'Panel Biblioteca')
+    expect(biblioteca).toContain('aria-label="Publicar en tienda: marcar o desmarcar todo"')
+    const box = biblioteca.match(/<input[^>]*aria-label="Publicar producto"[^>]*>/)?.[0] ?? ''
+    expect(box).toMatch(/\schecked(?:=|\s|\/?>)/)
+    expect(isDisabled(box)).toBe(false)
+    expect(biblioteca).toContain('Necesita «Editar fichas» ya guardado en la pestaña Fichas.')
+    expect(html).not.toMatch(/paquete/i)
   })
 
-  it('un catálogo sin paquetes de Biblioteca conserva Comercial y los anteriores, y el bloque sigue disponible', () => {
-    const state = accessState()
-    const html = render(seeded(accessState({
-      grants: [],
-      sources: [],
-      packages: state.packages.filter((pkg) => !['biblioteca-consulta', 'biblioteca-fichas', 'biblioteca-precios', 'biblioteca-actualizacion', 'biblioteca-publicacion'].includes(pkg.id)),
-    })))
+  it('sin grupos de acciones habilitadas conserva el bloque de Biblioteca y omite los demás', () => {
+    const html = render(seeded(accessState({ grants: [], sources: [], actions: [] })))
 
-    expect(html).toContain('aria-label="Comercial"')
-    expect(html).toContain('aria-label="Accesos anteriores"')
     expect(html).toContain('aria-label="Biblioteca"')
-    expect(sectionOf(html, 'Accesos anteriores')).toContain('Acceso anterior')
-  })
-
-  it('sin paquetes conserva las acciones disponibles y omite los bloques vacíos', () => {
-    const html = render(seeded(accessState({ grants: [], sources: [], packages: [] })))
-
-    expect(html).toContain('aria-label="Comercial"')
-    expect(html).toContain('aria-label="Clientes"')
-    expect(html).not.toContain('se aplican al marcar')
-    expect(html).not.toContain('aria-label="Complemento de Fichas"')
-    expect(html).not.toContain('aria-label="Accesos anteriores"')
+    expect(html).not.toContain('aria-label="Comercial"')
+    expect(html).not.toContain('aria-label="Marketing y mercadeo"')
+    expect(html).not.toMatch(/paquete/i)
   })
 
   it('expone la revocación completa de una fuente manual', () => {
-    const base = accessState()
     const html = render(seeded(accessState({
-      sources: [...base.sources, {
+      sources: [{
         id: 'manual-1', kind: 'manual', templateId: null, catalogVersion: 'panels-20261019-3', grantedById: 'admin-1', reason: 'manual-assignment',
       }],
       grants: [{ sourceId: 'manual-1', actionId: 'customers:read', scope: 'own' }],
@@ -514,45 +382,114 @@ describe('UserAccessPanel — paquetes con acciones concretas (ficha regla 1)', 
     expect(html).toContain('Retirar asignación manual')
   })
 
-  it('advierte dentro de Biblioteca sobre una fuente manual que conserva pestañas y otros accesos', () => {
-    const base = accessState()
-    const manualSource = {
-      id: 'manual-library', kind: 'manual' as const, templateId: null,
-      catalogVersion: 'panels-20261019-3', grantedById: 'admin-1', reason: 'manual-assignment',
-    }
+  it('bloquea guardar mientras existan accesos antiguos que este editor no muestra, y lo explica en simple', () => {
     const html = render(seeded(accessState({
-      sources: [...base.sources, manualSource],
-      grants: [
-        { sourceId: manualSource.id, actionId: 'products:read', scope: 'global' },
-        { sourceId: manualSource.id, actionId: 'products:write', scope: 'global' },
-        { sourceId: manualSource.id, actionId: 'products:publish', scope: 'global' },
-        { sourceId: manualSource.id, actionId: 'products:notes', scope: 'global' },
-        { sourceId: manualSource.id, actionId: 'prices:apply', scope: 'global' },
-        { sourceId: manualSource.id, actionId: 'customers:read', scope: 'own' },
-      ],
-    })))
-    const biblioteca = sectionOf(html, 'Accesos anteriores de Biblioteca')
-
-    expect(biblioteca).toContain('Otra asignación previa mantiene acceso a Biblioteca')
-    expect(biblioteca).toContain('Pestañas disponibles: Productos, Fichas, Publicar en tienda')
-    expect(biblioteca).toContain('Gestionar notas de productos (Global)')
-    expect(biblioteca).toContain('Aplicar precios (Global)')
-    expect(biblioteca).toContain('Esta asignación también contiene accesos de otros paneles (Consultar clientes), que se conservan')
-    expect(biblioteca).toContain('se conservan al guardar Biblioteca')
-    expect(biblioteca).not.toContain('Retirar asignación manual')
-    expect(html).not.toContain('Retirar asignación manual</button>')
-  })
-
-  it('bloquea guardar concesiones comerciales mientras existan permisos manuales antiguos', () => {
-    const base = accessState()
-    const html = render(seeded(accessState({
-      sources: [...base.sources, {
+      sources: [{
         id: 'manual-legacy', kind: 'manual', templateId: null, catalogVersion: 'panels-20261019-3', grantedById: 'admin-1', reason: 'manual-assignment',
       }],
       grants: [{ sourceId: 'manual-legacy', actionId: 'listas:read', scope: 'global' }],
     })))
-    expect(html).toContain('Hay concesiones manuales anteriores fuera de este editor.')
-    expect(sectionOf(html, 'Accesos anteriores de Biblioteca')).toContain('Consultar listas (Global)')
+    expect(html).toContain('Esta persona tiene accesos antiguos que este editor no muestra.')
+    expect(html).toContain('Retirar asignación manual')
+    expect(html).not.toMatch(/paquete/i)
+  })
+})
+
+describe('UserAccessPanel — grupos del portal dentro de Comercial (una casilla por pestaña)', () => {
+  const PORTAL_ACTIONS = [
+    { id: 'portalAccounts:read', label: 'Ver cuentas del portal', purpose: 'Ver cuentas web', allowedScopes: ['own', 'team', 'global'], dependencies: [], enabled: true },
+    { id: 'portalAccounts:manage', label: 'Gestionar cuentas del portal', purpose: 'Vincular y activar cuentas', allowedScopes: ['own', 'team', 'global'], dependencies: ['portalAccounts:read'], enabled: true },
+    { id: 'portalAccounts:assign', label: 'Asignar asesor del portal', purpose: 'Asignar asesor', allowedScopes: ['team', 'global'], dependencies: ['portalAccounts:read'], enabled: true },
+    { id: 'portalZones:manage', label: 'Gestionar zonas de asesores', purpose: 'Administrar zonas', allowedScopes: ['global'], dependencies: ['portalAccounts:read'], enabled: true },
+  ]
+  const manualSource = { id: 'manual-portal', kind: 'manual' as const, templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }
+
+  function portalState(grants: { actionId: string; scope: string }[] = []) {
+    const base = accessState()
+    return accessState({
+      sources: grants.length ? [manualSource] : [],
+      grants: grants.map((grant) => ({ sourceId: manualSource.id, ...grant })) as UserAccessState['grants'],
+      actions: [...(base.actions ?? []), ...PORTAL_ACTIONS] as UserAccessState['actions'],
+    })
+  }
+
+  const inputOf = (html: string, label: string) => html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? ''
+  const isChecked = (html: string, label: string) => /\schecked(?:=|\s|\/?>)/.test(inputOf(html, label))
+
+  it('ya no hay un panel «Clientes del portal»: los grupos Solicitudes del portal y Zonas viven en Comercial', () => {
+    const html = renderWorkspace(seeded(portalState()), ['Operador'])
+    const panel = sectionOf(html, 'Comercial')
+
+    expect(html).not.toContain('<span>Clientes del portal</span>')
+    expect(sectionOf(html, 'Clientes del portal')).toBe('')
+    for (const group of ['Solicitudes del portal', 'Zonas']) {
+      expect(panel).toContain(`aria-label="${group}: marcar o desmarcar todo"`)
+    }
+    for (const label of ['Ver cuentas del portal', 'Gestionar cuentas del portal', 'Asignar asesor del portal', 'Gestionar zonas de asesores']) {
+      expect(inputOf(panel, label)).not.toBe('')
+    }
+    expect(panel).toContain('Asignar asesor permite repartir las que aún no tienen uno')
+    expect(panel).toContain('Administrar las zonas que reparten los registros nuevos entre asesores')
+    expect(panel).not.toMatch(/ACL|scope|@Roles/i)
+  })
+
+  it('Zonas se asigna como una acción más de Comercial, sin ningún paquete', () => {
+    const html = render(seeded(portalState()))
+    const commercial = sectionOf(html, 'Comercial')
+
+    expect(commercial).toContain('aria-label="Gestionar zonas de asesores"')
+    expect(commercial).not.toMatch(/paquete/i)
+    expect(isDisabled(inputOf(commercial, 'Gestionar zonas de asesores'))).toBe(false)
+  })
+
+  it('solo Zonas no marca Asignar asesor ni Gestionar cuentas', () => {
+    const html = render(seeded(portalState([
+      { actionId: 'portalAccounts:read', scope: 'global' },
+      { actionId: 'portalZones:manage', scope: 'global' },
+    ])))
+
+    expect(isChecked(html, 'Gestionar zonas de asesores')).toBe(true)
+    expect(isChecked(html, 'Ver cuentas del portal')).toBe(true)
+    expect(isChecked(html, 'Asignar asesor del portal')).toBe(false)
+    expect(isChecked(html, 'Gestionar cuentas del portal')).toBe(false)
+  })
+
+  it('solo Asignar asesor no marca Zonas ni Gestionar cuentas', () => {
+    const html = render(seeded(portalState([
+      { actionId: 'portalAccounts:read', scope: 'team' },
+      { actionId: 'portalAccounts:assign', scope: 'team' },
+    ])))
+
+    expect(isChecked(html, 'Asignar asesor del portal')).toBe(true)
+    expect(isChecked(html, 'Gestionar zonas de asesores')).toBe(false)
+    expect(isChecked(html, 'Gestionar cuentas del portal')).toBe(false)
+  })
+
+  it('sin concesiones ninguna casilla del portal viene marcada', () => {
+    const html = render(seeded(portalState()))
+
+    for (const label of ['Ver cuentas del portal', 'Gestionar cuentas del portal', 'Asignar asesor del portal', 'Gestionar zonas de asesores']) {
+      expect(isChecked(html, label)).toBe(false)
+    }
+  })
+
+  it('los alcances ofrecidos son exactamente los del catálogo', () => {
+    const html = render(seeded(portalState([
+      { actionId: 'portalAccounts:read', scope: 'own' },
+      { actionId: 'portalAccounts:assign', scope: 'team' },
+      { actionId: 'portalZones:manage', scope: 'global' },
+    ])))
+    const optionsOf = (actionId: string) => [...(html.match(new RegExp(`<select[^>]*aria-label="Alcance ${actionId}"[^>]*>(.*?)</select>`))?.[1] ?? '').matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((match) => match[1])
+
+    expect(optionsOf('portalAccounts:read')).toEqual(['Propio', 'Equipo', 'Global'])
+    expect(optionsOf('portalAccounts:assign')).toEqual(['Equipo', 'Global'])
+    expect(optionsOf('portalZones:manage')).toEqual(['Global'])
+  })
+
+  it('con un catálogo sin acciones del portal no pinta los grupos', () => {
+    const html = render(seeded(accessState()))
+    expect(html).not.toContain('Solicitudes del portal')
+    expect(html).not.toContain('Gestionar zonas de asesores')
   })
 })
 
@@ -578,7 +515,7 @@ describe('accessActionNotice — avisos de 409 (versión) y 400/403/404', () => 
 })
 
 describe('UserAccessAssignments — selector de destino por query (?usuario=)', () => {
-  it('ofrece elegir usuario antes de mostrar paquetes', () => {
+  it('ofrece elegir usuario antes de mostrar sus accesos', () => {
     const client = new QueryClient()
     const html = renderToStaticMarkup(
       <QueryClientProvider client={client}>
@@ -591,10 +528,10 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
     expect(html).toContain('Accesos de usuarios')
     expect(html).toContain('Buscar usuario')
     expect(html).toContain('Selecciona un usuario')
-    expect(html).not.toContain('Paquete asignado')
+    expect(html).not.toContain('Guardar acciones individuales')
   })
 
-  it('con ?usuario= monta el panel de ese usuario y sus paquetes', () => {
+  it('con ?usuario= monta el panel de ese usuario y sus acciones, sin paquetes', () => {
     const client = new QueryClient()
     client.setQueryData(['users', 'access-directory', ''], { pageParams: [0], pages: [{ data: [
       {
@@ -619,7 +556,8 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
     )
 
     expect(html).toContain('Vendedor de prueba')
-    expect(html).toContain('Paquete asignado')
+    expect(html).toContain('Guardar acciones individuales')
+    expect(html).not.toMatch(/paquete/i)
     expect(html).toContain('aria-current="true"')
     expect(html).toContain('Cargar más usuarios')
   })
@@ -631,7 +569,7 @@ describe('UserAccessAssignments — selector de destino por query (?usuario=)', 
     const client = seeded(accessState())
     const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/users/access?usuario=user-1']}><UserAccessAssignments /></MemoryRouter></QueryClientProvider>)
     expect(html).toContain('Sólo Super Admin')
-    expect(html).not.toContain('Paquete asignado')
+    expect(html).not.toContain('Guardar acciones individuales')
     expect(html).not.toContain('Buscar usuario')
   })
 })

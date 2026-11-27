@@ -46,7 +46,6 @@ function SpecRows({ items, stacked = false }: { items: SpecItem[]; stacked?: boo
  */
 function DesktopSpecs({ groups, stickyTotal }: { groups: SpecGroup[]; stickyTotal: number }) {
   const [pinned, setPinned] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState(() => new Set(groups.slice(0, 3).map((group) => group.id)));
   const pinTimer = useRef<number | undefined>(undefined);
   const menuTop = stickyTotal + 16;
 
@@ -59,7 +58,6 @@ function DesktopSpecs({ groups, stickyTotal }: { groups: SpecGroup[]; stickyTota
   useEffect(() => () => window.clearTimeout(pinTimer.current), []);
 
   const select = (id: string) => {
-    setExpandedGroups((current) => new Set(current).add(id));
     const target = document.getElementById(desktopId(id));
     if (!target) return;
     target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
@@ -117,25 +115,13 @@ function DesktopSpecs({ groups, stickyTotal }: { groups: SpecGroup[]; stickyTota
             className="pt-8"
             style={{ scrollMarginTop: menuTop }}
           >
-            <details
-              open={expandedGroups.has(g.id)}
-              onToggle={(event) => {
-                const open = event.currentTarget.open;
-                setExpandedGroups((current) => {
-                  if (current.has(g.id) === open) return current;
-                  const next = new Set(current);
-                  if (open) next.add(g.id);
-                  else next.delete(g.id);
-                  return next;
-                });
-              }}
-              className="group rounded-xl border border-neutral-200 bg-neutral-50"
-            >
-              <summary id={`${desktopId(g.id)}-title`} className="cursor-pointer px-5 py-4 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600">
+            {/* Every group is always open (no arrow, no collapsing): the title is a plain heading. */}
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50">
+              <h3 id={`${desktopId(g.id)}-title`} className="px-5 py-4 text-base font-bold text-neutral-950">
                 {g.title}
-              </summary>
+              </h3>
               <div className="px-4 pb-4"><SpecRows items={g.items} /></div>
-            </details>
+            </div>
           </section>
         ))}
       </div>
@@ -234,10 +220,10 @@ function MobileSpecs({ groups }: { groups: SpecGroup[] }) {
             aria-label={`${i + 1} de ${groups.length}: ${g.title}`}
             className="w-full shrink-0 snap-start snap-always"
           >
-            <details open={i < 3} className="rounded-2xl border border-neutral-200 bg-white">
-              <summary className="cursor-pointer px-4 py-4 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600">{g.title}</summary>
+            <div className="rounded-2xl border border-neutral-200 bg-white">
+              <h3 className="px-4 py-4 text-base font-bold text-neutral-950">{g.title}</h3>
               <div className="px-4 pb-4"><SpecRows items={g.items} stacked /></div>
-            </details>
+            </div>
           </section>
         ))}
       </div>

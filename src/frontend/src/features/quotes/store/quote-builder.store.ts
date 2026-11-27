@@ -10,18 +10,12 @@ export interface BuilderCustomerSelection {
   label: string
 }
 
-export interface BuilderListaSelection {
-  id: string
-  label: string
-}
-
-export type BuilderStep = 'customer' | 'lista' | 'review'
+export type BuilderStep = 'customer' | 'review'
 
 interface QuoteBuilderState {
   isOpen: boolean
   step: BuilderStep
   customer: BuilderCustomerSelection | null
-  lista: BuilderListaSelection | null
   priceListId: string | null
   validUntil: string
   taxRate: string
@@ -30,7 +24,6 @@ interface QuoteBuilderState {
   close: () => void
   setStep: (step: BuilderStep) => void
   setCustomer: (customer: BuilderCustomerSelection | null) => void
-  setLista: (lista: BuilderListaSelection | null) => void
   setPriceListId: (priceListId: string | null) => void
   setValidUntil: (validUntil: string) => void
   setTaxRate: (taxRate: string) => void
@@ -42,7 +35,6 @@ const INITIAL_STATE = {
   isOpen: false,
   step: 'customer' as BuilderStep,
   customer: null,
-  lista: null,
   priceListId: null,
   validUntil: '',
   taxRate: '19',
@@ -55,7 +47,6 @@ export const useQuoteBuilderStore = create<QuoteBuilderState>((set) => ({
   close: () => set({ isOpen: false }),
   setStep: (step) => set({ step }),
   setCustomer: (customer) => set({ customer }),
-  setLista: (lista) => set({ lista }),
   setPriceListId: (priceListId) => set({ priceListId }),
   setValidUntil: (validUntil) => set({ validUntil }),
   setTaxRate: (taxRate) => set({ taxRate }),

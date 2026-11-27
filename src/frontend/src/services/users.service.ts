@@ -42,22 +42,22 @@ export const updateUserSupervisor = async (userId: string, supervisorId: string 
 }
 
 // ---------------------------------------------------------------------------
-// COM-01 frontend — concesiones por acción+alcance (paquetes de trabajo).
-// Superficie del backend `users.controller.ts` (COM-01 backend, E1):
-//   GET    /users/:id/access                  → estado, procedencia y paquetes
-//   PUT    /users/:id/access                  → modo paquete o modo grants (OCC)
-//   PUT    /users/:id/access/library          → casillas de Biblioteca (una fuente por usuario)
-//   DELETE /users/:id/access/packages/:id     → retira SOLO esa fuente template
+// COM-01 frontend — concesiones por acción+alcance asignadas una a una.
+// Superficie del backend `users.controller.ts`:
+//   GET    /users/:id/access                  → estado y procedencia de cada concesión
+//   PUT    /users/:id/access                  → concesiones sueltas (OCC)
+//   PUT    /users/:id/access/library          → casillas de Biblioteca
+//   DELETE /users/:id/access/manual/:id       → retira una asignación manual
 // El navegador nunca inventa reglas: sólo ecoa la versión OCC y la del
 // catálogo que el servidor ya sirvió (409/400 si se desactualizan).
 // ---------------------------------------------------------------------------
 
-/** Versión del catálogo con la que el servidor sirve hoy el paquete. */
-export const ACCESS_CATALOG_VERSION = 'panels-20261104-1'
+/** Versión del catálogo con la que el servidor sirve hoy las acciones. */
+export const ACCESS_CATALOG_VERSION = 'panels-20261125-1'
 
 export type AccessScope = 'own' | 'team' | 'list' | 'product' | 'global'
 
-/** Selección concreta de un paquete: acción del catálogo + alcance (§3.1). */
+/** Selección concreta: acción del catálogo + alcance (§3.1). */
 export interface AccessSelection {
   actionId: string
   scope: AccessScope
@@ -81,22 +81,11 @@ export interface AccessSource {
   reason: string | null
 }
 
-export interface AccessPackage {
-  id: string
-  name: string
-  selections: AccessSelection[]
-  applied: boolean
-  sourceId: string | null
-  /** Catálogo actual: los paquetes anteriores solo pueden revocarse. */
-  assignable?: boolean
-}
-
 export interface UserAccessState {
   catalogVersion: string
   accessVersion: number
   grants: AccessGrant[]
   sources: AccessSource[]
-  packages: AccessPackage[]
   /** Solo Super Admin recibe el catálogo completo para repartir trabajo. */
   actions?: AccessActionDefinition[]
 }
@@ -149,7 +138,7 @@ const ACCESS_STATUS_FALLBACK: Record<number, string> = {
   400: 'El servidor rechazó la asignación: revisa la acción, el alcance o la versión.',
   401: 'Tu sesión expiró. Vuelve a iniciar sesión para administrar concesiones.',
   403: 'Sólo Super Admin puede administrar concesiones por acción.',
-  404: 'El usuario o el paquete ya no existe.',
+  404: 'El usuario ya no existe.',
   409: 'Las concesiones cambiaron mientras se editaban; se recarga el estado actual.',
 }
 
@@ -216,51 +205,6 @@ export async function fetchUserAccess(userId: string): Promise<UserAccessState> 
   }
 }
 
-/**
- * Aplica un paquete del catálogo como fuente template (modo paquete del PUT).
- * `grants: []` es obligatorio: el DTO del servidor lo exige y `packageId` y
- * grants no-empty son excluyentes (400 «Envíe packageId o grants, no ambos»).
- */
-export async function applyUserPackage(
-  userId: string,
-  packageId: string,
-  expectedVersion: number,
-  options: { catalogVersion?: string; reason?: string; idempotencyKey?: string } = {},
-): Promise<AssignmentReceipt> {
-  try {
-    const res = await api.put(`/users/${userId}/access`, {
-      packageId,
-      grants: [],
-      expectedVersion,
-      expectedCatalogVersion: options.catalogVersion ?? ACCESS_CATALOG_VERSION,
-      ...(options.reason ? { reason: options.reason } : {}),
-      ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
-    })
-    return res.data as AssignmentReceipt
-  } catch (error) {
-    throw toAccessError(error)
-  }
-}
-
-/**
- * Retira la fuente template del paquete; las demás fuentes del usuario se
- * conservan (si otra concede la misma acción, el acceso permanece).
- */
-export async function removeUserPackage(
-  userId: string,
-  packageId: string,
-  expectedVersion: number,
-): Promise<AssignmentReceipt> {
-  try {
-    const res = await api.delete(`/users/${userId}/access/packages/${packageId}`, {
-      params: { expectedVersion },
-    })
-    return res.data as AssignmentReceipt
-  } catch (error) {
-    throw toAccessError(error)
-  }
-}
-
 /** Quita una fuente manual para que el usuario pueda volver a quedar sin acciones. */
 export async function removeManualAccessSource(
   userId: string,
@@ -277,11 +221,7 @@ export async function removeManualAccessSource(
   }
 }
 
-/**
- * Modo grants del PUT (fuente manual). COM-01 frontend lo deja declarado para
- * la revisión casilla a casilla: la interfaz de paquetes no lo usa todavía
- * (no existe superficie equivalente previa; ficha regla 1).
- */
+/** Guarda las acciones sueltas de la persona (fuente manual) con su alcance. */
 export async function setUserAccessGrants(
   userId: string,
   grants: AccessSelection[],
@@ -303,9 +243,9 @@ export async function setUserAccessGrants(
 }
 
 /**
- * Guarda las casillas de Biblioteca (Productos / Fichas / Precios) como una sola
- * selección. El servidor valida el conjunto, añade las dependencias y reemplaza
- * los paquetes de Biblioteca anteriores en la misma operación.
+ * Guarda las casillas de Biblioteca (Productos / Fichas / Precios / Importaciones /
+ * Catálogos maestros) como una sola selección de acciones. El servidor valida el
+ * conjunto y añade las dependencias.
  */
 export async function setUserLibrarySelection(
   userId: string,

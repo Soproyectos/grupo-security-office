@@ -4,16 +4,17 @@ import StorefrontChrome from '../components/StorefrontChrome'
 import GoogleSignInButton from '../components/GoogleSignInButton'
 import PasswordField from '../../customer-portal/components/PasswordField'
 import PasswordChecklist from '../../customer-portal/components/PasswordChecklist'
+import MunicipalityPicker from '../../customer-portal/components/MunicipalityPicker'
 import TurnstileWidget, { type TurnstileHandle } from '../../customer-portal/components/TurnstileWidget'
 import { useCustomerPortalSignup } from '../../customer-portal/hooks/useCustomerPortal'
 import { isPasswordValid } from '../../customer-portal/utils/password-rules'
-import { CAPTCHA_PENDING_MESSAGE, PRIVACY_POLICY_PATH, PRIVACY_REQUIRED_MESSAGE, readAuthError, signupErrorMessage, turnstileSiteKey, EMAIL_ALREADY_REGISTERED_CODE } from '../../customer-portal/utils/auth-errors'
+import { CAPTCHA_PENDING_MESSAGE, PRIVACY_POLICY_PATH, PRIVACY_REQUIRED_MESSAGE, readAuthError, signupErrorMessage, turnstileSiteKey, EMAIL_ALREADY_REGISTERED_CODE, INVALID_CITY_MESSAGE } from '../../customer-portal/utils/auth-errors'
 
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 const INPUT = `mt-1 min-h-12 w-full rounded-control border border-surface-300 bg-white px-3 ${FOCUS}`
 
-type Values = { contactName: string; companyName: string; email: string; documentId: string; phone: string; password: string; confirm: string }
-const EMPTY: Values = { contactName: '', companyName: '', email: '', documentId: '', phone: '', password: '', confirm: '' }
+type Values = { contactName: string; companyName: string; city: string; email: string; documentId: string; phone: string; password: string; confirm: string }
+const EMPTY: Values = { contactName: '', companyName: '', city: '', email: '', documentId: '', phone: '', password: '', confirm: '' }
 
 const TEXT_FIELDS = [
   { name: 'contactName', label: 'Nombre de contacto', type: 'text', required: true, max: 120, min: 2, autoComplete: 'name' },
@@ -36,6 +37,7 @@ export default function AccessRequestPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!values.city) { setError(INVALID_CITY_MESSAGE); return }
     if (!accepted) { setError(PRIVACY_REQUIRED_MESSAGE); return }
     if (!isPasswordValid(values.password, { email: values.email, name: values.contactName })) { setError('Tu contraseña aún no cumple todos los requisitos de la lista.'); return }
     if (values.password !== values.confirm) { setError('Las contraseñas no coinciden'); return }
@@ -49,6 +51,7 @@ export default function AccessRequestPage() {
         email: values.email.trim(),
         password: values.password,
         companyName: values.companyName.trim(),
+        city: values.city,
         ...(documentId ? { documentId } : {}),
         ...(phone ? { phone } : {}),
         acceptPrivacy: true,
@@ -93,6 +96,7 @@ export default function AccessRequestPage() {
                     />
                   </label>
                 ))}
+                <MunicipalityPicker value={values.city} onChange={set('city')} invalid={Boolean(error) && !values.city} />
                 <PasswordField id="signup-password" name="password" label="Contraseña" autoComplete="new-password" required minLength={12} maxLength={128} value={values.password} onChange={(event) => set('password')(event.target.value)} aria-describedby="signup-password-rules" />
                 <PasswordChecklist id="signup-password-rules" password={values.password} context={{ email: values.email, name: values.contactName }} />
                 <PasswordField id="signup-confirm" name="confirm" label="Confirmar contraseña" autoComplete="new-password" required maxLength={128} value={values.confirm} onChange={(event) => set('confirm')(event.target.value)} />

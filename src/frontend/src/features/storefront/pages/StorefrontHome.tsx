@@ -4,6 +4,7 @@ import HeroBanner from '../components/HeroBanner'
 import BrandCampaigns from '../components/BrandCampaigns'
 import InstagramReels from '../components/InstagramReels'
 import NewArrivals from '../components/NewArrivals'
+import ProductImageStage, { PRODUCT_STAGE_BORDER, PRODUCT_STAGE_LINK, PRODUCT_STAGE_TITLE_BORDER } from '../components/ProductImageStage'
 import LearnSection from '../components/LearnSection'
 import StorefrontChrome from '../components/StorefrontChrome'
 import { categoryHref } from '../components/mega-menu/menu-model'
@@ -115,7 +116,7 @@ export default function StorefrontHome() {
         {categoryStatus === 'ready' && <section aria-labelledby="home-tiles-title" className="mx-auto max-w-[105rem] px-5 py-4 sm:px-8 lg:px-12">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4">
             <h2 id="home-tiles-title" className="text-2xl font-bold lg:text-3xl">Explora por categoría</h2>
-            <Link to="/catalogo" className={`inline-flex min-h-11 items-center font-bold text-security-600 hover:underline ${FOCUS}`}>
+            <Link to="/catalogo" className={`inline-flex min-h-11 items-center font-bold ${PRODUCT_STAGE_LINK} hover:underline ${FOCUS}`}>
               Ver todo el catálogo <span aria-hidden="true" className="ml-2 text-xl">›</span>
             </Link>
           </div>
@@ -124,14 +125,12 @@ export default function StorefrontHome() {
               <li key={slug}>
                 <Link
                   to={categoryHref(slug)}
-                  className={`group flex h-full flex-col overflow-hidden rounded-card border border-surface-200 hover:border-security-600 ${FOCUS}`}
+                  className={`group flex h-full flex-col overflow-hidden rounded-card border ${PRODUCT_STAGE_BORDER} hover:border-security-600 ${FOCUS}`}
                 >
-                  <span className="block aspect-[4/3] bg-white">
-                    <img src={`/images/home/tiles/${slug}.jpg`} alt="" loading="lazy" className="h-full w-full object-contain p-3" />
-                  </span>
-                  <span className="flex min-h-12 flex-1 items-center justify-between gap-2 bg-surface-100 px-3 py-2 text-base font-bold text-storefront-ink group-hover:text-security-600 lg:text-lg">
+                  <ProductImageStage src={`/images/home/tiles/${slug}.jpg`} />
+                  <span className={`flex min-h-12 flex-1 items-center justify-between gap-2 border-t ${PRODUCT_STAGE_TITLE_BORDER} bg-white px-3 py-2 text-base font-bold text-storefront-ink group-hover:text-security-600 lg:text-lg`}>
                     {name}
-                    <span aria-hidden="true" className="text-2xl leading-none text-security-600">›</span>
+                    <span aria-hidden="true" className={`text-2xl leading-none ${PRODUCT_STAGE_LINK}`}>›</span>
                   </span>
                 </Link>
               </li>

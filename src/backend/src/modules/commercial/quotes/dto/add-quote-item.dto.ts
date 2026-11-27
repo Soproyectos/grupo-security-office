@@ -1,4 +1,4 @@
-import { IsInt, IsUUID, Min } from 'class-validator';
+import { IsInt, IsUUID, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsAbsent } from './absent.decorator';
 
@@ -14,6 +14,7 @@ export class AddQuoteItemDto {
   @ApiProperty({ example: 5, default: 1 })
   @IsInt()
   @Min(1)
+  @Max(9999)
   quantity: number;
 
   @ApiPropertyOptional({

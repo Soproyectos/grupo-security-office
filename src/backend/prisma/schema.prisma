@@ -51,8 +51,13 @@ model User {
   notifications           Notification[]
   supervisor              User?               @relation("UserHierarchy", fields: [supervisorId], references: [id])
   subordinates            User[]              @relation("UserHierarchy")
+  /// Advisor zone (one per advisor); used to auto-assign portal registrations by city.
+  zoneId                      String?
+  zone                        Zone?                 @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  advisedPortalAccounts       PortalAccount[]       @relation("PortalAccountAdvisor")
 
   @@index([supervisorId])
+  @@index([zoneId])
   @@map("users")
 }
 
@@ -1061,11 +1066,15 @@ model Customer {
   portalAccounts PortalAccount[]  @relation("PortalAccountCustomer")
   quotes         Quote[]
   salesOrders    SalesOrder[]     @relation("CustomerSalesOrder")
+  /// Company-wide portal tariff tier (all people of the company quote with it).
+  portalTierId   String?
+  portalTier     PortalTier?      @relation("CustomerPortalTier", fields: [portalTierId], references: [id], onDelete: SetNull)
 
   @@unique([documentType, documentId])
   @@index([ownerId, status])
   @@index([status])
   @@index([createdAt])
+  @@index([portalTierId])
   @@map("customers")
 }
 
@@ -1092,8 +1101,11 @@ model Quote {
   code        String      @unique
   customerId  String
   ownerId     String
-  listaId     String
+  /// Deprecated: quotes no longer depend on Listas. Kept optional for legacy rows.
+  listaId         String?
   priceListId String?
+  /// Portal person who sent the quote (null for panel quotes).
+  portalAccountId String?
   status      String      @default("borrador")
   currency    String      @default("COP")
   subtotal    Decimal     @default(0) @db.Decimal(14, 2)
@@ -1110,7 +1122,9 @@ model Quote {
   updatedAt   DateTime    @updatedAt
   items       QuoteItem[]
   customer    Customer    @relation(fields: [customerId], references: [id])
-  lista       Lista       @relation("QuoteLista", fields: [listaId], references: [id])
+  lista           Lista?             @relation("QuoteLista", fields: [listaId], references: [id])
+  portalAccount   PortalAccount?     @relation("QuotePortalAccount", fields: [portalAccountId], references: [id], onDelete: SetNull)
+  statusEvents    QuoteStatusEvent[]
   owner       User        @relation("QuoteOwner", fields: [ownerId], references: [id])
   priceList   PriceList?  @relation("QuotePriceList", fields: [priceListId], references: [id])
   salesOrder  SalesOrder? @relation("QuoteSalesOrder")
@@ -1120,6 +1134,7 @@ model Quote {
   @@index([customerId])
   @@index([status])
   @@index([listaId])
+  @@index([portalAccountId])
   @@map("quotes")
 }
 
@@ -1185,7 +1200,8 @@ model QuoteItem {
   name            String
   listaId         String?
   priceListId     String?
-  unitPrice       Decimal  @db.Decimal(12, 2)
+  /// Null means "price to confirm": the advisor completes it; never invented.
+  unitPrice       Decimal? @db.Decimal(12, 2)
   currency        String   @default("COP")
   quantity        Int      @default(1)
   discountPct     Decimal  @default(0) @db.Decimal(5, 2)
@@ -1204,7 +1220,14 @@ model QuoteItem {
 /// administrador comercial la aprueba (ACTIVE) o rechaza (REJECTED).
 /// El enlace a `customer` NO implica aprobación: la cuenta sigue PENDING.
 model PortalAccount {
+  /// Deprecated: superseded by Customer.portalTierId; kept for data migration.
   tierId          String?
+  /// Colombian DIVIPOLA municipality code (5 digits) chosen at registration.
+  city                String?
+  /// Advisor assigned while the person is not yet linked to a company.
+  advisorId           String?
+  advisor             User?                @relation("PortalAccountAdvisor", fields: [advisorId], references: [id], onDelete: SetNull)
+  quotes              Quote[]              @relation("QuotePortalAccount")
   tier            PortalTier?        @relation(fields: [tierId], references: [id], onDelete: SetNull)
   id              String             @id @default(uuid())
   email           String             @unique
@@ -1240,6 +1263,7 @@ model PortalAccount {
   @@index([state, createdAt])
   @@index([customerId])
   @@index([documentId])
+  @@index([advisorId])
   @@map("portal_accounts")
 }
 
@@ -1486,6 +1510,7 @@ model PortalTier {
   priceList   PriceList?      @relation(fields: [priceListId], references: [id], onDelete: SetNull)
   isActive    Boolean         @default(true)
   accounts    PortalAccount[]
+  customers   Customer[]      @relation("CustomerPortalTier")
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -1841,4 +1866,48 @@ model PortalAuthVerification {
 
   @@index([identifier])
   @@map("portal_auth_verification")
+}
+
+/// Advisor zone: a name plus a list of cities (DIVIPOLA codes). Managed by Super Admin.
+model Zone {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  cities    ZoneCity[]
+  users     User[]
+
+  @@map("zones")
+}
+
+model ZoneCity {
+  zoneId   String
+  /// Colombian DIVIPOLA municipality code (5 digits).
+  cityCode String
+  zone     Zone   @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@id([zoneId, cityCode])
+  @@index([cityCode])
+  @@map("zone_cities")
+}
+
+/// Quote status history. userId / portalAccountId are stored without FK on
+/// purpose (like approvedById): they are audit trail and must survive deletion
+/// of the actor.
+model QuoteStatusEvent {
+  id              String   @id @default(uuid())
+  quoteId         String
+  fromStatus      String?
+  toStatus        String
+  createdAt       DateTime @default(now())
+  /// Staff actor (no FK).
+  userId          String?
+  /// Customer actor (no FK).
+  portalAccountId String?
+  note            String?
+  quote           Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId, createdAt])
+  @@map("quote_status_events")
 }

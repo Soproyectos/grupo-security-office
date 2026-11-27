@@ -36,6 +36,8 @@ import { SalesTargetsModule } from './modules/commercial/sales-targets/sales-tar
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MarketingCampaignsModule } from './modules/marketing-campaigns/marketing-campaigns.module';
+import { GeoModule } from './common/geo/geo.module';
+import { ZonesModule } from './modules/zones/zones.module';
 
 @Module({
   imports: [
@@ -90,6 +92,8 @@ import { MarketingCampaignsModule } from './modules/marketing-campaigns/marketin
     CustomerPortalModule,
     StorefrontModule,
     MarketingCampaignsModule,
+    GeoModule,
+    ZonesModule,
   ],
   providers: [
     {

@@ -9,8 +9,11 @@ import LinkedAccountsSection from '../components/LinkedAccountsSection'
 import { useRefreshPortalSession } from '../hooks/usePortalProfile'
 import { useCustomerPortalAuthStore } from '../../../stores/customer-portal-auth.store'
 import StorefrontChrome from '../../storefront/components/StorefrontChrome'
+import CommercialTier from '../components/CommercialTier'
+import CustomerHome from './CustomerHome'
+import { quoteAccess } from '../utils/quote-access'
+import { usePortalQuoteList } from '../../../stores/portal-quote-list.store'
 import type { PortalAccount } from '../types/customer-portal.types'
-import { whatsappUrl } from '../../storefront/constants/contact'
 const COMPLETE_PROFILE_PATH='/clientes/completar-perfil'
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500'
 
@@ -19,22 +22,23 @@ function portalNavigationClass(active: boolean) {
   return `inline-flex min-h-11 items-center whitespace-nowrap border-b-[3px] text-sm font-semibold ${state} ${FOCUS}`
 }
 
-function BasicPriceAccess() {
+/** Sections of the portal. The quote ones appear once the account can quote; the count shows what is being built. */
+function PortalTabs({ account }: { account: PortalAccount }) {
+  const { count } = usePortalQuoteList(account.id)
+  const canQuote = quoteAccess(account) === 'ready' && account.state === 'ACTIVE'
+  const tabs: [string, string][] = [
+    ['/clientes', 'Inicio'],
+    ...(canQuote ? [['/clientes/cotizacion', count > 0 ? `Mi cotización (${count})` : 'Mi cotización'], ['/clientes/cotizaciones', 'Mis cotizaciones']] as [string, string][] : []),
+    ['/clientes/perfil', 'Mis datos'],
+  ]
   return (
-    <div className="mt-2 rounded-control bg-surface-100 px-3 py-2 text-sm text-ink-900">
-      <p>Tu acceso es básico. Un asesor puede habilitarte cotizaciones y precios.</p>
-      <div className="flex flex-wrap items-center gap-x-3">
-        <a
-          href={whatsappUrl('Hola, quiero solicitar acceso a precios de Grupo Security.')}
-          target="_blank"
-          rel="noreferrer noopener"
-          className={`inline-flex min-h-11 items-center font-semibold !text-security-600 hover:underline ${FOCUS}`}
-        >
-          Pedir acceso a precios
-        </a>
-        <p className="text-ink-600">Se abre WhatsApp para hablar con un asesor.</p>
-      </div>
-    </div>
+    <nav aria-label="Mi cuenta de cliente" className="mx-auto flex max-w-7xl gap-4 overflow-x-auto px-4 sm:px-5">
+      {tabs.map(([to, label]) => (
+        <NavLink key={to} to={to} end={to === '/clientes' || to === '/clientes/cotizacion'} className={({ isActive }) => portalNavigationClass(isActive)}>
+          {label}
+        </NavLink>
+      ))}
+    </nav>
   )
 }
 
@@ -62,17 +66,7 @@ export function CustomerPortalShell() {
   return (
     <StorefrontChrome>
       <div className="border-b border-surface-200 bg-white">
-        <nav aria-label="Mi cuenta de cliente" className="mx-auto flex max-w-7xl gap-4 overflow-x-auto px-4 sm:px-5">
-          {[
-            ['/clientes', 'Mi cuenta'],
-            ['/clientes/productos', 'Catálogo'],
-            ['/clientes/perfil', 'Mis datos'],
-          ].map(([to, label]) => (
-            <NavLink key={to} to={to!} end={to === '/clientes'} className={({ isActive }) => portalNavigationClass(isActive)}>
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+        <PortalTabs account={session.data} />
       </div>
       <main className="mx-auto w-full max-w-7xl px-4 py-2 sm:px-5 sm:py-3">
         <Outlet context={session.data} />
@@ -90,21 +84,6 @@ function EmailChangedNotice() {
  const refresh=useRefreshPortalSession()
  useEffect(()=>{void refresh()},[])// eslint-disable-line react-hooks/exhaustive-deps
  return <p role="status" className="rounded-control bg-surface-100 p-3 text-sm font-semibold text-ink-900">Tu correo se actualizó.</p>
-}
-
-function CommercialTier({ account }: { account: PortalAccount }) {
-  const tier = account.tier?.name || (account.type === 'INSTALLER' ? 'Instalador' : 'Cliente final')
-
-  return (
-    <section className="rounded-card border border-surface-200 bg-white p-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-        <h2 className="text-lg font-semibold">Tu clasificación comercial</h2>
-        <p className="rounded-full bg-security-50 px-3 py-1 text-sm font-semibold text-security-600">{tier}</p>
-      </div>
-      <p className="mt-2 text-sm text-ink-600">La administración actualiza tu escalafón y las condiciones comerciales de tu cuenta.</p>
-      {!account.tier && <BasicPriceAccess />}
-    </section>
-  )
 }
 
 const PROFILE_SECTIONS = [
@@ -184,24 +163,5 @@ export default function CustomerAccountPage({ profile = false }: { profile?: boo
 
   if (profile) return <CustomerProfile account={account} />
 
-  return (
-    <div className="space-y-6">
-      <header>
-        <p className="text-sm font-semibold text-security-600">Portal de clientes</p>
-        <h1 className="mt-2 font-condensed text-3xl font-semibold">Bienvenido, {account.contactName || 'cliente'}</h1>
-        <p className="mt-2 text-ink-600">{account.companyName}</p>
-      </header>
-      <CommercialTier account={account} />
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Link to="/clientes/productos" className="rounded-card border border-surface-200 bg-white p-6 hover:border-security-500">
-          <h2 className="text-xl font-semibold">Consultar catálogo</h2>
-          <p className="mt-2 text-sm text-ink-600">Encuentra productos y consulta los precios disponibles para tu cuenta.</p>
-        </Link>
-        <Link to="/clientes/perfil" className="rounded-card border border-surface-200 bg-white p-6 hover:border-security-500">
-          <h2 className="text-xl font-semibold">Mis datos</h2>
-          <p className="mt-2 text-sm text-ink-600">Consulta la empresa y el contacto registrados.</p>
-        </Link>
-      </div>
-    </div>
-  )
+  return <CustomerHome account={account} />
 }

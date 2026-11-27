@@ -255,10 +255,11 @@ describe('BASE-03 backend-vinculos — enlaces y revocación de detalle', () => 
       expect(JSON.stringify(link)).not.toContain('Taladro percutor');
     });
 
-    it('CON concesión vigente (products:read, alcance list): revealed:true + label y detalle', async () => {
+    it('CON concesión vigente (products:read, alcance global): revealed:true + label y detalle', async () => {
       grants.grantsForUser.mockResolvedValue([
         { sourceId: 'activity-read', actionId: 'activities:read', scope: 'own' },
-        { sourceId: 'src1', actionId: 'products:read', scope: 'list', resourceId: 'lista1' },
+        // products:read solo admite alcance global (CATALOG_SCOPES); `list` no cubre nunca.
+        { sourceId: 'src1', actionId: 'products:read', scope: 'global' },
       ]);
 
       const rows: any = await service.activities(seller);
@@ -537,7 +538,7 @@ describe('BASE-03 backend-vinculos — aceptación con concesión real (t06)', (
     expect(JSON.stringify(target.links[0])).not.toContain('Taladro percutor');
   });
 
-  it('con AccessGrant vigente (products:read, alcance list) la MISMA lectura revela label y detalle', async () => {
+  it('con AccessGrant vigente (products:read, alcance global) la MISMA lectura revela label y detalle', async () => {
     // `AccessSource.userId` apunta a `access_states`, no a `users`: el estado
     // de versión (OCC) lo crea el alta de concesiones y aquí se replica a mano.
     await db.accessState.upsert({ where: { userId: ctx.userId }, create: { userId: ctx.userId }, update: {} });
@@ -555,8 +556,8 @@ describe('BASE-03 backend-vinculos — aceptación con concesión real (t06)', (
       data: {
         sourceId: source.id,
         actionId: 'products:read',
-        scopeKind: 'list',
-        resourceId: listaId,
+        scopeKind: 'global',
+        resourceId: '',
       },
     });
     grantId = grant.id;

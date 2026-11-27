@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
@@ -31,6 +31,14 @@ export class UsersService {
     return count > 0;
   }
 
+  /** The zone must exist and be active to be given to a user (clearing it with null is always allowed). */
+  private async assertZoneAssignable(zoneId: string | null | undefined) {
+    if (!zoneId) return;
+    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId }, select: { id: true, isActive: true } });
+    if (!zone) throw new BadRequestException('La zona elegida no existe');
+    if (!zone.isActive) throw new BadRequestException('La zona elegida no está activa');
+  }
+
   async findAll(params?: { skip?: number; take?: number; search?: string }) {
     const { skip = 0, take = 50, search } = params || {};
 
@@ -52,6 +60,7 @@ export class UsersService {
           roles: {
             include: { role: true },
           },
+          zone: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -75,6 +84,7 @@ export class UsersService {
         roles: {
           include: { role: true },
         },
+        zone: { select: { id: true, name: true } },
       },
     });
 
@@ -102,6 +112,8 @@ export class UsersService {
       userInputs: [dto.email, dto.name],
     });
 
+    await this.assertZoneAssignable(dto.zoneId);
+
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = await this.prisma.user.create({
@@ -110,6 +122,7 @@ export class UsersService {
         name: dto.name,
         password: hashedPassword,
         isActive: dto.isActive ?? true,
+        ...(dto.zoneId ? { zoneId: dto.zoneId } : {}),
         roles: dto.roleIds?.length
           ? {
               create: dto.roleIds.map((roleId) => ({ roleId })),
@@ -118,6 +131,7 @@ export class UsersService {
       },
       include: {
         roles: { include: { role: true } },
+        zone: { select: { id: true, name: true } },
       },
     });
 
@@ -130,6 +144,7 @@ export class UsersService {
         email: user.email,
         name: user.name,
         isActive: user.isActive,
+        zoneId: user.zoneId ?? null,
         roles: user.roles.map((ur) => ur.role.name),
       },
     });
@@ -168,7 +183,10 @@ export class UsersService {
       await this.privileged.assertBreakGlass(id, 'retirar el rol Super Admin');
     }
 
+    if (dto.zoneId !== undefined) await this.assertZoneAssignable(dto.zoneId);
+
     const data: Prisma.UserUpdateInput = {
+      ...(dto.zoneId !== undefined && { zone: dto.zoneId ? { connect: { id: dto.zoneId } } : { disconnect: true } }),
       ...(dto.name && { name: dto.name }),
       ...(dto.email && { email: dto.email.toLowerCase() }),
       ...(dto.isActive !== undefined && { isActive: dto.isActive }),
@@ -201,6 +219,7 @@ export class UsersService {
       data,
       include: {
         roles: { include: { role: true } },
+        zone: { select: { id: true, name: true } },
       },
     });
 
@@ -224,8 +243,10 @@ export class UsersService {
         name: user.name,
         isActive: user.isActive,
         supervisorId: user.supervisorId,
+        zoneId: user.zoneId ?? null,
       },
       newValues: {
+        ...(dto.zoneId !== undefined && { zoneId: dto.zoneId }),
         ...(dto.name && { name: dto.name }),
         ...(dto.email && { email: dto.email.toLowerCase() }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),

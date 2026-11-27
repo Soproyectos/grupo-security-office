@@ -5,7 +5,7 @@ import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
 import { canAdministerAccess, hasAssignedAction, isCatalogPath, useOwnUserAccess, usePanelAccess } from '../../features/users/access'
-import { hasMarketingAction, MARKETING_PANEL_LABEL, MARKETING_PATH } from '../../features/marketing/marketing-access'
+import { visibleMarketingPages, MARKETING_PANEL_LABEL, MARKETING_PATH } from '../../features/marketing/marketing-access'
 import {
   fetchNotifications,
   fetchUnreadCount,
@@ -50,7 +50,8 @@ export default function Header() {
   const catalog = usePanelAccess('catalog')
   const { access, status } = useOwnUserAccess()
   const allowed = (action: string) => hasAssignedAction({ roles: user?.roles, grants: access?.grants, status }, [action])
-  const marketingRead = hasMarketingAction({ roles: user?.roles, grants: access?.grants, packages: access?.packages, status }, 'read')
+  // The Marketing entry shows with any of its tabs (Banners, Promociones internas, Gestionar avisos).
+  const marketingVisible = visibleMarketingPages({ roles: user?.roles, grants: access?.grants, status }).length > 0
   const isSeller = workspaceForRoles(user?.roles ?? []) === 'sales'
   const isSuperAdmin = canAdministerAccess(user?.roles)
 
@@ -460,13 +461,14 @@ export default function Header() {
                 </button>
               </div>
             </div>}
-            {!isSeller && isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /><NavItem to="/customer-accounts" label="Clientes y escalafones" /><NavItem to="/users/access" label="Asignar paneles" /></div>}
-            {!isSeller && marketingRead && (
+            {isSuperAdmin && <div className="flex flex-shrink-0 gap-3"><NavItem to="/team-requests" label="Peticiones" /></div>}
+            {!isSeller && marketingVisible && (
               <div className="flex-shrink-0">
                 <NavItem to={MARKETING_PATH} label={MARKETING_PANEL_LABEL} active={location.pathname.startsWith('/marketing')} />
               </div>
             )}
-            {!isSeller && allowed('users:read') && (
+            {/* «Usuarios» also leads to «Asignar paneles» (tab inside the panel), so Super Admin keeps it even with a sales role. */}
+            {(isSuperAdmin || (!isSeller && allowed('users:read'))) && (
               <div className="flex-shrink-0">
                 <NavItem to="/users" label="Usuarios" />
               </div>

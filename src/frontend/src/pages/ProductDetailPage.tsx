@@ -41,6 +41,7 @@ import { ProductPricesSection } from '../features/products/prices/ProductPricesS
 import { ValidationSection } from '../features/catalog-validation/ValidationSection'
 import { ProductPublicationSection } from '../features/catalog-publication/ProductPublicationPanel'
 import { visibleDetailTabs, type DetailTab } from '../features/products/lib/product-detail-access'
+import PasswordField from '../features/customer-portal/components/PasswordField'
 
 // "Ficha" is the single editing surface: general information, photos, public sheet and attributes.
 const PRICE_LIST_ORDER = [
@@ -575,18 +576,7 @@ function DeleteProductModal({
 
         {needsClave && (
           <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-              Clave del usuario
-            </label>
-            <input
-              id="delete-product-clave"
-              type="password"
-              value={clave}
-              onChange={(e) => setClave(e.target.value)}
-              autoComplete="current-password"
-              placeholder="••••••"
-              className={inputClass}
-            />
+            <PasswordField id="delete-product-clave" label="Clave del usuario" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" placeholder="••••••" />
             <p className="text-xs text-neutral-500 mt-1.5">
               {errorCode === 'CLAVE_USUARIO_INCORRECTA'
                 ? 'Clave incorrecta. Inténtalo de nuevo.'
@@ -597,18 +587,7 @@ function DeleteProductModal({
 
         {needsMasterKey && (
           <div>
-            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-              Clave maestra
-            </label>
-            <input
-              id="delete-product-master-key"
-              type="password"
-              value={masterKey}
-              onChange={(e) => setMasterKey(e.target.value)}
-              autoComplete="off"
-              placeholder="••••••"
-              className={inputClass}
-            />
+            <PasswordField id="delete-product-master-key" label="Clave maestra" value={masterKey} onChange={(e) => setMasterKey(e.target.value)} autoComplete="off" placeholder="••••••" />
             <p className="text-xs text-neutral-500 mt-1.5">
               El producto tiene datos asociados. Ingresa la clave maestra para eliminar.
             </p>

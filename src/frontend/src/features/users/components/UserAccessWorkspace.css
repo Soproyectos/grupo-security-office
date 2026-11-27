@@ -276,13 +276,6 @@
   flex: 0 0 auto;
 }
 
-.access-package-panel {
-  position: sticky;
-  z-index: 1;
-  bottom: 0;
-  background: var(--color-bg-card);
-}
-
 .access-library-block {
   display: flex;
   min-height: 0;
@@ -428,14 +421,11 @@
 .access-tree-summary::before {content:'';width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid currentColor;flex:none}
 .access-tree-group[open]>.access-tree-summary::before {transform:rotate(90deg)}
 .access-tree-content {padding:.2rem .25rem .35rem .65rem}
-.access-package-panel {flex:none;position:static}
-.access-package-panel[open]>div {max-height:10rem;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
 .access-manual-actions {flex:none}
 .access-workspace-detail {gap:.35rem}
 .access-workspace-detail>p {font-size:.75rem;margin:0}
 .access-panel-nav::-webkit-scrollbar,
-.access-sections::-webkit-scrollbar,
-.access-package-panel div::-webkit-scrollbar {display:none}
+.access-sections::-webkit-scrollbar {display:none}
 @media(max-width:700px) {
  .access-tree-summary {min-height:2.75rem!important}
  .access-tree-group,.access-tree-group[open] {min-height:2.75rem}

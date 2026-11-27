@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth.store'
 import { useDocumentTitle } from '../features/storefront/hooks/useDocumentTitle'
 import { ADMIN_TITLE } from '../features/storefront/utils/documentTitle'
 import api from '../services/api'
+import TurnstileWidget, { type TurnstileHandle } from '../features/customer-portal/components/TurnstileWidget'
+import { CAPTCHA_PENDING_MESSAGE, turnstileSiteKey } from '../features/customer-portal/utils/auth-errors'
 import MfaChallenge, {
   BackupCodes,
   type MfaStage,
@@ -32,6 +34,8 @@ export default function Login() {
   const [submitError, setSubmitError] = useState<string>('')
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
+  const captcha = useRef<TurnstileHandle>(null)
+  const [captchaToken, setCaptchaToken] = useState('')
 
   // Segundo paso del login (Fase S). Mientras `challenge` no sea null, el
   // usuario NO está autenticado: sólo demostró conocer la contraseña.
@@ -86,10 +90,15 @@ export default function Login() {
       return
     }
     
+    if (turnstileSiteKey() && !captchaToken) {
+      setSubmitError(CAPTCHA_PENDING_MESSAGE)
+      return
+    }
+
     setIsSubmitting(true)
     
     try {
-      const response = await api.post('/auth/login', form)
+      const response = await api.post('/auth/login', form, captchaToken ? { headers: { 'x-captcha-response': captchaToken } } : undefined)
       const { status, user, challengeToken } = response.data
 
       // El backend responde con un resultado discriminado. Sólo 'COMPLETE'
@@ -127,6 +136,8 @@ export default function Login() {
         setSubmitError(msg || 'Error al iniciar sesión. Intenta de nuevo.')
       }
     } finally {
+      // A Turnstile token works once: ask for a fresh one after every attempt.
+      captcha.current?.reset()
       setIsSubmitting(false)
     }
   }
@@ -305,6 +316,8 @@ export default function Login() {
                   Pedir ayuda con mi contraseña
                 </a>
               </div>
+
+              <TurnstileWidget ref={captcha} onToken={setCaptchaToken} />
 
               {/* CTA principal */}
               <button

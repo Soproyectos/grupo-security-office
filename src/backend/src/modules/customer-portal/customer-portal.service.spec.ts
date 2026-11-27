@@ -1,70 +1,38 @@
+import { createHash } from 'crypto';
 jest.mock('bcrypt', () => ({ compare: jest.fn(), hash: jest.fn() }));
 
-import { BadRequestException, ConflictException, ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
 import { CustomerPortalService } from './customer-portal.service';
 
 const prisma: any = {
   portalAccount: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-  portalTier: {findUnique:jest.fn(),findFirst:jest.fn(),create:jest.fn(),update:jest.fn()},
+  portalTier: {findUnique:jest.fn(),findFirst:jest.fn(),findMany:jest.fn(),create:jest.fn(),update:jest.fn()},
+  user: { findUnique: jest.fn() },
   $transaction: jest.fn((operation) => operation(prisma)),
   $queryRaw: jest.fn(),
   portalSession: { create: jest.fn(), updateMany: jest.fn() },
-  portalPasswordReset: { upsert: jest.fn(), findUnique: jest.fn(), deleteMany: jest.fn() },
   portalPriceListMapping: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   brand: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
   price: { findMany: jest.fn(), findFirst: jest.fn() },
   // La tarifa vive en la biblioteca y se resuelve por id (sin relación entre bases).
   priceList: { findUnique: jest.fn(), findMany: jest.fn(async ({ where }: any) => where.id.in.map((id: string) => ({ id, isActive: true, name: id, code: id, currency: 'COP' }))) },
-  customer: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+  customer: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
 };
 const jwt: any = { sign: jest.fn(() => 'portal-token') };
 const config: any = { get: jest.fn((_key: string, fallback?: unknown) => fallback) };
 const audit: any = { log: jest.fn() };
-const mail: any = { send: jest.fn() };
-
-const REGISTER_DTO = {
-  email: 'SALES@ACME.CO', password: 'long-password-12', contactName: 'Ana',
-  companyName: 'Acme', documentId: '900123456', type: 'FINAL_CUSTOMER',
-} as any;
+const ADMIN = { userId: 'staff-1', roles: ['Super Admin'] };
+// The scope rules have their own spec (portal-account-access.service.spec.ts); here the person always reaches the account.
+const access: any = { assertAccount: jest.fn().mockResolvedValue({}), requireScope: jest.fn().mockResolvedValue('global'), readWhere: jest.fn().mockResolvedValue({}), teamIds: jest.fn(), assertCustomerLinkable: jest.fn().mockResolvedValue(undefined), ownerInScope: jest.fn().mockResolvedValue(true) };
+const assignment: any = { assignForAccount: jest.fn().mockResolvedValue(null), canManage: jest.fn().mockResolvedValue(true) };
+const notifications: any = { create: jest.fn().mockResolvedValue({}) };
 
 describe('CustomerPortalService', () => {
   let service: CustomerPortalService;
-  beforeEach(() => { jest.clearAllMocks(); service = new CustomerPortalService(prisma, jwt, config, audit, mail); });
-
-  // ---------- Registro ----------
-
-  it('registra una cuenta ACTIVE básica normalizada, sin crear usuario interno', async () => {
-    prisma.portalAccount.findUnique.mockResolvedValue(null);
-    prisma.customer.findFirst.mockResolvedValue(null);
-    (bcrypt.hash as jest.Mock).mockResolvedValue('hash');
-    prisma.portalAccount.create.mockResolvedValue({ id: 'p1', state: 'ACTIVE' });
-
-    const result = await service.register(REGISTER_DTO);
-
-    expect(prisma.portalAccount.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ email: 'sales@acme.co', passwordHash: 'hash', documentId: '900123456', type: 'FINAL_CUSTOMER' }),
-    }));
-    expect(result.state).toBe('ACTIVE');
-  });
-
-  it('no permite autoseleccionar un escalafón ni vincular un NIT ajeno',async()=>{
-    prisma.portalAccount.findUnique.mockResolvedValue(null);
-    (bcrypt.hash as jest.Mock).mockResolvedValue('hash');
-    prisma.portalAccount.create.mockResolvedValue({id:'p1',state:'ACTIVE'});
-    await service.register({...REGISTER_DTO,type:'INSTALLER'});
-    const data=prisma.portalAccount.create.mock.calls[0][0].data;
-    expect(data.type).toBe('FINAL_CUSTOMER');expect(data.state).toBe('ACTIVE');
-    expect(data).not.toHaveProperty('tierId');expect(data).not.toHaveProperty('customerId');
-    expect(prisma.customer.findFirst).not.toHaveBeenCalled();
-  });
-
-  it('rechaza con 409 un correo ya registrado en el portal', async () => {
-    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1' });
-    await expect(service.register(REGISTER_DTO)).rejects.toThrow(ConflictException);
-  });
+  beforeEach(() => { jest.clearAllMocks(); service = new CustomerPortalService(prisma, jwt, config, audit, undefined, access, assignment, notifications); });
 
   // ---------- Login ----------
 
@@ -72,6 +40,14 @@ describe('CustomerPortalService', () => {
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', passwordHash: 'hash', state: 'PENDING' });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     await expect(service.login('sales@acme.co', 'password', {})).rejects.toThrow(ForbiddenException);
+  });
+
+  it('login con hash antiguo con prefijo sha256: compara el digest de la contraseña contra el hash sin prefijo', async () => {
+    const digest = createHash('sha256').update('Clave-larga-de-prueba-9!').digest('hex');
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', passwordHash: 'sha256:stored-bcrypt', state: 'REJECTED' });
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    await expect(service.login('sales@acme.co', 'Clave-larga-de-prueba-9!', {})).rejects.toThrow(ForbiddenException);
+    expect(bcrypt.compare).toHaveBeenCalledWith(digest, 'stored-bcrypt');
   });
 
   it('cuenta REJECTED con contraseña correcta recibe 403', async () => {
@@ -122,170 +98,49 @@ describe('CustomerPortalService', () => {
     expect(jwt.sign).not.toHaveBeenCalled();
   });
 
-  describe('recuperación de contraseña', () => {
-    const email = 'sales@acme.co';
-    const account = { id: 'p1', contactName: 'Ana', state: 'ACTIVE' };
-    const token = 'a'.repeat(64);
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    const password = `  ${'ñ'.repeat(90)}  `;
-    const passwordDigest = createHash('sha256').update(password).digest('hex');
-    const flushBackgroundWork = () => new Promise<void>((resolve) => setImmediate(resolve));
-
-    it('envía un enlace de una hora y solo guarda su hash sin tocar sesiones', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValueOnce(account);
-      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
-      config.get.mockReturnValueOnce('https://vitrina.example');
-      const started = Date.now();
-
-      const response = service.requestPasswordReset(' SALES@ACME.CO ');
-      await flushBackgroundWork();
-
-      expect(response.message).toMatch(/Si la cuenta existe/);
-      expect(mail.send).toHaveBeenCalledTimes(1);
-      const link = new URL(mail.send.mock.calls[0][2].split('\n').find((line: string) => line.startsWith('https://')));
-      expect(link.origin).toBe('https://vitrina.example');
-      expect(link.pathname).toBe('/clientes/restablecer');
-      expect(link.searchParams.get('email')).toBe(email);
-      const raw = link.searchParams.get('token')!;
-      expect(raw).toMatch(/^[a-f0-9]{64}$/);
-      const stored = prisma.portalPasswordReset.upsert.mock.calls[0][0].create;
-      expect(stored).toEqual({
-        accountId: 'p1',
-        tokenHash: createHash('sha256').update(raw).digest('hex'),
-        expiresAt: expect.any(Date),
-      });
-      expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(started + 3_600_000);
-      expect(stored.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 3_600_000);
-      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
-      expect(prisma.portalSession.create).not.toHaveBeenCalled();
-    });
-
-    it('da la misma respuesta para cuenta ausente, inactiva y falla de correo', async () => {
-      prisma.portalAccount.findUnique.mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ ...account, state: 'PENDING' })
-        .mockResolvedValueOnce(account);
-      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
-      mail.send.mockRejectedValueOnce(new Error('SMTP'));
-      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-      try {
-        const missing = service.requestPasswordReset('missing@example.com');
-        expect(service.requestPasswordReset('pending@example.com')).toEqual(missing);
-        expect(service.requestPasswordReset(email)).toEqual(missing);
-        await flushBackgroundWork();
-        expect(mail.send).toHaveBeenCalledTimes(1);
-        expect(warn).toHaveBeenCalledWith('No fue posible emitir el correo de recuperación del portal.');
-      } finally {
-        warn.mockRestore();
-      }
-    });
-
-    it('consume el enlace al cambiar la contraseña y revoca las sesiones de esa cuenta', async () => {
-      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce({ accountId: 'p1' });
-      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
-      prisma.portalPasswordReset.deleteMany.mockResolvedValueOnce({ count: 1 });
-      (bcrypt.hash as jest.Mock).mockResolvedValueOnce('new-hash');
-
-      await expect(service.resetPassword(email, token, password))
-        .resolves.toEqual({ message: 'Contraseña restaurada correctamente' });
-      expect(prisma.portalPasswordReset.findUnique).toHaveBeenCalledWith({
-        where: { tokenHash, account: { email, state: 'ACTIVE' }, expiresAt: { gt: expect.any(Date) } },
-        select: { accountId: true },
-      });
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      expect(prisma.portalPasswordReset.deleteMany).toHaveBeenCalledWith({
-        where: { accountId: 'p1', tokenHash, expiresAt: { gt: expect.any(Date) } },
-      });
-      expect(bcrypt.hash).toHaveBeenCalledWith(passwordDigest, 12);
-      expect(prisma.portalAccount.update).toHaveBeenCalledWith({
-        where: { id: 'p1' }, data: { passwordHash: 'sha256:new-hash' },
-      });
-      expect(prisma.portalSession.updateMany).toHaveBeenCalledWith({
-        where: { accountId: 'p1', revokedAt: null }, data: { revokedAt: expect.any(Date) },
-      });
-
-      prisma.portalAccount.findUnique.mockResolvedValueOnce({ ...account, email, passwordHash: 'sha256:new-hash' });
-      prisma.$queryRaw.mockResolvedValueOnce([{ email, passwordHash: 'sha256:new-hash' }]);
-      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
-      await service.login(email, password, {});
-      expect(bcrypt.compare).toHaveBeenCalledWith(passwordDigest, 'new-hash');
-    });
-
-    it('rechaza el enlace cuando vence o deja de estar vigente antes del consumo', async () => {
-      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce({ accountId: 'p1' });
-      prisma.$queryRaw.mockResolvedValueOnce([{ email }]);
-      prisma.portalPasswordReset.deleteMany.mockResolvedValueOnce({ count: 0 });
-      (bcrypt.hash as jest.Mock).mockResolvedValueOnce('unused-hash');
-
-      await expect(service.resetPassword(email, token, password)).rejects.toThrow(UnauthorizedException);
-      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
-      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
-    });
-
-    it('rechaza sin modificar datos cuando no existe un enlace vigente para la cuenta', async () => {
-      prisma.portalPasswordReset.findUnique.mockResolvedValueOnce(null);
-
-      await expect(service.resetPassword(email, token, password)).rejects.toThrow(UnauthorizedException);
-      expect(bcrypt.hash).not.toHaveBeenCalled();
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(prisma.portalSession.updateMany).not.toHaveBeenCalled();
-    });
-  });
-
   // ---------- Catálogo ----------
 
-  it('el catálogo público no expone precios', async () => {
-    prisma.product.findMany.mockResolvedValue([{ id: 'product-1', sku: 'SKU-1', name: 'Camera', description: null, category: { name: 'Video', slug: 'video' }, brand: { name: 'Acme', slug: 'acme' }, images: [] }]);
-    prisma.product.count.mockResolvedValue(1);
-    const result = await service.getCatalog({ page: 1, pageSize: 24 });
-    expect(result.data[0]).not.toHaveProperty('price');
+  it('los precios del cliente exigen mapping activo para el tipo (sin tarifa: lista vacía, sin leer precios)', async () => {
+    prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
+    await expect(service.getCatalogPrices(['product-1'], 'INSTALLER' as any)).resolves.toEqual({ prices: [] });
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
 
-  it('el catálogo del cliente exige mapping activo para el tipo', async () => {
-    prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
-    prisma.product.findMany.mockResolvedValue([]);
-    prisma.product.count.mockResolvedValue(0);
-    await expect(service.getCatalog({ page: 1, pageSize: 24 }, 'INSTALLER' as any)).rejects.toThrow(BadRequestException);
-  });
-
-  it('el catálogo del cliente resuelve el precio por tipo en una consulta batch', async () => {
+  it('los precios del cliente se resuelven por tipo en una consulta batch', async () => {
     prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
-    prisma.product.findMany.mockResolvedValue([
-      { id: 'product-1', sku: 'SKU-1', name: 'Camera', description: null, category: { name: 'Video', slug: 'video' }, brand: { name: 'Acme', slug: 'acme' }, images: [] },
-      { id: 'product-2', sku: 'SKU-2', name: 'Sensor', description: null, category: { name: 'Video', slug: 'video' }, brand: { name: 'Acme', slug: 'acme' }, images: [] },
-    ]);
-    prisma.product.count.mockResolvedValue(2);
+    prisma.product.findMany.mockResolvedValue([{ id: 'product-1' }, { id: 'product-2' }]);
     prisma.price.findMany.mockResolvedValue([
       { productId: 'product-1', value: { toString: () => '150000.00' }, currency: 'COP' },
     ]);
 
-    const result = await service.getCatalog({ page: 1, pageSize: 24 }, 'FINAL_CUSTOMER' as any);
+    const result = await service.getCatalogPrices(['product-1', 'product-2'], 'FINAL_CUSTOMER' as any);
 
     expect(prisma.price.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.price.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ priceListId: 'pl-1', productId: { in: ['product-1', 'product-2'] } }),
     }));
-    expect(result.data[0].price).toEqual({ value: '150000.00', currency: 'COP' });
-    expect(result.data[1].price).toBeNull();
+    expect(result.prices).toEqual([{ productId: 'product-1', value: '150000.00', currency: 'COP' }]);
   });
 
   // ---------- Aprobación / rechazo ----------
 
   it('no aprueba una cuenta sin tarifa activa para su tipo', async () => {
-    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'INSTALLER' });
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'INSTALLER', advisorId: 'adv-1' });
     prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
-    await expect(service.approve('p1', {}, 'staff-1')).rejects.toThrow(BadRequestException);
+    await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow(BadRequestException);
   });
 
   it('aprobar reutiliza el Customer enlazado por coincidencia de NIT/email', async () => {
-    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'INSTALLER', customerId: 'cust-1' });
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'INSTALLER', customerId: 'cust-1', advisorId: 'adv-1' });
+    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', isActive: true, ownerId: 'adv-1' });
     prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
-    prisma.portalAccount.update.mockResolvedValue({ id: 'p1', state: 'ACTIVE', type: 'INSTALLER' });
+    prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
 
-    const result = await service.approve('p1', {}, 'staff-1');
+    const result = await service.approve('p1', {}, ADMIN);
 
     expect(prisma.customer.create).not.toHaveBeenCalled();
-    expect(prisma.portalAccount.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.portalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'p1', state: 'PENDING' },
       data: expect.objectContaining({ state: 'ACTIVE', customerId: 'cust-1' }),
     }));
     expect(result.customerId).toBe('cust-1');
@@ -293,24 +148,124 @@ describe('CustomerPortalService', () => {
   });
 
   it('aprobar sin coincidencia crea un Customer con código CL-#### y documentType NIT', async () => {
-    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', customerId: null, companyName: 'Acme', documentId: '900123456', email: 'sales@acme.co', phone: null });
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', customerId: null, advisorId: 'adv-1', companyName: 'Acme', documentId: '900123456', email: 'sales@acme.co', phone: null });
     prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
     prisma.customer.findFirst.mockResolvedValue({ code: 'CL-0007' });
     prisma.customer.findUnique.mockResolvedValue(null);
     prisma.customer.create.mockResolvedValue({ id: 'cust-new' });
-    prisma.portalAccount.update.mockResolvedValue({ id: 'p1', state: 'ACTIVE', type: 'FINAL_CUSTOMER' });
+    prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
 
-    const result = await service.approve('p1', {}, 'staff-1');
+    const result = await service.approve('p1', {}, ADMIN);
 
     expect(prisma.customer.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ code: 'CL-0008', documentType: 'NIT', status: 'CLIENTE', source: 'WEB' }),
+      data: expect.objectContaining({ code: 'CL-0008', documentType: 'NIT', status: 'CLIENTE', source: 'WEB', ownerId: 'adv-1' }),
     }));
     expect(result.customerId).toBe('cust-new');
   });
 
+  describe('aprobar busca antes al cliente que ya existe (NIT/correo)', () => {
+    const pending = (over: Record<string, unknown> = {}) => ({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', customerId: null, advisorId: 'adv-1', companyName: 'Acme', documentId: '900.123.456-7', email: 'Ventas@Acme.co', phone: null, ...over });
+    const hit = (over: Record<string, unknown> = {}) => ({ id: 'cust-9', name: 'Acme', ownerId: 'adv-2', isActive: true, documentId: '900123456', byDocument: true, byEmail: false, ...over });
+    const values = () => prisma.$queryRaw.mock.calls[0].slice(1).flatMap((part: any) => (part && Array.isArray(part.values) ? part.values : [part]));
+    beforeEach(() => {
+      prisma.portalAccount.findUnique.mockResolvedValue(pending());
+      prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
+      prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
+      prisma.customer.findFirst.mockResolvedValue({ code: 'CL-0007' });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'cust-9', isActive: true, ownerId: 'adv-2' });
+      prisma.customer.create.mockResolvedValue({ id: 'cust-new' });
+      prisma.$queryRaw.mockResolvedValue([]);
+    });
+
+    it('con un cliente que ya tiene ese NIT (escrito distinto) lo vincula y no crea otro; manda el asesor de la empresa', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit()]);
+      const result = await service.approve('p1', {}, ADMIN);
+      expect(values()).toEqual(expect.arrayContaining(['900123456', 'ventas@acme.co']));
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+      expect(prisma.portalAccount.updateMany.mock.calls[0][0].data).toMatchObject({ state: 'ACTIVE', customerId: 'cust-9', advisorId: 'adv-2' });
+      expect(result).toMatchObject({ customerId: 'cust-9', advisorId: 'adv-2' });
+    });
+
+    it('con un cliente que solo coincide por correo (y no tiene otro NIT) lo vincula', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit({ byDocument: false, byEmail: true, documentId: null })]);
+      const result = await service.approve('p1', {}, ADMIN);
+      expect(result.customerId).toBe('cust-9');
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('con dos coincidencias (NIT en uno, correo en otro) responde 409 CUSTOMER_AMBIGUOUS y deja la cuenta pendiente', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit(), hit({ id: 'cust-10', byDocument: false, byEmail: true })]);
+      const error: any = await service.approve('p1', {}, ADMIN).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_AMBIGUOUS' });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+      expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('si el correo es de un cliente con otro NIT no lo vincula: 409 CUSTOMER_AMBIGUOUS', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit({ byDocument: false, byEmail: true, documentId: '800111222' })]);
+      await expect(service.approve('p1', {}, ADMIN)).rejects.toMatchObject({ response: expect.objectContaining({ code: 'CUSTOMER_AMBIGUOUS' }) });
+      expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('si el único cliente con ese NIT está desactivado responde 409 CUSTOMER_AMBIGUOUS', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit({ isActive: false })]);
+      await expect(service.approve('p1', {}, ADMIN)).rejects.toMatchObject({ response: expect.objectContaining({ code: 'CUSTOMER_AMBIGUOUS' }) });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('si el cliente encontrado está fuera del alcance de quien aprueba responde 409 CUSTOMER_OUT_OF_SCOPE sin revelar su nombre', async () => {
+      prisma.$queryRaw.mockResolvedValue([hit({ name: 'Nombre Secreto' })]);
+      access.assertCustomerLinkable.mockRejectedValueOnce(new ForbiddenException('Este cliente no está en tu alcance'));
+      const error: any = await service.approve('p1', {}, { userId: 'v1', roles: [] }).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_OUT_OF_SCOPE' });
+      expect(JSON.stringify(error.getResponse())).not.toContain('Nombre Secreto');
+      expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('sin coincidencia crea el cliente con NIT y correo normalizados', async () => {
+      prisma.customer.findUnique.mockResolvedValue(null); // the next CL code is free
+      const result = await service.approve('p1', {}, ADMIN);
+      expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ code: 'CL-0008', documentType: 'NIT', documentId: '900123456', email: 'ventas@acme.co', source: 'WEB', status: 'CLIENTE' });
+      expect(result.customerId).toBe('cust-new');
+    });
+
+    it('un dígito de verificación equivocado en la cuenta web NO bloquea la aprobación: se ignora y se guarda la base', async () => {
+      // 900123456 has verification digit 8 (hand-calculated); the account was registered with 7.
+      prisma.portalAccount.findUnique.mockResolvedValue(pending({ documentId: '900.123.456-7' }));
+      prisma.customer.findUnique.mockResolvedValue(null);
+      const result = await service.approve('p1', {}, ADMIN);
+      expect(result.customerId).toBe('cust-new');
+      expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'NIT', documentId: '900123456' });
+    });
+
+    it('un NIT de 10 dígitos cuyo último dígito es el DV calculado busca y crea con la base de 9 dígitos', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue(pending({ documentId: '9001234568' }));
+      prisma.$queryRaw.mockResolvedValue([hit()]);
+      const result = await service.approve('p1', {}, ADMIN);
+      expect(values()).toEqual(expect.arrayContaining(['900123456']));
+      expect(result.customerId).toBe('cust-9');
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('si otra persona creó el mismo NIT en medio (P2002) responde 409 CUSTOMER_DUPLICATE, no 500', async () => {
+      prisma.customer.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0', meta: { target: ['documentType', 'documentId'] } } as any));
+      const error: any = await service.approve('p1', {}, ADMIN).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'documentId' });
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('un cliente elegido a mano no pasa por la búsqueda automática', async () => {
+      await service.approve('p1', { customerId: 'cust-9' }, ADMIN);
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+  });
+
   it('rechazar exige PENDING y registra el motivo con auditoría', async () => {
     prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
-    const result = await service.reject('p1', { reason: 'Datos incompletos' }, 'staff-1');
+    const result = await service.reject('p1', { reason: 'Datos incompletos' }, ADMIN);
     expect(prisma.portalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'p1', state: 'PENDING' },
       data: expect.objectContaining({ state: 'REJECTED', rejectionReason: 'Datos incompletos' }),
@@ -321,40 +276,289 @@ describe('CustomerPortalService', () => {
 
   it('rechazar una cuenta ya revisada lanza 409', async () => {
     prisma.portalAccount.updateMany.mockResolvedValue({ count: 0 });
-    await expect(service.reject('p1', { reason: 'x'.repeat(10) }, 'staff-1')).rejects.toThrow(ConflictException);
+    await expect(service.reject('p1', { reason: 'x'.repeat(10) }, ADMIN)).rejects.toThrow(ConflictException);
   });
-  it('basic customers browse without a configured tariff and never read prices',async()=>{
+  it('without a configured tariff no price is read',async()=>{
     prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
-    prisma.product.findMany.mockResolvedValue([]);prisma.product.count.mockResolvedValue(0);
-    await expect(service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any)).resolves.toEqual(expect.objectContaining({data:[]}));
+    await expect(service.getCatalogPrices(['product-1'],'FINAL_CUSTOMER' as any)).resolves.toEqual({prices:[]});
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
   it('an assigned custom tier determines pricing instead of a client-supplied category',async()=>{
     prisma.portalTier.findUnique.mockResolvedValue({id:'gold',isActive:true,priceListId:'gold-list',priceList:{isActive:true}});
-    prisma.product.findMany.mockResolvedValue([{id:'product-1',name:'Camera',sku:'TEST',images:[],category:{},brand:{}}]);prisma.product.count.mockResolvedValue(1);
+    prisma.product.findMany.mockResolvedValue([{id:'product-1'}]);
     prisma.price.findMany.mockResolvedValue([]);
-    await service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any,'gold');
+    await service.getCatalogPrices(['product-1'],'FINAL_CUSTOMER' as any,'gold');
     expect(prisma.price.findMany.mock.calls[0][0].where.priceListId).toBe('gold-list');
     expect(prisma.portalPriceListMapping.findUnique).not.toHaveBeenCalled();
   });
   it('an inactive custom tier cannot reveal its prices',async()=>{
     prisma.portalTier.findUnique.mockResolvedValue({isActive:false});
-    await expect(service.getCatalog({page:1,pageSize:24},'FINAL_CUSTOMER' as any,'gold')).rejects.toThrow(BadRequestException);
+    await expect(service.getCatalogPrices(['product-1'],'FINAL_CUSTOMER' as any,'gold')).resolves.toEqual({prices:[]});
     expect(prisma.price.findMany).not.toHaveBeenCalled();
   });
-  it('requires active tiers when assigning to an account',async()=>{
-    prisma.portalAccount.findUnique.mockResolvedValue({id:'p1',state:'ACTIVE'});
-    prisma.portalTier.findUnique.mockResolvedValue({isActive:false});
-    await expect(service.assignTier('p1',{tierId:'gold'},'staff')).rejects.toThrow(BadRequestException);
-    expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+  it('aprobar exige un asesor asignado (409) antes de activar', async () => {
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: null });
+    await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow('Asigna un asesor antes de activar');
+    expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
   });
-  it('assigning a tier changes classification without auto-linking business documents',async()=>{
-    prisma.portalAccount.findUnique.mockResolvedValue({id:'p1',state:'ACTIVE',tierId:null,type:'FINAL_CUSTOMER'});
-    prisma.portalTier.findUnique.mockResolvedValue({isActive:true});
-    prisma.portalAccount.update.mockResolvedValue({id:'p1',tierId:'gold',type:'FINAL_CUSTOMER'});
-    await service.assignTier('p1',{tierId:'gold'},'staff');
-    expect(prisma.portalAccount.update.mock.calls[0][0].data).toEqual({tierId:'gold',type:'FINAL_CUSTOMER'});
-    expect(audit.log).toHaveBeenCalled();
+  it('aprobar con un cliente de otro responsable deja a la cuenta con el asesor de la empresa', async () => {
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: 'adv-1' });
+    prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
+    prisma.customer.findUnique.mockResolvedValue({ id: 'c9', isActive: true, ownerId: 'adv-2' });
+    prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
+    const result = await service.approve('p1', { customerId: 'c9' }, ADMIN);
+    expect(prisma.portalAccount.updateMany.mock.calls[0][0].data).toMatchObject({ state: 'ACTIVE', customerId: 'c9', advisorId: 'adv-2' });
+    expect(result.advisorId).toBe('adv-2');
+  });
+  it('aprobar con un cliente fuera del alcance de quien aprueba no cambia nada (403)', async () => {
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: 'adv-1' });
+    prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
+    prisma.customer.findUnique.mockResolvedValue({ id: 'c9', isActive: true, ownerId: 'other' });
+    access.assertCustomerLinkable.mockRejectedValueOnce(new ForbiddenException('Este cliente no está en tu alcance'));
+    await expect(service.approve('p1', { customerId: 'c9' }, { userId: 'v1', roles: [] })).rejects.toThrow(ForbiddenException);
+    expect(access.assertCustomerLinkable).toHaveBeenCalledWith({ userId: 'v1', roles: [] }, { id: 'c9', isActive: true, ownerId: 'other' });
+    expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
+    expect(prisma.customer.create).not.toHaveBeenCalled();
+  });
+  it('aprobar es atómico: si otra revisión ganó (0 filas) responde 409 dentro de la transacción', async () => {
+    prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', customerId: null, advisorId: 'adv-1', companyName: 'Acme', documentId: null, email: 'a@b.co', phone: null });
+    prisma.portalPriceListMapping.findUnique.mockResolvedValue({ priceListId: 'pl-1', priceList: { isActive: true } });
+    prisma.customer.findFirst.mockResolvedValue(null);
+    prisma.customer.findUnique.mockResolvedValue(null);
+    prisma.customer.create.mockResolvedValue({ id: 'cust-new' });
+    prisma.portalAccount.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow('La cuenta ya fue revisada');
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
+  describe('tarifa de la empresa', () => {
+    it('exige un cliente vinculado antes de asignar un nivel', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', customerId: null, customer: null });
+      await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow('Primero vincula la cuenta a un cliente');
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('requires active tiers when assigning to a company', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: null } });
+      prisma.portalTier.findUnique.mockResolvedValue({ isActive: false });
+      await expect(service.assignTier('p1', { tierId: 'gold' }, ADMIN)).rejects.toThrow(BadRequestException);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('guarda el nivel en el cliente (la empresa), no en la persona, y lo audita', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', customerId: 'c1', customer: { id: 'c1', portalTierId: null } });
+      prisma.portalTier.findUnique.mockResolvedValue({ isActive: true });
+      prisma.customer.update.mockResolvedValue({ id: 'c1', portalTierId: 'gold' });
+      expect(await service.assignTier('p1', { tierId: 'gold' }, ADMIN)).toEqual({ id: 'p1', customerId: 'c1', tierId: 'gold' });
+      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { portalTierId: 'gold' } });
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entity: 'Customer', entityId: 'c1' }));
+    });
+    it('null devuelve a la empresa a la tarifa general', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: 'gold' } });
+      prisma.customer.update.mockResolvedValue({ id: 'c1', portalTierId: null });
+      await service.assignTier('p1', { tierId: null }, ADMIN);
+      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { portalTierId: null } });
+    });
+    it('403 when the company owner is outside the caller manage scope', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'ACTIVE', customerId: 'c1', customer: { id: 'c1', portalTierId: null, ownerId: 'other' } });
+      access.ownerInScope.mockResolvedValueOnce(false);
+      await expect(service.assignTier('p1', { tierId: 'gold' }, { userId: 'v1', roles: [] })).rejects.toThrow('Esta empresa no está en tu alcance');
+      expect(access.ownerInScope).toHaveBeenCalledWith('portalAccounts:manage', { userId: 'v1', roles: [] }, 'other');
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('checks the scope of the person on that account first', async () => {
+      access.assertAccount.mockRejectedValueOnce(new ForbiddenException('Esta cuenta no está en tu alcance'));
+      await expect(service.assignTier('p1', { tierId: 'gold' }, { userId: 'v1', roles: [] })).rejects.toThrow(ForbiddenException);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('vincular cliente: el asesor es de la empresa', () => {
+    it('un cliente sin responsable toma el asesor de la cuenta como dueño', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', customerId: null, advisorId: 'adv-1' });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'c1', isActive: true, ownerId: null });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', customerId: 'c1', advisorId: 'adv-1' });
+      prisma.user.findUnique.mockResolvedValue({ id: 'adv-1', name: 'Ana' });
+      const result = await service.linkCustomer('p1', 'c1', ADMIN);
+      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { ownerId: 'adv-1' } });
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { customerId: 'c1', advisorId: 'adv-1' } });
+      expect(result).toMatchObject({ customerId: 'c1', advisorId: 'adv-1', ownerAssigned: true, advisorChanged: false });
+      expect(audit.log).toHaveBeenCalled();
+    });
+    it('si el cliente ya tiene otro responsable, la cuenta pasa a su asesor y se informa', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', customerId: null, advisorId: 'adv-1' });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'c1', isActive: true, ownerId: 'adv-2' });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', customerId: 'c1', advisorId: 'adv-2' });
+      prisma.user.findUnique.mockResolvedValue({ id: 'adv-2', name: 'Beto' });
+      const result = await service.linkCustomer('p1', 'c1', ADMIN);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { customerId: 'c1', advisorId: 'adv-2' } });
+      expect(result).toMatchObject({ advisorId: 'adv-2', advisorChanged: true, ownerAssigned: false, advisor: { id: 'adv-2', name: 'Beto' } });
+    });
+    it('un cliente fuera del alcance de quien enlaza se rechaza antes de cambiar nada', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', customerId: null, advisorId: 'adv-1' });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'c1', isActive: true, ownerId: 'other' });
+      access.assertCustomerLinkable.mockRejectedValueOnce(new ForbiddenException('Este cliente no está en tu alcance'));
+      await expect(service.linkCustomer('p1', 'c1', { userId: 'v1', roles: [] })).rejects.toThrow(ForbiddenException);
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('sin asesor en la cuenta y sin dueño en el cliente no inventa uno', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', customerId: null, advisorId: null });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'c1', isActive: true, ownerId: null });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', customerId: 'c1', advisorId: null });
+      const result = await service.linkCustomer('p1', 'c1', ADMIN);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ advisorId: null, advisorChanged: false, advisor: null });
+    });
+    it('no enlaza con un cliente inexistente o inactivo, y permite desenlazar', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', customerId: 'c1', advisorId: 'adv-1' });
+      prisma.customer.findUnique.mockResolvedValue({ id: 'c2', isActive: false });
+      await expect(service.linkCustomer('p1', 'c2', ADMIN)).rejects.toThrow('Cliente no encontrado');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      prisma.portalAccount.update.mockResolvedValue({ id: 'p1', customerId: null, advisorId: 'adv-1' });
+      expect(await service.linkCustomer('p1', null, ADMIN)).toMatchObject({ id: 'p1', customerId: null });
+    });
+  });
+
+  describe('reasignar asesor', () => {
+    const account = { id: 'p1', advisorId: 'adv-1', customerId: 'c1', contactName: 'Ana', companyName: 'Acme', customer: { ownerId: 'adv-1' } };
+    beforeEach(() => {
+      prisma.portalAccount.findUnique.mockResolvedValue(account);
+      prisma.user.findUnique.mockResolvedValue({ id: 'adv-2', name: 'Beto', isActive: true, roles: [] });
+      prisma.portalAccount.updateMany.mockResolvedValue({ count: 2 });
+      assignment.canManage.mockResolvedValue(true);
+      access.requireScope.mockResolvedValue('global');
+    });
+    it('global: cambia la cuenta, el dueño del cliente y las demás cuentas de la empresa, y avisa al nuevo asesor', async () => {
+      const result = await service.assignAdvisor('p1', { advisorId: 'adv-2' }, ADMIN);
+      expect(access.assertAccount).toHaveBeenCalledWith('portalAccounts:assign', ADMIN, 'p1');
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { advisorId: 'adv-2' } });
+      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { ownerId: 'adv-2' } });
+      expect(prisma.portalAccount.updateMany).toHaveBeenCalledWith({ where: { customerId: 'c1', id: { not: 'p1' } }, data: { advisorId: 'adv-2' } });
+      expect(notifications.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'adv-2', type: 'LEAD_ASSIGNED' }));
+      expect(result).toEqual({ id: 'p1', advisorId: 'adv-2', advisor: { id: 'adv-2', name: 'Beto' }, customerOwnerUpdated: true, accountsUpdated: 3 });
+    });
+    it('una cuenta sin cliente solo cambia su asesor', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ ...account, advisorId: null, customerId: null });
+      const result = await service.assignAdvisor('p1', { advisorId: 'adv-2' }, ADMIN);
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ customerOwnerUpdated: false, accountsUpdated: 1 });
+    });
+    it('equipo: puede asignar a alguien de su equipo', async () => {
+      access.requireScope.mockResolvedValue('team');
+      access.teamIds.mockResolvedValue(['sup-1', 'adv-2', 'adv-1']);
+      await service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'sup-1', roles: [] });
+      expect(prisma.portalAccount.update).toHaveBeenCalled();
+    });
+    it('equipo: no puede asignar a alguien fuera de su equipo', async () => {
+      access.requireScope.mockResolvedValue('team');
+      access.teamIds.mockResolvedValue(['sup-1']);
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'sup-1', roles: [] })).rejects.toThrow('Solo puedes asignar a ti o a alguien de tu equipo');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+    it('equipo: una empresa de otro equipo no se puede mover (403) y no se toca nada', async () => {
+      access.requireScope.mockResolvedValue('team');
+      access.teamIds.mockResolvedValue(['sup-1', 'adv-2']);
+      prisma.portalAccount.findUnique.mockResolvedValue({ ...account, customer: { ownerId: 'outsider' } });
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'sup-1', roles: [] })).rejects.toThrow('Esta empresa pertenece a otro equipo');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+      expect(prisma.portalAccount.updateMany).not.toHaveBeenCalled();
+    });
+    it('equipo: una empresa sin dueño sí se puede asignar', async () => {
+      access.requireScope.mockResolvedValue('team');
+      access.teamIds.mockResolvedValue(['sup-1', 'adv-2']);
+      prisma.portalAccount.findUnique.mockResolvedValue({ ...account, customer: { ownerId: null } });
+      await service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'sup-1', roles: [] });
+      expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { ownerId: 'adv-2' } });
+    });
+    it('propio: solo puede pasarla a sí mismo o a alguien de su equipo', async () => {
+      access.requireScope.mockResolvedValue('own');
+      access.teamIds.mockResolvedValue(['adv-1']);
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'adv-1', roles: [] })).rejects.toThrow('Solo puedes asignar a ti o a alguien de tu equipo');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+      access.teamIds.mockResolvedValue(['adv-1', 'adv-2']);
+      await service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'adv-1', roles: [] });
+      expect(prisma.portalAccount.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { advisorId: 'adv-2' } });
+    });
+    it('propio: una empresa cuyo dueño está fuera de su equipo no se puede mover', async () => {
+      access.requireScope.mockResolvedValue('own');
+      access.teamIds.mockResolvedValue(['adv-1', 'adv-2']);
+      prisma.portalAccount.findUnique.mockResolvedValue({ ...account, advisorId: 'adv-1', customer: { ownerId: 'outsider' } });
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'adv-1', roles: [] })).rejects.toThrow('Esta empresa pertenece a otro equipo');
+      expect(prisma.customer.update).not.toHaveBeenCalled();
+    });
+    it('el asesor elegido debe poder gestionar cuentas del portal', async () => {
+      assignment.canManage.mockResolvedValue(false);
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, ADMIN)).rejects.toThrow('no tiene permiso para gestionar cuentas del portal');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+    it('un Super Admin como destino se evalúa como tal', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'adv-2', name: 'Root', isActive: true, roles: [{ role: { name: 'Super Admin' } }] });
+      await service.assignAdvisor('p1', { advisorId: 'adv-2' }, ADMIN);
+      expect(assignment.canManage).toHaveBeenCalledWith('adv-2', true);
+    });
+    it('rechaza un asesor inexistente o inactivo', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'adv-2', name: 'Beto', isActive: false });
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, ADMIN)).rejects.toThrow('El asesor elegido no existe o está inactivo');
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+    it('sin permiso sobre la cuenta no cambia nada', async () => {
+      access.assertAccount.mockRejectedValueOnce(new ForbiddenException('Esta cuenta no está en tu alcance'));
+      await expect(service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'v1', roles: [] })).rejects.toThrow(ForbiddenException);
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+    it('no avisa a quien se asigna a sí mismo', async () => {
+      await service.assignAdvisor('p1', { advisorId: 'adv-2' }, { userId: 'adv-2', roles: [] });
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('perfil: ciudad y asignación automática', () => {
+    it('guarda una ciudad válida y busca asesor cuando la cuenta no tiene', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', privacyAcceptedAt: new Date() });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'a1', companyName: 'ACME', privacyAcceptedAt: new Date(), city: '05001', advisorId: null, createdAt: new Date('2026-12-01') });
+      const result = await service.updateProfile('a1', { companyName: 'ACME', city: '05001' } as any);
+      expect(prisma.portalAccount.update.mock.calls[0][0].data.city).toBe('05001');
+      expect(assignment.assignForAccount).toHaveBeenCalledWith('a1');
+      expect(result.account.city).toMatchObject({ code: '05001', name: 'Medellín' });
+      expect(result.account.profileComplete).toBe(true);
+    });
+    it('rechaza una ciudad inválida sin guardar', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', privacyAcceptedAt: new Date() });
+      await expect(service.updateProfile('a1', { companyName: 'ACME', city: '12345' } as any)).rejects.toMatchObject({ response: { code: 'INVALID_CITY', message: 'Elige tu ciudad de la lista' } });
+      expect(prisma.portalAccount.update).not.toHaveBeenCalled();
+    });
+    it('no vuelve a asignar si la cuenta ya tiene asesor', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'a1', privacyAcceptedAt: new Date() });
+      prisma.portalAccount.update.mockResolvedValue({ id: 'a1', companyName: 'ACME', privacyAcceptedAt: new Date(), city: '05001', advisorId: 'adv-1' });
+      await service.updateProfile('a1', { companyName: 'ACME', city: '05001' } as any);
+      expect(assignment.assignForAccount).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('precios por lote para la vitrina', () => {
+    it('devuelve el precio vigente de la tarifa del nivel solo de referencias publicadas', async () => {
+      prisma.portalTier.findUnique.mockResolvedValue({ id: 'gold', isActive: true, priceListId: 'gold-list' });
+      prisma.product.findMany.mockResolvedValue([{ id: 'p1' }]);
+      prisma.price.findMany.mockResolvedValue([{ productId: 'p1', value: { toString: () => '289000' }, currency: 'COP' }]);
+      const result = await service.getCatalogPrices(['p1', 'oculto'], 'FINAL_CUSTOMER' as any, 'gold');
+      expect(result).toEqual({ prices: [{ productId: 'p1', value: '289000', currency: 'COP' }] });
+      expect(prisma.product.findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ id: { in: ['p1', 'oculto'] }, lifecycleStatus: 'PUBLISHED', isVisible: true }));
+      expect(prisma.price.findMany.mock.calls[0][0].where.productId).toEqual({ in: ['p1'] });
+      expect(prisma.price.findMany.mock.calls[0][0].where.priceListId).toBe('gold-list');
+    });
+    it('sin tarifa aplicable no inventa precios ni consulta la tabla de precios', async () => {
+      prisma.portalPriceListMapping.findUnique.mockResolvedValue(null);
+      expect(await service.getCatalogPrices(['p1'], 'FINAL_CUSTOMER' as any, null)).toEqual({ prices: [] });
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    });
+    it('un nivel inactivo no rompe la vitrina: no muestra precios', async () => {
+      prisma.portalTier.findUnique.mockResolvedValue({ isActive: false });
+      expect(await service.getCatalogPrices(['p1'], 'FINAL_CUSTOMER' as any, 'gold')).toEqual({ prices: [] });
+      expect(prisma.price.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

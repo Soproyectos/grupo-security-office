@@ -88,12 +88,13 @@ describe('AdminLayout — preserva la navegación de los otros paneles (regla 3)
     expect(html).toContain('Auditoría')
   })
 
-  it('las secciones sólo-rol siguen donde estaban (Peticiones y Clientes y escalafones)', () => {
+  it('las secciones sólo-rol siguen donde estaban (Peticiones) y «Clientes del portal» ya no es un panel', () => {
     const html = render()
 
     expect(html).toContain('href="/team-requests"')
     expect(html).toContain('Peticiones')
-    expect(html).toContain('href="/customer-accounts"')
+    expect(html).not.toContain('href="/customer-accounts"')
+    expect(html).not.toContain('Clientes del portal')
   })
 
   it('Admin Comercial sin grants conserva herramientas personales sin recibir paneles por el cargo', () => {

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Input, Modal } from '../../../components/ui'
 import { useQuoteMutations } from '../hooks/useQuoteMutations'
 import { quoteErrorMessage } from '../../../services/quotes.service'
-import { fetchListaProducts } from '../../../services/listas.service'
+import api from '../../../services/api'
 import type { Quote } from '../types/quote.types'
 
 interface AddQuoteItemModalProps {
@@ -12,7 +12,7 @@ interface AddQuoteItemModalProps {
   quote: Quote
 }
 
-interface ListaProductOption {
+interface ProductOption {
   id: string
   sku?: string | null
   name?: string | null
@@ -28,8 +28,8 @@ function useDebounced<T>(value: T, delayMs = 300): T {
 }
 
 /**
- * Agrega un producto de la Lista de la cotización. El backend toma el precio
- * vigente de la tarifa (snapshot) y calcula los totales — el frontend solo
+ * Agrega un producto que la persona puede ver en Biblioteca (sin Listas). El backend toma el precio
+ * vigente de la tarifa de la empresa (snapshot); sin precio, la línea queda «por confirmar» y calcula los totales — el frontend solo
  * envía productId + quantity (COM-03 §3: el alta NO lleva descuento; la línea
  * nace con 0 y aplicarlo es la operación dedicada `PATCH
  * /:id/items/:itemId/discount`). Si no hay precio vigente el backend responde
@@ -43,28 +43,22 @@ export default function AddQuoteItemModal({
   const { addItem } = useQuoteMutations()
   const [search, setSearch] = useState('')
   const [quantity, setQuantity] = useState('1')
-  const [selected, setSelected] = useState<ListaProductOption | null>(null)
+  const [selected, setSelected] = useState<ProductOption | null>(null)
   const [error, setError] = useState<string | null>(null)
   const debouncedSearch = useDebounced(search)
 
+  const term = debouncedSearch.trim()
   const productsQuery = useQuery({
-    queryKey: ['listas', 'products', quote.listaId],
-    queryFn: () => fetchListaProducts(quote.listaId),
-    enabled: open,
+    queryKey: ['quotes', 'add-item-products', term],
+    queryFn: async () => {
+      const res = await api.get('/products', { params: { search: term, take: 20, skip: 0 } })
+      const body = res.data as unknown
+      const list = body && typeof body === 'object' && 'data' in body ? (body as { data: unknown }).data : body
+      return Array.isArray(list) ? (list as ProductOption[]) : []
+    },
+    enabled: open && term.length >= 2,
   })
-
-  const options = useMemo(() => {
-    const products = (productsQuery.data ?? []) as ListaProductOption[]
-    const term = debouncedSearch.trim().toLowerCase()
-    const filtered = term
-      ? products.filter(
-          (p) =>
-            (p.name ?? '').toLowerCase().includes(term) ||
-            (p.sku ?? '').toLowerCase().includes(term)
-        )
-      : products
-    return filtered.slice(0, 50)
-  }, [productsQuery.data, debouncedSearch])
+  const options = productsQuery.data ?? []
 
   const handleClose = () => {
     setSearch('')
@@ -122,20 +116,20 @@ export default function AddQuoteItemModal({
     >
       <div className="space-y-4">
         <Input
-          label="Buscar en la lista"
+          label="Buscar producto"
           name="product-search"
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="SKU o nombre"
+          placeholder="Escribe al menos 2 letras del nombre o el SKU"
         />
         <div
           role="listbox"
-          aria-label="Productos de la lista"
+          aria-label="Productos encontrados"
           className="max-h-56 overflow-y-auto divide-y divide-neutral-100 rounded-lg border border-neutral-200"
         >
-          {productsQuery.isLoading && (
-            <p className="p-4 text-sm text-neutral-400">Cargando...</p>
+          {productsQuery.isFetching && (
+            <p className="p-4 text-sm text-neutral-400">Buscando…</p>
           )}
           {options.map((p) => (
             <button
@@ -158,9 +152,19 @@ export default function AddQuoteItemModal({
               )}
             </button>
           ))}
+          {term.length < 2 && (
+            <p className="p-4 text-sm text-neutral-400">
+              Busca por nombre o SKU para agregar un producto.
+            </p>
+          )}
           {productsQuery.data && options.length === 0 && (
             <p className="p-4 text-sm text-neutral-400">
               No hay productos con ese criterio
+            </p>
+          )}
+          {productsQuery.isError && (
+            <p className="p-4 text-sm text-[var(--color-error)]" role="alert">
+              No se pudo buscar productos. Inténtalo de nuevo.
             </p>
           )}
         </div>

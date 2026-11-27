@@ -54,7 +54,7 @@ describe('QuotesService', () => {
     hierarchy = { getSubordinateIds: jest.fn().mockResolvedValue(['op-1']) };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
     grants = { grantsForUser: jest.fn().mockResolvedValue([
-      'customers:read', 'quotes:read', 'quotes:create', 'quotes:edit', 'quotes:status', 'quotes:discount',
+      'customers:read', 'quotes:read', 'quotes:create', 'quotes:edit', 'quotes:status', 'quotes:discount', 'products:read',
     ].map((actionId) => ({ sourceId: 'test', actionId, scope: 'own' }))) };
     // $transaction con callback: ejecuta sobre el mismo mock (patrón del codebase).
     prisma.$transaction.mockImplementation((fn: any) => fn(prisma));
@@ -81,8 +81,10 @@ describe('QuotesService', () => {
       .mockResolvedValue(baseQuote);
     prisma.quote.create.mockResolvedValue(baseQuote);
 
+    prisma.priceList.findUnique.mockResolvedValue({ id: 'pl-1', isActive: true });
+    prisma.portalTier.findFirst.mockResolvedValue({ id: 'tier-1' });
     await service.create(
-      { customerId: 'cust-1', listaId: 'lista-1', priceListId: 'pl-1' },
+      { customerId: 'cust-1', priceListId: 'pl-1' },
       operadorCtx,
     );
     expect(prisma.quote.create).toHaveBeenCalledWith(
@@ -136,12 +138,13 @@ describe('QuotesService', () => {
     expect(prisma.quote.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'q1' },
-        data: { subtotal: 10000, taxAmount: 1900, total: 11900 },
+        data: { subtotal: 10000, taxAmount: 1596.64, total: 10000 },
       }),
     );
   });
 
-  it('ítem sin precio vigente → 409 citando el SKU, nunca precio 0', async () => {
+  it('ítem sin precio vigente → línea «precio por confirmar» (unitPrice null, lineTotal 0), sin 409 ni precio inventado', async () => {
+    prisma.quoteItem.findFirst.mockResolvedValue(null);
     prisma.price.findMany.mockResolvedValue([
       {
         id: 'price-0',
@@ -153,15 +156,99 @@ describe('QuotesService', () => {
         updatedAt: new Date(),
       },
     ]);
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1', sku: 'SKU-NO-P' });
+    prisma.product.findUnique.mockResolvedValue({ id: 'p1', sku: 'SKU-NO-P', name: 'Sin precio' });
+    prisma.quoteItem.create.mockResolvedValue({});
+    // El total ignora la línea sin precio aunque otra línea sí sume.
+    prisma.quote.findUniqueOrThrow.mockResolvedValue({
+      ...baseQuote,
+      items: [{ unitPrice: 1000, lineTotal: 1000 }, { unitPrice: null, lineTotal: 999 }],
+    });
 
-    await expect(
-      service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx),
-    ).rejects.toThrow(ConflictException);
-    await expect(
-      service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx),
-    ).rejects.toThrow(/SKU-NO-P/);
-    expect(prisma.quoteItem.create).not.toHaveBeenCalled();
+    await service.addItem('q1', { productId: 'p1', quantity: 3 }, operadorCtx);
+
+    expect(prisma.quoteItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ unitPrice: null, priceId: null, lineTotal: 0, quantity: 3, sku: 'SKU-NO-P' }),
+      }),
+    );
+    expect(prisma.quote.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { subtotal: 1000, taxAmount: 159.66, total: 1000 } }),
+    );
+  });
+
+  it('cotización sin tarifa → la línea entra «por confirmar» en vez de 409', async () => {
+    prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, priceListId: null });
+    prisma.quoteItem.findFirst.mockResolvedValue(null);
+    prisma.product.findUnique.mockResolvedValue({ id: 'p1', sku: 'S1', name: 'N1' });
+    prisma.quoteItem.create.mockResolvedValue({});
+    prisma.quote.findUniqueOrThrow.mockResolvedValue({ ...baseQuote, items: [] });
+
+    await service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx);
+
+    expect(prisma.price.findMany).not.toHaveBeenCalled();
+    expect(prisma.quoteItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unitPrice: null, lineTotal: 0 }) }),
+    );
+  });
+
+  it('PATCH …/price: pone el precio de una línea por confirmar y recalcula línea y totales', async () => {
+    prisma.quoteItem.findUnique.mockResolvedValue({
+      id: 'item-1', quoteId: 'q1', unitPrice: null, quantity: 4, discountPct: 10,
+    });
+    prisma.quoteItem.update.mockResolvedValue({});
+    prisma.quote.findUniqueOrThrow.mockResolvedValue({
+      ...baseQuote,
+      items: [{ unitPrice: 250, lineTotal: 900 }],
+    });
+
+    await service.setItemPrice('q1', 'item-1', { unitPrice: 250 }, operadorCtx);
+
+    // 250 * 4 * (1 - 10/100) = 900
+    expect(prisma.quoteItem.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: { unitPrice: 250, lineTotal: 900, priceCapturedAt: expect.any(Date) },
+    });
+    expect(prisma.quote.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { subtotal: 900, taxAmount: 143.7, total: 900 } }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'price_set', entityId: 'item-1' }));
+  });
+
+  it('PATCH …/price: una línea con precio de tarifa → 409 (solo el descuento la baja)', async () => {
+    prisma.quoteItem.findUnique.mockResolvedValue({ id: 'item-1', quoteId: 'q1', unitPrice: 1000, quantity: 1, discountPct: 0 });
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 1 }, operadorCtx)).rejects.toThrow(/tarifa/);
+    expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+  });
+
+  it('un total por encima del máximo → 400 antes de escribir', async () => {
+    prisma.quoteItem.findUnique.mockResolvedValue({ id: 'item-1', quoteId: 'q1', unitPrice: null, quantity: 9999, discountPct: 0 });
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 9_999_999_999 }, operadorCtx)).rejects.toThrow(/máximo permitido/);
+    expect(prisma.quoteItem.update).not.toHaveBeenCalled();
+  });
+
+  it('ganada con líneas «por confirmar» → 409 y sin escritura', async () => {
+    prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'enviada', items: [{ unitPrice: 10 }, { unitPrice: null }] });
+    await expect(service.updateStatus('q1', { status: 'ganada' }, operadorCtx)).rejects.toThrow(/precio por confirmar/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('PATCH …/price: precio no positivo → 400; sin quotes:edit → 403; estado no editable → 409; ítem ajeno → 404', async () => {
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 0 }, operadorCtx)).rejects.toThrow(BadRequestException);
+
+    grants.grantsForUser.mockResolvedValue([{ sourceId: 's', actionId: 'quotes:read', scope: 'own' }]);
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 10 }, operadorCtx)).rejects.toThrow(ForbiddenException);
+
+    grants.grantsForUser.mockResolvedValue([
+      { sourceId: 's', actionId: 'quotes:read', scope: 'own' },
+      { sourceId: 's', actionId: 'quotes:edit', scope: 'own' },
+    ]);
+    prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'ganada' });
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 10 }, operadorCtx)).rejects.toThrow(ConflictException);
+
+    prisma.quote.findUnique.mockResolvedValue(baseQuote);
+    prisma.quoteItem.findUnique.mockResolvedValue({ id: 'item-1', quoteId: 'otra', unitPrice: null, quantity: 1, discountPct: 0 });
+    await expect(service.setItemPrice('q1', 'item-1', { unitPrice: 10 }, operadorCtx)).rejects.toThrow(NotFoundException);
+    expect(prisma.quoteItem.update).not.toHaveBeenCalled();
   });
 
   it('discountPct fuera de 0-100 al agregar ítem → 400, nunca lineTotal negativo', async () => {
@@ -497,16 +584,215 @@ describe('QuotesService', () => {
       expect(prisma.quote.create).not.toHaveBeenCalled();
     });
 
-    it('can create a quote for an owned customer using an authorized list', async () => {
-      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId });
+    describe('the level of quotes:create limits whose customers can be quoted', () => {
+      const teamCustomer = { id: 'team-c', isActive: true, ownerId: 'sub-1', portalTierId: null };
+      const grantsAt = (readScope: string, createScope: string) => [
+        { sourceId: 's', actionId: 'customers:read', scope: readScope },
+        { sourceId: 's', actionId: 'quotes:create', scope: createScope },
+      ];
+      const readyToCreate = () => {
+        prisma.quote.findUnique.mockResolvedValue(null);
+        prisma.quote.create.mockResolvedValue({ ...baseQuote, ownerId: seller.userId });
+      };
+
+      it('own: a customer of someone in the team is refused even if the person can see it', async () => {
+        hierarchy.getSubordinateIds.mockResolvedValue(['sub-1']);
+        grants.grantsForUser.mockResolvedValue(grantsAt('team', 'own'));
+        prisma.customer.findUnique.mockResolvedValue(teamCustomer);
+        await expect(service.create({ customerId: 'team-c' }, seller)).rejects.toThrow(ForbiddenException);
+        expect(prisma.quote.create).not.toHaveBeenCalled();
+      });
+
+      it('own: own customers are fine', async () => {
+        grants.grantsForUser.mockResolvedValue(grantsAt('own', 'own'));
+        prisma.customer.findUnique.mockResolvedValue({ ...teamCustomer, ownerId: seller.userId });
+        readyToCreate();
+        await service.create({ customerId: 'team-c' }, seller);
+        expect(prisma.quote.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('team: customers of the team are fine, customers outside are not found', async () => {
+        hierarchy.getSubordinateIds.mockResolvedValue(['sub-1']);
+        grants.grantsForUser.mockResolvedValue(grantsAt('team', 'team'));
+        prisma.customer.findUnique.mockResolvedValue(teamCustomer);
+        readyToCreate();
+        await service.create({ customerId: 'team-c' }, seller);
+        expect(prisma.quote.create).toHaveBeenCalledTimes(1);
+
+        prisma.quote.create.mockClear();
+        prisma.customer.findUnique.mockResolvedValue({ ...teamCustomer, ownerId: 'stranger' });
+        await expect(service.create({ customerId: 'team-c' }, seller)).rejects.toThrow(NotFoundException);
+        expect(prisma.quote.create).not.toHaveBeenCalled();
+      });
+
+      it('global: any customer the person can see', async () => {
+        grants.grantsForUser.mockResolvedValue(grantsAt('global', 'global'));
+        prisma.customer.findUnique.mockResolvedValue({ ...teamCustomer, ownerId: 'stranger' });
+        readyToCreate();
+        await service.create({ customerId: 'team-c' }, seller);
+        expect(prisma.quote.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('a wider create than read still cannot reach customers the person cannot see', async () => {
+        grants.grantsForUser.mockResolvedValue(grantsAt('own', 'global'));
+        prisma.customer.findUnique.mockResolvedValue({ ...teamCustomer, ownerId: 'stranger' });
+        await expect(service.create({ customerId: 'team-c' }, seller)).rejects.toThrow(NotFoundException);
+        expect(prisma.quote.create).not.toHaveBeenCalled();
+      });
+    });
+
+    it('creates a quote without any Lista and defaults to the company tariff (tier list)', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId, portalTierId: 'tier-1' });
+      prisma.portalTier.findUnique.mockResolvedValue({ id: 'tier-1', isActive: true, priceListId: 'pl-tier' });
+      prisma.priceList.findMany.mockResolvedValue([{ id: 'pl-tier', isActive: true }]);
+      prisma.quote.findFirst.mockResolvedValue(null);
+      prisma.quote.findUnique.mockResolvedValue(null);
+      prisma.quote.create.mockResolvedValue({ ...baseQuote, id: 'qnew', ownerId: seller.userId });
+      // listaId from an old client is accepted and ignored.
+      await service.create({ customerId: 'mine', listaId: 'lista-1' }, seller);
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
+      const data = prisma.quote.create.mock.calls[0][0].data;
+      expect(data).toMatchObject({ ownerId: seller.userId, customerId: 'mine', priceListId: 'pl-tier' });
+      expect(data).not.toHaveProperty('listaId');
+      expect(prisma.quoteStatusEvent.create).toHaveBeenCalledWith({
+        data: { quoteId: 'qnew', fromStatus: null, toStatus: 'borrador', userId: seller.userId },
+      });
+    });
+
+    it('defaults to the general FINAL_CUSTOMER mapping when the company has no active tier', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId, portalTierId: 'tier-off' });
+      prisma.portalTier.findUnique.mockResolvedValue({ id: 'tier-off', isActive: false, priceListId: 'pl-tier' });
+      prisma.portalPriceListMapping.findUnique.mockResolvedValue({ type: 'FINAL_CUSTOMER', priceListId: 'pl-general' });
+      prisma.priceList.findMany.mockResolvedValue([{ id: 'pl-general', isActive: true }]);
       prisma.quote.findFirst.mockResolvedValue(null);
       prisma.quote.findUnique.mockResolvedValue(null);
       prisma.quote.create.mockResolvedValue({ ...baseQuote, ownerId: seller.userId });
-      await service.create({ customerId: 'mine', listaId: 'lista-1' }, seller);
-      expect(acl.assertListaAccess).toHaveBeenCalledWith('lista-1', seller, 'view_prices');
-      expect(prisma.quote.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ ownerId: seller.userId, listaId: 'lista-1', customerId: 'mine' }),
-      }));
+      await service.create({ customerId: 'mine' }, seller);
+      expect(prisma.quote.create.mock.calls[0][0].data.priceListId).toBe('pl-general');
+    });
+
+    it('keeps an explicit priceListId over the company tariff', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId, portalTierId: 'tier-1' });
+      prisma.quote.findFirst.mockResolvedValue(null);
+      prisma.quote.findUnique.mockResolvedValue(null);
+      prisma.quote.create.mockResolvedValue({ ...baseQuote, ownerId: seller.userId });
+      prisma.priceList.findUnique.mockResolvedValue({ id: 'pl-chosen', isActive: true });
+      prisma.portalPriceListMapping.findFirst.mockResolvedValue({ id: 'm1' });
+      await service.create({ customerId: 'mine', priceListId: 'pl-chosen' }, seller);
+      expect(prisma.quote.create.mock.calls[0][0].data.priceListId).toBe('pl-chosen');
+    });
+
+    it('rejects with 400 a price list that is missing, inactive or not sellable; Super Admin may pick any active one', async () => {
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId, portalTierId: null });
+      prisma.quote.findUnique.mockResolvedValue(null);
+      prisma.quote.create.mockResolvedValue({ ...baseQuote });
+      prisma.priceList.findUnique.mockResolvedValue(null);
+      await expect(service.create({ customerId: 'mine', priceListId: 'x' }, seller)).rejects.toThrow(BadRequestException);
+      prisma.priceList.findUnique.mockResolvedValue({ id: 'x', isActive: false });
+      await expect(service.create({ customerId: 'mine', priceListId: 'x' }, seller)).rejects.toThrow(/no se puede usar/);
+      prisma.priceList.findUnique.mockResolvedValue({ id: 'x', isActive: true });
+      prisma.portalTier.findFirst.mockResolvedValue(null);
+      prisma.portalPriceListMapping.findFirst.mockResolvedValue(null);
+      await expect(service.create({ customerId: 'mine', priceListId: 'x' }, seller)).rejects.toThrow(BadRequestException);
+      expect(prisma.quote.create).not.toHaveBeenCalled();
+
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: 'admin-1', portalTierId: null });
+      grants.grantsForUser.mockResolvedValue(['customers:read', 'quotes:create'].map((actionId) => ({ sourceId: 't', actionId, scope: 'global' })));
+      await service.create({ customerId: 'mine', priceListId: 'x' }, adminCtx);
+      expect(prisma.quote.create.mock.calls[0][0].data.priceListId).toBe('x');
+    });
+
+    it('retries with a fresh code on a code clash (P2002) and gives up with 409 after 3 attempts', async () => {
+      const { Prisma } = await import('@prisma/client');
+      const clash = () => new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5', meta: { target: ['code'] } } as any);
+      prisma.customer.findUnique.mockResolvedValue({ id: 'mine', isActive: true, ownerId: seller.userId, portalTierId: null });
+      prisma.quote.findUnique.mockResolvedValue(null);
+      prisma.quote.create.mockRejectedValueOnce(clash()).mockResolvedValue({ ...baseQuote });
+      await service.create({ customerId: 'mine' }, seller);
+      expect(prisma.quote.create).toHaveBeenCalledTimes(2);
+
+      prisma.quote.create.mockReset();
+      prisma.quote.create.mockRejectedValue(clash());
+      await expect(service.create({ customerId: 'mine' }, seller)).rejects.toThrow(/Intenta de nuevo/);
+      expect(prisma.quote.create).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  // ---------- Historial de estados ----------
+
+  describe('status history', () => {
+    it('every status change writes an event in the same transaction', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'enviada' });
+      prisma.quote.update.mockResolvedValue({});
+      await service.updateStatus('q1', { status: 'negociacion' }, operadorCtx);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.quoteStatusEvent.create).toHaveBeenCalledWith({
+        data: { quoteId: 'q1', fromStatus: 'enviada', toStatus: 'negociacion', userId: 'op-1', note: undefined },
+      });
+    });
+
+    it('a lost quote records the reason as the event note', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'negociacion' });
+      prisma.quote.update.mockResolvedValue({});
+      await service.updateStatus('q1', { status: 'perdida', lostReason: 'precio' }, operadorCtx);
+      expect(prisma.quoteStatusEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ toStatus: 'perdida', note: 'precio' }),
+      });
+    });
+
+    it('an invalid transition writes no event', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, status: 'borrador' });
+      await expect(service.updateStatus('q1', { status: 'ganada' }, operadorCtx)).rejects.toThrow(ConflictException);
+      expect(prisma.quoteStatusEvent.create).not.toHaveBeenCalled();
+    });
+
+    const events = [
+      { id: 'e1', fromStatus: null, toStatus: 'enviada', createdAt: new Date('2026-11-01'), userId: null, portalAccountId: 'pa-1', note: null },
+      { id: 'e2', fromStatus: 'enviada', toStatus: 'negociacion', createdAt: new Date('2026-11-02'), userId: 'op-1', portalAccountId: null, note: null },
+    ];
+
+    it('returns the events oldest first with actor labels (own scope)', async () => {
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's', actionId: 'quotes:history', scope: 'own' },
+      ]);
+      prisma.quote.findUnique.mockResolvedValue({ id: 'q1', ownerId: 'op-1' });
+      prisma.quoteStatusEvent.findMany.mockResolvedValue(events);
+      prisma.user.findMany.mockResolvedValue([{ id: 'op-1', name: 'Olga Operadora' }]);
+      prisma.portalAccount.findMany.mockResolvedValue([{ id: 'pa-1', contactName: 'Ana' }]);
+
+      const result = await service.history('q1', operadorCtx);
+
+      expect(prisma.quoteStatusEvent.findMany).toHaveBeenCalledWith({ where: { quoteId: 'q1' }, orderBy: { createdAt: 'asc' } });
+      expect(result.map((e) => e.actor)).toEqual(['Cliente: Ana', 'Olga Operadora']);
+      expect(result.map((e) => e.toStatus)).toEqual(['enviada', 'negociacion']);
+    });
+
+    it('team scope reads a subordinate quote; own scope on someone else quote is 404', async () => {
+      grants.grantsForUser.mockResolvedValue([{ sourceId: 's', actionId: 'quotes:history', scope: 'team' }, { sourceId: 's', actionId: 'quotes:read', scope: 'team' }]);
+      hierarchy.getSubordinateIds.mockResolvedValue(['op-2']);
+      prisma.quote.findUnique.mockResolvedValue({ id: 'q1', ownerId: 'op-2' });
+      prisma.quoteStatusEvent.findMany.mockResolvedValue([]);
+      await expect(service.history('q1', { userId: 'sup-1', roles: ['Supervisor'] })).resolves.toEqual([]);
+
+      grants.grantsForUser.mockResolvedValue([{ sourceId: 's', actionId: 'quotes:history', scope: 'own' }, { sourceId: 's', actionId: 'quotes:read', scope: 'own' }]);
+      prisma.quote.findUnique.mockResolvedValue({ id: 'q1', ownerId: 'op-9' });
+      await expect(service.history('q1', operadorCtx)).rejects.toThrow(NotFoundException);
+    });
+
+    it('without quotes:history the history is a 404 and nothing is read; Super Admin bypasses', async () => {
+      prisma.quote.findUnique.mockResolvedValue({ id: 'q1', ownerId: 'op-1' });
+      // Default grants have quotes:read but not quotes:history.
+      await expect(service.history('q1', operadorCtx)).rejects.toThrow(NotFoundException);
+      expect(prisma.quoteStatusEvent.findMany).not.toHaveBeenCalled();
+
+      prisma.quoteStatusEvent.findMany.mockResolvedValue([]);
+      await expect(service.history('q1', adminCtx)).resolves.toEqual([]);
+    });
+
+    it('unknown quote is a 404', async () => {
+      prisma.quote.findUnique.mockResolvedValue(null);
+      await expect(service.history('nope', adminCtx)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -638,24 +924,22 @@ describe('QuotesService', () => {
   // ================= COM-03 · Aceptación 2 =================
   // «Producto/tarifa ajeno se rechaza.» (ficha, textual)
   describe('COM-03 · producto/tarifa ajeno se rechaza', () => {
-    it('producto de Lista sin nivel view_prices → 403 y ninguna fila creada', async () => {
-      acl.assertProductAccess.mockRejectedValue(
-        new ForbiddenException('No tienes permisos suficientes sobre esta Lista'),
-      );
+    it('sin products:read → 403, sin consultar Listas y ninguna fila creada', async () => {
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's1', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:edit', scope: 'own' },
+      ]);
 
       await expect(
         service.addItem('q1', { productId: 'p-ajeno', quantity: 1 }, operadorCtx),
       ).rejects.toThrow(ForbiddenException);
-      expect(acl.assertProductAccess).toHaveBeenCalledWith(
-        'p-ajeno',
-        operadorCtx,
-        'view_prices',
-      );
+      expect(acl.assertProductAccess).not.toHaveBeenCalled();
+      expect(acl.assertListaAccess).not.toHaveBeenCalled();
       expect(prisma.quoteItem.create).not.toHaveBeenCalled();
     });
 
-    it('producto inexistente o de Lista no autorizada → 404 (no revela existencia)', async () => {
-      acl.assertProductAccess.mockRejectedValue(new NotFoundException('Producto no encontrado'));
+    it('producto inexistente → 404', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
 
       await expect(
         service.addItem('q1', { productId: 'p-no-existe', quantity: 1 }, operadorCtx),
@@ -663,7 +947,27 @@ describe('QuotesService', () => {
       expect(prisma.quoteItem.create).not.toHaveBeenCalled();
     });
 
-    it('producto propio con view_prices → crea la línea con snapshot de precio vigente', async () => {
+    it('products:read en cualquier alcance basta (global) y Super Admin no lo necesita', async () => {
+      prisma.quoteItem.findFirst.mockResolvedValue(null);
+      prisma.product.findUnique.mockResolvedValue({ id: 'p1', sku: 'S1', name: 'N1' });
+      prisma.price.findMany.mockResolvedValue([]);
+      prisma.quoteItem.create.mockResolvedValue({});
+      prisma.quote.findUniqueOrThrow.mockResolvedValue({ ...baseQuote, items: [] });
+
+      grants.grantsForUser.mockResolvedValue([
+        { sourceId: 's1', actionId: 'quotes:read', scope: 'own' },
+        { sourceId: 's1', actionId: 'quotes:edit', scope: 'own' },
+        { sourceId: 's1', actionId: 'products:read', scope: 'global' },
+      ]);
+      await service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx);
+
+      grants.grantsForUser.mockResolvedValue([]);
+      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, ownerId: 'admin-1' });
+      await service.addItem('q1', { productId: 'p1', quantity: 1 }, adminCtx);
+      expect(prisma.quoteItem.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('producto propio → crea la línea con snapshot de precio vigente', async () => {
       prisma.quoteItem.findFirst.mockResolvedValue(null);
       prisma.price.findMany.mockResolvedValue([
         {
@@ -694,14 +998,6 @@ describe('QuotesService', () => {
       );
     });
 
-    it('cotización sin tarifa (priceListId) → 409 y ninguna fila creada', async () => {
-      prisma.quote.findUnique.mockResolvedValue({ ...baseQuote, priceListId: null });
-
-      await expect(
-        service.addItem('q1', { productId: 'p1', quantity: 1 }, operadorCtx),
-      ).rejects.toThrow(ConflictException);
-      expect(prisma.quoteItem.create).not.toHaveBeenCalled();
-    });
   });
 
   // ================= COM-03 · Aceptación 3 =================

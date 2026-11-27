@@ -25,6 +25,17 @@ import {
 import { UpdateQuoteItemDiscountDto } from './dto/update-quote-item-discount.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
+import { UpdateQuoteItemPriceDto } from './dto/update-quote-item-price.dto';
+import { resolveCompanyTariff } from '../../../common/pricing/company-tariff';
+import {
+  ITEM_EDITABLE_STATUSES,
+  computeLineTotal,
+  computeQuoteTotals,
+  effectiveQuoteStatus,
+  assertMoneyWithinLimit,
+  generateQuoteCode,
+  withQuoteCodeRetry,
+} from './quote-math';
 
 /**
  * Contexto de acceso del módulo: `AccessContext` + `jti` de la sesión viva
@@ -49,13 +60,6 @@ const QUOTE_TRANSITIONS: Record<string, string[]> = {
 };
 
 
-/** Estados en los que los ítems todavía se pueden agregar/editar/quitar. */
-const ITEM_EDITABLE_STATUSES = ['borrador', 'enviada', 'negociacion'] as const;
-
-/** Redondeo a 2 decimales para aritmética de dinero (siempre en backend). */
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 /**
  * Valida el rango de un descuento porcentual de línea. Sin este chequeo,
@@ -119,14 +123,7 @@ export class QuotesService {
   private effectiveStatus<T extends { status: string; validUntil: Date | null }>(
     quote: T,
   ): T {
-    if (
-      ITEM_EDITABLE_STATUSES.includes(quote.status as never) &&
-      quote.validUntil &&
-      quote.validUntil.getTime() < Date.now()
-    ) {
-      return { ...quote, status: 'vencida' };
-    }
-    return quote;
+    return effectiveQuoteStatus(quote);
   }
 
   async findAll(query: QuoteQueryDto, ctx: QuotesAccessContext) {
@@ -176,6 +173,8 @@ export class QuotesService {
         items: { orderBy: { position: 'asc' } },
         customer: { select: { id: true, code: true, name: true, status: true } },
         owner: { select: { id: true, name: true, email: true } },
+        // Who sent it when it came from the customer portal (needed to contact them by WhatsApp).
+        portalAccount: { select: { id: true, contactName: true, email: true, phone: true } },
       },
     });
     if (!quote) throw new NotFoundException('Cotización no encontrada');
@@ -186,9 +185,11 @@ export class QuotesService {
       throw new NotFoundException('Cotización no encontrada');
     }
 
-    // Lista y tarifa viven en la biblioteca: se resuelven por id, sin relación entre bases.
+    // Lista (solo filas antiguas) y tarifa viven en la biblioteca: se resuelven por id, sin relación entre bases.
     const [lista, priceList] = await Promise.all([
-      this.db.lista.findUnique({ where: { id: quote.listaId }, select: { id: true, code: true, name: true, currency: true } }),
+      quote.listaId
+        ? this.db.lista.findUnique({ where: { id: quote.listaId }, select: { id: true, code: true, name: true, currency: true } })
+        : Promise.resolve(null),
       quote.priceListId
         ? this.db.priceList.findUnique({ where: { id: quote.priceListId }, select: { id: true, code: true, name: true, currency: true } })
         : Promise.resolve(null),
@@ -198,6 +199,7 @@ export class QuotesService {
 
   async create(dto: CreateQuoteDto, ctx: QuotesAccessContext) {
     if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    // Without the grant at any level there is nothing to evaluate: fail before touching the customer.
     if (!(await this.decide('quotes:create', ctx)).allowed) throw new ForbiddenException('Sin permiso quotes:create');
 
     const customer = await this.prisma.customer.findUnique({
@@ -206,23 +208,36 @@ export class QuotesService {
     if (!customer || !customer.isActive || !(await this.customerReadable(customer.id, customer.ownerId, ctx))) {
       throw new NotFoundException('Cliente no encontrado');
     }
+    // The level of `quotes:create` limits WHOSE customers can be quoted: own = mine, team = my team's, global = any.
+    if (!(await this.decide('quotes:create', ctx, { id: customer.id, ownerId: customer.ownerId })).allowed) {
+      throw new ForbiddenException('No puedes crear cotizaciones para clientes fuera de tu alcance');
+    }
 
-    // Solo Listas donde el usuario tenga al menos view_prices.
-    await this.acl.assertListaAccess(dto.listaId, ctx, 'view_prices');
+    // Quotes no longer depend on Listas (C1): `dto.listaId`, if sent, is ignored.
+    // Default price list: the company tariff (tier, else the general one); the id given by the caller wins.
+    const companyTariff = (await resolveCompanyTariff({ prisma: this.prisma, db: this.db }, 'FINAL_CUSTOMER', customer.portalTierId, false))?.priceListId ?? null;
+    if (dto.priceListId) await this.assertSellablePriceList(dto.priceListId, companyTariff, ctx);
+    const priceListId = dto.priceListId ?? companyTariff;
+    const userId = ctx.userId;
 
-    const quote = await this.prisma.quote.create({
-      data: {
-        code: await this.generateCode(),
-        // Ids escalares: Lista y tarifa pertenecen a la biblioteca (sin relación entre bases).
-        customerId: dto.customerId,
-        listaId: dto.listaId,
-        priceListId: dto.priceListId ?? null,
-        ownerId: ctx.userId,
-        taxRate: dto.taxRate !== undefined ? Number(dto.taxRate) : 19,
-        validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
-        notes: dto.notes ?? null,
-      },
-    });
+    const quote = await withQuoteCodeRetry(() => this.prisma.$transaction(async (tx) => {
+      const created = await tx.quote.create({
+        data: {
+          code: await generateQuoteCode(tx),
+          // Ids escalares: la tarifa pertenece a la biblioteca (sin relación entre bases).
+          customerId: dto.customerId,
+          priceListId,
+          ownerId: userId,
+          taxRate: dto.taxRate !== undefined ? Number(dto.taxRate) : 19,
+          validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
+          notes: dto.notes ?? null,
+        },
+      });
+      await tx.quoteStatusEvent.create({
+        data: { quoteId: created.id, fromStatus: null, toStatus: 'borrador', userId },
+      });
+      return created;
+    }));
 
     await this.audit.log({
       userId: ctx.userId,
@@ -232,7 +247,6 @@ export class QuotesService {
       newValues: {
         code: quote.code,
         customerId: quote.customerId,
-        listaId: quote.listaId,
         priceListId: quote.priceListId,
       },
     });
@@ -244,12 +258,12 @@ export class QuotesService {
    * Agregar ítem. Reglas:
    * - COM-03 §3: el alta NO lleva descuento (`discountPct` → 400 sin escritura);
    *   el descuento se aplica después con `updateItemDiscount` (quotes:discount)
-   * - acceso producto con view_prices (issue #16)
-   * - acceso vigente a la Lista de la cotización (agregar/editar sí se bloquea)
+   * - producto: quien cotiza tiene `products:read` (cualquier alcance) o es Super Admin; sin Listas (C1/C4)
    * - precio vigente en la priceList de la cotización (misma regla de vigencia
    *   que prices.service: validFrom <= now <= validUntil, límites abiertos;
    *   si varios, el vigente con updatedAt más reciente)
-   * - si no hay precio vigente → 409 citando el SKU (nunca precio 0)
+   * - si no hay precio vigente → la línea entra con unitPrice null («precio por
+   *   confirmar»), lineTotal 0 y fuera de los totales (C5; nunca se inventa)
    * - snapshot: unitPrice/sku/name quedan CONGELADOS en el QuoteItem
    */
   async addItem(quoteId: string, dto: AddQuoteItemDto, ctx: QuotesAccessContext) {
@@ -260,18 +274,16 @@ export class QuotesService {
 
     const quote = await this.assertItemableQuote(quoteId, ctx);
 
-    await this.acl.assertProductAccess(dto.productId, ctx, 'view_prices');
+    const product = await this.assertProductReadable(dto.productId, ctx);
 
-    if (!quote.priceListId) {
-      throw new ConflictException(
-        'La cotización no tiene una tarifa (priceListId) asignada',
-      );
-    }
-
+    // Current price in the quote's tariff (same validity rule as prices.service). With no tariff or no current
+    // price the line enters as "precio por confirmar" (unitPrice null): the advisor completes it, never invented.
     const now = new Date();
-    const prices = await this.db.price.findMany({
-      where: { productId: dto.productId, priceListId: quote.priceListId },
-    });
+    const prices = quote.priceListId
+      ? await this.db.price.findMany({
+          where: { productId: dto.productId, priceListId: quote.priceListId },
+        })
+      : [];
     const vigente = prices
       .filter(
         (p) =>
@@ -280,45 +292,34 @@ export class QuotesService {
       )
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
 
-    if (!vigente) {
-      const product = await this.db.product.findUnique({
-        where: { id: dto.productId },
-        select: { sku: true },
-      });
-      throw new ConflictException(
-        `El producto ${product?.sku ?? dto.productId} no tiene precio vigente en la tarifa de la cotización`,
-      );
-    }
-
-    const product = await this.db.product.findUnique({
-      where: { id: dto.productId },
-    });
-
     // Línea nueva SIEMPRE con descuento 0: aplicarlo es la operación dedicada
     // `PATCH /:id/items/:itemId/discount` (COM-03 §3), nunca el alta.
     const discountPct = 0;
-    const unitPrice = Number(vigente.value);
+    const unitPrice = vigente ? Number(vigente.value) : null;
 
-    const item = await this.prisma.quoteItem.create({
-      data: {
-        quoteId,
-        productId: dto.productId,
-        priceId: vigente.id,
-        position: await this.nextPosition(quoteId),
-        sku: product!.sku,
-        name: product!.name,
-        listaId: quote.listaId,
-        priceListId: quote.priceListId,
-        unitPrice,
-        currency: vigente.currency,
-        quantity: dto.quantity,
-        discountPct,
-        lineTotal: this.computeLineTotal(unitPrice, dto.quantity, discountPct),
-        priceCapturedAt: now,
-      },
+    const lineTotal = computeLineTotal(unitPrice, dto.quantity, discountPct);
+    assertMoneyWithinLimit(lineTotal);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.quoteItem.create({
+        data: {
+          quoteId,
+          productId: dto.productId,
+          priceId: vigente?.id ?? null,
+          position: await this.nextPosition(quoteId, tx),
+          sku: product.sku,
+          name: product.name,
+          priceListId: quote.priceListId,
+          unitPrice,
+          currency: vigente?.currency ?? quote.currency,
+          quantity: dto.quantity,
+          discountPct,
+          lineTotal,
+          priceCapturedAt: now,
+        },
+      });
+      await this.recalculateTotals(quoteId, tx);
     });
-
-    await this.recalculateTotals(quoteId);
     return this.findOne(quoteId, ctx);
   }
 
@@ -352,16 +353,15 @@ export class QuotesService {
     const discountPct = Number(item.discountPct);
     assertValidDiscountPct(discountPct);
 
-    await this.prisma.quoteItem.update({
-      where: { id: itemId },
-      data: {
-        quantity,
-        discountPct,
-        lineTotal: this.computeLineTotal(Number(item.unitPrice), quantity, discountPct),
-      },
+    const lineTotal = computeLineTotal(this.snapshotPrice(item), quantity, discountPct);
+    assertMoneyWithinLimit(lineTotal);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.quoteItem.update({
+        where: { id: itemId },
+        data: { quantity, discountPct, lineTotal },
+      });
+      await this.recalculateTotals(quoteId, tx);
     });
-
-    await this.recalculateTotals(quoteId);
     return this.findOne(quoteId, ctx);
   }
 
@@ -395,15 +395,15 @@ export class QuotesService {
     assertValidDiscountPct(discountPct);
 
     const quantity = item.quantity;
-    await this.prisma.quoteItem.update({
-      where: { id: itemId },
-      data: {
-        discountPct,
-        lineTotal: this.computeLineTotal(Number(item.unitPrice), quantity, discountPct),
-      },
+    const lineTotal = computeLineTotal(this.snapshotPrice(item), quantity, discountPct);
+    assertMoneyWithinLimit(lineTotal);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.quoteItem.update({
+        where: { id: itemId },
+        data: { discountPct, lineTotal },
+      });
+      await this.recalculateTotals(quoteId, tx);
     });
-
-    await this.recalculateTotals(quoteId);
 
     // DISENO:159 «aplicación de descuentos cuando se delegue»: selectiva y
     // sin PII — solo el porcentaje antes/después por ítem (patrón COM-02 §5.3).
@@ -419,6 +419,58 @@ export class QuotesService {
     return this.findOne(quoteId, ctx);
   }
 
+  /**
+   * Sets the price of a line (typically one that entered as "precio por confirmar"). Same scope and
+   * editability rules as any line edit (`quotes:edit`, editable status). Recomputes the line and the totals,
+   * keeping the line's current discount.
+   */
+  async setItemPrice(
+    quoteId: string,
+    itemId: string,
+    dto: UpdateQuoteItemPriceDto,
+    ctx: QuotesAccessContext,
+  ) {
+    const unitPrice = Number(dto.unitPrice);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      throw new BadRequestException('El precio debe ser mayor que cero');
+    }
+    await this.assertItemableQuote(quoteId, ctx);
+
+    const item = await this.prisma.quoteItem.findUnique({ where: { id: itemId } });
+    if (!item || item.quoteId !== quoteId) {
+      throw new NotFoundException('Ítem no encontrado en esta cotización');
+    }
+
+    // Only a "precio por confirmar" line can be priced by hand; a tariff price is lowered with the discount.
+    if (item.unitPrice !== null && item.unitPrice !== undefined) {
+      throw new ConflictException('Este precio viene de la tarifa; para bajarlo usa el descuento');
+    }
+    const discountPct = Number(item.discountPct);
+    assertValidDiscountPct(discountPct);
+    const rounded = Math.round((unitPrice + Number.EPSILON) * 100) / 100;
+    const lineTotal = computeLineTotal(rounded, item.quantity, discountPct);
+    assertMoneyWithinLimit(lineTotal);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.quoteItem.update({
+        where: { id: itemId },
+        data: { unitPrice: rounded, lineTotal, priceCapturedAt: new Date() },
+      });
+      await this.recalculateTotals(quoteId, tx);
+    });
+
+    await this.audit.log({
+      userId: ctx.userId,
+      action: 'price_set',
+      entity: 'QuoteItem',
+      entityId: itemId,
+      oldValues: { unitPrice: item.unitPrice === null ? null : Number(item.unitPrice) },
+      newValues: { unitPrice: rounded },
+    });
+
+    return this.findOne(quoteId, ctx);
+  }
+
   async removeItem(quoteId: string, itemId: string, ctx: QuotesAccessContext) {
     await this.assertItemableQuote(quoteId, ctx);
 
@@ -427,8 +479,10 @@ export class QuotesService {
       throw new NotFoundException('Ítem no encontrado en esta cotización');
     }
 
-    await this.prisma.quoteItem.delete({ where: { id: itemId } });
-    await this.recalculateTotals(quoteId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.quoteItem.delete({ where: { id: itemId } });
+      await this.recalculateTotals(quoteId, tx);
+    });
     return this.findOne(quoteId, ctx);
   }
 
@@ -458,6 +512,10 @@ export class QuotesService {
       throw new BadRequestException('Perdida requiere lostReason');
     }
 
+    if (dto.status === 'ganada' && (quote.items ?? []).some((item) => item.unitPrice === null)) {
+      throw new ConflictException('Hay productos con precio por confirmar');
+    }
+
     const now = new Date();
     const isWin = dto.status === 'ganada';
 
@@ -473,6 +531,16 @@ export class QuotesService {
           closedAt: isWin || dto.status === 'perdida' ? now : undefined,
           issuedAt: dto.status === 'enviada' ? (quote.issuedAt ?? now) : undefined,
           lostReason: dto.status === 'perdida' ? dto.lostReason : undefined,
+        },
+      });
+      // Traceability: every status change is recorded in the same transaction as the change itself.
+      await tx.quoteStatusEvent.create({
+        data: {
+          quoteId: id,
+          fromStatus: persistedFrom,
+          toStatus: dto.status,
+          userId: ctx.userId,
+          note: dto.status === 'perdida' ? dto.lostReason : undefined,
         },
       });
       if (isWin) {
@@ -519,7 +587,65 @@ export class QuotesService {
     return this.findOne(id, ctx);
   }
 
+  /**
+   * Status history of a quote, oldest first. Needs `quotes:history` within its scope (own = the quote's owner is
+   * the caller; team; global; Super Admin bypass). Out of scope is a 403.
+   */
+  async history(id: string, ctx: QuotesAccessContext) {
+    if (!ctx.userId) throw new ForbiddenException('Usuario sin identificar');
+    const quote = await this.prisma.quote.findUnique({ where: { id }, select: { id: true, ownerId: true } });
+    if (!quote) throw new NotFoundException('Cotización no encontrada');
+    const decision = await this.decide('quotes:history', ctx, { id, ownerId: quote.ownerId });
+    if (!decision.allowed) throw new NotFoundException('Cotización no encontrada');
+
+    const events = await this.prisma.quoteStatusEvent.findMany({
+      where: { quoteId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    const userIds = [...new Set(events.map((e) => e.userId).filter((v): v is string => !!v))];
+    const accountIds = [...new Set(events.map((e) => e.portalAccountId).filter((v): v is string => !!v))];
+    const [users, accounts] = await Promise.all([
+      userIds.length ? this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+      accountIds.length ? this.prisma.portalAccount.findMany({ where: { id: { in: accountIds } }, select: { id: true, contactName: true } }) : Promise.resolve([]),
+    ]);
+    const userNames = new Map<string, string>(users.map((u): [string, string] => [u.id, u.name]));
+    const accountNames = new Map<string, string>(accounts.map((a): [string, string] => [a.id, a.contactName]));
+
+    return events.map((e) => ({
+      id: e.id,
+      fromStatus: e.fromStatus,
+      toStatus: e.toStatus,
+      note: e.note,
+      createdAt: e.createdAt,
+      actor: e.portalAccountId
+        ? `Cliente: ${accountNames.get(e.portalAccountId) ?? 'cliente'}`
+        : (e.userId ? userNames.get(e.userId) : null) ?? 'Sistema',
+    }));
+  }
+
   // ============================== Helpers ==============================
+
+  /**
+   * Product the caller may quote (C4): it must exist and the caller holds `products:read` in any scope, or is
+   * Super Admin. Lists play no part. Missing permission is a 403; a missing product a 404.
+   */
+  private async assertProductReadable(productId: string, ctx: QuotesAccessContext) {
+    const isSuper = ctx.roles.includes('Super Admin');
+    if (!isSuper) {
+      const held = await this.grants.grantsForUser(ctx.userId!);
+      if (!held.some((grant) => grant.actionId === 'products:read')) {
+        throw new ForbiddenException('No tienes permiso para consultar productos');
+      }
+    }
+    const product = await this.db.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Producto no encontrado');
+    return product;
+  }
+
+  /** The frozen price of a line as a number; null when it is "precio por confirmar". */
+  private snapshotPrice(item: { unitPrice: unknown }): number | null {
+    return item.unitPrice === null || item.unitPrice === undefined ? null : Number(item.unitPrice);
+  }
 
   /**
    * Cotización en scope + en estado que permita editar ítems + acceso
@@ -535,7 +661,6 @@ export class QuotesService {
         `Los ítems no se pueden modificar en estado '${quote.status}'`,
       );
     }
-    await this.acl.assertListaAccess(quote.listaId, ctx, 'view_prices');
     return quote;
   }
 
@@ -576,73 +701,47 @@ export class QuotesService {
     }
   }
 
-  private computeLineTotal(
-    unitPrice: number,
-    quantity: number,
-    discountPct: number,
-  ): number {
-    // Fórmula exacta: unitPrice * quantity * (1 - discountPct/100),
-    // redondeada a 2 decimales por línea.
-    return round2(unitPrice * quantity * (1 - discountPct / 100));
-  }
-
   /**
    * Recalcula los montos denormalizados de la cotización (SÓLO backend lo hace,
-   * el frontend nunca hace aritmética de dinero). Fórmula exacta:
-   *   subtotal  = Σ lineTotal (ya redondeado por línea)
-   *   base      = subtotal - discount (descuento global de la cotización)
-   *   taxAmount = round2(base * taxRate / 100)
-   *   total     = round2(base + taxAmount)
+   * el frontend nunca hace aritmética de dinero). Las líneas «precio por
+   * confirmar» (unitPrice null) no suman. Fórmula en `computeQuoteTotals`.
    */
-  private async recalculateTotals(quoteId: string): Promise<void> {
-    const quote = await this.prisma.quote.findUniqueOrThrow({
+  private async recalculateTotals(
+    quoteId: string,
+    db: Pick<PrismaService, 'quote'> = this.prisma,
+  ): Promise<void> {
+    const quote = await db.quote.findUniqueOrThrow({
       where: { id: quoteId },
       include: { items: true },
     });
-    const subtotal = round2(
-      quote.items.reduce((sum, it) => sum + Number(it.lineTotal), 0),
-    );
-    const base = subtotal - Number(quote.discount);
-    const taxAmount = round2((base * Number(quote.taxRate)) / 100);
-    await this.prisma.quote.update({
-      where: { id: quoteId },
-      data: { subtotal, taxAmount, total: round2(base + taxAmount) },
-    });
+    const totals = computeQuoteTotals(quote.items, Number(quote.discount), Number(quote.taxRate));
+    assertMoneyWithinLimit(totals.subtotal, totals.taxAmount, totals.total);
+    await db.quote.update({ where: { id: quoteId }, data: totals });
   }
 
-  private async nextPosition(quoteId: string): Promise<number> {
-    const last = await this.prisma.quoteItem.findFirst({
+  /**
+   * A price list chosen by hand must exist, be active and be "sellable": the company tariff, or a list used by an
+   * active tier or a general mapping. Super Admin may pick any active list. Never lets a bad id reach the FK.
+   */
+  private async assertSellablePriceList(id: string, companyTariff: string | null, ctx: QuotesAccessContext) {
+    const invalid = new BadRequestException('Esa tarifa no se puede usar en cotizaciones');
+    const list = await this.db.priceList.findUnique({ where: { id } });
+    if (!list || !list.isActive) throw invalid;
+    if (ctx.roles.includes('Super Admin') || id === companyTariff) return;
+    const [tier, mapping] = await Promise.all([
+      this.prisma.portalTier.findFirst({ where: { priceListId: id, isActive: true }, select: { id: true } }),
+      this.prisma.portalPriceListMapping.findFirst({ where: { priceListId: id }, select: { id: true } }),
+    ]);
+    if (!tier && !mapping) throw invalid;
+  }
+
+  private async nextPosition(quoteId: string, db: Pick<PrismaService, 'quoteItem'> = this.prisma): Promise<number> {
+    const last = await db.quoteItem.findFirst({
       where: { quoteId },
       orderBy: { position: 'desc' },
       select: { position: true },
     });
     return (last?.position ?? 0) + 1;
-  }
-
-  /**
-   * Código secuencial COT-0001, COT-0002, ... (mismo patrón que Customer y el
-   * generador de PO del módulo suppliers eliminado). Reintenta ante carrera.
-   */
-  private async generateCode(attempt = 0): Promise<string> {
-    if (attempt >= 5) {
-      return `COT-${Date.now().toString(36).toUpperCase()}`;
-    }
-
-    const last = await this.prisma.quote.findFirst({
-      where: { code: { startsWith: 'COT-' } },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    const lastNum = last?.code ? parseInt(last.code.slice(4), 10) : 0;
-    const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
-    const candidate = `COT-${String(next).padStart(4, '0')}`;
-
-    const exists = await this.prisma.quote.findUnique({
-      where: { code: candidate },
-      select: { id: true },
-    });
-    if (exists) return this.generateCode(attempt + 1);
-    return candidate;
   }
 
   /**

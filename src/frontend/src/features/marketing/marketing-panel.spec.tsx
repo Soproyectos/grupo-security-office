@@ -7,7 +7,6 @@ const { get, post, patch, put, del } = vi.hoisted(() => ({ get: vi.fn(), post: v
 vi.mock('../../services/api', () => ({ default: { get, post, patch, put, delete: del }, resolveAssetUrl: (path?: string | null) => path ?? '' }))
 
 import BannersTab from './BannersTab'
-import MarketingIndex from './MarketingIndex'
 import { canLeave } from './unsaved-guard'
 import Drawer from '../../components/ui/Drawer'
 import { nextFocusIndex } from '../../components/ui/drawer-focus'
@@ -17,7 +16,7 @@ import CampaignPreview from './CampaignPreview'
 import { PREVIEW_CANVAS_WIDTH, draftToCampaigns, emptyPreviewText, previewScale } from './marketing-rules'
 import { readLayoutMessage, readPreviewMessage } from '../storefront/utils/preview-frame'
 import { campaignsKey, type CampaignDetail, type CampaignSummary } from './marketing-api'
-import { hasAssignedMarketingPanel, hasMarketingAction, marketingPermissions, MARKETING_PACKAGE_IDS, MARKETING_PAGES, type MarketingPermissions } from './marketing-access'
+import { hasMarketingAction, marketingPermissions, MARKETING_PAGES, visibleMarketingPages, type MarketingPermissions } from './marketing-access'
 import { userAccessKey } from '../users/access'
 import { useAuthStore } from '../../stores/auth.store'
 import type { AccessGrant } from '../../services/users.service'
@@ -55,15 +54,10 @@ function login(roles: string[]) {
   Object.assign(useAuthStore.getInitialState(), session)
 }
 
-const PANEL_PACKAGES = [{ id: 'marketing-edicion', applied: true }]
-
-function client(list?: CampaignSummary[], access?: AccessGrant[], packageIds: string[] = ['marketing-edicion']) {
+function client(list?: CampaignSummary[], access?: AccessGrant[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   if (list) qc.setQueryData(campaignsKey, list)
-  if (access) {
-    const packages = packageIds.map((id) => ({ id, name: id, selections: [], applied: true, sourceId: id }))
-    qc.setQueryData(userAccessKey('u1'), { catalogVersion: 'v1', accessVersion: 1, grants: access, sources: [], packages })
-  }
+  if (access) qc.setQueryData(userAccessKey('u1'), { catalogVersion: 'v1', accessVersion: 1, grants: access, sources: [] })
   return qc
 }
 
@@ -94,84 +88,132 @@ beforeEach(() => {
 })
 
 describe('acceso al panel', () => {
-  it('solo cuenta marketing:* con alcance global y con el panel asignado; Super Admin siempre', () => {
+  it('solo cuenta marketing:* asignado con alcance global; Super Admin siempre', () => {
     const read = [{ actionId: 'marketing:read', scope: 'global' as const }]
-    expect(hasMarketingAction({ roles: [], grants: read, packages: PANEL_PACKAGES, status: 'ready' }, 'read')).toBe(true)
-    expect(hasMarketingAction({ roles: [], grants: [{ actionId: 'marketing:read', scope: 'team' }], packages: PANEL_PACKAGES, status: 'ready' }, 'read')).toBe(false)
-    expect(hasMarketingAction({ roles: [], grants: read, packages: PANEL_PACKAGES, status: 'loading' }, 'read')).toBe(false)
+    expect(hasMarketingAction({ roles: [], grants: read, status: 'ready' }, 'read')).toBe(true)
+    expect(hasMarketingAction({ roles: [], grants: [{ actionId: 'marketing:read', scope: 'team' }], status: 'ready' }, 'read')).toBe(false)
+    expect(hasMarketingAction({ roles: [], grants: read, status: 'loading' }, 'read')).toBe(false)
+    expect(hasMarketingAction({ roles: [], grants: read, status: 'unavailable' }, 'read')).toBe(false)
     expect(hasMarketingAction({ roles: ['Super Admin'], grants: [], status: 'unavailable' }, 'delete')).toBe(true)
   })
-  it('una acción suelta o un paquete sin aplicar no abre el panel', () => {
+  it('la acción suelta abre el panel sin ningún paquete ni rol; otra acción de marketing no la reemplaza', () => {
     const read = [{ actionId: 'marketing:read', scope: 'global' as const }]
-    expect(hasMarketingAction({ roles: [], grants: read, packages: [], status: 'ready' }, 'read')).toBe(false)
-    expect(hasMarketingAction({ roles: [], grants: read, status: 'ready' }, 'read')).toBe(false)
-    expect(hasMarketingAction({ roles: [], grants: read, packages: [{ id: 'marketing-edicion', applied: false }], status: 'ready' }, 'read')).toBe(false)
-    expect(hasMarketingAction({ roles: [], grants: read, packages: [{ id: 'biblioteca-consulta', applied: true }], status: 'ready' }, 'read')).toBe(false)
-    expect(hasAssignedMarketingPanel({ roles: [], packages: [{ id: 'marketing-publicacion', applied: true }], status: 'ready' })).toBe(true)
+    expect(hasMarketingAction({ roles: [], grants: read, status: 'ready' }, 'read')).toBe(true)
+    expect(hasMarketingAction({ roles: ['Vendedor'], grants: read, status: 'ready' }, 'read')).toBe(true)
+    expect(hasMarketingAction({ roles: ['Vendedor'], grants: [{ actionId: 'marketing:publish', scope: 'global' }], status: 'ready' }, 'read')).toBe(false)
+    expect(hasMarketingAction({ roles: ['Vendedor'], grants: [{ actionId: 'commercialPromotions:read', scope: 'team' }], status: 'ready' }, 'read')).toBe(false)
   })
-  it('cada paquete del panel lo abre', () => {
-    for (const id of MARKETING_PACKAGE_IDS) {
-      expect(hasMarketingAction({ roles: [], grants: grants(['read']), packages: [{ id, applied: true }], status: 'ready' }, 'read')).toBe(true)
+  it('cada acción de marketing abre solo su permiso', () => {
+    for (const action of ['read', 'create', 'edit', 'publish', 'delete'] as const) {
+      const permissions = marketingPermissions({ roles: [], grants: grants([action]), status: 'ready' })
+      expect(permissions[action], action).toBe(true)
     }
   })
   it('subir imágenes pide crear o editar', () => {
-    expect(marketingPermissions({ roles: [], grants: grants(['read', 'edit']), packages: PANEL_PACKAGES, status: 'ready' }).images).toBe(true)
-    expect(marketingPermissions({ roles: [], grants: grants(['read', 'publish']), packages: PANEL_PACKAGES, status: 'ready' }).images).toBe(false)
+    expect(marketingPermissions({ roles: [], grants: grants(['read', 'edit']), status: 'ready' }).images).toBe(true)
+    expect(marketingPermissions({ roles: [], grants: grants(['read', 'publish']), status: 'ready' }).images).toBe(false)
   })
-  it('hoy el panel tiene solo la página Banners', () => {
-    expect(MARKETING_PAGES.map((page) => page.label)).toEqual(['Banners'])
+  it('el panel tiene tres pestañas, en orden, con icono y ayuda', () => {
+    expect(MARKETING_PAGES.map((page) => page.label)).toEqual(['Banners', 'Promociones internas', 'Gestionar avisos'])
+    expect(MARKETING_PAGES.map((page) => page.to)).toEqual(['/marketing/banners', '/marketing/promotions', '/marketing/notices'])
+    for (const page of MARKETING_PAGES) {
+      expect(page.icon.length).toBeGreaterThan(0)
+      expect(page.hint.length).toBeGreaterThan(0)
+    }
+  })
+  it('cada pestaña conserva la acción que exigía antes de moverse', () => {
+    expect(MARKETING_PAGES.map((page) => page.actionId)).toEqual(['marketing:read', 'commercialPromotions:read', 'commercialPromotions:create'])
+  })
+})
+
+describe('pestañas visibles', () => {
+  const labels = (input: Parameters<typeof visibleMarketingPages>[0]) => visibleMarketingPages(input).map((page) => page.label)
+  const promo = (...actions: string[]) => actions.map((action) => ({ actionId: `commercialPromotions:${action}`, scope: 'team' as const }))
+  it('Super Admin ve las tres, aunque el acceso no cargue', () => {
+    expect(labels({ roles: ['Super Admin'], grants: [], status: 'unavailable' })).toEqual(['Banners', 'Promociones internas', 'Gestionar avisos'])
+  })
+  it('quien solo tiene promociones ve sus pestañas y no Banners', () => {
+    expect(labels({ roles: [], grants: promo('read'), status: 'ready' })).toEqual(['Promociones internas'])
+    expect(labels({ roles: [], grants: promo('create'), status: 'ready' })).toEqual(['Gestionar avisos'])
+    expect(labels({ roles: [], grants: promo('read', 'create'), status: 'ready' })).toEqual(['Promociones internas', 'Gestionar avisos'])
+  })
+  it('quien solo tiene banners ve Banners y ninguna pestaña de avisos', () => {
+    expect(labels({ roles: [], grants: grants(['read']), status: 'ready' })).toEqual(['Banners'])
+  })
+  it('editar o publicar avisos sin crear no abre Gestionar avisos', () => {
+    expect(labels({ roles: [], grants: promo('edit', 'publish', 'withdraw'), status: 'ready' })).toEqual([])
+  })
+  it('cargando o con error no recupera pestañas', () => {
+    expect(labels({ roles: [], grants: promo('read', 'create'), status: 'loading' })).toEqual([])
+    expect(labels({ roles: [], grants: promo('read', 'create'), status: 'unavailable' })).toEqual([])
+  })
+  it('sin ninguna acción no hay pestañas', () => {
+    expect(labels({ roles: ['Consulta'], grants: [], status: 'ready' })).toEqual([])
   })
 })
 
 describe('MarketingLayout', () => {
-  const html = (access: AccessGrant[], packageIds?: string[]) => renderToStaticMarkup(
-    <QueryClientProvider client={client(undefined, access, packageIds)}>
-      <MemoryRouter initialEntries={['/marketing/banners']}>
-        <Routes><Route path="/marketing" element={<MarketingLayout />}><Route path="banners" element={<p>DATOS-BANNERS</p>} /></Route></Routes>
+  const html = (access: AccessGrant[], path = '/marketing/banners') => renderToStaticMarkup(
+    <QueryClientProvider client={client(undefined, access)}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes><Route path="/marketing" element={<MarketingLayout />}>
+          <Route path="banners" element={<p>DATOS-BANNERS</p>} />
+          <Route path="promotions" element={<p>DATOS-PROMOCIONES</p>} />
+          <Route path="notices" element={<p>DATOS-AVISOS</p>} />
+        </Route></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  it('con marketing:read muestra el panel con migas hacia el índice y no «Campañas»', () => {
+  const promoGrants = (...actions: string[]): AccessGrant[] => actions.map((action) => ({ sourceId: 's1', actionId: `commercialPromotions:${action}`, scope: 'team' }))
+  it('con marketing:read muestra la barra con Banners activa, su ayuda y no «Campañas»', () => {
     const out = html(grants(['read']))
-    expect(out).toContain('Marketing y mercadeo')
-    expect(out).toContain('href="/marketing"')
-    expect(out).toContain('aria-current="page">Banners<')
+    expect(out).toContain('biblioteca-workspace__bar')
+    expect(out).toContain('>Marketing y mercadeo</h1>')
+    expect(out).toContain('aria-label="Navegación de Marketing"')
+    expect(out).toMatch(/aria-current="page"[^>]*href="\/marketing\/banners"/)
+    expect(out).toContain('Imágenes de la portada de la tienda y ventana emergente.')
+    expect(out).not.toContain('href="/marketing/promotions"')
+    expect(out).not.toContain('href="/marketing/notices"')
     expect(out).not.toContain('Campañas')
     expect(out).toContain('DATOS-BANNERS')
   })
-  it('con la acción suelta pero sin paquete del panel no monta el contenido', () => {
-    const out = html(grants(['read', 'create', 'edit', 'publish', 'delete']), [])
+  it('Super Admin ve las tres pestañas en orden y la activa sigue la ruta', () => {
+    login(['Super Admin'])
+    const out = html([], '/marketing/notices')
+    const order = ['/marketing/banners', '/marketing/promotions', '/marketing/notices']
+    const positions = order.map((href) => out.indexOf(`href="${href}"`))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+    expect(out).toMatch(/aria-current="page"[^>]*href="\/marketing\/notices"/)
+    expect(out).toContain('Crea, publica y retira avisos para el equipo.')
+    expect(out).toContain('DATOS-AVISOS')
+  })
+  it('quien solo tiene promociones ve su pestaña y su página, sin Banners', () => {
+    const out = html(promoGrants('read'), '/marketing/promotions')
+    expect(out).toContain('href="/marketing/promotions"')
+    expect(out).toMatch(/aria-current="page"[^>]*href="\/marketing\/promotions"/)
+    expect(out).toContain('Avisos vigentes para consultar antes de cotizar.')
+    expect(out).not.toContain('href="/marketing/banners"')
+    expect(out).not.toContain('href="/marketing/notices"')
+    expect(out).toContain('DATOS-PROMOCIONES')
+    expect(out).not.toContain('Sin acceso a este panel')
+  })
+  it('con solo las acciones de marketing asignadas monta Banners, sin ningún paquete', () => {
+    const out = html(grants(['read', 'create', 'edit', 'publish', 'delete']))
+    expect(out).not.toContain('Sin acceso a este panel')
+    expect(out).toContain('DATOS-BANNERS')
+    expect(out).toContain('href="/marketing/banners"')
+  })
+  it('con una acción de marketing de otro alcance que no sea global no monta Banners', () => {
+    const out = html([{ sourceId: 's1', actionId: 'marketing:read', scope: 'own' }])
     expect(out).toContain('Sin acceso a este panel')
     expect(out).not.toContain('DATOS-BANNERS')
   })
-  it('sin marketing:read no monta el contenido', () => {
+  it('sin marketing:read ni avisos no monta el contenido ni pinta pestañas', () => {
     const out = html(grants(['edit']))
     expect(out).toContain('Sin acceso a este panel')
     expect(out).not.toContain('DATOS-BANNERS')
-    expect(out).not.toContain('href="/marketing/banners"')
-  })
-})
-
-describe('índice del panel', () => {
-  const index = (access: AccessGrant[]) => renderToStaticMarkup(
-    <QueryClientProvider client={client(undefined, access)}>
-      <MemoryRouter initialEntries={['/marketing']}>
-        <Routes><Route path="/marketing" element={<MarketingLayout />}><Route index element={<MarketingIndex />} /></Route></Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
-  it('lista «Banners» como enlace con su descripción, sin migas ni «Campañas»', () => {
-    const out = index(grants(['read']))
-    expect(out).toContain('href="/marketing/banners"')
-    expect(out).toContain('Banners')
-    expect(out).toContain('Imágenes de la portada de la tienda y ventana emergente')
-    expect(out).not.toContain('Campañas')
-    expect(out).not.toContain('aria-label="Ruta de navegación"')
-  })
-  it('sin acceso no lista páginas', () => {
-    const out = index(grants(['edit']))
-    expect(out).toContain('Sin acceso a este panel')
-    expect(out).not.toContain('href="/marketing/banners"')
+    expect(out).not.toContain('biblioteca-workspace__nav')
   })
 })
 

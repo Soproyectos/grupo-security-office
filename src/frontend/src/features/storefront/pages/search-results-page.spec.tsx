@@ -6,6 +6,8 @@ import type { PublicProductResult } from '../types/publicProduct'
 import SearchResultsPage from './SearchResultsPage'
 import { CAMERA_SUBCATEGORY_SLUGS } from '../constants/home-catalog'
 
+vi.mock('../hooks/useAssignedProductPrices', () => ({ useAssignedProductPrices: () => ({ signedIn: false, error: false, prices: new Map() }) }))
+
 /**
  * The repo has no DOM environment and no @testing-library, so — as
  * `category-page.spec.tsx` did — the suite asserts what the visitor sees on a

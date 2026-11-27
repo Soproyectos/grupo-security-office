@@ -22,6 +22,20 @@ const activeLista = (id: string, overrides?: Record<string, unknown>) => ({
 });
 
 /**
+ * ClassificationService (real, instanciado por defecto en el ejecutor) valida la
+ * categoría resuelta con `category.findUnique` antes de escribir el producto.
+ * `jest.resetAllMocks()` deja ese mock en `undefined` → «Categoría no encontrada».
+ * Se devuelve una categoría raíz válida para el id pedido.
+ */
+const mockClassificationLookups = () => {
+  mockPrisma.category.findUnique.mockImplementation(async (args: any) => ({
+    id: args?.where?.id,
+    parentId: null,
+    parent: null,
+  }));
+};
+
+/**
  * Existing products are resolved by NORMALIZED SKU (findProductsBySkus): a raw
  * identity query returns the matching ids and product.findMany loads them.
  *
@@ -83,6 +97,7 @@ describe('BatchExecutorService — Lista destino (listaId)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
@@ -345,6 +360,7 @@ describe('BatchExecutorService — Decisiones de secciones del wizard', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
@@ -507,6 +523,7 @@ describe('BatchExecutorService — Aislamiento de filas con SAVEPOINT', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
@@ -670,6 +687,7 @@ describe('BatchExecutorService — Protección de identidad bloqueada (ADR-002)'
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
@@ -819,6 +837,7 @@ describe('BatchExecutorService — CAT-01 5.2: la carga masiva nunca mueve Produ
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,
@@ -968,6 +987,7 @@ describe('BatchExecutorService — CAT-01 C7: lista destino archivada/inactiva d
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockClassificationLookups();
     mockPrisma.$queryRaw.mockResolvedValue([]);
     service = new BatchExecutorService(
       mockPrisma as unknown as PrismaService,

@@ -10,7 +10,7 @@ import { ROLES } from '../../lib/roles'
  *
  * Criterio MÍNIMO documentado: hoy el único rol que `resolveAccess` exime
  * sin concesión es Super Admin (data-scope.ts, EXCEPCIÓN 1) y `quotes:discount`
- * no la recibe NADIE por defecto — ningún paquete la asigna (decisión F1
+ * no la recibe NADIE por defecto — solo el Super Admin la asigna (decisión F1
  * pendiente del coordinador). Ofrecer el editor a quien el servidor rechazará
  * sería una promesa falsa; por eso el resto de roles ve el descuento SOLO
  * LECTURA (junto al gate de estado que ya existía).

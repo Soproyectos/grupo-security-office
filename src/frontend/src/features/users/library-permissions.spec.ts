@@ -138,28 +138,18 @@ describe('pestañas visibles y estado inicial', () => {
     expect(visibleTabs(set('masters:write', 'products:approveSpecs')).map((item) => item.id)).toEqual([])
   })
 
-  it('el estado inicial refleja lo que ya tiene, sin contar el complemento ni alcances no globales', () => {
-    const base = { catalogVersion: 'v', grantedById: 'x', reason: null }
-    const sources = [
-      { id: 'a', kind: 'template', templateId: 'biblioteca-fichas', ...base },
-      { id: 'b', kind: 'template', templateId: 'biblioteca-publicacion', ...base },
-      { id: 'c', kind: 'manual', templateId: null, ...base },
+  it('el estado inicial refleja las acciones asignadas, sin contar «Publicar en tienda» ni alcances no globales', () => {
+    const grants = [
+      { sourceId: 'a', actionId: 'products:read', scope: 'global' as const },
+      { sourceId: 'a', actionId: 'products:write', scope: 'global' as const },
+      { sourceId: 'b', actionId: 'products:publish', scope: 'global' as const },
+      { sourceId: 'c', actionId: 'prices:apply', scope: 'global' as const },
+      { sourceId: 'c', actionId: 'products:notes', scope: 'list' as const, resourceId: 'x' },
+      { sourceId: 'c', actionId: 'customers:read', scope: 'own' as const },
     ]
-    const initial = initialSelection({
-      sources,
-      grants: [
-        { sourceId: 'a', actionId: 'products:read', scope: 'global' },
-        { sourceId: 'a', actionId: 'products:write', scope: 'global' },
-        { sourceId: 'b', actionId: 'products:validate', scope: 'global' },
-        { sourceId: 'b', actionId: 'products:publish', scope: 'global' },
-        { sourceId: 'c', actionId: 'prices:apply', scope: 'global' },
-        { sourceId: 'c', actionId: 'products:notes', scope: 'list', resourceId: 'x' },
-        { sourceId: 'c', actionId: 'customers:read', scope: 'own' },
-      ],
-    })
-    expect(sorted(initial)).toEqual(['prices:apply', 'products:read', 'products:write'])
-    expect(hasPublicationComplement({ sources })).toBe(true)
-    expect(hasPublicationComplement({ sources: sources.slice(0, 1) })).toBe(false)
+    expect(sorted(initialSelection({ grants }))).toEqual(['prices:apply', 'products:read', 'products:write'])
+    expect(hasPublicationComplement({ grants })).toBe(true)
+    expect(hasPublicationComplement({ grants: grants.slice(0, 2) })).toBe(false)
     expect(initialSelection(undefined).size).toBe(0)
   })
 

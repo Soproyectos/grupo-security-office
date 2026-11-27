@@ -1,34 +1,49 @@
-import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException, Inject } from '@nestjs/common';
+import { AssignPortalAdvisorDto, AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional, UnauthorizedException, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PortalAccountState, PortalAccountType, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import { directLegacyProductLibrary } from '../products/product-library';
 import { AuditService } from '../audit/audit.service';
-import { CatalogQueryDto } from './dto/catalog-query.dto';
-import { RegisterPortalAccountDto } from './dto/register-portal-account.dto';
 import { ApprovePortalAccountDto, RejectPortalAccountDto } from './dto/review-portal-account.dto';
 import { UpsertPortalPriceListMappingDto } from './dto/upsert-price-list-mapping.dto';
-import { StorefrontMailService } from '../storefront/storefront-mail.service';
 import { UpdatePortalProfileDto } from './dto/portal-profile.dto';
 import { DEFAULT_PRIVACY_POLICY_VERSION } from './portal-auth/portal-auth.rules';
-import { portalAccountView } from './portal-profile';
+import { PORTAL_ACCOUNT_INCLUDE, portalAccountView } from './portal-profile';
+import { CITY_INVALID_MESSAGE, findMunicipality, isValidCity } from '../../common/geo/municipalities';
+import { ROLE } from '../../common/rbac/roles.constants';
+import { NotificationService } from '../notifications/notification.service';
+import { PORTAL_ACTIONS, PortalAccountAccessService, type PortalAdminContext } from './portal-account-access.service';
+import { PortalAdvisorAssignmentService } from './portal-auth/portal-advisor-assignment.service';
 import { DeletePortalAccountDto } from './dto/delete-portal-account.dto';
 import { verifyPortalPassword } from './portal-auth/portal-auth.hash';
 import { validatePortalPassword, weakPasswordMessage } from './portal-auth/password-policy';
+import { resolveCompanyTariff } from '../../common/pricing/company-tariff';
+import { CreatePortalQuoteDto, PORTAL_QUOTE_MAX_PRODUCTS, PORTAL_QUOTE_MAX_QUANTITY } from './dto/create-portal-quote.dto';
+import { generateCustomerCode } from '../commercial/customers/customer-code';
+import { findCustomersByIdentity, normalizeDocumentId, normalizeEmail, parseNitInput } from '../commercial/customers/customer-identity';
+import { assertMoneyWithinLimit, computeLineTotal, computeQuoteTotals, effectiveQuoteStatus, generateQuoteCode, withQuoteCodeRetry } from '../commercial/quotes/quote-math';
 
+/** Open portal quotes (enviada or negociacion, not expired) one person may hold at a time. */
+const PORTAL_QUOTE_MAX_OPEN = 20;
 const GENERIC_LOGIN_ERROR = 'Credenciales inválidas';
 const DUMMY_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEe.7ROU8.4uWxTPoqkbnk1k1ZfMCTPQmPu';
-const RESET_REQUEST_MESSAGE = 'Si la cuenta existe, se ha enviado un correo de recuperación.';
-const RESET_TOKEN_ERROR = 'Token inválido o expirado';
 const PASSWORD_HASH_PREFIX = 'sha256:';
 
 function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+/**
+ * The tariff belongs to the COMPANY (the linked customer): the guard already exposes its tier as `tierId`.
+ * An account that is not linked to a customer gets no prices at all (returns null).
+ */
+export function portalPricing(account: { type: PortalAccountType; tierId?: string | null; customerId?: string | null }) {
+  return account.customerId ? { type: account.type, tierId: account.tierId ?? null } : null;
 }
 
 @Injectable()
@@ -40,33 +55,27 @@ export class CustomerPortalService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
-    private readonly mail: StorefrontMailService,
     /** Productos, tarifas y Listas (biblioteca); lo demás sigue siendo operativo. */
     @Inject(BibliotecaPrismaService) private readonly library: BibliotecaPrismaService = directLegacyProductLibrary(prisma),
+    /** Scope checks for the staff panel; absent only in narrow unit tests (then admin methods fail closed). */
+    @Optional() private readonly access?: PortalAccountAccessService,
+    @Optional() private readonly assignment?: PortalAdvisorAssignmentService,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
+
+  private get acl(): PortalAccountAccessService {
+    if (!this.access) throw new ForbiddenException('No tienes permiso para esta acción');
+    return this.access;
+  }
+
+  /** In-app notice that never breaks the operation that triggered it. */
+  private async notifyAdvisor(userId: string, title: string, message: string, data: Record<string, unknown>, type: 'LEAD_ASSIGNED' | 'QUOTE_STATUS_CHANGED' = 'LEAD_ASSIGNED') {
+    try { await this.notifications?.create({ userId, type, title, message, data }); }
+    catch { this.logger.warn('No se pudo enviar el aviso al asesor'); }
+  }
 
   /** Contrato de tipos compartido: el cliente de biblioteca expone sus modelos con los tipos operativos. */
   private get db(): PrismaService { return this.library.client as unknown as PrismaService }
-
-  /** Public signup always creates an independent basic account. Company identity
-   * is a claim until checked by staff: never auto-link by a submitted NIT. */
-  async register(dto: RegisterPortalAccountDto) {
-    const email = dto.email.trim().toLowerCase();
-    const exists = await this.prisma.portalAccount.findUnique({where:{email},select:{id:true}});
-    if(exists) throw new ConflictException('Ya existe una cuenta para este correo');
-    const passwordHash = await bcrypt.hash(dto.password,12);
-    try {
-      const account = await this.prisma.portalAccount.create({data:{
-        email,passwordHash,contactName:dto.contactName.trim(),companyName:dto.companyName.trim(),
-        documentId:dto.documentId?.trim()||null,phone:dto.phone?.trim()||null,
-        type:PortalAccountType.FINAL_CUSTOMER,state:PortalAccountState.ACTIVE,
-      }});
-      return {id:account.id,state:account.state,message:'Cuenta creada. Ya puedes ingresar como cliente final.'};
-    } catch(error) {
-      if(error instanceof Prisma.PrismaClientKnownRequestError && error.code==='P2002') throw new ConflictException('Ya existe una cuenta para este correo');
-      throw error;
-    }
-  }
 
   /** La tarifa vive en la biblioteca: el escalafón y la asignación guardan solo su id y la tarifa se resuelve aparte (sin relación entre bases). */
   private async priceListsById(ids:string[]) {
@@ -74,33 +83,45 @@ export class CustomerPortalService {
     const rows=unique.length?await this.db.priceList.findMany({where:{id:{in:unique}}}):[];
     return new Map(rows.map((r)=>[r.id,r]));
   }
-  private async priceMapping(type:PortalAccountType,tierId?:string|null) {
-    if(tierId) {
-      const tier=await this.prisma.portalTier.findUnique({where:{id:tierId}});
-      if(!tier?.isActive) throw new BadRequestException('Tu escalafón comercial no está activo; contacta a tu asesor');
-      if(!tier.priceListId)return null;
-      const priceList=(await this.priceListsById([tier.priceListId])).get(tier.priceListId);
-      if(!priceList?.isActive) throw new BadRequestException('La tarifa de tu escalafón no está activa');
-      return {priceListId:tier.priceListId,priceList};
-    }
-    const found=await this.prisma.portalPriceListMapping.findUnique({where:{type}});
-    const mapping=found?{...found,priceList:(await this.priceListsById([found.priceListId])).get(found.priceListId)}:null;
-    if(mapping?.priceList?.isActive)return mapping;
-    if(type===PortalAccountType.FINAL_CUSTOMER)return null;
-    throw new BadRequestException('No hay una tarifa activa configurada para este tipo de cliente');
+  /** Company tariff shown to the customer; an inactive tier or list is an error (shared resolution with staff quotes). */
+  private priceMapping(type:PortalAccountType,tierId?:string|null) {
+    return resolveCompanyTariff({prisma:this.prisma,db:this.db},type,tierId,true);
   }
 
-  listAccounts() {
-    return this.prisma.portalAccount.findMany({orderBy:{createdAt:'desc'},take:1000,select:{
-      id:true,email:true,contactName:true,companyName:true,documentId:true,type:true,state:true,
-      privacyAcceptedAt:true,deletionRequestedAt:true,
-      tierId:true,tier:{select:{id:true,name:true,isActive:true}},createdAt:true,
-    }});
+  /** Same fields for the full list and the pending queue; city is resolved to its name and department. */
+  private static readonly ACCOUNT_ADMIN_SELECT = {
+    id:true,email:true,contactName:true,companyName:true,documentId:true,phone:true,type:true,state:true,
+    privacyAcceptedAt:true,deletionRequestedAt:true,city:true,createdAt:true,
+    advisorId:true,advisor:{select:{id:true,name:true}},
+    customerId:true,customer:{select:{id:true,code:true,name:true,documentId:true,email:true,ownerId:true,portalTierId:true,portalTier:{select:{id:true,name:true,isActive:true}}}},
+  } satisfies Prisma.PortalAccountSelect;
+
+  private withCity<T extends {city:string|null}>(row:T) { return {...row,city:findMunicipality(row.city)}; }
+
+  /** Accounts the person can read (portalAccounts:read, scoped). */
+  async listAccounts(ctx:PortalAdminContext) {
+    const where=await this.acl.readWhere(ctx);
+    const rows=await this.prisma.portalAccount.findMany({where,orderBy:{createdAt:'desc'},take:1000,select:CustomerPortalService.ACCOUNT_ADMIN_SELECT});
+    return rows.map((row)=>this.withCity(row));
   }
   async listTiers() {
     const tiers=await this.prisma.portalTier.findMany({orderBy:{name:'asc'}});
     const lists=await this.priceListsById(tiers.map((x)=>x.priceListId).filter((x):x is string=>!!x));
     return tiers.map((x)=>{const l=x.priceListId?lists.get(x.priceListId):undefined;return {...x,priceList:l?{id:l.id,name:l.name,isActive:l.isActive}:null};});
+  }
+  /** Tiers and the general tariff are Super Admin only (the screen for them lives in Biblioteca). */
+  requireSuperAdmin(ctx:PortalAdminContext) {
+    if(!ctx.roles?.includes(ROLE.SUPER_ADMIN))throw new ForbiddenException('No tienes permiso para esta acción');
+  }
+  /** General tariff screens: the listed roles. */
+  requireTariffAdmin(ctx:PortalAdminContext,roles:readonly string[]) {
+    if(!ctx.roles?.some(r=>roles.includes(r)))throw new ForbiddenException('No tienes permiso para esta acción');
+  }
+  /** Advisors that manage accounts need the tier list to pick one; they never see the price list behind it. */
+  async listTiersFor(ctx:PortalAdminContext) {
+    if(ctx.roles?.includes(ROLE.SUPER_ADMIN))return this.listTiers();
+    await this.acl.requireScope(PORTAL_ACTIONS.manage,ctx);
+    return this.prisma.portalTier.findMany({where:{isActive:true},orderBy:{name:'asc'},select:{id:true,name:true,description:true,isActive:true}});
   }
   async saveTier(dto:PortalTierDto,actorId:string,id?:string) {
     if(id&&!await this.prisma.portalTier.findUnique({where:{id}}))throw new NotFoundException('Escalafón no encontrado');
@@ -114,17 +135,118 @@ export class CustomerPortalService {
     await this.audit.log({userId:actorId,action:id?'update':'create',entity:'PortalTier',entityId:tier.id,newValues:{name:tier.name,priceListId:tier.priceListId,isActive:tier.isActive}});
     return tier;
   }
-  async assignTier(id:string,dto:AssignPortalTierDto,actorId:string) {
-    if(dto.tierId===undefined)throw new BadRequestException('Indica el escalafón o null para cliente final');
-    const account=await this.prisma.portalAccount.findUnique({where:{id}});
-    if(!account||account.state!=='ACTIVE')throw new BadRequestException('La cuenta debe estar activa');
+  /** The tariff is the company's: it is stored on the linked customer, so every person of the company quotes with it. */
+  async assignTier(id:string,dto:AssignPortalTierDto,ctx:PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
+    if(dto.tierId===undefined)throw new BadRequestException('Indica el escalafón o null para usar la tarifa general');
+    const account=await this.prisma.portalAccount.findUnique({where:{id},select:{id:true,state:true,customerId:true,customer:{select:{id:true,portalTierId:true,ownerId:true}}}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    if(account.state==='REJECTED')throw new BadRequestException('La solicitud de esta cuenta fue rechazada');
+    if(!account.customerId)throw new BadRequestException('Primero vincula la cuenta a un cliente');
+    // The tariff changes the whole company: its owner must be within the caller's manage scope.
+    if(!(await this.acl.ownerInScope(PORTAL_ACTIONS.manage,ctx,account.customer?.ownerId??null)))throw new ForbiddenException('Esta empresa no está en tu alcance');
     if(dto.tierId) {
       const tier=await this.prisma.portalTier.findUnique({where:{id:dto.tierId}});
       if(!tier?.isActive)throw new BadRequestException('Selecciona un escalafón activo');
     }
-    const updated=await this.prisma.portalAccount.update({where:{id},data:{tierId:dto.tierId,type:PortalAccountType.FINAL_CUSTOMER}});
-    await this.audit.log({userId:actorId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{tierId:account.tierId,type:account.type},newValues:{tierId:updated.tierId,type:updated.type}});
-    return {id:updated.id,tierId:updated.tierId};
+    const customer=await this.prisma.customer.update({where:{id:account.customerId},data:{portalTierId:dto.tierId}});
+    await this.audit.log({userId:ctx.userId,action:'update',entity:'Customer',entityId:account.customerId,oldValues:{portalTierId:account.customer?.portalTierId??null},newValues:{portalTierId:customer.portalTierId??null,viaPortalAccount:id}});
+    return {id:account.id,customerId:account.customerId,tierId:customer.portalTierId??null};
+  }
+
+  /**
+   * One advisor per company (C3). When a person is linked to a customer: a customer without owner takes the
+   * account's advisor as owner; a customer owned by somebody else wins and the account moves to that owner.
+   * Returns what changed so the caller can report it.
+   */
+  private async applyCompanyAdvisor(account:{advisorId:string|null},customer:{id:string;ownerId:string|null},db:{customer:{update:(args:any)=>Promise<unknown>}}=this.prisma) {
+    if(!customer.ownerId) {
+      if(!account.advisorId)return {advisorId:null,advisorChanged:false,ownerAssigned:false};
+      await db.customer.update({where:{id:customer.id},data:{ownerId:account.advisorId}});
+      return {advisorId:account.advisorId,advisorChanged:false,ownerAssigned:true};
+    }
+    return {advisorId:customer.ownerId,advisorChanged:customer.ownerId!==account.advisorId,ownerAssigned:false};
+  }
+
+  /** Active customer the caller can reach (items 1+2): shared by linking and approving with a customer id. */
+  private async assertCustomerLinkable(customerId:string,ctx:PortalAdminContext) {
+    const customer=await this.prisma.customer.findUnique({where:{id:customerId},select:{id:true,isActive:true,ownerId:true}});
+    if(!customer||!customer.isActive)throw new NotFoundException('Cliente no encontrado');
+    await this.acl.assertCustomerLinkable(ctx,customer);
+    return customer;
+  }
+
+  /** Enlaza (o desenlaza con null) la cuenta con un cliente comercial. La empresa manda sobre el asesor (C3). */
+  async linkCustomer(id:string,customerId:string|null,ctx:PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
+    const account=await this.prisma.portalAccount.findUnique({where:{id}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    if(!customerId) {
+      const updated=await this.prisma.portalAccount.update({where:{id},data:{customerId:null}});
+      await this.audit.log({userId:ctx.userId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{customerId:account.customerId},newValues:{customerId:null}});
+      return {id:updated.id,customerId:null,advisorId:updated.advisorId??null,advisorChanged:false,ownerAssigned:false,advisor:null};
+    }
+    const customer=await this.assertCustomerLinkable(customerId,ctx);
+    const link=await this.applyCompanyAdvisor(account,customer);
+    const updated=await this.prisma.portalAccount.update({where:{id},data:{customerId,advisorId:link.advisorId}});
+    const advisor=link.advisorId?await this.prisma.user.findUnique({where:{id:link.advisorId},select:{id:true,name:true}}):null;
+    await this.audit.log({userId:ctx.userId,action:'update',entity:'PortalAccount',entityId:id,oldValues:{customerId:account.customerId,advisorId:account.advisorId},newValues:{customerId:updated.customerId,advisorId:updated.advisorId}});
+    return {id:updated.id,customerId:updated.customerId,advisorId:updated.advisorId??null,advisorChanged:link.advisorChanged,ownerAssigned:link.ownerAssigned,advisor};
+  }
+
+  /**
+   * Assigns or reassigns the advisor of a web account. The advisor belongs to the company: the linked customer's
+   * owner and every other web account of that customer follow. Own and team scope can only hand the account
+   * to the person or one of their subordinates (own: only accounts the person already has; team: the whole team's);
+   * global scope can pick any active user.
+   */
+  async assignAdvisor(id:string,dto:AssignPortalAdvisorDto,ctx:PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.assign,ctx,id);
+    const scope=await this.acl.requireScope(PORTAL_ACTIONS.assign,ctx);
+    const advisor=await this.prisma.user.findUnique({where:{id:dto.advisorId},select:{id:true,name:true,isActive:true,roles:{select:{role:{select:{name:true}}}}}});
+    if(!advisor||!advisor.isActive)throw new BadRequestException('El asesor elegido no existe o está inactivo');
+    // The advisor must be able to work the account: same rule as the automatic assignment (Super Admin allowed).
+    const targetIsSuper=(advisor.roles??[]).some((r)=>r.role.name===ROLE.SUPER_ADMIN);
+    if(!(await this.assignment?.canManage(advisor.id,targetIsSuper)))throw new BadRequestException('El asesor elegido no tiene permiso para gestionar cuentas del portal');
+    const teamIds=scope!=='global'?await this.acl.teamIds(ctx):[];
+    if(scope!=='global'&&!teamIds.includes(advisor.id))throw new ForbiddenException('Solo puedes asignar a ti o a alguien de tu equipo');
+    const account=await this.prisma.portalAccount.findUnique({where:{id},select:{id:true,advisorId:true,customerId:true,contactName:true,companyName:true,customer:{select:{ownerId:true}}}});
+    if(!account)throw new NotFoundException('Cuenta no encontrada');
+    // Moving a company also moves its owner and its other web accounts: with team scope that company must be unowned or in the team.
+    const companyOwner=account.customer?.ownerId??null;
+    if(scope!=='global'&&account.customerId&&companyOwner&&!teamIds.includes(companyOwner))throw new ForbiddenException('Esta empresa pertenece a otro equipo');
+    const accountsUpdated=await this.prisma.$transaction(async(tx)=>{
+      await tx.portalAccount.update({where:{id},data:{advisorId:advisor.id}});
+      if(!account.customerId)return 1;
+      await tx.customer.update({where:{id:account.customerId},data:{ownerId:advisor.id}});
+      const others=await tx.portalAccount.updateMany({where:{customerId:account.customerId,id:{not:id}},data:{advisorId:advisor.id}});
+      return 1+others.count;
+    });
+    await this.audit.log({userId:ctx.userId,action:'assign-advisor',entity:'PortalAccount',entityId:id,oldValues:{advisorId:account.advisorId},newValues:{advisorId:advisor.id,customerOwnerUpdated:!!account.customerId,accountsUpdated}});
+    if(advisor.id!==account.advisorId&&advisor.id!==ctx.userId) {
+      await this.notifyAdvisor(advisor.id,'Cuenta web asignada',`${account.contactName} (${account.companyName}) quedó a tu cargo. Revisa la cuenta y actívala.`,{portalAccountId:id});
+    }
+    return {id,advisorId:advisor.id,advisor:{id:advisor.id,name:advisor.name},customerOwnerUpdated:!!account.customerId,accountsUpdated};
+  }
+
+  /**
+   * Advisors the person may pick when assigning (portalAccounts:assign): own and team scope = themselves and their
+   * team, global scope = everyone. Only active staff who can manage portal accounts are listed.
+   */
+  async listAdvisors(ctx:PortalAdminContext) {
+    const scope=await this.acl.requireScope(PORTAL_ACTIONS.assign,ctx);
+    const ids=scope==='global'?null:await this.acl.teamIds(ctx);
+    const users=await this.prisma.user.findMany({
+      where:{isActive:true,...(ids?{id:{in:ids}}:{})},
+      orderBy:{name:'asc'},take:500,
+      select:{id:true,name:true,zone:{select:{name:true}},roles:{select:{role:{select:{name:true}}}}},
+    });
+    const advisors:{id:string;name:string;zone:string|null}[]=[];
+    for(const user of users) {
+      const superAdmin=(user.roles??[]).some((r)=>r.role.name===ROLE.SUPER_ADMIN);
+      if(await this.assignment?.canManage(user.id,superAdmin))advisors.push({id:user.id,name:user.name,zone:user.zone?.name??null});
+    }
+    return advisors;
   }
 
   private static readonly PRIVACY_REQUIRED = {code:'PRIVACY_NOT_ACCEPTED',message:'Debes aceptar la política de tratamiento de datos'};
@@ -138,12 +260,18 @@ export class CustomerPortalService {
     const data:Prisma.PortalAccountUpdateInput={companyName:dto.companyName.trim()};
     if(dto.documentId!==undefined)data.documentId=dto.documentId.trim()||null;
     if(dto.phone!==undefined)data.phone=dto.phone.trim()||null;
+    if(dto.city!==undefined) {
+      if(!isValidCity(dto.city))throw new BadRequestException({code:'INVALID_CITY',message:CITY_INVALID_MESSAGE});
+      data.city=dto.city;
+    }
     if(!account.privacyAcceptedAt&&acceptsNow){
       data.privacyAcceptedAt=new Date();
       data.privacyVersion=this.config.get<string>('PRIVACY_POLICY_VERSION')||DEFAULT_PRIVACY_POLICY_VERSION;
     }
-    const updated=await this.prisma.portalAccount.update({where:{id:accountId},data,include:{tier:{select:{id:true,name:true,isActive:true}},authUser:{select:{accounts:{select:{providerId:true,password:true}}}}}});
-    return {account:portalAccountView(updated)};
+    const saved=await this.prisma.portalAccount.update({where:{id:accountId},data,include:PORTAL_ACCOUNT_INCLUDE});
+    // The person just gave a city: look for an advisor in that zone (no-op when the account already has one).
+    if(dto.city!==undefined&&!saved.advisorId)await this.assignment?.assignForAccount(accountId);
+    return {account:portalAccountView({...saved,tier:saved.customer?.portalTier??null})};
   }
 
   /** Records the request only; staff decides and nothing is deleted here. Idempotent. */
@@ -205,7 +333,8 @@ export class CustomerPortalService {
     return {deleted:true};
   }
 
-  async suspend(id:string,reason:string,actorId:string) {
+  async suspend(id:string,reason:string,ctx:PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
     const account=await this.prisma.portalAccount.findUnique({where:{id}});
     if(!account)throw new NotFoundException('Cuenta no encontrada');
     if(account.state==='SUSPENDED')throw new BadRequestException('La cuenta ya está suspendida');
@@ -216,16 +345,17 @@ export class CustomerPortalService {
       if(account.authUserId)await tx.portalAuthSession.deleteMany({where:{userId:account.authUserId}});
       await tx.portalSession.updateMany({where:{accountId:id,revokedAt:null},data:{revokedAt:now}});
     });
-    await this.audit.log({userId:actorId,action:'suspend',entity:'PortalAccount',entityId:id,oldValues:{state:account.state},newValues:{state:PortalAccountState.SUSPENDED,reason:reason.trim()}});
+    await this.audit.log({userId:ctx.userId,action:'suspend',entity:'PortalAccount',entityId:id,oldValues:{state:account.state},newValues:{state:PortalAccountState.SUSPENDED,reason:reason.trim()}});
     return {id,state:PortalAccountState.SUSPENDED};
   }
 
-  async reactivate(id:string,actorId:string) {
+  async reactivate(id:string,ctx:PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage,ctx,id);
     const account=await this.prisma.portalAccount.findUnique({where:{id}});
     if(!account)throw new NotFoundException('Cuenta no encontrada');
     if(account.state!=='SUSPENDED')throw new BadRequestException('Solo se pueden reactivar cuentas suspendidas');
     await this.prisma.portalAccount.update({where:{id},data:{state:PortalAccountState.ACTIVE}});
-    await this.audit.log({userId:actorId,action:'reactivate',entity:'PortalAccount',entityId:id,oldValues:{state:'SUSPENDED'},newValues:{state:PortalAccountState.ACTIVE}});
+    await this.audit.log({userId:ctx.userId,action:'reactivate',entity:'PortalAccount',entityId:id,oldValues:{state:'SUSPENDED'},newValues:{state:PortalAccountState.ACTIVE}});
     return {id,state:PortalAccountState.ACTIVE};
   }
 
@@ -259,176 +389,268 @@ export class CustomerPortalService {
 
   async logout(jti: string) { await this.prisma.portalSession.updateMany({ where: { jti, revokedAt: null }, data: { revokedAt: new Date() } }); }
 
-  async getCatalog(query: CatalogQueryDto, accountType?: PortalAccountType, tierId?:string|null) {
-    const where: Prisma.ProductWhereInput = {
-      lifecycleStatus: 'PUBLISHED', isActive: true, isVisible: true,
-      category: { isActive: true }, brand: { isActive: true },
-      ...(query.search?.trim() ? { OR: [
-        { name: { contains: query.search.trim(), mode: 'insensitive' } }, { sku: { contains: query.search.trim(), mode: 'insensitive' } },
-      ] } : {}),
-      ...(query.category ? { category: { slug: query.category, isActive: true } } : {}),
-      ...(query.brand ? { brand: { slug: query.brand, isActive: true } } : {}),
-    };
-    const [mapping, data, total] = await Promise.all([
-      accountType ? this.priceMapping(accountType,tierId) : null,
-      this.db.product.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: { name: 'asc' }, include: {
-        category: { select: { name: true, slug: true } }, brand: { select: { name: true, slug: true } },
-        images: { where: { isPrimary: true }, take: 1, select: { url: true, alt: true } },
-      }}),
-      this.db.product.count({ where }),
-    ]);
-    // Resolución de precios en UNA consulta (no N+1): tarifas vigentes del
-    // price list del tipo, mapeadas por producto.
-    const now = new Date();
-    let pricesByProduct = new Map<string, { value: string; currency: string } | null>();
-    if (mapping && data.length > 0) {
-      const prices = await this.db.price.findMany({
-        where: {
-          productId: { in: data.map((p) => p.id) },
-          priceListId: mapping.priceListId,
-          OR: [{ validFrom: null }, { validFrom: { lte: now } }],
-          AND: [{ OR: [{ validUntil: null }, { validUntil: { gte: now } }] }],
-        },
-        select: { productId: true, value: true, currency: true },
-      });
-      pricesByProduct = new Map(
-        data.map((p) => {
-          const price = prices.find((pr) => pr.productId === p.id);
-          return [p.id, price ? { value: price.value.toString(), currency: price.currency } : null];
-        }),
-      );
-    }
-    const output = data.map((p) => {
-      const item: any = { id: p.id, sku: p.sku, name: p.name, description: p.description, category: p.category, brand: p.brand, image: p.images[0] ?? null };
-      if (mapping) item.price = pricesByProduct.get(p.id) ?? null;
-      return item;
+  /**
+   * Precios del cliente para un lote de referencias (vitrina). Mismas reglas de publicación y vigencia que el catálogo.
+   * Sin tarifa aplicable o sin precio vigente, la referencia simplemente no aparece: nunca se inventa un valor.
+   */
+  async getCatalogPrices(ids:string[],accountType:PortalAccountType,tierId?:string|null) {
+    let mapping:Awaited<ReturnType<CustomerPortalService['priceMapping']>>=null;
+    try { mapping=await this.priceMapping(accountType,tierId); }
+    catch(error) { if(!(error instanceof BadRequestException))throw error; }
+    if(!mapping||!ids.length)return {prices:[]};
+    const visible=await this.db.product.findMany({
+      where:{id:{in:ids},lifecycleStatus:'PUBLISHED',isActive:true,isVisible:true,category:{isActive:true},brand:{isActive:true}},
+      select:{id:true},
     });
-    return { data: output, meta: { total, page: query.page, pageSize: query.pageSize, totalPages: Math.ceil(total / query.pageSize) } };
+    if(!visible.length)return {prices:[]};
+    const now=new Date();
+    const rows=await this.db.price.findMany({
+      where:{
+        productId:{in:visible.map((p)=>p.id)},priceListId:mapping.priceListId,
+        OR:[{validFrom:null},{validFrom:{lte:now}}],AND:[{OR:[{validUntil:null},{validUntil:{gte:now}}]}],
+      },
+      select:{productId:true,value:true,currency:true},
+    });
+    const seen=new Set<string>();
+    const prices=rows.filter((r)=>!seen.has(r.productId)&&seen.add(r.productId)).map((r)=>({productId:r.productId,value:r.value.toString(),currency:r.currency}));
+    return {prices};
   }
 
   /**
-   * Detail has the same publication boundary as the collection. A missing or
-   * unpublished item is deliberately a 404, rather than exposing its state.
+   * A customer sends the quote built in the store. It is a `Quote` of portal origin: owned by the company's advisor,
+   * priced with the company tariff (a line without a current price enters as "precio por confirmar", never invented)
+   * and sent right away ('enviada'). Prices are frozen at this moment.
    */
-  async getProductDetail(id: string, accountType?: PortalAccountType, tierId?:string|null) {
-    const product = await this.db.product.findFirst({
-      where: {
-        id,
-        lifecycleStatus: 'PUBLISHED',
-        isActive: true,
-        isVisible: true,
-        category: { isActive: true },
-        brand: { isActive: true },
+  async createCustomerQuote(
+    account:{id:string;state:string;type:PortalAccountType;customerId?:string|null;advisorId?:string|null;tierId?:string|null;contactName:string;companyName:string},
+    dto:CreatePortalQuoteDto,
+  ) {
+    if(account.state!=='ACTIVE')throw new ConflictException('Tu cuenta aún no está activa; tu asesor la activará pronto');
+    if(!account.customerId)throw new ConflictException('Tu cuenta aún no está vinculada a una empresa; tu asesor debe vincularla antes de que puedas cotizar');
+    const customer=await this.prisma.customer.findUnique({where:{id:account.customerId},select:{id:true,isActive:true,ownerId:true}});
+    if(!customer||!customer.isActive)throw new ConflictException('Tu empresa no está activa; contacta a tu asesor');
+    const advisorId=account.advisorId??customer.ownerId;
+    const advisor=advisorId?await this.prisma.user.findUnique({where:{id:advisorId},select:{id:true,isActive:true}}):null;
+    if(!advisorId||!advisor?.isActive)throw new ConflictException('Tu cuenta aún no tiene un asesor asignado; en cuanto lo tenga podrás cotizar');
+
+    // Same product twice: sum the quantities.
+    const merged=new Map<string,number>();
+    for(const item of dto.items)merged.set(item.productId,(merged.get(item.productId)??0)+item.quantity);
+    if(merged.size>PORTAL_QUOTE_MAX_PRODUCTS)throw new BadRequestException(`Una cotización puede tener hasta ${PORTAL_QUOTE_MAX_PRODUCTS} productos distintos`);
+    if([...merged.values()].some((q)=>q>PORTAL_QUOTE_MAX_QUANTITY))throw new BadRequestException(`La cantidad máxima por producto es ${PORTAL_QUOTE_MAX_QUANTITY}`);
+    const ids=[...merged.keys()];
+
+    // Only products the customer can see in the published catalog (same boundary as the catalog).
+    const products=await this.db.product.findMany({
+      where:{id:{in:ids},lifecycleStatus:'PUBLISHED',isActive:true,isVisible:true,category:{isActive:true},brand:{isActive:true}},
+      select:{id:true,sku:true,name:true},
+    });
+    if(products.length!==ids.length)throw new BadRequestException('Algunos productos ya no están disponibles en el catálogo; quítalos e intenta de nuevo');
+    const byId=new Map(products.map((p)=>[p.id,p]));
+
+    // Company tariff; an unusable tier or list means no prices (all lines "por confirmar"), never an invented value.
+    let tariff:Awaited<ReturnType<CustomerPortalService['priceMapping']>>=null;
+    const pricing=portalPricing(account);
+    try { tariff=pricing?await this.priceMapping(pricing.type,pricing.tierId):null; }
+    catch(error) { if(!(error instanceof BadRequestException))throw error; }
+    const now=new Date();
+    const priceRows=tariff?await this.db.price.findMany({
+      where:{
+        productId:{in:ids},priceListId:tariff.priceListId,
+        OR:[{validFrom:null},{validFrom:{lte:now}}],AND:[{OR:[{validUntil:null},{validUntil:{gte:now}}]}],
       },
-      include: {
-        category: { select: { name: true, slug: true } },
-        brand: { select: { name: true, slug: true } },
-        images: { orderBy: { sortOrder: 'asc' }, select: { url: true, alt: true, isPrimary: true } },
+      orderBy:{updatedAt:'desc'},
+      select:{id:true,productId:true,value:true,currency:true},
+    }):[];
+    const priceByProduct=new Map<string,(typeof priceRows)[number]>();
+    for(const row of priceRows)if(!priceByProduct.has(row.productId))priceByProduct.set(row.productId,row);
+
+    const lines=ids.map((productId,index)=>{
+      const product=byId.get(productId)!;
+      const price=priceByProduct.get(productId);
+      const quantity=merged.get(productId)!;
+      const unitPrice=price?Number(price.value):null;
+      return {
+        position:index+1,productId,priceId:price?.id??null,sku:product.sku,name:product.name,
+        priceListId:tariff?.priceListId??null,unitPrice,currency:price?.currency??'COP',quantity,discountPct:0,
+        lineTotal:computeLineTotal(unitPrice,quantity,0),priceCapturedAt:now,
+      };
+    });
+    const totals=computeQuoteTotals(lines,0,19);
+    assertMoneyWithinLimit(...lines.map((l)=>l.lineTotal),totals.subtotal,totals.taxAmount,totals.total);
+    // Open quotes (sent or in negotiation, not expired) are capped per person.
+    const open=await this.prisma.quote.count({where:{portalAccountId:account.id,status:{in:['enviada','negociacion']},OR:[{validUntil:null},{validUntil:{gte:now}}]}});
+    if(open>=PORTAL_QUOTE_MAX_OPEN)throw new ConflictException(`Ya tienes ${PORTAL_QUOTE_MAX_OPEN} cotizaciones abiertas; espera la respuesta de tu asesor`);
+    const notes=dto.notes?.trim()||null;
+
+    const quote=await withQuoteCodeRetry(()=>this.prisma.$transaction(async(tx)=>{
+      const created=await tx.quote.create({data:{
+        code:await generateQuoteCode(tx),
+        customerId:customer.id,ownerId:advisorId,priceListId:tariff?.priceListId??null,portalAccountId:account.id,
+        status:'enviada',issuedAt:now,notes,...totals,
+        items:{create:lines},
+      }});
+      await tx.quoteStatusEvent.create({data:{quoteId:created.id,fromStatus:null,toStatus:'enviada',portalAccountId:account.id}});
+      return created;
+    }));
+    const pendingPrices=lines.filter((l)=>l.unitPrice===null).length;
+    await this.audit.log({action:'create',entity:'Quote',entityId:quote.id,newValues:{code:quote.code,customerId:customer.id,portalAccountId:account.id,origin:'portal',items:lines.length,pendingPrices}});
+    await this.notifyAdvisor(advisorId,'Nueva cotización de un cliente',`${account.contactName} (${account.companyName}) envió la cotización ${quote.code}. Revisa el stock y contáctalo.`,{quoteId:quote.id,quoteCode:quote.code,portalAccountId:account.id,newStatus:'enviada'},'QUOTE_STATUS_CHANGED');
+    return {id:quote.id,code:quote.code,status:'enviada',total:Number(quote.total),currency:quote.currency,itemCount:lines.length,hasPendingPrices:pendingPrices>0};
+  }
+
+  /** The caller's own quotes only (the ones this person sent), newest first. */
+  async listCustomerQuotes(accountId:string) {
+    const rows=await this.prisma.quote.findMany({
+      where:{portalAccountId:accountId},orderBy:{createdAt:'desc'},take:200,
+      select:{id:true,code:true,status:true,validUntil:true,createdAt:true,issuedAt:true,total:true,currency:true,items:{select:{unitPrice:true}}},
+    });
+    return rows.map((row)=>{
+      const q=effectiveQuoteStatus(row);
+      return {id:q.id,code:q.code,status:q.status,createdAt:q.createdAt,issuedAt:q.issuedAt,total:Number(q.total),currency:q.currency,itemCount:q.items.length,hasPendingPrices:q.items.some((i)=>i.unitPrice===null)};
+    });
+  }
+
+  /** One of the caller's own quotes with its lines and history; anything else is a 404. Staff names and ids never leave. */
+  async getCustomerQuote(accountId:string,id:string) {
+    const quote=await this.prisma.quote.findFirst({
+      where:{id,portalAccountId:accountId},
+      include:{
+        items:{orderBy:{position:'asc'}},
+        statusEvents:{orderBy:{createdAt:'asc'}},
+        owner:{select:{name:true}},
       },
     });
-    if (!product) throw new NotFoundException('Producto no encontrado');
-
-    const detail: any = {
-      id: product.id,
-      sku: product.sku,
-      name: product.name,
-      description: product.description,
-      technicalSpecs: product.technicalSpecs,
-      category: product.category,
-      brand: product.brand,
-      images: product.images,
+    if(!quote)throw new NotFoundException('Cotización no encontrada');
+    const q=effectiveQuoteStatus(quote);
+    return {
+      id:q.id,code:q.code,status:q.status,createdAt:q.createdAt,issuedAt:q.issuedAt,validUntil:q.validUntil,notes:q.notes,
+      currency:q.currency,subtotal:Number(q.subtotal),taxRate:Number(q.taxRate),taxAmount:Number(q.taxAmount),total:Number(q.total),
+      advisor:q.owner?{name:q.owner.name}:null,
+      hasPendingPrices:q.items.some((i)=>i.unitPrice===null),
+      items:q.items.map((i)=>({
+        id:i.id,sku:i.sku,name:i.name,quantity:i.quantity,currency:i.currency,
+        unitPrice:i.unitPrice===null?null:Number(i.unitPrice),lineTotal:Number(i.lineTotal),
+      })),
+      history:q.statusEvents.map((e)=>({
+        fromStatus:e.fromStatus,toStatus:e.toStatus,createdAt:e.createdAt,
+        actor:e.portalAccountId===accountId?'Tú':e.portalAccountId?'Tu empresa':'Tu asesor',
+      })),
     };
-    if (!accountType) return detail;
-
-    const mapping = await this.priceMapping(accountType,tierId);
-    if(!mapping) {detail.price=null;return detail;}
-    const now = new Date();
-    const price = await this.db.price.findFirst({
-      where: {
-        productId: product.id,
-        priceListId: mapping.priceListId,
-        OR: [{ validFrom: null }, { validFrom: { lte: now } }],
-        AND: [{ OR: [{ validUntil: null }, { validUntil: { gte: now } }] }],
-      },
-      select: { value: true, currency: true },
-    });
-    detail.price = price ? { value: price.value.toString(), currency: price.currency } : null;
-    return detail;
   }
 
-  /** Cola de revisión. Incluye el Customer enlazado por coincidencia de NIT/email. */
-  async listPending() {
-    return this.prisma.portalAccount.findMany({
-      where: { state: 'PENDING' },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true, email: true, contactName: true, companyName: true, documentId: true, phone: true,
-        type: true, state: true, createdAt: true,
-        customer: { select: { id: true, code: true, name: true, documentId: true, email: true } },
-      },
+  /** Cola de revisión: cuentas pendientes dentro del alcance de quien consulta (portalAccounts:read). */
+  async listPending(ctx:PortalAdminContext) {
+    const scope=await this.acl.readWhere(ctx);
+    const rows=await this.prisma.portalAccount.findMany({
+      where:{AND:[{state:'PENDING'},scope]},
+      orderBy:{createdAt:'asc'},
+      select:CustomerPortalService.ACCOUNT_ADMIN_SELECT,
     });
+    return rows.map((row)=>this.withCity(row));
   }
 
-  async approve(id: string, dto: ApprovePortalAccountDto, actorId: string) {
+  async approve(id: string, dto: ApprovePortalAccountDto, ctx: PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage, ctx, id);
     const account = await this.prisma.portalAccount.findUnique({ where: { id } });
     if (!account) throw new NotFoundException('Solicitud de portal no encontrada');
-    if (account.state !== 'PENDING') throw new ConflictException('La solicitud ya fue revisada');
+    if (account.state !== 'PENDING') throw new ConflictException('La cuenta ya fue revisada');
+    if (!account.advisorId) throw new ConflictException('Asigna un asesor antes de activar');
     const foundMapping = await this.prisma.portalPriceListMapping.findUnique({ where: { type: account.type } });
     const mappingList = foundMapping ? (await this.priceListsById([foundMapping.priceListId])).get(foundMapping.priceListId) : undefined;
     const mapping = foundMapping && mappingList ? { ...foundMapping, priceList: mappingList } : null;
     if (!mapping || !mapping.priceList.isActive) throw new BadRequestException('Configure una tarifa activa para el tipo de cliente antes de aprobar');
-    let customerId = dto.customerId;
-    if (customerId) {
-      const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-      if (!customer || !customer.isActive) throw new NotFoundException('Cliente no encontrado');
-    } else if (account.customerId) {
-      // Coincidencia detectada al registrarse (NIT/email): reutilizar el
-      // Customer existente en vez de crear un duplicado con el mismo NIT.
-      customerId = account.customerId;
-    } else {
-      const customer = await this.prisma.customer.create({
-        data: {
-          code: await this.generateCustomerCode(),
-          name: account.companyName,
-          documentType: account.documentId ? 'NIT' : null,
-          documentId: account.documentId,
-          email: account.email,
-          phone: account.phone,
-          status: 'CLIENTE',
-          source: 'WEB',
-          convertedAt: new Date(),
-          createdById: actorId,
-        },
-      });
-      customerId = customer.id;
+    // Same reach rule as linking: only an active customer the caller can already reach (also when it was linked earlier).
+    let target = dto.customerId ?? account.customerId ?? undefined;
+    let found = false;
+    if (!target) {
+      // No customer chosen: the same company may already exist (created by an advisor). Never create a second one.
+      target = await this.findExistingCustomerFor(account);
+      found = !!target;
     }
-    const updated = await this.prisma.portalAccount.update({ where: { id }, data: { state: 'ACTIVE', customerId, approvedById: actorId, approvedAt: new Date() } });
-    await this.audit.log({ userId: actorId, action: 'approve', entity: 'PortalAccount', entityId: id, newValues: { customerId, type: updated.type, priceListId: mapping.priceListId } });
-    return { id: updated.id, state: updated.state, customerId };
+    let existing: { id: string; isActive: boolean; ownerId: string | null } | null = null;
+    if (target) {
+      try { existing = await this.assertCustomerLinkable(target, ctx); }
+      catch (error) {
+        if (found && error instanceof ForbiddenException) throw new ConflictException({ code: 'CUSTOMER_OUT_OF_SCOPE', message: 'Ya existe una empresa con ese NIT o correo, pero no está a tu cargo. Pídele a su responsable o a tu supervisor que apruebe la cuenta.' });
+        throw error;
+      }
+    }
+    const code = existing ? null : await generateCustomerCode(this.prisma);
+    // NIT base only; a wrong verification digit from the public sign-up is ignored, it never blocks the approval.
+    const documentId = parseNitInput(account.documentId).base || null;
+    // One transaction: the state flip is guarded (PENDING only) so a concurrent review leaves no orphan Customer.
+    let result;
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        let customerId = existing?.id;
+        let advisorId = account.advisorId;
+        if (existing) {
+          // The company's advisor wins (C3); a customer without owner takes this account's advisor.
+          advisorId = (await this.applyCompanyAdvisor(account, existing, tx)).advisorId ?? advisorId;
+        } else {
+          const customer = await tx.customer.create({
+            data: {
+              code: code!,
+              name: account.companyName,
+              documentType: documentId ? 'NIT' : null,
+              documentId,
+              email: normalizeEmail(account.email) || null,
+              phone: account.phone,
+              status: 'CLIENTE',
+              source: 'WEB',
+              convertedAt: new Date(),
+              createdById: ctx.userId,
+              ownerId: account.advisorId,
+            },
+          });
+          customerId = customer.id;
+        }
+        const flipped = await tx.portalAccount.updateMany({ where: { id, state: 'PENDING' }, data: { state: 'ACTIVE', customerId, advisorId, approvedById: ctx.userId, approvedAt: new Date() } });
+        if (!flipped.count) throw new ConflictException('La cuenta ya fue revisada');
+        return { customerId, advisorId };
+      });
+    } catch (error) {
+      // Someone created the same company between the lookup and the insert: the next try finds and links it.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = (error.meta?.target as string[] | undefined) ?? [];
+        const sameCompany = target.includes('documentId') || target.includes('documentType');
+        throw new ConflictException(sameCompany
+          ? { code: 'CUSTOMER_DUPLICATE', field: 'documentId', message: 'Mientras aprobabas se creó otro cliente con ese NIT. Intenta aprobar de nuevo para vincularla a ese cliente.' }
+          : { code: 'CUSTOMER_CONFLICT', message: 'No se pudo crear el cliente porque otro registro se cruzó. Intenta aprobar de nuevo.' });
+      }
+      throw error;
+    }
+    await this.audit.log({ userId: ctx.userId, action: 'approve', entity: 'PortalAccount', entityId: id, newValues: { customerId: result.customerId, advisorId: result.advisorId, type: account.type, priceListId: mapping.priceListId } });
+    return { id, state: PortalAccountState.ACTIVE, customerId: result.customerId, advisorId: result.advisorId };
   }
 
   /**
-   * Código secuencial CL-####, igual al de CustomersService.generateCode
-   * (allí es privado). Aprobar un portal debe producir clientes con el mismo
-   * formato que el resto del módulo comercial, no códigos ad-hoc.
+   * Customer that already is this web account's company, by normalized NIT and email (the same rules as the
+   * internal create). Returns its id when exactly ONE active customer matches; undefined when none does.
+   * 409 CUSTOMER_AMBIGUOUS (account stays pending, the advisor links by hand) when several match, the only match
+   * is deactivated, or it matches by email but has a different NIT than the account.
    */
-  private async generateCustomerCode(attempt = 0): Promise<string> {
-    if (attempt >= 5) return `CL-${Date.now().toString(36).toUpperCase()}`;
-    const last = await this.prisma.customer.findFirst({
-      where: { code: { startsWith: 'CL-' } },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    const lastNum = last?.code ? parseInt(last.code.slice(3), 10) : 0;
-    const candidate = `CL-${String((Number.isFinite(lastNum) ? lastNum : 0) + 1).padStart(4, '0')}`;
-    const exists = await this.prisma.customer.findUnique({ where: { code: candidate }, select: { id: true } });
-    return exists ? this.generateCustomerCode(attempt + 1) : candidate;
+  private async findExistingCustomerFor(account: { documentId?: string | null; email?: string | null }): Promise<string | undefined> {
+    const documentId = parseNitInput(account.documentId).base; // base only, so "9011234561" finds "901123456"
+    const matches = await findCustomersByIdentity(this.prisma, { documentId, email: normalizeEmail(account.email) });
+    if (!matches.length) return undefined;
+    const ambiguous = (message: string) => new ConflictException({ code: 'CUSTOMER_AMBIGUOUS', message });
+    if (matches.length > 1) throw ambiguous('Hay más de un cliente con el NIT o el correo de esta cuenta. Vincúlala a mano al cliente correcto y vuelve a aprobar.');
+    const [match] = matches;
+    if (!match.isActive) throw ambiguous('Ya existe un cliente desactivado con el NIT o el correo de esta cuenta. Pide a tu supervisor que lo reactive o vincúlala a mano a otro cliente.');
+    const otherDocument = normalizeDocumentId(match.documentId);
+    if (!match.byDocument && documentId && otherDocument && otherDocument !== documentId) {
+      throw ambiguous('El correo de esta cuenta pertenece a un cliente con otro NIT. Revisa los datos y vincúlala a mano al cliente correcto.');
+    }
+    return match.id;
   }
 
-  async reject(id: string, dto: RejectPortalAccountDto, actorId: string) {
-    const updated = await this.prisma.portalAccount.updateMany({ where: { id, state: 'PENDING' }, data: { state: 'REJECTED', rejectedById: actorId, rejectedAt: new Date(), rejectionReason: dto.reason.trim() } });
-    if (!updated.count) throw new ConflictException('La solicitud no existe o ya fue revisada');
-    await this.audit.log({ userId: actorId, action: 'reject', entity: 'PortalAccount', entityId: id, newValues: { reason: dto.reason.trim() } });
+  async reject(id: string, dto: RejectPortalAccountDto, ctx: PortalAdminContext) {
+    await this.acl.assertAccount(PORTAL_ACTIONS.manage, ctx, id);
+    const updated = await this.prisma.portalAccount.updateMany({ where: { id, state: 'PENDING' }, data: { state: 'REJECTED', rejectedById: ctx.userId, rejectedAt: new Date(), rejectionReason: dto.reason.trim() } });
+    if (!updated.count) throw new ConflictException('La cuenta ya fue revisada');
+    await this.audit.log({ userId: ctx.userId, action: 'reject', entity: 'PortalAccount', entityId: id, newValues: { reason: dto.reason.trim() } });
     return { id, state: PortalAccountState.REJECTED };
   }
 
@@ -447,82 +669,6 @@ export class CustomerPortalService {
     const mapping = await this.prisma.portalPriceListMapping.upsert({ where: { type: dto.type }, create: dto, update: { priceListId: dto.priceListId } });
     await this.audit.log({ userId: actorId, action: 'upsert', entity: 'PortalPriceListMapping', entityId: mapping.id, newValues: { type: dto.type, priceListId: dto.priceListId } });
     return mapping;
-  }
-
-  requestPasswordReset(email: string) {
-    void this.sendPasswordReset(email).catch(() => {
-      this.logger.warn('No fue posible emitir el correo de recuperación del portal.');
-    });
-    return { message: RESET_REQUEST_MESSAGE };
-  }
-
-  private async sendPasswordReset(emailInput: string) {
-    const email = emailInput.trim().toLowerCase();
-    const account = await this.prisma.portalAccount.findUnique({
-      where: { email },
-      select: { id: true, state: true, contactName: true },
-    });
-    if (account?.state !== 'ACTIVE') return;
-
-    const token = randomBytes(32).toString('hex');
-    const storefrontUrl = this.config.get<string>('STOREFRONT_URL');
-    const production = this.config.get<string>('NODE_ENV') === 'production';
-    if (production && !storefrontUrl) throw new Error('Falta STOREFRONT_URL para la recuperación del portal');
-    const url = new URL('/clientes/restablecer', storefrontUrl || 'http://localhost:5173');
-    if ((production && url.protocol !== 'https:') || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-      throw new Error('STOREFRONT_URL no es válida para la recuperación del portal');
-    }
-    url.searchParams.set('email', email);
-    url.searchParams.set('token', token);
-    const saved = await this.prisma.$transaction(async (tx) => {
-      const current = await this.lockActiveAccount(tx, account.id);
-      if (current?.email !== email) return false;
-      const reset = { tokenHash: sha256(token), expiresAt: new Date(Date.now() + 3_600_000) };
-      await tx.portalPasswordReset.upsert({
-        where: { accountId: account.id },
-        create: { accountId: account.id, ...reset },
-        update: reset,
-      });
-      return true;
-    });
-    if (!saved) return;
-
-    await this.mail.send(
-      email,
-      'Recuperación de contraseña',
-      `Hola ${account.contactName}.\n\nUsa este enlace para establecer una nueva contraseña:\n${url}\n\nEl enlace vence en una hora y solo puede usarse una vez. Si no lo solicitaste, puedes ignorar este correo.`,
-    );
-  }
-
-  async resetPassword(emailInput: string, token: string, newPassword: string) {
-    const email = emailInput.trim().toLowerCase();
-    const tokenHash = sha256(token);
-    const pending = await this.prisma.portalPasswordReset.findUnique({
-      where: { tokenHash, account: { email, state: 'ACTIVE' }, expiresAt: { gt: new Date() } },
-      select: { accountId: true },
-    });
-    if (!pending) throw new UnauthorizedException(RESET_TOKEN_ERROR);
-
-    // El prehash conserva los bytes que bcrypt descartaría en contraseñas largas.
-    const passwordHash = PASSWORD_HASH_PREFIX + await bcrypt.hash(sha256(newPassword), 12);
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.lockActiveAccount(tx, pending.accountId);
-      if (current?.email !== email) throw new UnauthorizedException(RESET_TOKEN_ERROR);
-      const now = new Date();
-      const consumed = await tx.portalPasswordReset.deleteMany({
-        where: { accountId: pending.accountId, tokenHash, expiresAt: { gt: now } },
-      });
-      if (!consumed.count) throw new UnauthorizedException(RESET_TOKEN_ERROR);
-      await tx.portalAccount.update({
-        where: { id: pending.accountId },
-        data: { passwordHash },
-      });
-      await tx.portalSession.updateMany({
-        where: { accountId: pending.accountId, revokedAt: null },
-        data: { revokedAt: now },
-      });
-    });
-    return { message: 'Contraseña restaurada correctamente' };
   }
 
   private async lockActiveAccount(tx: Prisma.TransactionClient, accountId: string) {

@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
+import CatalogAccountNotice from './CatalogAccountNotice'
 import CategoryMenuContainer from './mega-menu/CategoryMenuContainer'
 import StorefrontFooter from './StorefrontFooter'
 import { whatsappUrl } from '../constants/contact'
@@ -133,6 +134,7 @@ export default function StorefrontChrome({ children, home = false, search, hideM
           </div>
         </div>
       </header>
+      <CatalogAccountNotice />
       {children}
       <StorefrontFooter />
       <a

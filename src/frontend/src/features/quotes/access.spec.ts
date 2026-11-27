@@ -11,7 +11,7 @@ import { quotesAccess } from './access'
  *
  * Criterio MÍNIMO documentado: hoy el único rol que `resolveAccess` exime
  * sin concesión es Super Admin (data-scope.ts, EXCEPCIÓN 1); nadie más recibe
- * `quotes:discount` por defecto (F1: ningún paquete la asigna). Punto de
+ * `quotes:discount` por defecto (F1: solo el Super Admin la asigna). Punto de
  * extensión (D5/E6/F1): cuando el navegador reciba concesiones, esta función
  * las recibe como segundo argumento y `canEditDiscount` pasa a leer
  * `quotes:discount` con su alcance.

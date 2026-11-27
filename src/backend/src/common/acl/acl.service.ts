@@ -1,5 +1,6 @@
 import { Inject, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { decideCatalogResourceAccessFromGrants } from '../security/catalog-resource-access';
+import { GRANTING_SOURCE_WHERE } from '../security/granting-sources';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BibliotecaPrismaService } from '../../prisma/biblioteca-prisma.service';
 import {
@@ -181,7 +182,7 @@ export class AclService {
 
   private async currentGrants(userId: string): Promise<ScopedGrant[]> {
     const rows = await this.prisma.accessGrant.findMany({
-      where: { source: { userId } },
+      where: { source: { userId, ...GRANTING_SOURCE_WHERE } },
       select: { sourceId: true, actionId: true, scopeKind: true, resourceId: true },
     });
     return rows.map((row) => ({ sourceId: row.sourceId, actionId: row.actionId,

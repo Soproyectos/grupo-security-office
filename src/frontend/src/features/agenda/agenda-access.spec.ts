@@ -78,7 +78,7 @@ describe('paridad con el servidor (nivel 0 por rol y equipo)', () => {
     }
   })
 
-  it('el paquete jefe de equipo (leer + asignar + completar de equipo) habilita todo el equipo', () => {
+  it('las tres acciones de equipo (leer + asignar + completar) habilitan todo el equipo', () => {
     const grants = [grant('activities:read', 'team'), grant('activities:assign', 'team'), grant('activities:complete', 'team')]
     expect(agendaAccess({ roles: ['Operador'], grants, status: 'ready' })).toMatchObject({
       canUseTeam: true, canAssignOthers: true, canCompleteTeam: true,

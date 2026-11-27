@@ -19,6 +19,7 @@ vi.mock('../hooks/useCustomerPortal', () => ({
   useCustomerPortalSession: () => sessionMock,
   useCustomerPortalLogout: () => ({ isPending: false, isError: false, mutate: vi.fn() }),
 }))
+vi.mock('../hooks/usePortalQuotes', () => ({ useMunicipalities: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }) }))
 vi.mock('../hooks/usePortalProfile', () => ({
   useDeletePortalAccount: () => mutationMock,
   useUpdatePortalProfile: () => mutationMock,

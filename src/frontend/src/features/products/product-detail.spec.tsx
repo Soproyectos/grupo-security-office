@@ -6,6 +6,8 @@ import { ProductNotFoundError } from './api/productsApi'
 import { ProductDetailRoute } from './ProductDetailRoute'
 import type { ProductDetail } from './types'
 
+vi.mock('../storefront/hooks/useAssignedProductPrices', () => ({ useAssignedProductPrices: () => ({ signedIn: false, error: false, prices: new Map() }) }))
+
 /**
  * No DOM environment: the suite asserts the server render of the real route
  * inside a `MemoryRouter`, with the query hook replaced by a fixed value.

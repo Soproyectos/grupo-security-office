@@ -27,7 +27,14 @@ describe('Perfil de sesión: Biblioteca solo por concesiones globales vigentes',
     expect(profile.permissions).toEqual(expect.arrayContaining(['customers:read', 'dashboard:pack:ventas']));
     expect(profile.permissions.some((permission) => /^(products|prices|providers|listas):/.test(permission))).toBe(false);
     expect(prisma.accessGrant.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { source: { userId: user.id }, scopeKind: 'global' },
+      // Only sources that grant access count: leftovers of removed packages are ignored.
+      where: {
+        source: {
+          userId: user.id,
+          OR: [{ kind: 'manual' }, { kind: 'template', templateId: 'biblioteca-seleccion' }],
+        },
+        scopeKind: 'global',
+      },
     }));
   });
 

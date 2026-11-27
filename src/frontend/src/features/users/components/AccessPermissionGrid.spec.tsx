@@ -13,20 +13,31 @@ function render(selected: string[], inherited: string[]) {
 }
 
 describe('AccessPermissionGrid', () => {
-  it('muestra el acceso por paquete marcado y protegido, sin bloquear las acciones adicionales', () => {
+  it('muestra lo incluido automáticamente como marcado y protegido, sin bloquear las acciones adicionales', () => {
     const html = render([], ['customers:read'])
     const protectedBox = html.match(/<input[^>]*aria-label="Consultar clientes"[^>]*>/)?.[0] ?? ''
     const editableBox = html.match(/<input[^>]*aria-label="Editar clientes"[^>]*>/)?.[0] ?? ''
     expect(protectedBox).toMatch(/\schecked(?:=|\s|\/?>)/)
     expect(protectedBox).toMatch(/\sdisabled(?:=|\s|\/?>)/)
     expect(editableBox).not.toMatch(/\sdisabled(?:=|\s|\/?>)/)
-    expect(html).toContain('(por paquete)')
+    expect(html).toContain('(incluido automáticamente)')
+    expect(html).not.toMatch(/paquete/i)
   })
 
-  it('comunica una selección parcial y cuenta también lo concedido por paquetes al completar el grupo', () => {
+  it('comunica una selección parcial y cuenta también lo incluido automáticamente al completar el grupo', () => {
     expect(render([], ['customers:read'])).toContain('aria-checked="mixed"')
     const complete = render(['customers:edit'], ['customers:read'])
     expect(complete).toContain('aria-checked="true"')
     expect(complete).not.toContain('aria-checked="mixed"')
+  })
+
+  it('toda casilla sin asignación automática se puede marcar y desmarcar siempre', () => {
+    const html = render(['customers:read', 'customers:edit'], [])
+    for (const label of ['Consultar clientes', 'Editar clientes']) {
+      const box = html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? ''
+      expect(box).toMatch(/\schecked(?:=|\s|\/?>)/)
+      expect(box).not.toMatch(/\sdisabled(?:=|\s|\/?>)/)
+    }
+    expect(html).not.toMatch(/paquete/i)
   })
 })

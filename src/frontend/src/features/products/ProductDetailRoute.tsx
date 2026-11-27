@@ -6,6 +6,8 @@ import { useProduct } from './api/useProduct';
 import { ProductNotFoundError } from './api/productsApi';
 import { ProductDetailPage } from './components/ProductDetailPage';
 import { ui } from './styles';
+import { useAssignedProductPrices } from '../storefront/hooks/useAssignedProductPrices';
+import { usePortalQuoteList } from '../../stores/portal-quote-list.store';
 
 interface ProductDetailRouteProps {
   /** Product id or published slug. Defaults to the `:id` / `:slug` route param. */
@@ -18,6 +20,16 @@ export function ProductDetailRoute({ idOrSlug, headerOffset }: ProductDetailRout
   const params = useParams<{ id?: string; slug?: string }>();
   const key = idOrSlug ?? params.id ?? params.slug ?? '';
   const { data, isPending, isError, error, refetch } = useProduct(key);
+  const assigned = useAssignedProductPrices(data ? [data.id] : []);
+  const assignedPrice = data ? (assigned.prices.get(data.id) ?? null) : null;
+  const quoteList = usePortalQuoteList(assigned.quoteAccountId);
+  const accountId = assigned.quoteAccountId;
+  const quoteAction = data && accountId
+    ? {
+        inList: quoteList.items.find((line) => line.productId === data.id)?.quantity ?? 0,
+        add: (quantity: number) => quoteList.add(accountId, { productId: data.id, sku: data.model, name: data.name, imageUrl: data.image?.src ?? null }, quantity),
+      }
+    : undefined;
   const notFound = isError && error instanceof ProductNotFoundError;
 
   useDocumentTitle(pageTitle(data ? data.name : notFound ? 'Producto no encontrado' : 'Producto'));
@@ -51,6 +63,8 @@ export function ProductDetailRoute({ idOrSlug, headerOffset }: ProductDetailRout
           <ProductDetailPage
             product={data}
             headerOffset={headerOffset}
+            assignedPrice={assignedPrice}
+            quoteAction={quoteAction}
             onDownload={(file) => {
               // Punto para analítica (GTM/GA4), igual que Hikvision registra cada descarga.
               (window as Window & { dataLayer?: unknown[] }).dataLayer?.push({ event: 'file_download', ...file, product: data.id });

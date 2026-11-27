@@ -213,3 +213,20 @@ describe('tras reasignar la fila muestra el responsable nuevo (ACEPTACIÓN 3)', 
     expect(DESPUES).not.toMatch(/auditor[ií]a/i)
   })
 })
+
+describe('documento del cliente en la lista', () => {
+  it('muestra el NIT con puntos y su dígito cuando el servidor lo envía', () => {
+    const html = render(
+      seededClient([customer({ id: 'c-1', documentType: 'NIT', documentId: '901123456', documentDv: 1 })]),
+    )
+    expect(html).toContain('NIT 901.123.456-1')
+  })
+
+  it('muestra el valor tal cual cuando no viene dígito', () => {
+    const html = render(
+      seededClient([customer({ id: 'c-1', documentType: 'NIT', documentId: '901123456', documentDv: null })]),
+    )
+    expect(html).toContain('NIT 901123456')
+    expect(html).not.toContain('901.123.456')
+  })
+})

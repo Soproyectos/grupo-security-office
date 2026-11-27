@@ -3,15 +3,11 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import api from '../../services/api'
 import { useAuthStore } from '../../stores/auth.store'
 import {
-  applyUserPackage,
   fetchUserAccess,
-  removeUserPackage,
   setUserLibrarySelection,
   userAccessErrorMessage,
   UserAccessServiceError,
-  type AccessPackage,
   type AccessGrant,
-  type AccessSource,
   type UserAccessState,
 } from '../../services/users.service'
 
@@ -20,9 +16,9 @@ import {
  *
  * MISMO patrón que `features/agenda/agenda-access.ts` (BASE-03): una función
  * pura decide la navegación a partir de identidad + concesiones. Aquí el
- * criterio deja de ser el rol y pasa a ser la ACCIÓN concedida (ficha regla 1:
- * «paquete no equivale a rol»); el servidor sigue siendo la autoridad del
- * alcance y de los datos por petición (`data-scope.ts`).
+ * criterio deja de ser el rol y pasa a ser la ACCIÓN concedida por el Super
+ * Admin; el servidor sigue siendo la autoridad del alcance y de los datos por
+ * petición (`data-scope.ts`).
  */
 
 export const NO_PANELS_MESSAGE = 'Sin paneles asignados'
@@ -35,14 +31,22 @@ export interface CommercialTab {
   readonly actionId: string
 }
 
-/** Los dos paneles usan las rutas existentes sin mezclar sus herramientas. */
+/** Portal accounts («Solicitudes») and advisor zones («Zonas») live inside Comercial. */
+export const COMMERCIAL_PORTAL_PATH = '/commercial/portal'
+export const COMMERCIAL_ZONES_PATH = '/commercial/zones'
+
+/**
+ * Los dos paneles usan las rutas existentes sin mezclar sus herramientas.
+ * «Promociones internas» and «Gestionar avisos» are NOT here any more: they live in the
+ * Marketing panel (`features/marketing/marketing-access.ts`).
+ */
 export const COMMERCIAL_TABS: readonly CommercialTab[] = Object.freeze([
   { to: '/commercial/customers', label: 'Clientes', end: false, actionId: 'customers:read' },
+  { to: COMMERCIAL_PORTAL_PATH, label: 'Solicitudes', end: false, actionId: 'portalAccounts:read' },
   { to: '/commercial/quotes', label: 'Cotizaciones', end: false, actionId: 'quotes:read' },
   { to: '/targets', label: 'Metas', end: false, actionId: 'targets:read' },
   { to: '/reports', label: 'Resumen del equipo', end: false, actionId: 'teamInsights:read' },
-  { to: '/sales/promotions', label: 'Promociones internas', end: false, actionId: 'commercialPromotions:read' },
-  { to: '/promotions', label: 'Gestionar avisos', end: false, actionId: 'commercialPromotions:create' },
+  { to: COMMERCIAL_ZONES_PATH, label: 'Zonas', end: false, actionId: 'portalZones:manage' },
 ])
 
 export const CATALOG_TABS: readonly CommercialTab[] = Object.freeze([
@@ -61,10 +65,10 @@ export const LIBRARY_IMPORTS_PATH = '/commercial/library/update/import'
 export const LIBRARY_MASTERS_PATH = '/commercial/library/masters'
 
 /**
- * Pestañas independientes, cada una con su paquete y su acción:
+ * Pestañas independientes, cada una con su acción:
  * Productos = products:read, Fichas = products:write, Precios = prices:preview,
  * Importaciones = imports:read, Catálogos maestros = masters:read.
- * `biblioteca-publicacion` es un complemento de Fichas y no abre pestaña propia.
+ * `biblioteca-publicacion` (products:publish) es un complemento de Fichas y no abre pestaña propia.
  * Pertenecer a Biblioteca no concede ninguna: cada una exige su propia concesión.
  */
 export type LibraryPanelId =
@@ -84,20 +88,6 @@ const LIBRARY_PANEL_ACTIONS: Readonly<Record<LibraryPanelId, string>> = Object.f
   'biblioteca-maestros': 'masters:read',
 })
 
-/**
- * Paquetes cuya asignación abre cada pestaña. `biblioteca-actualizacion` es el
- * paquete anterior (fichas + precios juntos): quien aún lo tiene conserva sus
- * pestañas Fichas y Precios hasta que se le retire.
- */
-const LIBRARY_PANEL_PACKAGES: Readonly<Record<LibraryPanelId, readonly string[]>> = Object.freeze({
-  'biblioteca-consulta': ['biblioteca-consulta'],
-  'biblioteca-fichas': ['biblioteca-fichas', 'biblioteca-actualizacion'],
-  'biblioteca-precios': ['biblioteca-precios', 'biblioteca-actualizacion'],
-  'biblioteca-publicacion': ['biblioteca-publicacion'],
-  'biblioteca-importaciones': ['biblioteca-importaciones'],
-  'biblioteca-maestros': ['biblioteca-maestros'],
-})
-
 const LIBRARY_PANEL_BY_ACTION: Readonly<Record<string, LibraryPanelId>> = Object.freeze({
   'products:read': 'biblioteca-consulta',
   'products:write': 'biblioteca-fichas',
@@ -113,7 +103,7 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = Object.freeze({
   'customers:read': 'Consultar clientes',
   'customers:create': 'Crear cliente',
   'customers:edit': 'Editar cliente',
-  'customers:reassign': 'Reasignar cartera',
+  'customers:reassign': 'Reasignar responsable del cliente',
   'quotes:read': 'Consultar cotizaciones',
   'quotes:create': 'Crear cotización',
   'quotes:edit': 'Editar cotización',
@@ -211,16 +201,16 @@ export interface CommercialAccess {
 export interface CommercialAccessInput {
   readonly roles?: readonly string[] | null
   readonly grants?: readonly AccessGrant[] | null
-  readonly packages?: readonly Pick<AccessPackage, 'id' | 'applied'>[] | null
-  /** Fuentes del usuario: permiten reconocer la selección por casillas de Biblioteca. */
-  readonly sources?: readonly Pick<AccessSource, 'id' | 'kind' | 'templateId'>[] | null
   readonly status: 'loading' | 'ready' | 'unavailable'
 }
 
 /** Acciones de Biblioteca: solo cuentan con alcance global. */
 const LIBRARY_ACTION_PATTERN = /^(products|prices|providers|imports|masters):/
 
-export function hasAssignedAction(input: CommercialAccessInput, actions: readonly string[]): boolean {
+export function hasAssignedAction(
+  input: Pick<CommercialAccessInput, 'roles' | 'status'> & { readonly grants?: readonly (Pick<AccessGrant, 'actionId' | 'scope'> & Partial<AccessGrant>)[] | null },
+  actions: readonly string[],
+): boolean {
   if (canAdministerAccess(input.roles)) return true
   if (input.status !== 'ready') return false
   return (input.grants ?? []).some((grant) =>
@@ -229,27 +219,13 @@ export function hasAssignedAction(input: CommercialAccessInput, actions: readonl
   )
 }
 
-/** Id reservado de la fuente que guarda las casillas de Biblioteca (espejo del servidor). */
-export const LIBRARY_SELECTION_TEMPLATE_ID = 'biblioteca-seleccion'
-
 /**
- * Una pestaña de Biblioteca se muestra si la persona tiene su acción global y esa
- * acción viene de un paquete vigente aplicado o de la selección por casillas.
- * Los permisos sueltos o de accesos anteriores no abren pestañas.
+ * Una pestaña de Biblioteca se muestra si la persona tiene su acción asignada
+ * con alcance global. No importa de dónde venga la asignación: solo cuentan las
+ * acciones, nunca un grupo de accesos.
  */
 export function hasAssignedLibraryPanel(input: CommercialAccessInput, panelId: LibraryPanelId): boolean {
-  if (canAdministerAccess(input.roles)) return true
-  if (input.status !== 'ready') return false
-  const requiredAction = LIBRARY_PANEL_ACTIONS[panelId]
-  if (!hasAssignedAction(input, [requiredAction])) return false
-  const accepted = LIBRARY_PANEL_PACKAGES[panelId]
-  if ((input.packages ?? []).some((pkg) => accepted.includes(pkg.id) && pkg.applied)) return true
-  const selectionSourceIds = new Set(
-    (input.sources ?? []).filter((source) => source.kind === 'template' && source.templateId === LIBRARY_SELECTION_TEMPLATE_ID).map((source) => source.id),
-  )
-  return (input.grants ?? []).some((grant) =>
-    grant.actionId === requiredAction && grant.scope === 'global' && selectionSourceIds.has(grant.sourceId),
-  )
+  return hasAssignedAction(input, [LIBRARY_PANEL_ACTIONS[panelId]])
 }
 
 /**
@@ -266,8 +242,8 @@ export function panelAccess(input: CommercialAccessInput, panel: 'commercial' | 
   const candidates = panel === 'commercial' ? COMMERCIAL_TABS : CATALOG_TABS
   const tabs = candidates.filter((tab) => {
     if (panel === 'catalog') {
-      const packageId = LIBRARY_PANEL_BY_ACTION[tab.actionId]
-      return packageId ? hasAssignedLibraryPanel(input, packageId) : false
+      const panelId = LIBRARY_PANEL_BY_ACTION[tab.actionId]
+      return panelId ? hasAssignedLibraryPanel(input, panelId) : false
     }
     return hasAssignedAction(input, [tab.actionId])
   })
@@ -466,14 +442,14 @@ export function usePanelAccess(panel: 'commercial' | 'catalog'): CommercialAcces
   const roles = useAuthStore((state) => state.user?.roles)
   const { access, status } = useOwnUserAccess()
   return useMemo(
-    () => panelAccess({ roles, grants: access?.grants ?? null, packages: access?.packages ?? null, sources: access?.sources ?? null, status }, panel),
+    () => panelAccess({ roles, grants: access?.grants ?? null, status }, panel),
     [roles, access, status, panel],
   )
 }
 
 /**
- * Refetch de acceso + identidad DESPUÉS de aplicar o retirar un paquete
- * (aceptación 3, lado cliente): el menú se actualiza en la misma sesión, sin
+ * Refetch de acceso + identidad DESPUÉS de cambiar las acciones asignadas
+ * (lado cliente): el menú se actualiza en la misma sesión, sin
  * cerrarla ni redirigir a login. La identidad se re-escribe desde
  * `GET /auth/profile` (mismo criterio que `verifyPromotionPublisher`); si ese
  * refetch falla, la sesión sigue viva y el acceso ya quedó refetcheado.
@@ -522,29 +498,6 @@ function clearCurrentUserGrants(userId: string): void {
     // A failed refresh cannot leave stale grants or role-based fallbacks active.
     current.login({ ...current.user, roles: [], permissions: [] })
   }
-}
-
-/** Aplica el paquete y refetchea caché compartida + identidad (sin sesión nueva). */
-export async function applyPackageInCache(
-  client: QueryClient,
-  userId: string,
-  packageId: string,
-  expectedVersion: number,
-  catalogVersion?: string,
-): Promise<void> {
-  await applyUserPackage(userId, packageId, expectedVersion, { catalogVersion })
-  await refreshSessionAfterAccessChange(client, userId)
-}
-
-/** Retira SOLO la fuente del paquete y refetchea caché + identidad (aceptación 3). */
-export async function revokePackageInCache(
-  client: QueryClient,
-  userId: string,
-  packageId: string,
-  expectedVersion: number,
-): Promise<void> {
-  await removeUserPackage(userId, packageId, expectedVersion)
-  await refreshSessionAfterAccessChange(client, userId)
 }
 
 /** Guarda las casillas de Biblioteca y refetchea caché + identidad (menú al día sin cerrar sesión). */

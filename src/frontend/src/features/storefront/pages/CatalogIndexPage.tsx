@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import StorefrontChrome from '../components/StorefrontChrome'
 import { useCategoryMenu } from '../hooks/useCategoryMenu'
@@ -15,6 +15,20 @@ const NO_ROOTS: MenuCategory[] = []
  */
 function rootsBySortOrder(categories: MenuCategory[]): MenuCategory[] {
   return [...categories].sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+const MAX_COLUMNS = 6
+const TILE_WIDTH_REM = 11
+const TILE_GAP_REM = 1.5
+
+/**
+ * Widest row that keeps the rows balanced: 9 categories become 5 + 4 instead of 6 + 3. The list is centered and
+ * capped to that width, so a short last row is centered too. Below `sm` the tiles simply wrap two per row.
+ */
+function gridMaxWidth(count: number): string {
+  const rows = Math.ceil(count / MAX_COLUMNS)
+  const columns = Math.ceil(count / rows)
+  return `${columns * TILE_WIDTH_REM + (columns - 1) * TILE_GAP_REM}rem`
 }
 
 function ChevronRight() {
@@ -76,15 +90,15 @@ function CatalogSkeleton() {
       <span className="sr-only">Cargando catálogo…</span>
       <div aria-hidden="true" className="space-y-3">
         <span className="block h-3 w-56 max-w-full animate-pulse rounded bg-surface-200" />
-        <span className="block h-8 w-72 max-w-full animate-pulse rounded bg-surface-200" />
+        <span className="mx-auto block h-8 w-72 max-w-full animate-pulse rounded bg-surface-200" />
       </div>
       <div
         aria-hidden="true"
-        className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6"
+        className="mx-auto flex flex-wrap justify-center gap-x-6 gap-y-8 rounded-card border border-surface-200 bg-white px-4 py-8 sm:px-6"
       >
         {[0, 1, 2, 3, 4, 5].map((tile) => (
-          <div key={tile} className="flex flex-col items-center gap-3">
-            <span className="h-24 w-24 animate-pulse rounded-full bg-surface-200" />
+          <div key={tile} className="flex w-[8.5rem] flex-col items-center gap-3 sm:w-44">
+            <span className="h-28 w-28 animate-pulse rounded-full bg-surface-200 sm:h-36 sm:w-36" />
             <span className="h-3 w-20 animate-pulse rounded bg-surface-100" />
           </div>
         ))}
@@ -147,28 +161,33 @@ export default function CatalogIndexPage() {
 
   return (
     <StorefrontChrome>
-      <main className="mx-auto max-w-7xl px-5 py-8 lg:px-12">
+      {/* `w-full` matters: the chrome is a flex column and `mx-auto` alone would shrink the page to its content. */}
+      <main className="mx-auto w-full max-w-[105rem] px-5 py-8 sm:px-8 lg:px-12">
         {status === 'loading' && <CatalogSkeleton />}
         {status === 'error' && <CatalogError onRetry={retry} />}
         {status === 'ready' && (
           <>
             <Breadcrumb />
-            <h1 className="mt-4 text-page-title font-bold text-ink-900">Catálogo</h1>
+            <header className="mt-4 text-center">
+              <h1 className="text-page-title font-bold text-ink-900">Catálogo</h1>
+              {roots.length > 0 && <p className="mt-2 text-ink-600">Elige una categoría para ver sus productos.</p>}
+            </header>
             {categories.length === 0 ? (
               <div className="mt-8">
                 <CatalogEmpty />
               </div>
             ) : roots.length > 0 ? (
-              <section aria-labelledby="catalogo-todas-categorias" className="mt-8">
-                <h2 id="catalogo-todas-categorias" className="text-eyebrow uppercase text-ink-500">
+              <section aria-labelledby="catalogo-todas-categorias" className="mt-6 rounded-card border border-surface-200 bg-white px-4 py-8 sm:px-6 lg:py-10">
+                <h2 id="catalogo-todas-categorias" className="sr-only">
                   Todas las categorías
                 </h2>
                 <ul
                   role="list"
-                  className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6"
+                  style={{ '--catalog-grid-max': gridMaxWidth(roots.length) } as CSSProperties}
+                  className="mx-auto flex flex-wrap justify-center gap-x-6 gap-y-8 sm:max-w-[var(--catalog-grid-max)]"
                 >
                   {roots.map((root) => (
-                    <CategoryTile key={root.id} node={root} />
+                    <CategoryTile key={root.id} node={root} large />
                   ))}
                 </ul>
               </section>

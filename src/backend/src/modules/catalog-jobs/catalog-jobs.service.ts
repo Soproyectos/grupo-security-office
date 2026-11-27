@@ -186,17 +186,23 @@ export class CatalogJobsService {
 
   /** Reclamo atómico con arriendo; un lease vencido (proceso muerto) se re-clama y reanuda. */
   async claimNext(): Promise<{ id: string; kind: string; actorId: string; attempt: number; maxAttempts: number; checkpoint: unknown } | null> {
-    const leaseUntil = new Date(Date.now() + LEASE_MINUTES * 60_000)
+    const now = new Date()
+    // Las columnas son `timestamp` sin zona y Prisma guarda UTC. Con now() o con un
+    // Date como parámetro, PostgreSQL convierte con la zona horaria de la sesión de
+    // la BD (p. ej. America/Bogota) y desplaza el arriendo. Se pasa el ISO en UTC
+    // como texto y se castea a `timestamp`, que ignora la zona.
+    const nowIso = now.toISOString()
+    const leaseIso = new Date(now.getTime() + LEASE_MINUTES * 60_000).toISOString()
     const rows = await this.db.$queryRaw<{ id: string }[]>`
       UPDATE catalog_jobs
       SET state = 'RUNNING',
-          "leaseUntil" = ${leaseUntil},
+          "leaseUntil" = ${leaseIso}::timestamp,
           attempt = attempt + 1,
-          "startedAt" = COALESCE("startedAt", now()),
-          "updatedAt" = now()
+          "startedAt" = COALESCE("startedAt", ${nowIso}::timestamp),
+          "updatedAt" = ${nowIso}::timestamp
       WHERE id IN (
         SELECT id FROM catalog_jobs
-        WHERE (state = 'QUEUED' OR (state = 'RUNNING' AND "leaseUntil" < now()))
+        WHERE (state = 'QUEUED' OR (state = 'RUNNING' AND "leaseUntil" < ${nowIso}::timestamp))
           AND "cancelRequested" = false
         ORDER BY "createdAt"
         LIMIT 1

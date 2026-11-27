@@ -7,7 +7,7 @@ const COMERCIAL = { userId: 'user-1', roles: ['Operador'] };
 const SUPERVISOR_GRANTS = [
   { sourceId: 'g1', actionId: 'quotes:read', scope: 'global' },
   { sourceId: 'g2', actionId: 'targets:read', scope: 'global' },
-  { sourceId: 'g3', actionId: 'teamInsights:read', scope: 'global' },
+  { sourceId: 'g3', actionId: 'teamInsights:read', scope: 'team' },
 ];
 
 describe('DashboardService', () => {

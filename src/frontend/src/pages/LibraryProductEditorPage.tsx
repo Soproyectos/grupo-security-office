@@ -54,6 +54,7 @@ import { ProductAuditTab } from '../features/products/audit/ProductAuditTab'
 import { ProductPricesSection } from '../features/products/prices/ProductPricesSection'
 import { LibraryPublicationSection } from '../features/catalog-publication/LibraryPublicationSection'
 import './LibraryProductEditorPage.css'
+import PasswordField from '../features/customer-portal/components/PasswordField'
 
 const LEAVE_PROMPT = 'Hay cambios sin guardar. ¿Salir y descartarlos?'
 
@@ -286,17 +287,7 @@ function RemoveProductModal({ product, onClose, onRemoved }: { product: Product;
         </label>
         {needsClave && (
           <div>
-            <label className={labelClass} htmlFor="editor-remove-clave">
-              Clave del usuario
-            </label>
-            <input
-              id="editor-remove-clave"
-              type="password"
-              value={clave}
-              onChange={(event) => setClave(event.target.value)}
-              autoComplete="current-password"
-              className={inputClass}
-            />
+            <PasswordField id="editor-remove-clave" label="Clave del usuario" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" />
             <p className={hintClass}>
               {code === 'CLAVE_USUARIO_INCORRECTA' ? 'Clave incorrecta. Inténtalo de nuevo.' : 'Ingresa tu clave para confirmar.'}
             </p>

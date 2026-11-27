@@ -84,7 +84,6 @@ function render(client: QueryClient, grants: AccessGrant[] = [], scope: 'own' | 
     accessVersion: 1,
     grants,
     sources: [],
-    packages: [],
   })
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>

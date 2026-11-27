@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react'
 import type { PublicProductResult } from '../types/publicProduct'
 import PublicProductCard from './PublicProductCard'
+import { useAssignedProductPrices } from '../hooks/useAssignedProductPrices'
+import { usePortalQuoteList } from '../../../stores/portal-quote-list.store'
 
 const GRID_CLASS = 'grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4'
 const COMPACT_GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] sm:gap-4'
@@ -24,10 +26,14 @@ function subscribeToGridBreakpoints(update: () => void): () => void {
 /** Responsive grid of product cards: 2, 3 and 4 columns. */
 export function PublicProductGrid({ products, compact = false, className }: { products: PublicProductResult[]; compact?: boolean; className?: string }) {
   const firstRowSize = useSyncExternalStore(subscribeToGridBreakpoints, getFirstRowSize, () => 2)
+  const assigned = useAssignedProductPrices(products.map((p) => p.id))
+  const quoteList = usePortalQuoteList(assigned.quoteAccountId)
+  const accountId = assigned.quoteAccountId
   return (
     <ul role="list" className={className ?? (compact ? COMPACT_GRID_CLASS : GRID_CLASS)}>
       {products.map((product, index) => (
-        <PublicProductCard key={product.id} product={product} eagerImage={index < firstRowSize} compact={compact} />
+        <PublicProductCard key={product.id} product={product} eagerImage={index < firstRowSize} compact={compact} assignedPrice={assigned.prices.get(product.id) ?? null}
+          quoteAction={accountId ? { inList: quoteList.items.find((line) => line.productId === product.id)?.quantity ?? 0, add: (quantity) => quoteList.add(accountId, { productId: product.id, sku: product.sku, name: product.name, imageUrl: product.imageUrl }, quantity) } : undefined} />
       ))}
     </ul>
   )

@@ -7,6 +7,8 @@ import type { PublicProductResult } from '../types/publicProduct'
 import { CategoryShopTiles } from './CategoryShopTiles'
 import { ProductShelfView } from './ProductShelf'
 
+vi.mock('../hooks/useAssignedProductPrices', () => ({ useAssignedProductPrices: () => ({ signedIn: false, error: false, prices: new Map() }) }))
+
 /** Data-driven pieces of the home, rendered with fixed props (no effects on a server render). */
 
 function category(slug: string, name: string, options: Partial<MenuCategory> = {}): MenuCategory {

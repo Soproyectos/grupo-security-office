@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPortalSession } from '../../../services/customer-portal.service'
 import { signInPortal, signOutPortal, signUpPortal, startGoogleSignIn, type PortalSignUp } from '../../../services/portal-auth.service'
 import { useCustomerPortalAuthStore } from '../../../stores/customer-portal-auth.store'
+import { usePortalQuoteListStore } from '../../../stores/portal-quote-list.store'
 
 export function useCustomerPortalSession() {
   return useQuery({
@@ -33,5 +34,5 @@ export function useCustomerPortalGoogle() {
 export function useCustomerPortalLogout() {
   const queryClient = useQueryClient()
   const setAccount = useCustomerPortalAuthStore((state) => state.setAccount)
-  return useMutation({ mutationFn: signOutPortal, onSuccess: () => { setAccount(null); queryClient.removeQueries({ queryKey: ['customer-portal'] }) } })
+  return useMutation({ mutationFn: signOutPortal, onSuccess: () => { setAccount(null); usePortalQuoteListStore.getState().clearAll(); queryClient.removeQueries({ queryKey: ['customer-portal'] }) } })
 }

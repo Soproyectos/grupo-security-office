@@ -7,6 +7,9 @@ import ReassignCustomerModal from '../features/customers/components/ReassignCust
 import { customersAccess } from '../features/customers/access'
 import { useCustomers } from '../features/customers/hooks/useCustomers'
 import { useCustomerMutations } from '../features/customers/hooks/useCustomerMutations'
+import { useMunicipalities } from '../features/customer-portal/hooks/usePortalQuotes'
+import { municipalityLabel } from '../features/customer-portal/utils/municipality'
+import { formatCustomerDocument, isMunicipalityCode } from '../features/customers/customer-form'
 import { fetchUsers } from '../services/users.service'
 import { toCustomerEditPayload, type ReassignCustomerPayload } from '../services/customers.service'
 import { useAuthStore } from '../stores/auth.store'
@@ -21,13 +24,6 @@ import {
 } from '../features/customers/types/customer.types'
 
 const PAGE_SIZE = 20
-
-function formatDocument(customer: Customer): string {
-  if (!customer.documentId) return '-'
-  return customer.documentType
-    ? `${customer.documentType} ${customer.documentId}`
-    : customer.documentId
-}
 
 export default function CustomersPage({ personal = false }: { personal?: boolean }) {
   const [search, setSearch] = useState('')
@@ -69,6 +65,14 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     return map
   }, [ownersQuery.data])
 
+  // New customers keep a DIVIPOLA code as city: show "Ciudad · Departamento" instead of the code.
+  const municipalities = useMunicipalities()
+  const cityLabels = useMemo(() => {
+    const map = new Map<string, string>()
+    municipalities.data?.forEach((m) => map.set(m.code, municipalityLabel(m)))
+    return map
+  }, [municipalities.data])
+
   const submitting = create.isPending || update.isPending || reassign.isPending
 
   const handleSubmit = async (payload: CustomerPayload) => {
@@ -79,6 +83,15 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     } else {
       await create.mutateAsync(payload)
     }
+  }
+
+  // There is no detail page by id: opening the existing customer means showing it alone in the list.
+  const handleOpenExisting = (existing: { id: string; name: string }) => {
+    setModalOpen(false)
+    setEditing(null)
+    setStatusFilter(undefined)
+    setSearch(existing.name)
+    setPage(1)
   }
 
   const handleReassign = async (payload: ReassignCustomerPayload) => {
@@ -126,7 +139,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
           </div>
         ),
       },
-      { key: 'document', header: 'Documento', render: formatDocument },
+      { key: 'document', header: 'Documento', render: formatCustomerDocument },
       {
         key: 'contact',
         header: 'Contacto',
@@ -138,7 +151,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
           </div>
         ),
       },
-      { key: 'city', header: 'Ciudad', render: (c: Customer) => c.city ?? '-' },
+      { key: 'city', header: 'Ciudad', render: (c: Customer) => (c.city && isMunicipalityCode(c.city) ? (cityLabels.get(c.city.trim()) ?? c.city) : (c.city ?? '-')) },
       {
         key: 'status',
         header: 'Estado',
@@ -217,7 +230,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
     })
 
     return cols
-  }, [showOwnerColumn, canReassign, ownerNames, convert.isPending, reassign.isPending, remove.isPending, personal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showOwnerColumn, canReassign, ownerNames, cityLabels, convert.isPending, reassign.isPending, remove.isPending, personal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -349,6 +362,7 @@ export default function CustomersPage({ personal = false }: { personal?: boolean
         customer={editing}
         onSubmit={handleSubmit}
         isSubmitting={submitting}
+        onOpenExisting={handleOpenExisting}
       />
 
       <ReassignCustomerModal

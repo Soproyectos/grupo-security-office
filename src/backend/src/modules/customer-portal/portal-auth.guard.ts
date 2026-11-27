@@ -1,17 +1,37 @@
-import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Optional, SetMetadata, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PortalAuthService } from './portal-auth/portal-auth.service';
 import { ensurePortalAccountSafe } from './portal-auth/portal-account-sync';
-import { deriveAuthMethods } from './portal-profile';
+import { deriveAuthMethods, PORTAL_ACCOUNT_INCLUDE } from './portal-profile';
 
 export const PORTAL_COOKIE = 'customer_access_token';
 
-/** One query brings the tier and the sign-in methods (provider names and whether a password exists; never the hash). */
-const PORTAL_ACCOUNT_INCLUDE = {
-  tier: { select: { id: true, name: true, isActive: true } },
-  authUser: { select: { accounts: { select: { providerId: true, password: true } } } },
-};
+export const REQUIRE_APPROVED_KEY = 'portal:require-approved';
+
+/** Marks a priced route: a PENDING account (still in review) is denied with 403 ACCOUNT_PENDING. Read by PortalAuthGuard. */
+export const RequireApprovedPortalAccount = () => SetMetadata(REQUIRE_APPROVED_KEY, true);
+
+/** Session states that may sign in: PENDING accounts see their own profile (and nothing priced); the controller denies prices. */
+const SESSION_STATES = ['ACTIVE', 'PENDING'];
+
+/**
+ * What the controller needs from the account. The tariff is the COMPANY's: it comes from the linked customer
+ * (`tierId` / `tier`); an account without a linked customer has no tier and gets no prices.
+ */
+function sessionAccount(account: any, jti: string | undefined) {
+  return {
+    id: account.id, email: account.email, type: account.type, state: account.state, customerId: account.customerId, authUserId: account.authUserId,
+    contactName: account.contactName, companyName: account.companyName, city: account.city, advisorId: account.advisorId, createdAt: account.createdAt,
+    tierId: account.customer?.portalTierId ?? null, tier: account.customer?.portalTier ?? null,
+    // Minimal company view so /auth/me can tell whether the account can send quotes (canQuote).
+    customer: account.customer ? { id: account.customer.id, isActive: account.customer.isActive, ownerId: account.customer.ownerId } : null,
+    advisorName: account.advisor?.name ?? account.customer?.owner?.name ?? null,
+    documentId: account.documentId, phone: account.phone, privacyAcceptedAt: account.privacyAcceptedAt, deletionRequestedAt: account.deletionRequestedAt,
+    ...deriveAuthMethods(account.authUser), jti,
+  };
+}
 
 @Injectable()
 export class PortalAuthGuard implements CanActivate {
@@ -19,10 +39,23 @@ export class PortalAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     @Optional() private readonly portalAuth?: PortalAuthService,
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
+    await this.authenticate(req);
+    // Fail closed: without a Reflector the route marker cannot be read, so a PENDING account is denied everywhere.
+    const required = this.reflector
+      ? this.reflector.getAllAndOverride<boolean>(REQUIRE_APPROVED_KEY, [context.getHandler(), context.getClass()])
+      : true;
+    if (required && req.portalAccount?.state === 'PENDING') {
+      throw new ForbiddenException({ code: 'ACCOUNT_PENDING', message: 'Tu cuenta está en revisión' });
+    }
+    return true;
+  }
+
+  private async authenticate(req: any): Promise<true> {
     if (await this.authenticateWithBetterAuth(req)) return true;
     const token = req.cookies?.[PORTAL_COOKIE]
       ?? (typeof req.headers?.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
@@ -40,10 +73,10 @@ export class PortalAuthGuard implements CanActivate {
       this.prisma.portalAccount.findUnique({ where: { id: payload.sub }, include:PORTAL_ACCOUNT_INCLUDE }),
       this.prisma.portalSession.findUnique({ where: { jti: payload.jti } }),
     ]);
-    if (!account || account.state !== 'ACTIVE' || !session || session.accountId !== account.id || session.revokedAt || session.expiresAt <= new Date()) {
+    if (!account || !SESSION_STATES.includes(account.state) || !session || session.accountId !== account.id || session.revokedAt || session.expiresAt <= new Date()) {
       throw new UnauthorizedException('Sesión de cliente finalizada');
     }
-    req.portalAccount = { id: account.id, email: account.email, type: account.type, customerId: account.customerId, authUserId: account.authUserId, contactName:account.contactName, companyName:account.companyName, tierId:account.tierId, tier:account.tier, documentId:account.documentId, phone:account.phone, privacyAcceptedAt:account.privacyAcceptedAt, deletionRequestedAt:account.deletionRequestedAt, ...deriveAuthMethods((account as any).authUser), jti: payload.jti };
+    req.portalAccount = sessionAccount(account, payload.jti);
     return true;
   }
 
@@ -60,8 +93,8 @@ export class PortalAuthGuard implements CanActivate {
       const id = await ensurePortalAccountSafe(this.prisma, session.user);
       if (id) account = await this.prisma.portalAccount.findUnique({ where: { id }, include });
     }
-    if (!account || account.state !== 'ACTIVE') throw new UnauthorizedException('Sesión de cliente finalizada');
-    req.portalAccount = { id: account.id, email: account.email, type: account.type, customerId: account.customerId, authUserId: account.authUserId, contactName: account.contactName, companyName: account.companyName, tierId: account.tierId, tier: account.tier, documentId: account.documentId, phone: account.phone, privacyAcceptedAt: account.privacyAcceptedAt, deletionRequestedAt: account.deletionRequestedAt, ...deriveAuthMethods((account as any).authUser), jti: session.session?.id };
+    if (!account || !SESSION_STATES.includes(account.state)) throw new UnauthorizedException('Sesión de cliente finalizada');
+    req.portalAccount = sessionAccount(account, session.session?.id);
     return true;
   }
 }

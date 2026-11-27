@@ -15,15 +15,16 @@ Los avisos internos para vendedores son otra herramienta y no cambian.
 
 ## Cómo se delega el panel
 
-El panel no aparece solo: lo asigna el Super Admin en **Asignar paneles**, persona por persona, en el bloque **Marketing y mercadeo**. Hay tres paquetes y se pueden combinar:
+El panel no aparece solo: lo asigna el Super Admin en **Asignar paneles**, persona por persona, en el bloque **Marketing y mercadeo**. Se marca cada acción por separado y se pueden combinar:
 
-| Paquete | La persona podrá |
+| Acción | La persona podrá |
 |---|---|
-| Ver banners y pop-ups | Entrar al panel y ver cada banner con su estado. |
-| Preparar banners y pop-ups | Crear, cambiar y eliminar borradores, y subir imágenes. No puede publicar. |
-| Publicar y retirar banners | Hacer que un banner se vea en la tienda o quitarlo. No puede crear ni cambiar. |
+| Ver campañas | Entrar al panel y ver cada banner con su estado. |
+| Crear campaña y Editar campaña | Crear y cambiar borradores, y subir imágenes. No puede publicar. |
+| Eliminar campaña | Borrar una campaña que ya no está publicada. |
+| Publicar y retirar campañas | Hacer que un banner se vea en la tienda o quitarlo. No puede crear ni cambiar. |
 
-Así, una persona puede diseñar y otra decidir cuándo sale. Quien no tiene ningún paquete no ve el ítem **Marketing y mercadeo** en el menú.
+Así, una persona puede diseñar y otra decidir cuándo sale. Quien no tiene asignada «Ver campañas» no ve Banners; el ítem **Marketing y mercadeo** del menú aparece solo si tiene alguna pestaña del panel.
 
 ## Crear un banner o un pop-up
 

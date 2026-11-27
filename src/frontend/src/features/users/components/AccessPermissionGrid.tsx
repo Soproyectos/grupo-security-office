@@ -45,7 +45,7 @@ export function AccessPermissionGrid({ groups, selected, inherited, disabled, on
   disabled: boolean
   onToggle: (actionId: string, checked: boolean) => void
   onToggleGroup: (actionIds: string[], checked: boolean) => void
-  renderOptions: (actionId: string, includedInPackage: boolean) => ReactNode
+  renderOptions: (actionId: string, included: boolean) => ReactNode
   embedded?: boolean
   tree?: boolean
   inheritedLabel?: (actionId: string) => string | undefined
@@ -64,9 +64,9 @@ export function AccessPermissionGrid({ groups, selected, inherited, disabled, on
                 const included = inherited.has(action.id)
                 return (
                   <li key={action.id}>
-                    <label className={ROW} title={included ? 'Incluido en un paquete. Retira ese paquete para quitar este acceso.' : action.purpose}>
+                    <label className={ROW} title={included ? 'Se incluye por una asignación que no se cambia aquí.' : action.purpose}>
                       <input type="checkbox" aria-label={action.label} className={BOX} checked={selected.has(action.id) || included} disabled={disabled || included || !action.allowedScopes.length} onChange={(event) => onToggle(action.id, event.target.checked)} />
-                      <span className="min-w-0 break-words">{action.label}{included && <span className="ml-1 text-xs text-[var(--color-text-secondary)]">({inheritedLabel?.(action.id) ?? 'por paquete'})</span>}</span>
+                      <span className="min-w-0 break-words">{action.label}{included && <span className="ml-1 text-xs text-[var(--color-text-secondary)]">({inheritedLabel?.(action.id) ?? 'incluido automáticamente'})</span>}</span>
                     </label>
                     {renderOptions(action.id, included)}
                   </li>

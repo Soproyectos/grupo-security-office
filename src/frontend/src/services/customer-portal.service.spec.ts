@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const portal = vi.hoisted(() => ({ patch: vi.fn(), post: vi.fn() }))
-const staff = vi.hoisted(() => ({ post: vi.fn() }))
+const staff = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn() }))
 
 vi.mock('axios', () => ({ default: { create: () => portal } }))
 vi.mock('./api', () => ({ default: staff }))
 
-import { createPortalPassword, reactivatePortalAccount, deletePortalAccount, suspendPortalAccount, updatePortalProfile } from './customer-portal.service'
+import { fetchAdminPriceLists, fetchAdminTiers, createPortalPassword, reactivatePortalAccount, deletePortalAccount, suspendPortalAccount, updatePortalProfile } from './customer-portal.service'
 
 describe('customer-portal.service: perfil y panel', () => {
-  beforeEach(() => { portal.patch.mockReset(); portal.post.mockReset(); staff.post.mockReset() })
+  beforeEach(() => { portal.patch.mockReset(); portal.post.mockReset(); staff.post.mockReset(); staff.get.mockReset() })
 
   it('guarda el perfil y devuelve la cuenta', async () => {
     portal.patch.mockResolvedValue({ data: { account: { id: 'a1', profileComplete: true } } })
@@ -42,5 +42,18 @@ describe('customer-portal.service: perfil y panel', () => {
     portal.post.mockResolvedValue({ data: { data: { hasPassword: true } } })
     expect(await createPortalPassword({ newPassword: 'Clave-segura-123' })).toEqual({ hasPassword: true })
     expect(portal.post).toHaveBeenCalledWith('/customer-portal/auth/me/password', { newPassword: 'Clave-segura-123' })
+  })
+
+  it('lee las tarifas aunque el API las devuelva dentro de data (causa de la pantalla en blanco)', async () => {
+    staff.get.mockResolvedValue({ data: { data: [{ id: 'l1', name: 'Detalle', isActive: true }] } })
+    expect(await fetchAdminPriceLists()).toEqual([{ id: 'l1', name: 'Detalle', isActive: true }])
+    expect(staff.get).toHaveBeenCalledWith('/prices/lists')
+  })
+
+  it('siempre entrega una lista, aunque la respuesta venga vacía o rara', async () => {
+    staff.get.mockResolvedValue({ data: null })
+    expect(await fetchAdminPriceLists()).toEqual([])
+    staff.get.mockResolvedValue({ data: [{ id: 't1', name: 'Oro', isActive: true }] })
+    expect(await fetchAdminTiers()).toEqual([{ id: 't1', name: 'Oro', isActive: true }])
   })
 })

@@ -3,6 +3,7 @@ import { Button, Alert } from '../../../components/ui'
 import { getApiErrorMessage } from '../../../lib/apiError'
 import { deleteProduct } from '../../../services/product-detail.service'
 import type { Product } from '../types/product.types'
+import PasswordField from '../../customer-portal/components/PasswordField'
 
 interface BulkDeleteModalProps {
   open: boolean
@@ -215,18 +216,7 @@ export function BulkDeleteModal({
             <>
               <p className="text-sm text-neutral-600">{notice}</p>
               <div>
-                <label htmlFor="bulk-clave" className="block text-sm font-medium text-neutral-800 mb-1.5">
-                  Clave del usuario
-                </label>
-                <input
-                  id="bulk-clave"
-                  type="password"
-                  value={clave}
-                  onChange={(e) => setClave(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="••••••"
-                  className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)] focus:border-[var(--color-primary)] text-sm"
-                />
+                <PasswordField id="bulk-clave" label="Clave del usuario" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" placeholder="••••••" />
                 {claveInvalid && (
                   <p className="text-xs text-red-600 mt-1.5">Clave incorrecta. Inténtalo de nuevo.</p>
                 )}

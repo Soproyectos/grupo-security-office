@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createPortalPassword, deletePortalAccount, updatePortalProfile } from '../../../services/customer-portal.service'
 import { changePortalEmail, changePortalPassword } from '../../../services/portal-auth.service'
 import { useCustomerPortalAuthStore } from '../../../stores/customer-portal-auth.store'
+import { usePortalQuoteListStore } from '../../../stores/portal-quote-list.store'
 import type { PortalProfileInput } from '../types/customer-portal.types'
 
 const SESSION_KEY = ['customer-portal', 'session']
@@ -21,6 +22,7 @@ export function useDeletePortalAccount() {
     mutationFn: deletePortalAccount,
     onSuccess: () => {
       useCustomerPortalAuthStore.getState().setAccount(null)
+      usePortalQuoteListStore.getState().clearAll()
       queryClient.removeQueries({ queryKey: ['customer-portal'] })
     },
   })

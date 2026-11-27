@@ -29,4 +29,20 @@ describe('seller navigation', () => {
     expect(html).not.toContain('Usuarios')
     expect(html).not.toContain('Auditoría')
   })
+
+  it('uses the shared tab pattern with its help text and opens the catalog link in another tab after the tabs', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/sales/customers']}><SalesLayout /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(html).toContain('biblioteca-workspace__bar')
+    expect(html).toContain('aria-label="Mi espacio de ventas"')
+    expect(html).toContain('Mi agenda')
+    expect(html).toMatch(/aria-current="page"[^>]*href="\/sales\/customers"/)
+    expect(html).toContain('Los clientes que tienes asignados.')
+    expect(html).not.toContain('Tus actividades por fecha.')
+    expect(html).toContain('(abre en otra pestaña)')
+    expect(html).toContain('target="_blank"')
+  })
 })

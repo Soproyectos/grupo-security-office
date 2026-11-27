@@ -21,7 +21,7 @@ describe('CustomerPortalService self-service deletion', () => {
     jest.resetAllMocks();
     (verifyPortalPassword as jest.Mock).mockImplementation(async ({ hash, password }: any) => hash === `h:${password}`);
     prisma.$transaction.mockImplementation((op: any) => op(prisma));
-    service = new CustomerPortalService(prisma, {} as any, { get: jest.fn() } as any, audit, {} as any);
+    service = new CustomerPortalService(prisma, {} as any, { get: jest.fn() } as any, audit);
   });
 
   it('hasPassword: true with credential, false without it or without authUserId', async () => {
@@ -90,7 +90,7 @@ describe('CustomerPortalService first password (Google accounts)', () => {
   const strong = 'Qv8#rLn2$Xwk-Pj5';
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new CustomerPortalService(prisma, {} as any, { get: jest.fn() } as any, audit, {} as any);
+    service = new CustomerPortalService(prisma, {} as any, { get: jest.fn() } as any, audit);
   });
 
   it('creates the password for a Google account, audits without personal data, returns {hasPassword:true}', async () => {

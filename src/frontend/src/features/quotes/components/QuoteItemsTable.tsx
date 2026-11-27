@@ -5,6 +5,61 @@ import { useQuoteMutations } from '../hooks/useQuoteMutations'
 import { quoteErrorMessage } from '../../../services/quotes.service'
 import type { Quote, QuoteItem } from '../types/quote.types'
 
+export const PRICE_PENDING_LABEL = 'Por confirmar'
+
+/** Control para completar un «precio por confirmar»: el servidor valida el valor y decide si se puede. */
+function SetPriceControl({ item, quoteId }: { item: QuoteItem; quoteId: string }) {
+  const { setItemPrice } = useQuoteMutations()
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const amount = Number(value.replace(',', '.'))
+  const valid = value.trim() !== '' && Number.isFinite(amount) && amount > 0
+
+  const save = async () => {
+    if (!valid) return
+    setError(null)
+    try {
+      await setItemPrice.mutateAsync({ quoteId, itemId: item.id, unitPrice: amount })
+      setOpen(false)
+      setValue('')
+    } catch (err) {
+      setError(quoteErrorMessage(err))
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button type="button" variant="secondary" className="min-h-11 px-3 py-1 text-xs" onClick={() => setOpen(true)}>
+        Poner precio<span className="sr-only"> a {item.name}</span>
+      </Button>
+    )
+  }
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2"
+      onSubmit={(e) => { e.preventDefault(); void save() }}
+    >
+      <label className="sr-only" htmlFor={`price-${item.id}`}>Precio unitario de {item.name}</label>
+      <input
+        id={`price-${item.id}`}
+        type="number"
+        inputMode="decimal"
+        min="0.01"
+        step="0.01"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        disabled={setItemPrice.isPending}
+        placeholder="Precio unitario"
+        className="min-h-11 w-32 rounded-lg border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-focus-ring)] disabled:opacity-60"
+      />
+      <Button type="submit" className="min-h-11 px-3 py-1 text-xs" loading={setItemPrice.isPending} disabled={!valid}>Guardar precio</Button>
+      <Button type="button" variant="ghost" className="min-h-11 px-3 py-1 text-xs" disabled={setItemPrice.isPending} onClick={() => { setOpen(false); setValue(''); setError(null) }}>Cancelar</Button>
+      {error && <p className="basis-full text-xs text-[var(--color-error)]" role="alert">{error}</p>}
+    </form>
+  )
+}
+
 interface QuoteItemsTableProps {
   quote: Quote
   /** true solo si el estado permite mutar ítems (borrador/enviada/negociacion). */
@@ -133,7 +188,17 @@ export default function QuoteItemsTable({
           {
             key: 'unitPrice',
             header: 'Precio unitario',
-            render: (item: QuoteItem) => formatMoney(item.unitPrice, currency),
+            render: (item: QuoteItem) =>
+              item.unitPrice === null ? (
+                <div className="space-y-1">
+                  <span className="inline-block rounded-full bg-[var(--color-warning-bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-warning-hover)]">
+                    {PRICE_PENDING_LABEL}
+                  </span>
+                  {editable && <SetPriceControl item={item} quoteId={quote.id} />}
+                </div>
+              ) : (
+                formatMoney(item.unitPrice, currency)
+              ),
           },
           {
             key: 'discountPct',
@@ -161,7 +226,7 @@ export default function QuoteItemsTable({
             header: 'Total línea',
             render: (item: QuoteItem) => (
               <span className="font-medium">
-                {formatMoney(item.lineTotal, currency)}
+                {item.unitPrice === null ? '—' : formatMoney(item.lineTotal, currency)}
               </span>
             ),
           },

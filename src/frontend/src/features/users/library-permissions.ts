@@ -8,9 +8,6 @@ import type { UserAccessState } from '../../services/users.service'
  * sirven para que la persona vea qué se marcará o desmarcará junto.
  */
 
-export const LIBRARY_SELECTION_SOURCE_ID = 'biblioteca-seleccion'
-export const LIBRARY_COMPLEMENT_SOURCE_ID = 'biblioteca-publicacion'
-
 export type LibraryTabId = 'productos' | 'fichas' | 'precios' | 'importaciones' | 'maestros'
 
 export interface LibraryCheckbox {
@@ -88,7 +85,7 @@ export const LIBRARY_TABS: readonly LibraryTabDefinition[] = Object.freeze([
   },
 ])
 
-/** Las 16 acciones que pueden marcarse (products:publish NO: es un complemento aparte). */
+/** Las 16 acciones que pueden marcarse aquí (products:publish NO: se asigna aparte, como acción suelta de Biblioteca). */
 export const LIBRARY_SELECTION_ACTION_IDS: readonly string[] = Object.freeze(
   [...new Set(LIBRARY_TABS.flatMap((tab) => tab.items.map((item) => item.actionId)))],
 )
@@ -185,29 +182,20 @@ export function visibleTabs(selection: LibrarySelection): LibraryTabDefinition[]
 
 /**
  * Estado inicial de las casillas: lo que la persona ya tiene de Biblioteca con
- * alcance global, vengan de paquetes, de una selección anterior o de una
- * asignación manual. El complemento «Publicar en tienda» no cuenta: se
- * conserva aparte.
+ * alcance global. «Publicar en tienda» no cuenta: se asigna aparte.
  */
-export function initialSelection(access: Pick<UserAccessState, 'grants' | 'sources'> | undefined): Set<string> {
+export function initialSelection(access: Pick<UserAccessState, 'grants'> | undefined): Set<string> {
   if (!access) return new Set()
-  const complementSourceIds = new Set(
-    access.sources.filter((source) => source.templateId === LIBRARY_COMPLEMENT_SOURCE_ID).map((source) => source.id),
-  )
   return new Set(
     access.grants
-      .filter((grant) =>
-        grant.scope === 'global' &&
-        LIBRARY_SELECTION_ACTION_IDS.includes(grant.actionId) &&
-        !complementSourceIds.has(grant.sourceId),
-      )
+      .filter((grant) => grant.scope === 'global' && LIBRARY_SELECTION_ACTION_IDS.includes(grant.actionId))
       .map((grant) => grant.actionId),
   )
 }
 
 /** Hay «Publicar en tienda» asignado: necesita poder editar fichas. */
-export function hasPublicationComplement(access: Pick<UserAccessState, 'sources'> | undefined): boolean {
-  return Boolean(access?.sources.some((source) => source.templateId === LIBRARY_COMPLEMENT_SOURCE_ID))
+export function hasPublicationComplement(access: Pick<UserAccessState, 'grants'> | undefined): boolean {
+  return Boolean(access?.grants.some((grant) => grant.actionId === 'products:publish'))
 }
 
 export const PUBLICATION_NEEDS_EDIT_MESSAGE = 'Quita primero Publicar en tienda: necesita poder editar fichas.'

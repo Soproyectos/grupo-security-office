@@ -150,7 +150,7 @@ describe('índice del catálogo', () => {
   it('pinta el título de la página y el encabezado de todas las categorías', () => {
     const markup = renderPage()
 
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Catálogo</h1>')
+    expect(markup).toContain('<h1 class="text-page-title font-bold text-ink-900">Catálogo</h1>')
     expect(markup).toContain('aria-labelledby="catalogo-todas-categorias"')
     expect(markup).toContain('Todas las categorías')
   })
@@ -191,7 +191,7 @@ describe('estado vacío', () => {
     const markup = renderPage()
 
     expect(markup).toContain('El catálogo todavía no tiene categorías')
-    expect(markup).toContain('<h1 class="mt-4 text-page-title font-bold text-ink-900">Catálogo</h1>')
+    expect(markup).toContain('<h1 class="text-page-title font-bold text-ink-900">Catálogo</h1>')
     // Sin categorías no hay nada que enlistar ni enlaces de categoría.
     expect(markup).not.toContain('aria-labelledby="catalogo-todas-categorias"')
     expect(markup).not.toContain('href="/catalogo/categoria/')

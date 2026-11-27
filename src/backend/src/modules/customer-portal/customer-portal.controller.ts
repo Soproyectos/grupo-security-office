@@ -1,6 +1,6 @@
-import { AssignPortalTierDto, PortalTierDto } from './dto/portal-tier.dto';
+import { AssignPortalAdvisorDto, AssignPortalTierDto, LinkPortalCustomerDto, PortalTierDto } from './dto/portal-tier.dto';
 import { Body, Controller, ForbiddenException, Optional, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -9,15 +9,14 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ROLE } from '../../common/rbac/roles.constants';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PortalAuthGuard, PORTAL_COOKIE } from './portal-auth.guard';
-import { CustomerPortalService } from './customer-portal.service';
-import { CatalogQueryDto } from './dto/catalog-query.dto';
+import { PortalAuthGuard, PORTAL_COOKIE, RequireApprovedPortalAccount } from './portal-auth.guard';
+import { CustomerPortalService, portalPricing } from './customer-portal.service';
+import type { PortalAdminContext } from './portal-account-access.service';
+import { CatalogPricesQueryDto } from './dto/catalog-prices-query.dto';
+import { CreatePortalQuoteDto } from './dto/create-portal-quote.dto';
 import { PortalLoginDto } from './dto/portal-login.dto';
-import { RegisterPortalAccountDto } from './dto/register-portal-account.dto';
 import { ApprovePortalAccountDto, RejectPortalAccountDto } from './dto/review-portal-account.dto';
 import { UpsertPortalPriceListMappingDto } from './dto/upsert-price-list-mapping.dto';
-import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfigService } from '@nestjs/config';
 import { SuspendPortalAccountDto, UpdatePortalProfileDto } from './dto/portal-profile.dto';
 import { DeletePortalAccountDto } from './dto/delete-portal-account.dto';
@@ -25,8 +24,12 @@ import { isProfileComplete, portalAccountView } from './portal-profile';
 import { PortalAuthService } from './portal-auth/portal-auth.service';
 import { CreatePortalPasswordDto } from './dto/create-portal-password.dto';
 
-/** Revisión de cuentas: única matríz autorizada para aprobar/rechazar (PORTAL-02). */
-const REVIEW_ROLES = [ROLE.SUPER_ADMIN];
+/**
+ * Cuentas del portal (panel): ya no son solo Super Admin. Cada ruta exige una acción de panel
+ * (`portalAccounts:read|manage|assign`) con su alcance propio / de equipo / total; la comprobación vive en el
+ * servicio (PortalAccountAccessService) porque depende de la cuenta concreta. Niveles, tarifa general y zonas
+ * siguen siendo solo de Super Admin.
+ */
 /** Configuración de tarifas por tipo: queda en manos del área comercial. */
 const MAPPING_ROLES = [ROLE.SUPER_ADMIN, ROLE.ADMIN_COMERCIAL];
 
@@ -39,10 +42,9 @@ const MAPPING_ROLES = [ROLE.SUPER_ADMIN, ROLE.ADMIN_COMERCIAL];
  *    del PORTAL (cookie `customer_access_token`, scope 'customer_portal'),
  *    nunca la del panel interno. Sin @Public, el guard global interno las
  *    bloquearía antes de que PortalAuthGuard llegara a ejecutarse.
- * 3. Rutas admin: SIN @Public → exige sesión interna (guard global) y, vía
- *    RolesGuard por ruta, uno de los roles de revisión. El RolesGuard NO es
- *    global en esta app: sin @UseGuards(RolesGuard) el @Roles() es metadata
- *    muerta y cualquier usuario autenticado aprobaría cuentas.
+ * 3. Rutas admin: SIN @Public → exigen sesión interna (JwtAuthGuard) y, según la ruta, la acción de
+ *    panel con su alcance (servicio) o un rol vía RolesGuard (niveles, tarifa general). El RolesGuard
+ *    NO es global en esta app: sin @UseGuards(RolesGuard) el @Roles() es metadata muerta.
  */
 @ApiTags('Customer Portal')
 @Controller('api/customer-portal')
@@ -52,21 +54,8 @@ export class CustomerPortalController {
   private requireCompleteProfile(req: any) {
     if (!isProfileComplete(req.portalAccount)) throw new ForbiddenException({ code: 'PROFILE_INCOMPLETE', message: 'Completa tus datos para continuar' });
   }
+  private adminCtx(user: any): PortalAdminContext { return { userId: user?.sub ?? user?.id, roles: user?.roles ?? [], jti: user?.jti }; }
   private meta(req: Request) { return { ipAddress: req.ip, userAgent: req.get('user-agent')?.slice(0, 255) }; }
-
-  @Public()
-  @Get('catalog/products')
-  publicCatalog(@Query() query: CatalogQueryDto) { return this.portal.getCatalog(query); }
-
-  @Public()
-  @Get('catalog/products/:id')
-  publicProductDetail(@Param('id') id: string) { return this.portal.getProductDetail(id); }
-
-  @Public()
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @Post('accounts/register')
-  @HttpCode(HttpStatus.CREATED)
-  register(@Body() dto: RegisterPortalAccountDto) { return this.portal.register(dto); }
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -122,84 +111,104 @@ export class CustomerPortalController {
     return { message: 'Sesión cerrada' };
   }
 
+  /** Priced routes: a PENDING account can sign in and see itself, but is denied here (RequireApprovedPortalAccount, read by the guard). */
+  /** Precios del cliente para una lista de referencias de la vitrina. Respuesta privada: depende de la sesión. */
   @Public()
+  @RequireApprovedPortalAccount()
   @UseGuards(PortalAuthGuard)
-  @Get('customer/catalog/products')
-  customerCatalog(@Query() query: CatalogQueryDto, @Req() req: any) { this.requireCompleteProfile(req); return this.portal.getCatalog(query, req.portalAccount.type, req.portalAccount.tierId); }
+  @Get('customer/catalog/prices')
+  async customerPrices(@Query() query: CatalogPricesQueryDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    this.requireCompleteProfile(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Vary', 'Cookie');
+    // Sin cliente vinculado no hay tarifa: no hay precios.
+    const pricing = portalPricing(req.portalAccount);
+    if (!pricing) return { prices: [] };
+    // El interceptor global ya envuelve la respuesta en `data`: aquí se devuelve el objeto directo.
+    return this.portal.getCatalogPrices(query.ids, pricing.type, pricing.tierId);
+  }
+
+  /** The customer sends the quote built in the store (company tariff, advisor of the company). */
+  @Public()
+  @RequireApprovedPortalAccount()
+  @UseGuards(PortalAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('customer/quotes')
+  @HttpCode(HttpStatus.CREATED)
+  createQuote(@Body() dto: CreatePortalQuoteDto, @Req() req: any) {
+    this.requireCompleteProfile(req);
+    return this.portal.createCustomerQuote(req.portalAccount, dto);
+  }
+
+  /** "Mis cotizaciones": only the ones this person sent. Private response. */
+  @Public()
+  @RequireApprovedPortalAccount()
+  @UseGuards(PortalAuthGuard)
+  @Get('customer/quotes')
+  listQuotes(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    this.requireCompleteProfile(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Vary', 'Cookie');
+    return this.portal.listCustomerQuotes(req.portalAccount.id);
+  }
 
   @Public()
+  @RequireApprovedPortalAccount()
   @UseGuards(PortalAuthGuard)
-  @Get('customer/catalog/products/:id')
-  customerProductDetail(@Param('id') id: string, @Req() req: any) { this.requireCompleteProfile(req); return this.portal.getProductDetail(id, req.portalAccount.type, req.portalAccount.tierId); }
+  @Get('customer/quotes/:id')
+  quoteDetail(@Param('id') id: string, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    this.requireCompleteProfile(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Vary', 'Cookie');
+    return this.portal.getCustomerQuote(req.portalAccount.id, id);
+  }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('admin/accounts/pending')
   @ApiBearerAuth()
-  @Roles(...REVIEW_ROLES)
-  pending() { return this.portal.listPending(); }
+  pending(@CurrentUser() user: any) { return this.portal.listPending(this.adminCtx(user)); }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('admin/accounts/:id/approve')
   @ApiBearerAuth()
-  @Roles(...REVIEW_ROLES)
-  approve(@Param('id') id: string, @Body() dto: ApprovePortalAccountDto, @CurrentUser() user: any) { return this.portal.approve(id, dto, user.sub ?? user.id); }
+  approve(@Param('id') id: string, @Body() dto: ApprovePortalAccountDto, @CurrentUser() user: any) { return this.portal.approve(id, dto, this.adminCtx(user)); }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('admin/accounts/:id/reject')
   @ApiBearerAuth()
-  @Roles(...REVIEW_ROLES)
-  reject(@Param('id') id: string, @Body() dto: RejectPortalAccountDto, @CurrentUser() user: any) { return this.portal.reject(id, dto, user.sub ?? user.id); }
+  reject(@Param('id') id: string, @Body() dto: RejectPortalAccountDto, @CurrentUser() user: any) { return this.portal.reject(id, dto, this.adminCtx(user)); }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('admin/price-list-mappings')
   @ApiBearerAuth()
-  @Roles(...MAPPING_ROLES)
-  listMappings() { return this.portal.listMappings(); }
+  async listMappings(@CurrentUser() user: any) { this.portal.requireTariffAdmin(this.adminCtx(user), MAPPING_ROLES); return this.portal.listMappings(); }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('admin/price-list-mappings')
   @ApiBearerAuth()
-  @Roles(...MAPPING_ROLES)
-  mapping(@Body() dto: UpsertPortalPriceListMappingDto, @CurrentUser() user: any) { return this.portal.upsertMapping(dto, user.sub ?? user.id); }
-  @Get('admin/accounts') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  accounts() {return this.portal.listAccounts();}
-  @Get('admin/tiers') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  tiers() {return this.portal.listTiers();}
-  @Post('admin/tiers') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {return this.portal.saveTier(dto,user.sub??user.id);}
-  @Patch('admin/tiers/:id') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  editTier(@Param('id') id:string,@Body() dto:PortalTierDto,@CurrentUser() user:any) {return this.portal.saveTier(dto,user.sub??user.id,id);}
-  @Post('admin/accounts/:id/suspend') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  suspend(@Param('id') id:string,@Body() dto:SuspendPortalAccountDto,@CurrentUser() user:any) {return this.portal.suspend(id,dto.reason,user.sub??user.id);}
-  @Post('admin/accounts/:id/reactivate') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  reactivate(@Param('id') id:string,@CurrentUser() user:any) {return this.portal.reactivate(id,user.sub??user.id);}
-  @Patch('admin/accounts/:id/tier') @UseGuards(JwtAuthGuard,RolesGuard) @Roles(ROLE.SUPER_ADMIN)
-  assignTier(@Param('id') id:string,@Body() dto:AssignPortalTierDto,@CurrentUser() user:any) {return this.portal.assignTier(id,dto,user.sub??user.id);}
-
-  /**
-   * Recuperación de contraseña para clientes del portal.
-   * - POST /api/customer-portal/accounts/forgot-password: solicitar enlace
-   * - POST /api/customer-portal/accounts/reset-password: restablecer con token
-   */
-  @Public()
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @Post('accounts/forgot-password')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Solicitar enlace de recuperación de contraseña' })
-  @ApiResponse({ status: 200, description: 'Si la cuenta existe, se ha enviado un correo de recuperación.' })
-  async requestPasswordReset(@Body() dto: ForgotPasswordRequestDto) {
-    return this.portal.requestPasswordReset(dto.email);
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @Post('accounts/reset-password')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Restablecer contraseña con token' })
-  @ApiResponse({ status: 200, description: 'Contraseña restaurada correctamente' })
-  @ApiResponse({ status: 401, description: 'Token inválido o expirado' })
-  async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.portal.resetPassword(dto.email, dto.token, dto.password);
-  }
-
+  async mapping(@Body() dto: UpsertPortalPriceListMappingDto, @CurrentUser() user: any) { this.portal.requireTariffAdmin(this.adminCtx(user), MAPPING_ROLES); return this.portal.upsertMapping(dto, user.sub ?? user.id); }
+  @Get('admin/accounts') @UseGuards(JwtAuthGuard)
+  accounts(@CurrentUser() user:any) {return this.portal.listAccounts(this.adminCtx(user));}
+  /** Super Admin: full tiers. Advisors with portalAccounts:manage: active tiers only, to pick one for a company. */
+  @Get('admin/tiers') @UseGuards(JwtAuthGuard)
+  tiers(@CurrentUser() user:any) {return this.portal.listTiersFor(this.adminCtx(user));}
+  @Post('admin/tiers') @UseGuards(JwtAuthGuard)
+  async createTier(@Body() dto:PortalTierDto,@CurrentUser() user:any) {this.portal.requireSuperAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id);}
+  @Patch('admin/tiers/:id') @UseGuards(JwtAuthGuard)
+  async editTier(@Param('id') id:string,@Body() dto:PortalTierDto,@CurrentUser() user:any) {this.portal.requireSuperAdmin(this.adminCtx(user));return this.portal.saveTier(dto,user.sub??user.id,id);}
+  @Post('admin/accounts/:id/suspend') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard)
+  suspend(@Param('id') id:string,@Body() dto:SuspendPortalAccountDto,@CurrentUser() user:any) {return this.portal.suspend(id,dto.reason,this.adminCtx(user));}
+  @Post('admin/accounts/:id/reactivate') @HttpCode(HttpStatus.OK) @UseGuards(JwtAuthGuard)
+  reactivate(@Param('id') id:string,@CurrentUser() user:any) {return this.portal.reactivate(id,this.adminCtx(user));}
+  /** Company tariff: sets the tier of the customer linked to the account. */
+  @Patch('admin/accounts/:id/tier') @UseGuards(JwtAuthGuard)
+  assignTier(@Param('id') id:string,@Body() dto:AssignPortalTierDto,@CurrentUser() user:any) {return this.portal.assignTier(id,dto,this.adminCtx(user));}
+  @Patch('admin/accounts/:id/customer') @UseGuards(JwtAuthGuard)
+  linkCustomer(@Param('id') id:string,@Body() dto:LinkPortalCustomerDto,@CurrentUser() user:any) {return this.portal.linkCustomer(id,dto.customerId??null,this.adminCtx(user));}
+  /** Advisors the caller may assign (portalAccounts:assign). */
+  @Get('admin/advisors') @UseGuards(JwtAuthGuard)
+  advisors(@CurrentUser() user:any) {return this.portal.listAdvisors(this.adminCtx(user));}
+  /** Assign / reassign the advisor (portalAccounts:assign, own, team or global scope). */
+  @Patch('admin/accounts/:id/advisor') @UseGuards(JwtAuthGuard)
+  assignAdvisor(@Param('id') id:string,@Body() dto:AssignPortalAdvisorDto,@CurrentUser() user:any) {return this.portal.assignAdvisor(id,dto,this.adminCtx(user));}
 }

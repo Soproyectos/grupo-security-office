@@ -1,4 +1,4 @@
-import { deriveAuthMethods, isProfileComplete, portalAccountView } from './portal-profile';
+import { CITY_REQUIRED_FROM, deriveAuthMethods, isProfileComplete, portalAccountView } from './portal-profile';
 
 const NOW = new Date('2026-11-20T10:00:00Z');
 
@@ -12,7 +12,38 @@ describe('profileComplete', () => {
   });
   it('exposes the /me shape with the new fields', () => {
     const view = portalAccountView({ id: 'a1', email: 'a@b.co', type: 'FINAL_CUSTOMER', contactName: 'Ana', companyName: 'ACME', tier: null, documentId: '123', phone: '3001234567', privacyAcceptedAt: NOW, deletionRequestedAt: null, passwordHash: 'secret' });
-    expect(view).toEqual({ id: 'a1', email: 'a@b.co', type: 'FINAL_CUSTOMER', contactName: 'Ana', companyName: 'ACME', tier: null, documentId: '123', phone: '3001234567', privacyAcceptedAt: NOW, deletionRequestedAt: null, hasPassword: false, linkedProviders: [], profileComplete: true });
+    expect(view).toEqual({ id: 'a1', email: 'a@b.co', type: 'FINAL_CUSTOMER', state: null, city: null, contactName: 'Ana', companyName: 'ACME', tier: null, documentId: '123', phone: '3001234567', privacyAcceptedAt: NOW, deletionRequestedAt: null, hasPassword: false, linkedProviders: [], profileComplete: true, canQuote: false, advisor: null });
+  });
+  it('canQuote needs an approved, complete account linked to an active company with an advisor', () => {
+    const ready = { companyName: 'ACME', privacyAcceptedAt: NOW, state: 'ACTIVE', advisorId: 'u1', customer: { id: 'c1', isActive: true, ownerId: 'u1' } };
+    expect(portalAccountView(ready).canQuote).toBe(true);
+    expect(portalAccountView({ ...ready, advisorId: null }).canQuote).toBe(true);
+    expect(portalAccountView({ ...ready, advisorId: null, customer: { ...ready.customer, ownerId: null } }).canQuote).toBe(false);
+    expect(portalAccountView({ ...ready, state: 'PENDING' }).canQuote).toBe(false);
+    expect(portalAccountView({ ...ready, customer: null }).canQuote).toBe(false);
+    expect(portalAccountView({ ...ready, customer: { ...ready.customer, isActive: false } }).canQuote).toBe(false);
+    expect(portalAccountView({ ...ready, companyName: '(sin empresa)' }).canQuote).toBe(false);
+  });
+  it('shows only the advisor name: own advisor first, then the company owner, never ids', () => {
+    const base = { companyName: 'ACME', privacyAcceptedAt: NOW, state: 'ACTIVE', advisorId: 'u1', customer: { id: 'c1', isActive: true, ownerId: 'u2', owner: { name: 'Dueño' } } };
+    expect(portalAccountView({ ...base, advisor: { name: 'Asesor' } }).advisor).toEqual({ name: 'Asesor' });
+    expect(portalAccountView({ ...base, advisorName: 'Asesor' }).advisor).toEqual({ name: 'Asesor' });
+    expect(portalAccountView(base).advisor).toEqual({ name: 'Dueño' });
+    expect(portalAccountView({ ...base, customer: null }).advisor).toBeNull();
+  });
+  it('requires a city only for accounts created from the cutoff on; older accounts keep working', () => {
+    const base = { companyName: 'ACME', privacyAcceptedAt: NOW };
+    const before = new Date(CITY_REQUIRED_FROM.getTime() - 1000);
+    const after = new Date(CITY_REQUIRED_FROM.getTime() + 1000);
+    expect(isProfileComplete({ ...base, createdAt: before, city: null })).toBe(true);
+    expect(isProfileComplete({ ...base, createdAt: after, city: null })).toBe(false);
+    expect(isProfileComplete({ ...base, createdAt: after, city: '05001' })).toBe(true);
+    expect(isProfileComplete({ ...base, createdAt: CITY_REQUIRED_FROM, city: null })).toBe(false);
+  });
+  it('shows the state and the resolved city', () => {
+    const view = portalAccountView({ id: 'a1', email: 'a@b.co', companyName: 'ACME', privacyAcceptedAt: NOW, state: 'PENDING', city: '11001', createdAt: new Date('2026-12-01') });
+    expect(view).toMatchObject({ state: 'PENDING', city: { code: '11001', name: 'Bogotá, D.C.', department: 'Bogotá, D.C.' }, profileComplete: true });
+    expect(portalAccountView({ id: 'a1', email: 'a@b.co', companyName: 'ACME', privacyAcceptedAt: NOW, createdAt: new Date('2026-12-01') })).toMatchObject({ city: null, profileComplete: false });
   });
   it('does not depend on a password: Better Auth accounts without one are complete with company and privacy', () => {
     const base = { companyName: 'ACME', privacyAcceptedAt: NOW };

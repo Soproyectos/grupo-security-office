@@ -5,7 +5,6 @@ import { Button, Input, Modal } from '../../../components/ui'
 import { extractBackendMessage, useQuoteMutations } from '../hooks/useQuoteMutations'
 import { useQuoteBuilderStore } from '../store/quote-builder.store'
 import { fetchCustomers } from '../../../services/customers.service'
-import { fetchListas } from '../../../services/listas.service'
 
 function useDebounced<T>(value: T, delayMs = 300): T {
   const [debounced, setDebounced] = useState(value)
@@ -17,7 +16,7 @@ function useDebounced<T>(value: T, delayMs = 300): T {
 }
 
 /**
- * Wizard de creación de cotización (3 pasos: cliente → lista → revisar).
+ * Wizard de creación de cotización (2 pasos: cliente → revisar; sin Listas, la tarifa sale de la empresa).
  * Solo recolecta SELECCIONES (ids, fecha, notas); todos los montos los
  * calcula el backend al crear la cotización y al agregar ítems después.
  */
@@ -39,15 +38,6 @@ export default function QuoteBuilderModal({
     enabled: store.isOpen && store.step === 'customer',
   })
 
-  const listasQuery = useQuery({
-    queryKey: ['listas', 'all'],
-    queryFn: fetchListas,
-    enabled: store.isOpen && store.step === 'lista',
-  })
-  const selectableListas = (listasQuery.data ?? []).filter(
-    (l) => l.isActive && !l.archivedAt
-  )
-
   if (!store.isOpen) return null
 
   const handleClose = () => {
@@ -56,12 +46,11 @@ export default function QuoteBuilderModal({
   }
 
   const handleConfirm = async () => {
-    if (!store.customer || !store.lista) return
+    if (!store.customer) return
     setSubmitError(null)
     try {
       const quote = await create.mutateAsync({
         customerId: store.customer.id,
-        listaId: store.lista.id,
         validUntil: store.validUntil || undefined,
         taxRate: store.taxRate || undefined,
         notes: store.notes || undefined,
@@ -75,7 +64,6 @@ export default function QuoteBuilderModal({
 
   const titles: Record<typeof store.step, string> = {
     customer: 'Nueva cotización — Cliente',
-    lista: 'Nueva cotización — Lista de precios',
     review: 'Nueva cotización — Revisar y confirmar',
   }
 
@@ -92,7 +80,7 @@ export default function QuoteBuilderModal({
               type="button"
               variant="secondary"
               onClick={() =>
-                store.setStep(store.step === 'review' ? 'lista' : 'customer')
+                store.setStep('customer')
               }
             >
               Atrás
@@ -109,15 +97,6 @@ export default function QuoteBuilderModal({
             <Button
               type="button"
               disabled={!store.customer}
-              onClick={() => store.setStep('lista')}
-            >
-              Siguiente
-            </Button>
-          )}
-          {store.step === 'lista' && (
-            <Button
-              type="button"
-              disabled={!store.lista}
               onClick={() => store.setStep('review')}
             >
               Siguiente
@@ -127,7 +106,7 @@ export default function QuoteBuilderModal({
             <Button
               type="button"
               loading={create.isPending}
-              disabled={!store.customer || !store.lista}
+              disabled={!store.customer}
               onClick={handleConfirm}
             >
               Confirmar y crear
@@ -184,44 +163,6 @@ export default function QuoteBuilderModal({
         </div>
       )}
 
-      {store.step === 'lista' && (
-        <div
-          role="listbox"
-          aria-label="Listas de precios disponibles"
-          className="max-h-80 overflow-y-auto divide-y divide-neutral-100 rounded-lg border border-neutral-200"
-        >
-          {listasQuery.isLoading && (
-            <p className="p-4 text-sm text-neutral-400">Cargando...</p>
-          )}
-          {selectableListas.map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              role="option"
-              aria-selected={store.lista?.id === l.id}
-              onClick={() =>
-                store.setLista({ id: l.id, label: `${l.name} (${l.currency})` })
-              }
-              className={`w-full px-4 py-2.5 text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)] ${
-                store.lista?.id === l.id
-                  ? 'bg-[var(--color-primary-bg-subtle)] text-[var(--color-primary)]'
-                  : 'hover:bg-neutral-50'
-              }`}
-            >
-              <span className="font-medium">{l.name}</span>
-              <span className="ml-2 text-xs text-neutral-400">
-                {l.code} · {l.currency}
-              </span>
-            </button>
-          ))}
-          {listasQuery.data && selectableListas.length === 0 && (
-            <p className="p-4 text-sm text-neutral-400">
-              No hay listas activas disponibles
-            </p>
-          )}
-        </div>
-      )}
-
       {store.step === 'review' && (
         <div className="space-y-4">
           <dl className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 p-4 text-sm sm:grid-cols-2">
@@ -229,12 +170,6 @@ export default function QuoteBuilderModal({
               <dt className="text-xs text-neutral-400">Cliente</dt>
               <dd className="font-medium text-neutral-800">
                 {store.customer?.label}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-neutral-400">Lista</dt>
-              <dd className="font-medium text-neutral-800">
-                {store.lista?.label}
               </dd>
             </div>
           </dl>
@@ -246,7 +181,7 @@ export default function QuoteBuilderModal({
             onChange={(e) => store.setValidUntil(e.target.value)}
           />
           <Input
-            label="Impuesto (%)"
+            label="IVA incluido en los precios (%)"
             name="tax-rate"
             type="number"
             min="0"
@@ -276,8 +211,8 @@ export default function QuoteBuilderModal({
           )}
           <p className="text-xs text-neutral-400">
             La cotización se crea en estado Borrador. Después podrás agregar
-            productos desde el detalle; los precios y totales los calcula el
-            sistema.
+            productos desde el detalle; los precios salen de la tarifa de la empresa del
+            cliente y los totales los calcula el sistema.
           </p>
         </div>
       )}

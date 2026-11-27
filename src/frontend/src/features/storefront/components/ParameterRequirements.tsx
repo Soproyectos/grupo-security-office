@@ -20,20 +20,36 @@ export function visibleFacetOptions(
   return { options, visible }
 }
 
-function ParameterChecklist({ facet, selected, atLimit, onToggle }: {
+function ParameterChecklist({ facet, selected, atLimit, defaultOpen, onToggle }: {
   facet: PublicKeySpecFacet
   selected: ReadonlySet<string>
   atLimit: boolean
+  /** Open on arrival (the first requirement); the others start collapsed unless one of their options is selected. */
+  defaultOpen: boolean
   onToggle: (filter: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const hasSelection = facet.values.some((option) => selected.has(`${facet.specKey}:${option.value}`))
+  const [open, setOpen] = useState(defaultOpen || hasSelection)
   const { options, visible } = visibleFacetOptions(facet, selected, expanded)
+  const panelId = `requirement-${facet.specKey}`
 
   return (
-    <fieldset className="min-w-0">
-      <legend className="mb-1 text-sm font-semibold text-ink-800">
-        {facet.label}{facet.unit && ` (${facet.unit})`}
-      </legend>
+    <fieldset className="min-w-0 border-b border-surface-200 pb-1 last:border-b-0">
+      <legend className="sr-only">{facet.label}{facet.unit && ` (${facet.unit})`}</legend>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-control text-left text-sm font-medium text-ink-700 hover:text-security-600 ${FOCUS}`}
+      >
+        <span className="min-w-0 break-words">{facet.label}{facet.unit && ` (${facet.unit})`}</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`size-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="m19 9-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <div id={panelId} hidden={!open}>
       <div>
         {visible.map((option) => {
           const filter = `${facet.specKey}:${option.value}`
@@ -60,6 +76,7 @@ function ParameterChecklist({ facet, selected, atLimit, onToggle }: {
           {expanded ? 'Ver menos opciones' : `Ver las ${options.length} opciones`}
         </button>
       )}
+      </div>
     </fieldset>
   )
 }
@@ -74,10 +91,10 @@ export default function ParameterRequirements({ facets, selected, maxSelections,
   const selectedSet = new Set(selected)
   const atLimit = selectedSet.size >= maxSelections
   return (
-    <div className="space-y-4">
+    <div className="ml-1 space-y-1 border-l border-surface-200 pl-3">
       {atLimit && <p role="status" className="text-sm text-ink-600">Puedes marcar hasta {maxSelections} requisitos.</p>}
-      {facets.filter((facet) => visibleFacetOptions(facet, selectedSet, false).options.length > 0).map((facet) => (
-        <ParameterChecklist key={facet.specKey} facet={facet} selected={selectedSet} atLimit={atLimit} onToggle={onToggle} />
+      {facets.filter((facet) => visibleFacetOptions(facet, selectedSet, false).options.length > 0).map((facet, index) => (
+        <ParameterChecklist key={facet.specKey} facet={facet} selected={selectedSet} atLimit={atLimit} defaultOpen={index === 0} onToggle={onToggle} />
       ))}
       {truncated && (
         <p role="status" className="text-sm text-ink-600">Hay más requisitos de los que podemos mostrar. Elige una subcategoría o usa la búsqueda para afinar.</p>
