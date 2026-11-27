@@ -1,4 +1,4 @@
-import { ConflictException, INestApplication, NotFoundException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { ConflictException, ForbiddenException, INestApplication, NotFoundException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request = require('supertest');
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -36,9 +36,10 @@ describe('library review HTTP permission contract', () => {
     await request(app.getHttpServer()).get(path).set('x-fixture-role', 'Consulta').expect(200);
     expect(service.review).toHaveBeenCalledWith('fixture', { userId: 'actor-fixture', name: 'Actor fixture', roles: ['Consulta'] });
   });
-  it('Consulta cannot mutate despite authenticated read', async () => {
+  it('the role does not decide: a read-only person is stopped by the service ACL (products:write), not by a role list', async () => {
+    service.recordGap.mockRejectedValue(new ForbiddenException('Sin permiso products:write'));
     await request(app.getHttpServer()).put(path + '/gaps').set('x-fixture-role', 'Consulta').send(input).expect(403);
-    expect(service.recordGap).not.toHaveBeenCalled();
+    expect(service.recordGap).toHaveBeenCalledTimes(1);
   });
   it('Admin Comercial still requires the service ACL grant', async () => {
     service.recordGap.mockRejectedValue(new NotFoundException('Producto no encontrado'));

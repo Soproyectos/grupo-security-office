@@ -29,14 +29,12 @@ export class DashboardController {
   }
 
   @Get('sales-goal')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Meta mensual y facturado del usuario autenticado, sin datos de equipo' })
   getPersonalSalesGoal(@CurrentUser() user: any) {
     return this.dashboardService.getPersonalSalesGoal(this.ctx(user));
   }
 
   @Get('me')
-  @Roles(...ALL_ROLES)
   @ApiOperation({
     summary:
       'Espacio de trabajo del usuario autenticado: KPIs, Listas accesibles y actividad reciente',
@@ -70,7 +68,6 @@ export class DashboardController {
    * secciones concedidas (`libraryStats:*`) y `{}` si no hay ninguna.
    */
   @Get('library-stats')
-  @Roles(...ALL_ROLES)
   @ApiOperation({ summary: 'Estadísticas de Biblioteca por pestaña, solo las concedidas al usuario' })
   getLibraryStats(@CurrentUser() user: any) {
     return this.libraryStats.getLibraryStats(this.ctx(user));

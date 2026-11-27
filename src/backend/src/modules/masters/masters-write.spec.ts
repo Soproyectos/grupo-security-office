@@ -7,7 +7,8 @@ import { CategoriesController } from '../categories/categories.controller';
 import { LibrarySpecsController } from '../library-specs/library-specs.controller';
 import { PriceActionGuard } from '../prices/price-action.guard';
 import { PricesController } from '../prices/prices.controller';
-import { GrantOrMastersWriteGuard, MASTERS_WRITE_KEY, RolesOrMastersWriteGuard } from './masters-write';
+import { GrantOrMastersWriteGuard, MASTERS_WRITE_KEY } from './masters-write';
+import { GrantGuard, REQUIRED_GRANTS_KEY } from '../../common/security/require-grant';
 
 const grant = (actionId: string) => ({ sourceId: `s-${actionId}`, actionId, scope: 'global' });
 const grants = (...ids: string[]) => ({ grantsForUser: jest.fn().mockResolvedValue(ids.map(grant)) }) as any;
@@ -27,26 +28,27 @@ describe('masters:write as an additional path on master-catalog writes', () => {
     [BrandsController, 'create'], [BrandsController, 'update'], [BrandsController, 'toggleActive'], [BrandsController, 'uploadLogo'], [BrandsController, 'remove'],
   ];
 
-  it.each(roleHandlers)('%p.%s is marked and keeps its role list', (cls, name) => {
-    expect(Reflect.getMetadata(MASTERS_WRITE_KEY, cls.prototype[name])).toBe(true);
+  // The write routes of brands and categories are protected ONLY by the assigned action `masters:write`
+  // (global): the role decides nothing. Super Admin keeps its exception.
+  const required = (cls: any, name: string) => Reflect.getMetadata(REQUIRED_GRANTS_KEY, cls.prototype[name])
+
+  it.each(roleHandlers)('%p.%s requires masters:write and carries no role list', (cls, name) => {
+    expect(required(cls, name)).toEqual(['masters:write'])
+    expect(Reflect.getMetadata('roles', cls.prototype[name])).toBeUndefined()
   });
 
-  it.each(roleHandlers)('%p.%s: masters:write-only user passes; masters:read-only and grantless do not; roles keep working', async (cls, name) => {
-    const only = (g: any) => new RolesOrMastersWriteGuard(reflector, g);
-    expect(await ok(only(grants(...WRITER)).canActivate(ctx(cls, name, user())))).toBe(true);
-    expect(await ok(only(grants(...READER)).canActivate(ctx(cls, name, user())))).toBe(false);
-    expect(await ok(only(grants()).canActivate(ctx(cls, name, user(['Vendedor']))))).toBe(false);
-    expect(await ok(only(grants()).canActivate(ctx(cls, name, user(['Admin Comercial']))))).toBe(true);
-    expect(await ok(only(grants()).canActivate(ctx(cls, name, user(['Super Admin']))))).toBe(true);
+  it.each(roleHandlers)('%p.%s: only masters:write opens it; the role does not; Super Admin keeps its exception', async (cls, name) => {
+    const guard = (g: any) => new GrantGuard(reflector, g);
+    expect(await ok(guard(grants(...WRITER)).canActivate(ctx(cls, name, user())))).toBe(true);
+    expect(await ok(guard(grants(...WRITER)).canActivate(ctx(cls, name, user(['Vendedor']))))).toBe(true);
+    expect(await ok(guard(grants(...READER)).canActivate(ctx(cls, name, user())))).toBe(false);
+    expect(await ok(guard(grants()).canActivate(ctx(cls, name, user(['Admin Comercial']))))).toBe(false);
+    expect(await ok(guard(grants()).canActivate(ctx(cls, name, user(['Super Admin']))))).toBe(true);
   });
 
-  it('reads stay open to all roles and never need masters:write', async () => {
-    expect(await ok(new RolesOrMastersWriteGuard(reflector, grants()).canActivate(ctx(CategoriesController, 'findAll', user(['Vendedor']))))).toBe(true);
-  });
-
-  it('an unmarked handler is not opened by masters:write', async () => {
-    const guard = new RolesOrMastersWriteGuard(reflector, grants(...WRITER));
-    expect(await ok(guard.canActivate(ctx(CategoriesController, 'findOne', user())))).toBe(false); // read endpoints are not marked
+  it('reads stay open to any signed-in session and never need masters:write', () => {
+    expect(required(CategoriesController, 'findAll')).toBeUndefined();
+    expect(Reflect.getMetadata('roles', CategoriesController.prototype.findAll)).toBeUndefined();
   });
 
   describe('dictionary and molds', () => {
