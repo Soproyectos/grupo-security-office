@@ -130,6 +130,33 @@ describe('CustomerPortalService', () => {
     await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow(BadRequestException);
   });
 
+  describe('aprobar con la tarifa propia de la cuenta', () => {
+    beforeEach(() => {
+      prisma.portalPriceListMapping.findUnique.mockReset().mockResolvedValue(null);
+      prisma.portalTier.findUnique.mockReset();
+      prisma.customer.findUnique.mockReset().mockResolvedValue(null);
+      prisma.portalAccount.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('aprueba sin tarifa general si la cuenta ya tiene una tarifa activa guardada', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: 'adv-1', tierId: 'tier-1', companyName: 'Acme' });
+      prisma.portalTier.findUnique.mockResolvedValue({ id: 'tier-1', isActive: true, priceListId: 'pl-1' });
+      prisma.customer.create.mockResolvedValue({ id: 'cust-new' });
+      await expect(service.approve('p1', {}, ADMIN)).resolves.toEqual(expect.objectContaining({ state: 'ACTIVE' }));
+    });
+
+    it('sin tarifa general ni tarifa guardada en la cuenta, pide elegir una', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: 'adv-1', tierId: null });
+      await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow('Elige y guarda una tarifa para esta cuenta');
+    });
+
+    it('si la tarifa guardada está inactiva no alcanza', async () => {
+      prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'FINAL_CUSTOMER', advisorId: 'adv-1', tierId: 'tier-1' });
+      prisma.portalTier.findUnique.mockResolvedValue({ id: 'tier-1', isActive: false, priceListId: 'pl-1' });
+      await expect(service.approve('p1', {}, ADMIN)).rejects.toThrow(BadRequestException);
+    });
+  });
+
   it('aprobar reutiliza el Customer enlazado por coincidencia de NIT/email', async () => {
     prisma.portalAccount.findUnique.mockResolvedValue({ id: 'p1', state: 'PENDING', type: 'INSTALLER', customerId: 'cust-1', advisorId: 'adv-1' });
     prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1', isActive: true, ownerId: 'adv-1' });
