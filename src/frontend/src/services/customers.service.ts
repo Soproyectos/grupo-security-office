@@ -48,13 +48,76 @@ export type CustomerErrorCode =
 export class CustomerServiceError extends Error {
   readonly code: CustomerErrorCode
   readonly status: number
+  /** Raw response body, kept so callers can read structured fields (e.g. a duplicate). */
+  readonly body?: unknown
 
-  constructor(code: CustomerErrorCode, message: string, status: number) {
+  constructor(code: CustomerErrorCode, message: string, status: number, body?: unknown) {
     super(message)
     this.name = 'CustomerServiceError'
     this.code = code
     this.status = status
+    this.body = body
   }
+}
+
+/** Field of the customer form that a duplicate warning points at. */
+export type CustomerDuplicateField = 'documentId' | 'email'
+
+/** 409 CUSTOMER_DUPLICATE: the document or the email already belongs to a customer. */
+export interface CustomerDuplicate {
+  field: CustomerDuplicateField
+  message: string
+  /** Present only when the existing customer is within the reader's scope. */
+  existing?: { id: string; name: string }
+}
+
+const DUPLICATE_FALLBACK: Record<CustomerDuplicateField, string> = {
+  documentId: 'Ya existe un cliente con este número de documento.',
+  email: 'Ya existe un cliente con este correo.',
+}
+
+/**
+ * Reads a 409 `CUSTOMER_DUPLICATE` out of a raw axios error or a typed
+ * `CustomerServiceError`. Returns null for any other error.
+ */
+export function parseCustomerDuplicate(error: unknown): CustomerDuplicate | null {
+  const typed = error instanceof CustomerServiceError ? error : null
+  const status = typed?.status ?? statusOf(error)
+  if (status !== 409) return null
+  const data = (typed ? typed.body : (error as { response?: { data?: unknown } } | null)?.response?.data) as
+    | Record<string, unknown>
+    | null
+    | undefined
+  if (!data || typeof data !== 'object' || data.code !== 'CUSTOMER_DUPLICATE') return null
+  const field = data.field
+  if (field !== 'documentId' && field !== 'email') return null
+  const message =
+    typeof data.message === 'string' && data.message.trim() ? data.message : DUPLICATE_FALLBACK[field]
+  const existing = data.existing as { id?: unknown; name?: unknown } | null | undefined
+  const known =
+    existing && typeof existing.id === 'string' && typeof existing.name === 'string' && existing.name.trim()
+      ? { id: existing.id, name: existing.name }
+      : undefined
+  return known ? { field, message, existing: known } : { field, message }
+}
+
+const NIT_DV_FALLBACK = 'El dígito de verificación del NIT no coincide.'
+
+/**
+ * Reads a 400 `INVALID_NIT_DV` (the written check digit does not match the NIT)
+ * out of a raw axios error or a typed `CustomerServiceError`. Returns the
+ * message to show next to the document field, or null for any other error.
+ */
+export function parseInvalidNitDv(error: unknown): string | null {
+  const typed = error instanceof CustomerServiceError ? error : null
+  const status = typed?.status ?? statusOf(error)
+  if (status !== 400) return null
+  const data = (typed ? typed.body : (error as { response?: { data?: unknown } } | null)?.response?.data) as
+    | Record<string, unknown>
+    | null
+    | undefined
+  if (!data || typeof data !== 'object' || data.code !== 'INVALID_NIT_DV') return null
+  return typeof data.message === 'string' && data.message.trim() ? data.message : NIT_DV_FALLBACK
 }
 
 const DEFAULT_ERROR = 'No se pudo guardar el cambio. Vuelve a intentarlo.'
@@ -109,6 +172,7 @@ function toCustomerError(error: unknown): unknown {
     codeFor(status),
     serverMessageOf(error) ?? STATUS_FALLBACK[status] ?? DEFAULT_ERROR,
     status,
+    (error as { response?: { data?: unknown } } | null)?.response?.data,
   )
 }
 

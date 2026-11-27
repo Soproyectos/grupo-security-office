@@ -17,6 +17,16 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ReassignCustomerDto } from './dto/reassign-customer.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
+import { CITY_INVALID_MESSAGE, isValidCity } from '../../../common/geo/municipalities';
+import { generateCustomerCode } from './customer-code';
+import {
+  findCustomersByIdentity,
+  nitDvForDisplay,
+  normalizeDocumentForType,
+  normalizeDocumentId,
+  normalizeDocumentType,
+  normalizeEmail,
+} from './customer-identity';
 
 /**
  * Contexto de acceso del módulo: `AccessContext` + `jti` de la sesión viva
@@ -118,12 +128,21 @@ export class CustomersService {
     ]);
 
     return {
-      data,
+      data: data.map((customer) => this.withDocumentDv(customer)),
       meta: { total, skip, take, totalPages: Math.max(1, Math.ceil(total / take)) },
     };
   }
 
+  /** Read-only `documentDv`: NIT verification digit calculated on the fly (never stored); null when not applicable. */
+  private withDocumentDv<T extends { documentType?: string | null; documentId?: string | null }>(customer: T): T & { documentDv: number | null } {
+    return { ...customer, documentDv: nitDvForDisplay(customer.documentType, customer.documentId) };
+  }
+
   async findOne(id: string, ctx: CustomersAccessContext) {
+    return this.withDocumentDv(await this.loadCustomer(id, ctx));
+  }
+
+  private async loadCustomer(id: string, ctx: CustomersAccessContext) {
     const customer = await this.prisma.customer.findUnique({ where: { id } });
     if (!customer || !customer.isActive) {
       throw new NotFoundException('Cliente no encontrado');
@@ -143,14 +162,22 @@ export class CustomersService {
     if (!decision.allowed) throw new ForbiddenException('Sin permiso customers:create');
     if (decision.scope === 'own' && dto.ownerId && dto.ownerId !== ctx.userId) throw new ForbiddenException('Alcance propio');
     if (decision.scope === 'team' && dto.ownerId && dto.ownerId !== ctx.userId && !(await this.hierarchy.getSubordinateIds(ctx.userId!).then(ids=>ids.includes(dto.ownerId!)))) throw new ForbiddenException('Fuera del equipo');
+    const city = this.normalizeCityForSave(dto.city);
+    if (city && !isValidCity(city)) throw this.invalidCity();
+    // Same identity rules as the web-account approval: the document is stored normalized (so the base unique
+    // protects every spelling) and a document without type is a NIT. A NIT is stored without verification digit.
+    const documentType = normalizeDocumentType(dto.documentType, !!normalizeDocumentId(dto.documentId));
+    const documentId = this.documentForSave(dto.documentId, documentType) || null;
+    const email = normalizeEmail(dto.email) || null;
+    await this.assertNoDuplicate({ documentId, email }, ctx);
     const data: Prisma.CustomerCreateInput = {
-      code: await this.generateCode(),
+      code: await generateCustomerCode(this.prisma),
       name: dto.name.trim(),
-      documentType: dto.documentType ?? null,
-      documentId: dto.documentId ?? null,
-      email: dto.email ?? null,
+      documentType,
+      documentId,
+      email,
       phone: dto.phone ?? null,
-      city: dto.city ?? null,
+      city,
       address: dto.address ?? null,
       status: dto.status ?? 'LEAD',
       source: dto.source ?? null,
@@ -184,7 +211,7 @@ export class CustomersService {
       },
     });
 
-    return customer;
+    return this.withDocumentDv(customer);
   }
 
   /**
@@ -199,16 +226,36 @@ export class CustomersService {
    */
   async update(id: string, dto: UpdateCustomerDto, ctx: CustomersAccessContext) {
     this.assertGeneralEditOnlyFields(dto);
-    const existing = await this.findOne(id, ctx);
+    const existing = await this.loadCustomer(id, ctx);
     await this.assertActionAllowed('customers:edit', existing, ctx);
 
     const data: Prisma.CustomerUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
-    if (dto.documentType !== undefined) data.documentType = dto.documentType;
-    if (dto.documentId !== undefined) data.documentId = dto.documentId;
-    if (dto.email !== undefined) data.email = dto.email;
+    const changed: { documentId?: string; email?: string } = {};
+    if (dto.documentId !== undefined) {
+      const documentType = dto.documentType?.trim().toUpperCase() || existing.documentType || 'NIT';
+      const documentId = this.documentForSave(dto.documentId, documentType) || null;
+      data.documentId = documentId;
+      if (documentId) data.documentType = documentType;
+      if (documentId && documentId !== normalizeDocumentId(existing.documentId)) changed.documentId = documentId;
+    }
+    if (dto.documentType !== undefined && dto.documentId === undefined) {
+      data.documentType = normalizeDocumentType(dto.documentType, !!existing.documentId);
+    }
+    if (dto.email !== undefined) {
+      const email = normalizeEmail(dto.email) || null;
+      data.email = email;
+      if (email && email !== normalizeEmail(existing.email)) changed.email = email;
+    }
     if (dto.phone !== undefined) data.phone = dto.phone;
-    if (dto.city !== undefined) data.city = dto.city;
+    if (dto.city !== undefined) {
+      // Old customers keep a free-text city: only a city that actually changes must come from the DIVIPOLA list.
+      const city = this.normalizeCityForSave(dto.city);
+      if (city !== (existing.city ?? null)) {
+        if (city && !isValidCity(city)) throw this.invalidCity();
+        data.city = city;
+      }
+    }
     if (dto.address !== undefined) data.address = dto.address;
     if (dto.source !== undefined) data.source = dto.source;
     if (dto.sourceDetail !== undefined) data.sourceDetail = dto.sourceDetail;
@@ -216,6 +263,8 @@ export class CustomersService {
     if (dto.lastContactAt !== undefined) {
       data.lastContactAt = dto.lastContactAt ? new Date(dto.lastContactAt) : null;
     }
+
+    await this.assertNoDuplicate(changed, ctx, id);
 
     let customer;
     try {
@@ -236,12 +285,12 @@ export class CustomersService {
       newValues,
     });
 
-    return customer;
+    return this.withDocumentDv(customer);
   }
 
   /**
    * Reasignación de cartera — endpoint DEDICADO (COM-02 §3): exige la
-   * concesión `customers:reassign` (catálogo team|global, depende de
+   * concesión `customers:reassign` (catálogo own|team|global, depende de
    * `customers:read`) resuelta con `resolveAccess` sobre el recurso. Sustituye
    * a la guarda de cartera personal del PATCH general (decisión reportada: la
    * capacidad deja de inferirse del rol WRITE_ROLES y pasa a la concesión;
@@ -250,7 +299,7 @@ export class CustomersService {
    * requerido por el DTO.
    */
   async reassign(id: string, dto: ReassignCustomerDto, ctx: CustomersAccessContext) {
-    const existing = await this.findOne(id, ctx); // 404 fuera del scope de lectura
+    const existing = await this.loadCustomer(id, ctx); // 404 fuera del scope de lectura
     const reassignScope = await this.assertActionAllowed('customers:reassign', existing, ctx); // 403 sin cobertura
 
     const newOwner = await this.prisma.user.findUnique({
@@ -262,7 +311,9 @@ export class CustomersService {
         'owner-not-found: el nuevo responsable no existe o está inactivo',
       );
     }
-    if (reassignScope === 'team' && dto.ownerId !== ctx.userId &&
+    // Own and team scope can only hand the customer to the person or to someone in their team;
+    // only global scope can pick anyone.
+    if (reassignScope !== 'global' && dto.ownerId !== ctx.userId &&
         !(await this.hierarchy.getSubordinateIds(ctx.userId!).then((ids) => ids.includes(dto.ownerId)))) {
       throw new ForbiddenException('El nuevo responsable está fuera de tu equipo');
     }
@@ -286,12 +337,12 @@ export class CustomersService {
       },
     });
 
-    return customer;
+    return this.withDocumentDv(customer);
   }
 
   /** Conversión MANUAL LEAD → CLIENTE. Marca `convertedAt`. */
   async convert(id: string, ctx: CustomersAccessContext) {
-    const existing = await this.findOne(id, ctx);
+    const existing = await this.loadCustomer(id, ctx);
     await this.assertActionAllowed('customers:edit', existing, ctx as CustomersAccessContext);
     if (existing.status !== 'LEAD') {
       throw new ConflictException(
@@ -313,12 +364,12 @@ export class CustomersService {
       newValues: { status: customer.status, convertedAt: customer.convertedAt },
     });
 
-    return customer;
+    return this.withDocumentDv(customer);
   }
 
   /** Soft delete: isActive = false (nunca borrado físico). */
   async remove(id: string, ctx: CustomersAccessContext) {
-    const existing = await this.findOne(id, ctx);
+    const existing = await this.loadCustomer(id, ctx);
     await this.assertActionAllowed('customers:edit', existing, ctx as CustomersAccessContext);
 
     await this.prisma.customer.update({
@@ -340,31 +391,63 @@ export class CustomersService {
     });
   }
 
+  private normalizeCityForSave(city: string | undefined | null): string | null {
+    return city?.trim() || null;
+  }
+
   /**
-   * Código secuencial CL-0001, CL-0002, ... basado en el último código CL-<num>
-   * existente (reintentos ante carrera por unique(code)). Sigue el patrón del
-   * generador de PO (módulo suppliers eliminado): prefijo + sufijo calculado.
+   * Document to store for the given type. A NIT is stored as its base number (without verification digit);
+   * a typed digit that does not match the calculated one is a 400. No digit typed is never an error, and other
+   * document types are not touched.
    */
-  private async generateCode(attempt = 0): Promise<string> {
-    if (attempt >= 5) {
-      return `CL-${Date.now().toString(36).toUpperCase()}`;
+  private documentForSave(raw: unknown, documentType: string | null): string {
+    const { documentId, dvStatus } = normalizeDocumentForType(raw, documentType);
+    if (dvStatus === 'invalid') {
+      throw new BadRequestException({
+        code: 'INVALID_NIT_DV',
+        field: 'documentId',
+        message: 'El dígito de verificación no coincide con el NIT. Revisa el número.',
+      });
     }
+    return documentId;
+  }
 
-    const last = await this.prisma.customer.findFirst({
-      where: { code: { startsWith: 'CL-' } },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    const lastNum = last?.code ? parseInt(last.code.slice(3), 10) : 0;
-    const next = Number.isFinite(lastNum) ? lastNum + 1 : 1;
-    const candidate = `CL-${String(next).padStart(4, '0')}`;
+  private invalidCity(): BadRequestException {
+    return new BadRequestException({ code: 'INVALID_CITY', message: CITY_INVALID_MESSAGE });
+  }
 
-    const exists = await this.prisma.customer.findUnique({
-      where: { code: candidate },
-      select: { id: true },
+  /**
+   * 409 CUSTOMER_DUPLICATE when another customer already has this document or email (any document type,
+   * any spelling). The existing customer's id and name go in the body ONLY when the caller may read it
+   * (customers:read scope), so the screen can offer to open it; otherwise the message is generic.
+   */
+  private async assertNoDuplicate(
+    identity: { documentId?: string | null; email?: string | null },
+    ctx: CustomersAccessContext,
+    excludeId?: string,
+  ): Promise<void> {
+    const matches = await findCustomersByIdentity(this.prisma, {
+      documentId: identity.documentId ?? '',
+      email: identity.email ?? '',
+      excludeId,
     });
-    if (exists) return this.generateCode(attempt + 1);
-    return candidate;
+    if (!matches.length) return;
+    const hit = matches.find((m) => m.byDocument) ?? matches[0];
+    const field = hit.byDocument ? 'documentId' : 'email';
+    const what = field === 'documentId' ? 'NIT o documento' : 'correo';
+    let existing: { id: string; name: string } | undefined;
+    if (hit.isActive) {
+      const decision = await this.decide('customers:read', ctx, { id: hit.id, kind: 'customer', ownerId: hit.ownerId });
+      if (decision.allowed) existing = { id: hit.id, name: hit.name };
+    }
+    throw new ConflictException({
+      code: 'CUSTOMER_DUPLICATE',
+      field,
+      message: existing
+        ? `Ya existe un cliente con ese ${what}. Puedes abrirlo y trabajar sobre él.`
+        : `Ya existe un cliente con ese ${what}. Pídele a su responsable que te lo comparta o escribe a tu supervisor.`,
+      ...(existing ? { existing } : {}),
+    });
   }
 
   /** Campos prohibidos en la edición GENERAL (COM-02 §5.1): la petición se
@@ -453,9 +536,11 @@ export class CustomersService {
     ) {
       const target = (error.meta?.target as string[]) ?? [];
       if (target.includes('documentType') || target.includes('documentId')) {
-        throw new ConflictException(
-          'Ya existe un cliente/lead con ese tipo y número de documento',
-        );
+        throw new ConflictException({
+          code: 'CUSTOMER_DUPLICATE',
+          field: 'documentId',
+          message: 'Ya existe un cliente con ese NIT o documento. Pídele a su responsable que te lo comparta o escribe a tu supervisor.',
+        });
       }
       throw new ConflictException('Conflicto de unicidad');
     }

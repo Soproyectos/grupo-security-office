@@ -21,7 +21,11 @@ export class CreateCustomerDto {
   @IsOptional()
   documentType?: string;
 
-  @ApiPropertyOptional({ example: '901123456-7' })
+  @ApiPropertyOptional({
+    example: '901123456-1',
+    description:
+      'Para NIT, el dígito de verificación es opcional; si se escribe (con guion) debe coincidir con el calculado o responde 400 INVALID_NIT_DV. Se guarda solo el número base.',
+  })
   @IsString()
   @IsOptional()
   documentId?: string;
@@ -36,8 +40,8 @@ export class CreateCustomerDto {
   @IsOptional()
   phone?: string;
 
-  /** Texto libre, decisión de producto: no se modelan ciudades como entidad. */
-  @ApiPropertyOptional({ example: 'Bogotá' })
+  /** DIVIPOLA municipality code (5 digits, same list and format as the web accounts); the service checks it. */
+  @ApiPropertyOptional({ example: '11001' })
   @IsString()
   @IsOptional()
   city?: string;

@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Modal, Input, Select, Button, Alert } from '../../../components/ui'
-import { customerErrorMessage } from '../../../services/customers.service'
+import {
+  customerErrorMessage,
+  parseCustomerDuplicate,
+  parseInvalidNitDv,
+  type CustomerDuplicate,
+} from '../../../services/customers.service'
+import CustomerDuplicateNotice from './CustomerDuplicateNotice'
+import MunicipalityPicker from '../../customer-portal/components/MunicipalityPicker'
 import {
   CUSTOMER_SOURCES,
   CUSTOMER_SOURCE_LABELS,
@@ -14,8 +21,12 @@ import type {
   CustomerStatus,
 } from '../types/customer.types'
 import {
-  EMPTY_CUSTOMER_FORM,
   buildCustomerPayload,
+  computeNitDv,
+  documentTypeOptions,
+  isMunicipalityCode,
+  legacyCityOf,
+  parseNitInput,
   toCustomerFormState,
   type CustomerFormState,
 } from '../customer-form'
@@ -26,13 +37,16 @@ interface CustomerFormModalProps {
   customer?: Customer | null
   onSubmit: (payload: CustomerPayload) => Promise<unknown>
   isSubmitting?: boolean
+  /** Opens the customer that already has the same document or email. */
+  onOpenExisting?: (existing: { id: string; name: string }) => void
 }
 
 /**
  * El mensaje que se pinta: el del servidor tal cual si lo hay (400 de
- * validación, 403 de transición sin concesiones, 404, 409 de documento
- * duplicado) y si no uno claro por estado — `customerErrorMessage` cubre tanto
- * el error tipado del servicio como un error axios crudo (POST de creación).
+ * validación, 403 de transición sin concesiones, 404) y si no uno claro por
+ * estado — `customerErrorMessage` cubre tanto el error tipado del servicio como
+ * un error axios crudo (POST de creación). El 409 de duplicado NO pasa por aquí:
+ * se pinta junto a su campo.
  */
 function errorMessage(err: unknown): string {
   return customerErrorMessage(err, 'No se pudo guardar el cliente')
@@ -44,9 +58,14 @@ export default function CustomerFormModal({
   customer,
   onSubmit,
   isSubmitting = false,
+  onOpenExisting,
 }: CustomerFormModalProps) {
-  const [form, setForm] = useState<CustomerFormState>(EMPTY_CUSTOMER_FORM)
+  // Start from the customer being edited so the city field mounts with its value.
+  const [form, setForm] = useState<CustomerFormState>(() => toCustomerFormState(customer))
   const [error, setError] = useState<string | null>(null)
+  const [duplicate, setDuplicate] = useState<CustomerDuplicate | null>(null)
+  // The server's message when the written NIT check digit does not match.
+  const [nitDvError, setNitDvError] = useState<string | null>(null)
 
   // El modo decide el contrato: en edición NO se construye `status`
   // (COM-02 §3 — el PATCH general responde 400 status-not-allowed-in-general-edit).
@@ -56,23 +75,61 @@ export default function CustomerFormModal({
     if (open) {
       setForm(toCustomerFormState(customer))
       setError(null)
+      setDuplicate(null)
+      setNitDvError(null)
     }
   }, [open, customer])
 
-  const set = <K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) =>
+  // Bring the person to the field the warning is about.
+  useEffect(() => {
+    if (duplicate) document.getElementById(duplicate.field)?.focus()
+  }, [duplicate])
+  useEffect(() => {
+    if (nitDvError) document.getElementById('documentId')?.focus()
+  }, [nitDvError])
+
+  // Old customers kept their city as free text: it stays as it was unless a city is picked.
+  const legacyCity = legacyCityOf(customer)
+
+  const set = <K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+    // The warning is about the rejected value: it goes away once that field changes.
+    if (duplicate && key === duplicate.field) setDuplicate(null)
+    // Same for the check digit warning: it is about the typed number and type.
+    if (nitDvError && (key === 'documentId' || key === 'documentType')) setNitDvError(null)
+  }
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
+    setDuplicate(null)
+    setNitDvError(null)
 
     try {
-      await onSubmit(buildCustomerPayload(form, mode))
+      await onSubmit(buildCustomerPayload(form, mode, legacyCity))
       onClose()
     } catch (err) {
-      setError(errorMessage(err))
+      // What the advisor typed stays in the form: only the message changes.
+      const found = parseCustomerDuplicate(err)
+      const dvMessage = found ? null : parseInvalidNitDv(err)
+      if (found) setDuplicate(found)
+      else if (dvMessage) setNitDvError(dvMessage)
+      else setError(errorMessage(err))
     }
   }
+
+  const documentDuplicate = duplicate?.field === 'documentId' ? duplicate : null
+  const emailDuplicate = duplicate?.field === 'email' ? duplicate : null
+
+  // The check digit of a NIT is shown as help while typing. It never blocks saving:
+  // the server decides, and writing the digit is optional.
+  const nit = form.documentType === 'NIT' ? parseNitInput(form.documentId) : null
+  const calculatedDv = nit ? computeNitDv(nit.base) : null
+  const dvMismatch =
+    nit !== null && calculatedDv !== null && nit.enteredDv !== null && nit.enteredDv !== calculatedDv
+  const documentError = documentDuplicate?.message ?? nitDvError ?? undefined
+  const showDvHelp = form.documentType === 'NIT' && !documentError
+  const dvHelpId = 'documentId-dv-help'
 
   return (
     <Modal
@@ -108,31 +165,59 @@ export default function CustomerFormModal({
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
+          <Select
             label="Tipo de documento"
             name="documentType"
             value={form.documentType}
             onChange={(e) => set('documentType', e.target.value)}
-            placeholder="NIT"
+            options={documentTypeOptions(form.documentType)}
           />
-          <Input
-            label="Número de documento"
-            name="documentId"
-            value={form.documentId}
-            onChange={(e) => set('documentId', e.target.value)}
-            placeholder="901123456-7"
-          />
+          <div className="space-y-1">
+            <Input
+              label="Número de documento"
+              name="documentId"
+              value={form.documentId}
+              onChange={(e) => set('documentId', e.target.value)}
+              placeholder="901123456-7"
+              error={documentError}
+              {...(showDvHelp ? { 'aria-describedby': dvHelpId } : {})}
+            />
+            {showDvHelp && (
+              <div id={dvHelpId}>
+                {/* The polite region stays mounted so screen readers announce each change. */}
+                <p aria-live="polite" className="text-xs text-neutral-600">
+                  {calculatedDv !== null && !dvMismatch
+                    ? `Dígito de verificación: ${calculatedDv} (se calcula solo)`
+                    : ''}
+                </p>
+                {dvMismatch && (
+                  <p role="alert" className="text-sm text-brand-error">
+                    El dígito de verificación no coincide. Para ese NIT debería ser {calculatedDv}.
+                  </p>
+                )}
+              </div>
+            )}
+            {documentDuplicate && (
+              <CustomerDuplicateNotice duplicate={documentDuplicate} onOpenExisting={onOpenExisting} />
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label="Email"
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={(e) => set('email', e.target.value)}
-            placeholder="contacto@empresa.com"
-          />
+          <div className="space-y-1">
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={(e) => set('email', e.target.value)}
+              placeholder="contacto@empresa.com"
+              error={emailDuplicate?.message}
+            />
+            {emailDuplicate && (
+              <CustomerDuplicateNotice duplicate={emailDuplicate} onOpenExisting={onOpenExisting} />
+            )}
+          </div>
           <Input
             label="Teléfono"
             name="phone"
@@ -143,12 +228,15 @@ export default function CustomerFormModal({
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
+          <MunicipalityPicker
+            variant="panel"
+            required={false}
             label="Ciudad"
-            name="city"
-            value={form.city}
-            onChange={(e) => set('city', e.target.value)}
-            placeholder="Bogotá"
+            placeholder="Escribe y elige una ciudad"
+            hint="Elige una ciudad de la lista para dejar al cliente en su zona."
+            value={isMunicipalityCode(form.city) ? form.city.trim() : ''}
+            legacyText={form.city === legacyCity ? legacyCity : ''}
+            onChange={(code) => set('city', code)}
           />
           <Input
             label="Dirección"

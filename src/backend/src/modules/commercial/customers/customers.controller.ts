@@ -76,7 +76,7 @@ export class CustomersController {
   @Patch(':id/reassign')
   @ApiOperation({
     summary:
-      'Reasignar responsable del cliente (requiere customers:reassign con alcance team/global)',
+      'Reasignar responsable del cliente (requiere customers:reassign con alcance propio, de equipo o global)',
   })
   @ApiResponse({ status: 403, description: 'Sin customers:reassign que cubra el cliente' })
   @ApiResponse({ status: 404, description: 'No existe o fuera del scope del usuario' })

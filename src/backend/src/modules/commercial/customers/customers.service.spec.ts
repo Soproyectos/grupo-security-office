@@ -537,6 +537,59 @@ describe('CustomersService', () => {
       expect(result.ownerId).toBe('seller-1');
     });
 
+    describe('reassign con alcance propio', () => {
+      const seller = { userId: 'seller-1', roles: ['Vendedor'] };
+      const ownGrants = [
+        { sourceId: 's-read', actionId: 'customers:read', scope: 'own' },
+        { sourceId: 's-re', actionId: 'customers:reassign', scope: 'own' },
+      ];
+      beforeEach(() => {
+        hierarchy.getSubordinateIds.mockResolvedValue([]);
+        grants.grantsForUser.mockResolvedValue(ownGrants);
+        prisma.customer.findUnique.mockResolvedValue({ ...ownedByVend, ownerId: 'seller-1' });
+        prisma.user.findUnique.mockResolvedValue({ id: 'seller-1', isActive: true });
+        prisma.customer.update.mockResolvedValue({ id: 'c1', ownerId: 'seller-1' });
+      });
+
+      it('sobre un cliente propio y hacia sí mismo: permitido', async () => {
+        await expect(service.reassign('c1', { ownerId: 'seller-1' }, seller)).resolves.toMatchObject({ ownerId: 'seller-1' });
+      });
+
+      it('no puede pasarlo a alguien fuera de su equipo: 403 y sin escrituras', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'otro', isActive: true });
+        await expect(service.reassign('c1', { ownerId: 'otro' }, seller)).rejects.toThrow(ForbiddenException);
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+      });
+
+      it('puede pasarlo a alguien de su equipo', async () => {
+        hierarchy.getSubordinateIds.mockResolvedValue(['sub-1']);
+        prisma.user.findUnique.mockResolvedValue({ id: 'sub-1', isActive: true });
+        prisma.customer.update.mockResolvedValue({ id: 'c1', ownerId: 'sub-1' });
+        await expect(service.reassign('c1', { ownerId: 'sub-1' }, seller)).resolves.toMatchObject({ ownerId: 'sub-1' });
+      });
+
+      it('un cliente de su equipo (no propio) no se puede reasignar con alcance propio: 403', async () => {
+        hierarchy.getSubordinateIds.mockResolvedValue(['vend-1']);
+        grants.grantsForUser.mockResolvedValue([
+          { sourceId: 's-read', actionId: 'customers:read', scope: 'team' },
+          { sourceId: 's-re', actionId: 'customers:reassign', scope: 'own' },
+        ]);
+        prisma.customer.findUnique.mockResolvedValue(ownedByVend);
+        await expect(service.reassign('c1', { ownerId: 'seller-1' }, seller)).rejects.toThrow(ForbiddenException);
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+      });
+
+      it('con alcance global puede elegir a cualquiera', async () => {
+        grants.grantsForUser.mockResolvedValue([
+          { sourceId: 's-read', actionId: 'customers:read', scope: 'global' },
+          { sourceId: 's-re', actionId: 'customers:reassign', scope: 'global' },
+        ]);
+        prisma.user.findUnique.mockResolvedValue({ id: 'otro', isActive: true });
+        prisma.customer.update.mockResolvedValue({ id: 'c1', ownerId: 'otro' });
+        await expect(service.reassign('c1', { ownerId: 'otro' }, seller)).resolves.toMatchObject({ ownerId: 'otro' });
+      });
+    });
+
     it('vendedor SIN la acción (paquete estándar): 403 y cero escrituras', async () => {
       grants.grantsForUser.mockResolvedValue([
         { sourceId: 's-read', actionId: 'customers:read', scope: 'own' },
@@ -600,6 +653,222 @@ describe('CustomersService', () => {
           newValues: { ownerId: 'admin-1' },
         }),
       );
+    });
+  });
+
+  // ---------- Identidad compartida con la web: duplicados y ciudad DIVIPOLA ----------
+
+  describe('identidad del cliente (NIT/correo/ciudad)', () => {
+    const match = (over: Record<string, unknown> = {}) => ({
+      id: 'old-1', name: 'Empresa Existente', ownerId: 'op-1', isActive: true, documentId: '901123456',
+      byDocument: true, byEmail: false, ...over,
+    });
+    // The query is a tagged template: its interpolated fragments carry the bound values (normalized document, email, excluded id).
+    const sqlValues = (call: number): unknown[] =>
+      prisma.$queryRaw.mock.calls[call].slice(1).flatMap((part: any) => (part && Array.isArray(part.values) ? part.values : [part]));
+
+    beforeEach(() => {
+      prisma.customer.findFirst.mockResolvedValue(null);
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.customer.create.mockResolvedValue({ id: 'new-1', code: 'CL-0001' });
+      prisma.$queryRaw.mockResolvedValue([]);
+    });
+
+    it('busca duplicados con el NIT normalizado, sin importar puntos, espacios ni dígito de verificación', async () => {
+      await service.create({ name: 'Acme', documentId: '901.123.456-1' }, operadorCtx);
+      expect(sqlValues(0)).toEqual(expect.arrayContaining(['901123456']));
+      expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'NIT', documentId: '901123456' });
+    });
+
+    it('409 CUSTOMER_DUPLICATE por NIT con puntos cuando ya existe sin ellos; incluye el cliente si está en su alcance', async () => {
+      prisma.$queryRaw.mockResolvedValue([match()]);
+      const error: any = await service
+        .create({ name: 'Acme', documentType: 'NIT', documentId: '901.123.456-1' }, operadorCtx)
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({
+        code: 'CUSTOMER_DUPLICATE', field: 'documentId', existing: { id: 'old-1', name: 'Empresa Existente' },
+      });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('detecta el duplicado aunque el documento viejo tenga otro tipo (la búsqueda no filtra por tipo)', async () => {
+      prisma.$queryRaw.mockResolvedValue([match()]);
+      const error: any = await service
+        .create({ name: 'Acme', documentType: 'CC', documentId: '901123456' }, operadorCtx)
+        .catch((e) => e);
+      expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'documentId' });
+    });
+
+    it('409 por correo en mayúsculas: busca el correo en minúsculas y responde field=email', async () => {
+      prisma.$queryRaw.mockResolvedValue([match({ byDocument: false, byEmail: true })]);
+      const error: any = await service.create({ name: 'Acme', email: '  Ventas@ACME.co ' }, operadorCtx).catch((e) => e);
+      expect(sqlValues(0)).toEqual(expect.arrayContaining(['ventas@acme.co']));
+      expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'email' });
+    });
+
+    it('un cliente fuera del alcance de lectura NO revela nombre ni id', async () => {
+      prisma.$queryRaw.mockResolvedValue([match({ ownerId: 'otra-persona' })]);
+      const error: any = await service.create({ name: 'Acme', documentId: '901123456' }, operadorCtx).catch((e) => e);
+      const body = error.getResponse();
+      expect(body).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'documentId' });
+      expect(body).not.toHaveProperty('existing');
+      expect(JSON.stringify(body)).not.toContain('Empresa Existente');
+      expect(body.message).toContain('supervisor');
+    });
+
+    it('guarda el correo normalizado y asume NIT si hay documento sin tipo', async () => {
+      await service.create({ name: 'Acme', email: 'Ventas@Acme.CO', documentId: '900123456' }, operadorCtx);
+      expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({
+        email: 'ventas@acme.co', documentType: 'NIT', documentId: '900123456',
+      });
+    });
+
+    it('rechaza una ciudad que no está en la lista DIVIPOLA (400 INVALID_CITY) y no crea nada', async () => {
+      const error: any = await service.create({ name: 'Acme', city: 'Bogotá' }, operadorCtx).catch((e) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.getResponse()).toMatchObject({ code: 'INVALID_CITY', message: 'Elige tu ciudad de la lista' });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('acepta un código DIVIPOLA válido y lo guarda en el mismo formato que la web (5 dígitos)', async () => {
+      await service.create({ name: 'Acme', city: '11001' }, operadorCtx);
+      expect(prisma.customer.create.mock.calls[0][0].data.city).toBe('11001');
+    });
+
+    describe('dígito de verificación del NIT (opcional)', () => {
+      // 901123456 -> DV 1 and 900111222 -> DV 1 (hand-calculated, see customer-identity.spec)
+      it('con el dígito bueno (con guion y puntos) guarda solo el número base', async () => {
+        await service.create({ name: 'Acme', documentType: 'NIT', documentId: '901.123.456-1' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'NIT', documentId: '901123456' });
+      });
+
+      it('con el dígito malo responde 400 INVALID_NIT_DV, no busca duplicados y no crea nada', async () => {
+        const error: any = await service
+          .create({ name: 'Acme', documentType: 'NIT', documentId: '901.123.456-7' }, operadorCtx)
+          .catch((e) => e);
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect(error.getResponse()).toEqual({
+          code: 'INVALID_NIT_DV',
+          field: 'documentId',
+          message: 'El dígito de verificación no coincide con el NIT. Revisa el número.',
+        });
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+        expect(prisma.customer.create).not.toHaveBeenCalled();
+      });
+
+      it('el tipo por defecto (sin documentType) también es NIT y valida el dígito', async () => {
+        const error: any = await service.create({ name: 'Acme', documentId: '901123456-7' }, operadorCtx).catch((e) => e);
+        expect(error.getResponse()).toMatchObject({ code: 'INVALID_NIT_DV' });
+      });
+
+      it('sin dígito acepta sin error', async () => {
+        await service.create({ name: 'Acme', documentType: 'NIT', documentId: '901123456' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentId: '901123456' });
+      });
+
+      it('10 dígitos cuyo último dígito es el DV calculado se leen como NIT con DV y detectan el duplicado de la base', async () => {
+        prisma.$queryRaw.mockResolvedValue([match()]);
+        const error: any = await service.create({ name: 'Acme', documentId: '9011234561' }, operadorCtx).catch((e) => e);
+        expect(sqlValues(0)).toEqual(expect.arrayContaining(['901123456']));
+        expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'documentId' });
+      });
+
+      it('10 dígitos que NO coinciden con el DV calculado se guardan completos como base, sin error', async () => {
+        await service.create({ name: 'Acme', documentId: '9011234567' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'NIT', documentId: '9011234567' });
+      });
+
+      it('una cédula no se calcula ni se valida: 10 dígitos y guion se tratan como siempre', async () => {
+        await service.create({ name: 'Ana', documentType: 'CC', documentId: '9011234561' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'CC', documentId: '9011234561' });
+        prisma.customer.create.mockClear();
+        await service.create({ name: 'Ana', documentType: 'CC', documentId: '901123456-7' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).toMatchObject({ documentType: 'CC', documentId: '901123456' });
+      });
+
+      it('edición: dígito malo 400 INVALID_NIT_DV sin escribir; sin dígito o con el bueno se acepta', async () => {
+        prisma.customer.findUnique.mockResolvedValue({
+          id: 'c1', isActive: true, code: 'CL-0001', name: 'Acme', documentType: 'NIT', documentId: '900111222', ownerId: 'w-1', status: 'CLIENTE',
+        });
+        prisma.customer.update.mockResolvedValue({ id: 'c1' });
+        grants.grantsForUser.mockResolvedValue([
+          { sourceId: 's-1', actionId: 'customers:read', scope: 'own' },
+          { sourceId: 's-1', actionId: 'customers:edit', scope: 'own' },
+        ]);
+        const writeCtx = { userId: 'w-1', roles: ['Admin Comercial'] };
+        const error: any = await service.update('c1', { documentId: '900.111.222-3' }, writeCtx).catch((e) => e);
+        expect(error.getResponse()).toMatchObject({ code: 'INVALID_NIT_DV', field: 'documentId' });
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+        await service.update('c1', { documentId: '900111222' }, writeCtx);
+        await service.update('c1', { documentId: '900111222-1' }, writeCtx);
+        expect(prisma.customer.update.mock.calls.map((c: any) => c[0].data.documentId)).toEqual(['900111222', '900111222']);
+      });
+    });
+
+    describe('documentDv en la lectura', () => {
+      it('el detalle y la lista traen el dígito calculado (no guardado) solo para NIT numérico', async () => {
+        acl.isListasAdmin.mockReturnValue(true);
+        prisma.customer.findUnique.mockResolvedValue({ id: 'c1', isActive: true, ownerId: 'o', documentType: 'NIT', documentId: '800197268' });
+        await expect(service.findOne('c1', adminCtx)).resolves.toMatchObject({ id: 'c1', documentId: '800197268', documentDv: 4 });
+
+        prisma.customer.findMany.mockResolvedValue([
+          { id: 'a', documentType: 'NIT', documentId: '800197268' },
+          { id: 'b', documentType: 'CC', documentId: '800197268' },
+          { id: 'c', documentType: 'NIT', documentId: 'AB123' },
+          { id: 'd', documentType: null, documentId: null },
+        ]);
+        prisma.customer.count.mockResolvedValue(4);
+        const { data } = await service.findAll({}, adminCtx);
+        expect(data.map((c: any) => c.documentDv)).toEqual([4, null, null, null]);
+      });
+
+      it('lo que se guarda no lleva documentDv', async () => {
+        await service.create({ name: 'Acme', documentId: '800197268' }, operadorCtx);
+        expect(prisma.customer.create.mock.calls[0][0].data).not.toHaveProperty('documentDv');
+      });
+    });
+
+    describe('edición', () => {
+      const writeCtx = { userId: 'w-1', roles: ['Admin Comercial'] };
+      beforeEach(() => {
+        grants.grantsForUser.mockResolvedValue([
+          { sourceId: 's-1', actionId: 'customers:read', scope: 'own' },
+          { sourceId: 's-1', actionId: 'customers:edit', scope: 'own' },
+        ]);
+        prisma.customer.findUnique.mockResolvedValue({
+          id: 'c1', isActive: true, code: 'CL-0001', name: 'Acme', email: 'old@acme.test', city: 'Bogotá D.C.',
+          documentType: 'NIT', documentId: '900111222', ownerId: 'w-1', status: 'CLIENTE',
+        });
+        prisma.customer.update.mockResolvedValue({ id: 'c1' });
+      });
+
+      it('un cliente antiguo con ciudad en texto libre se edita sin tocar la ciudad', async () => {
+        await service.update('c1', { name: 'Acme SAS', city: 'Bogotá D.C.' }, writeCtx);
+        const data = prisma.customer.update.mock.calls[0][0].data;
+        expect(data).toMatchObject({ name: 'Acme SAS' });
+        expect(data).not.toHaveProperty('city');
+      });
+
+      it('si la ciudad cambia debe ser DIVIPOLA: texto libre 400, código válido se guarda', async () => {
+        await expect(service.update('c1', { city: 'Medellín' }, writeCtx)).rejects.toThrow(BadRequestException);
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+        await service.update('c1', { city: '05001' }, writeCtx);
+        expect(prisma.customer.update.mock.calls[0][0].data.city).toBe('05001');
+      });
+
+      it('cambiar el NIT a uno que ya tiene otro cliente da 409 y excluye al propio cliente de la búsqueda', async () => {
+        prisma.$queryRaw.mockResolvedValue([match({ id: 'otro', ownerId: 'x' })]);
+        const error: any = await service.update('c1', { documentId: '901.123.456-1' }, writeCtx).catch((e) => e);
+        expect(error.getResponse()).toMatchObject({ code: 'CUSTOMER_DUPLICATE', field: 'documentId' });
+        expect(sqlValues(0)).toEqual(expect.arrayContaining(['901123456', 'c1']));
+        expect(prisma.customer.update).not.toHaveBeenCalled();
+      });
+
+      it('reescribir el mismo NIT con otro formato no busca duplicados', async () => {
+        await service.update('c1', { documentId: '900.111.222-1' }, writeCtx);
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
     });
   });
 

@@ -39,9 +39,16 @@ const LEAD: Customer = {
   updatedAt: '2026-10-16T00:00:00.000Z',
 }
 
-function render(customer: Customer | null) {
+const MUNICIPALITIES = [
+  { code: '05001', name: 'Medellín', departmentCode: '05', department: 'Antioquia' },
+  { code: '66001', name: 'Pereira', departmentCode: '66', department: 'Risaralda' },
+]
+
+function render(customer: Customer | null, withMunicipalities = false) {
+  const client = new QueryClient()
+  if (withMunicipalities) client.setQueryData(['public', 'municipalities'], MUNICIPALITIES)
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <CustomerFormModal
         open
         onClose={() => {}}
@@ -93,5 +100,80 @@ describe('creación (customer == null)', () => {
 
   it('se titula como creación', () => {
     expect(html).toContain('Nuevo cliente o lead')
+  })
+})
+
+describe('ciudad con la lista DIVIPOLA', () => {
+  it('en la creación la ciudad es un selector con búsqueda, no un campo de texto libre', () => {
+    const html = render(null, true)
+    expect(html).toContain('role="combobox"')
+    expect(html).toContain('role="listbox"')
+    expect(html).toContain('>Ciudad</label>')
+    expect(html).toContain('Elige una ciudad de la lista')
+  })
+
+  it('la ciudad es opcional: el selector no la exige', () => {
+    const html = render(null, true)
+    expect(html).not.toMatch(/<input[^>]*role="combobox"[^>]*required/)
+  })
+
+  it('en la edición muestra la ciudad guardada como «Ciudad · Departamento»', () => {
+    const html = render({ ...LEAD, city: '05001' }, true)
+    expect(html).toContain('value="Medellín · Antioquia"')
+  })
+
+  it('un cliente antiguo con ciudad escrita a mano ve ese valor y puede editarse sin elegir otra', () => {
+    const html = render({ ...LEAD, city: 'Bogotá' })
+    expect(html).toContain('value="Bogotá"')
+    expect(html).not.toMatch(/<input[^>]*role="combobox"[^>]*disabled=""/)
+  })
+})
+
+describe('tipo de documento', () => {
+  it('al crear viene NIT seleccionado y antes del número', () => {
+    const html = render(null)
+    expect(html).toMatch(/<select[^>]*name="documentType"/)
+    expect(html).toMatch(/<option value="NIT" selected/)
+    expect(html.indexOf('name="documentType"')).toBeLessThan(html.indexOf('name="documentId"'))
+  })
+})
+
+describe('dígito de verificación del NIT', () => {
+  const nitCustomer = (documentId: string, documentType = 'NIT'): Customer => ({
+    ...LEAD,
+    documentType,
+    documentId,
+  })
+
+  it('muestra la ayuda con el dígito calculado, anunciada con aria-live polite', () => {
+    const html = render(nitCustomer('901123456'))
+    expect(html).toContain('Dígito de verificación: 1 (se calcula solo)')
+    expect(html).toMatch(/<p[^>]*aria-live="polite"[^>]*>Dígito de verificación: 1/)
+    expect(html).not.toContain('role="alert"')
+  })
+
+  it('acepta el NIT escrito con puntos y con su dígito correcto, sin aviso', () => {
+    const html = render(nitCustomer('901.123.456-1'))
+    expect(html).toContain('Dígito de verificación: 1 (se calcula solo)')
+    expect(html).not.toContain('no coincide')
+  })
+
+  it('avisa con role alert cuando el dígito escrito no coincide, sin bloquear nada', () => {
+    const html = render(nitCustomer('901123456-7'))
+    expect(html).toMatch(/<p[^>]*role="alert"[^>]*>El dígito de verificación no coincide\. Para ese NIT debería ser (<!-- -->)?1(<!-- -->)?\./)
+    expect(html).not.toContain('Dígito de verificación: 1 (se calcula solo)')
+    // Nothing becomes required because of the check digit.
+    expect(html).not.toMatch(/<input[^>]*name="documentId"[^>]*required/)
+  })
+
+  it('no muestra la ayuda cuando el tipo de documento no es NIT', () => {
+    const html = render(nitCustomer('901123456', 'CC'))
+    expect(html).not.toContain('Dígito de verificación')
+  })
+
+  it('no muestra dígito mientras el número está vacío', () => {
+    const html = render(null)
+    expect(html).not.toContain('(se calcula solo)')
+    expect(html).toContain('aria-live="polite"')
   })
 })
