@@ -493,6 +493,62 @@ describe('UserAccessPanel — grupos del portal dentro de Comercial (una casilla
   })
 })
 
+describe('UserAccessPanel — acciones que antes dependían solo del cargo', () => {
+  const ACTIONS = [
+    { id: 'portalAccounts:read', label: 'Ver cuentas del portal', purpose: 'Ver cuentas web', allowedScopes: ['own', 'team', 'global'], dependencies: [], enabled: true },
+    { id: 'audit:read', label: 'Consultar auditoría', purpose: 'Ver el registro', allowedScopes: ['global'], dependencies: [], enabled: true },
+    { id: 'salesOrders:read', label: 'Consultar pedidos', purpose: 'Ver pedidos', allowedScopes: ['own', 'team', 'global'], dependencies: [], enabled: true },
+    { id: 'salesOrders:invoice', label: 'Registrar factura del pedido', purpose: 'Anotar factura', allowedScopes: ['own', 'team', 'global'], dependencies: ['salesOrders:read'], enabled: true },
+    { id: 'storefront:manage', label: 'Gestionar la tienda web', purpose: 'Administrar la tienda', allowedScopes: ['global'], dependencies: [], enabled: true },
+    { id: 'portalTariffs:manage', label: 'Gestionar tarifa general y niveles', purpose: 'Tarifa y niveles', allowedScopes: ['global'], dependencies: ['portalAccounts:read'], enabled: true },
+  ]
+  const manualSource = { id: 'manual-extra', kind: 'manual' as const, templateId: null, catalogVersion: 'test', grantedById: 'admin-1', reason: null }
+  const state = (grants: { actionId: string; scope: string }[] = []) => accessState({
+    sources: grants.length ? [manualSource] : [],
+    grants: grants.map((grant) => ({ sourceId: manualSource.id, ...grant })) as UserAccessState['grants'],
+    actions: [...(accessState().actions ?? []), ...ACTIONS] as UserAccessState['actions'],
+  })
+  const inputOf = (html: string, label: string) => html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? ''
+  const isChecked = (html: string, label: string) => /\schecked(?:=|\s|\/?>)/.test(inputOf(html, label))
+
+  it('Auditoría, Pedidos, Tienda web y Tarifa general y niveles son grupos de Comercial, con ayuda en lenguaje simple', () => {
+    const panel = sectionOf(renderWorkspace(seeded(state()), ['Operador']), 'Comercial')
+
+    for (const group of ['Auditoría', 'Pedidos', 'Tienda web', 'Tarifa general y niveles']) {
+      expect(panel).toContain(`aria-label="${group}: marcar o desmarcar todo"`)
+    }
+    for (const label of ['Consultar auditoría', 'Consultar pedidos', 'Registrar factura del pedido', 'Gestionar la tienda web', 'Gestionar tarifa general y niveles']) {
+      expect(inputOf(panel, label)).not.toBe('')
+    }
+    expect(panel).toContain('Ver el registro de quién cambió qué')
+    expect(panel).toContain('Elegir la tarifa general de la tienda')
+    expect(panel).not.toMatch(/ACL|scope|@Roles/i)
+  })
+
+  it('sin concesiones ninguna de las cinco casillas viene marcada', () => {
+    const html = render(seeded(state()))
+    for (const label of ['Consultar auditoría', 'Consultar pedidos', 'Registrar factura del pedido', 'Gestionar la tienda web', 'Gestionar tarifa general y niveles']) {
+      expect(isChecked(html, label)).toBe(false)
+    }
+  })
+
+  it('los alcances ofrecidos son los del catálogo: pedidos propio/equipo/global, el resto solo global', () => {
+    const html = render(seeded(state([
+      { actionId: 'audit:read', scope: 'global' },
+      { actionId: 'salesOrders:read', scope: 'own' },
+      { actionId: 'salesOrders:invoice', scope: 'own' },
+      { actionId: 'storefront:manage', scope: 'global' },
+      { actionId: 'portalAccounts:read', scope: 'global' },
+      { actionId: 'portalTariffs:manage', scope: 'global' },
+    ])))
+    const optionsOf = (actionId: string) => [...(html.match(new RegExp(`<select[^>]*aria-label="Alcance ${actionId}"[^>]*>(.*?)</select>`))?.[1] ?? '').matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((match) => match[1])
+
+    expect(optionsOf('salesOrders:read')).toEqual(['Propio', 'Equipo', 'Global'])
+    expect(optionsOf('salesOrders:invoice')).toEqual(['Propio', 'Equipo', 'Global'])
+    for (const id of ['audit:read', 'storefront:manage', 'portalTariffs:manage']) expect(optionsOf(id)).toEqual(['Global'])
+  })
+})
+
 describe('accessActionNotice — avisos de 409 (versión) y 400/403/404', () => {
   it('el 409 es un aviso de versión con el mensaje del servidor', () => {
     const notice = accessActionNotice(

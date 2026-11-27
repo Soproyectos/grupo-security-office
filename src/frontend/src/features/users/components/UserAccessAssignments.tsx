@@ -49,6 +49,10 @@ const ACTION_TREE = [
     // Portal groups feed the «Solicitudes» and «Zonas» tabs of Comercial; each is assigned on its own.
     { label: 'Solicitudes del portal', ids: ['portalAccounts:read', 'portalAccounts:manage', 'portalAccounts:assign'] },
     { label: 'Zonas', ids: ['portalZones:manage'] },
+    { label: 'Auditoría', ids: ['audit:read'] },
+    { label: 'Pedidos', ids: ['salesOrders:read', 'salesOrders:invoice'] },
+    { label: 'Tienda web', ids: ['storefront:manage'] },
+    { label: 'Tarifa general y niveles', ids: ['portalTariffs:manage'] },
   ] },
   { panel: 'Marketing y mercadeo', children: [
     { label: 'Contenido', ids: ['marketing:read', 'marketing:create', 'marketing:edit', 'marketing:delete'] },
@@ -67,6 +71,10 @@ const ACTION_TREE = [
 const GROUP_HINTS: Readonly<Record<string, string>> = {
   'Solicitudes del portal': 'Ver y gestionar las cuentas que se registran en la tienda. Asignar asesor permite repartir las que aún no tienen uno. Cuánto ve cada persona depende del alcance.',
   Zonas: 'Administrar las zonas que reparten los registros nuevos entre asesores. Incluye ver las cuentas del portal.',
+  Auditoría: 'Ver el registro de quién cambió qué en las áreas comerciales. El historial de Biblioteca solo se ve además con «Editar fichas» y las notas internas.',
+  Pedidos: 'Ver los pedidos que salen de las cotizaciones ganadas. «Registrar factura» permite anotar el número y la fecha de la factura. Cuánto ve cada persona depende del alcance.',
+  'Tienda web': 'Ver el resumen de la tienda web, cambiar sus ajustes y atender las cuentas y consultas de los clientes.',
+  'Tarifa general y niveles': 'Elegir la tarifa general de la tienda y crear o editar los niveles de clientes. Incluye ver las cuentas del portal.',
   'Publicar en tienda': 'Permite publicar, programar y retirar productos desde la ficha. Necesita «Editar fichas» ya guardado en la pestaña Fichas.',
   'Avisos internos': 'Consultar los avisos vigentes abre la pestaña Promociones internas. Crear avisos abre Gestionar avisos, donde también se editan, publican y retiran.',
 }

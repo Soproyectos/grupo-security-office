@@ -77,12 +77,3 @@ export function canViewUsers(): boolean {
   )
 }
 
-export function canViewAudit(): boolean {
-  return (
-    hasRole(ROLES.SUPER_ADMIN) ||
-    hasRole(ROLES.SUPERVISOR) ||
-    hasRole(ROLES.ADMIN_COMERCIAL) ||
-    hasPermission('audit:read')
-  )
-}
-

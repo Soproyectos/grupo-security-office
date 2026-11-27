@@ -276,10 +276,10 @@ describe('Historial por producto GET /audit/:entity/:entityId', () => {
   });
 
   it('el feed general no habilita auditoría de Biblioteca por cargo', async () => {
-    const denied = build([]);
+    const denied = build([grant('audit:read')]);
     await denied.controller.findAll(undefined, undefined, undefined, undefined, undefined, undefined, adminComercial);
     expect(denied.auditService.findAll).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ libraryWrite: false }));
-    const allowed = build([grant('products:read'), grant('products:write'), grant('products:notes')]);
+    const allowed = build([grant('audit:read'), grant('products:read'), grant('products:write'), grant('products:notes')]);
     await allowed.controller.findAll(undefined, undefined, undefined, undefined, undefined, undefined, adminComercial);
     expect(allowed.auditService.findAll).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ libraryWrite: true }));
   });
@@ -290,20 +290,24 @@ describe('Historial por producto GET /audit/:entity/:entityId', () => {
     expect(auditService.findByEntity).not.toHaveBeenCalled();
   });
 
-  it('las demás entidades conservan su protección: solo Super Admin y Admin Comercial; products:write no las abre', async () => {
+  it('las demás entidades exigen la acción audit:read: ni el cargo ni products:write las abren; Super Admin conserva su excepción', async () => {
     for (const entity of ['User', 'Assignment']) {
       const denied = build([grant('products:read'), grant('products:write')]);
       await expect(denied.controller.findByEntity(entity, 'x-1', vendedor)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(denied.controller.findByEntity(entity, 'x-1', supervisor)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(denied.controller.findByEntity(entity, 'x-1', adminComercial)).rejects.toBeInstanceOf(ForbiddenException);
       expect(denied.auditService.findByEntity).not.toHaveBeenCalled();
-      const allowed = build([]);
-      await expect(allowed.controller.findByEntity(entity, 'x-1', adminComercial)).resolves.toBeDefined();
-      await expect(allowed.controller.findByEntity(entity, 'x-1', superAdmin)).resolves.toBeDefined();
+      const allowed = build([grant('audit:read')]);
+      await expect(allowed.controller.findByEntity(entity, 'x-1', vendedor)).resolves.toBeDefined();
+      await expect(build([]).controller.findByEntity(entity, 'x-1', superAdmin)).resolves.toBeDefined();
     }
   });
 
-  it('el listado general GET /audit conserva @Roles(Super Admin, Admin Comercial)', () => {
-    expect(rolesOf(proto(AuditController).findAll)).toEqual(['Super Admin', 'Admin Comercial']);
+  it('el listado general GET /audit exige audit:read y ya no fija cargos', async () => {
+    expect(rolesOf(proto(AuditController).findAll)).toBeUndefined();
+    const { controller, auditService } = build([]);
+    await expect(controller.findAll(undefined, undefined, undefined, undefined, undefined, undefined, adminComercial)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(auditService.findAll).not.toHaveBeenCalled();
   });
 });
 

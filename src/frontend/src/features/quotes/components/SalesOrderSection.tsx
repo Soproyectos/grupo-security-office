@@ -1,19 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Card, Input, Button } from '../../../components/ui'
-import { hasRole } from '../../../lib/rbac'
-import { ROLES } from '../../../lib/roles'
+import { useHasAssignedAction } from '../../users/access'
 import { formatMoney } from '../lib/money'
 import { extractBackendMessage } from '../hooks/useQuoteMutations'
 import {
   useSalesOrderForQuote,
   useUpdateInvoice,
 } from '../hooks/useSalesOrder'
-
-const INVOICE_ROLES = [ROLES.SUPER_ADMIN, ROLES.ADMIN_COMERCIAL, ROLES.SUPERVISOR]
-
-function canRegisterInvoice(): boolean {
-  return INVOICE_ROLES.some((role) => hasRole(role))
-}
 
 function formatDate(value: string | null): string {
   if (!value) return '—'
@@ -45,14 +38,17 @@ export default function SalesOrderSection({
   customerId,
   quoteStatus,
 }: SalesOrderSectionProps) {
-  const isGanada = quoteStatus === 'ganada'
+  // Ver el pedido es una acción asignable: sin ella la sección no se muestra ni se pide al servidor.
+  const canRead = useHasAssignedAction(['salesOrders:read'])
+  const isGanada = quoteStatus === 'ganada' && canRead
   const { salesOrder, isLoading, error } = useSalesOrderForQuote(
     quoteId,
     customerId,
     isGanada
   )
   const updateInvoice = useUpdateInvoice()
-  const editable = canRegisterInvoice()
+  // Registrar la factura es una acción asignable (Super Admin siempre); el servidor la vuelve a exigir.
+  const editable = useHasAssignedAction(['salesOrders:invoice'])
 
   const [editing, setEditing] = useState(false)
   const [invoiceNumber, setInvoiceNumber] = useState('')

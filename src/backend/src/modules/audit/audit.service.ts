@@ -4,9 +4,9 @@ import { HierarchyService } from '../../common/hierarchy/hierarchy.service';
 import { Prisma } from '@prisma/client';
 
 /**
- * Entidades del ámbito comercial (contenedor de compras). El Admin Comercial puede
- * ver SOLO auditoría de estas entidades; las entidades globales (User, Role,
- * Assignment) le están vedadas por diseño.
+ * Entidades del ámbito comercial (contenedor de compras). Quien tiene la acción
+ * `audit:read` sin ser Super Admin ve SOLO auditoría de estas entidades; las
+ * entidades globales (User, Role, Assignment) le están vedadas por diseño.
  */
 export const COMERCIAL_ENTITIES = [
   'LISTA',
@@ -116,9 +116,9 @@ export class AuditService {
   }
 
   /**
-   * ¿El usuario ve auditoría GLOBAL (Super Admin / Supervisor)?
-   * Solo estos dos roles ven todo; el resto (p.ej. Admin Comercial) se limita a
-   * las entidades comerciales, sin importar el filtro `entity` del query.
+   * ¿El usuario ve auditoría GLOBAL? Solo Super Admin ve todo; quien llega con la
+   * acción `audit:read` se limita a las entidades comerciales, sin importar el
+   * filtro `entity` del query. (El acceso a la ruta lo decide el controlador.)
    */
   private isGlobalAuditor(roles?: string[]): boolean {
     return !!roles && roles.includes('Super Admin');

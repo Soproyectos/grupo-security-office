@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import QuoteDetailPage from './QuoteDetailPage'
 import { useAuthStore } from '../stores/auth.store'
+import { userAccessKey } from '../features/users/access'
 import type { Quote, QuoteItem } from '../features/quotes/types/quote.types'
 import type { SalesOrder } from '../features/quotes/types/sales-order.types'
 
@@ -200,6 +201,43 @@ describe('ACEPTACIÓN 3 (lado cliente) — ganada con UN pedido, sin duplicados'
     expect(html).not.toContain('Marcar como ganada')
     expect(html).not.toContain('Marcar como enviada')
     expect(html).not.toContain('Acciones de estado')
+  })
+})
+
+describe('Pedido de una cotización ganada — acciones salesOrders:read y salesOrders:invoice', () => {
+  const grant = (actionId: string) => ({ sourceId: 's1', actionId, scope: 'team' })
+  const withAccess = (actionIds: string[]) => {
+    login(['Vendedor'])
+    const client = seeded(quote({ status: 'ganada' }), [salesOrder()])
+    client.setQueryData(userAccessKey('user-1'), { catalogVersion: 'v1', accessVersion: 1, grants: actionIds.map(grant), sources: [] })
+    return render(client)
+  }
+
+  it('Super Admin ve el pedido y puede registrar la factura', () => {
+    const html = render(seeded(quote({ status: 'ganada' }), [salesOrder()]))
+    expect(html).toContain('SO-0001')
+    expect(html).toContain('Registrar factura externa')
+  })
+
+  it('sin salesOrders:read el cargo no basta: no se muestra la sección Pedido', () => {
+    login(['Admin Comercial'])
+    const client = seeded(quote({ status: 'ganada' }), [salesOrder()])
+    client.setQueryData(userAccessKey('user-1'), { catalogVersion: 'v1', accessVersion: 1, grants: [grant('quotes:read')], sources: [] })
+    const html = render(client)
+    expect(html).not.toContain('SO-0001')
+    expect(html).not.toContain('Registrar factura externa')
+  })
+
+  it('con salesOrders:read ve el pedido pero no ofrece registrar la factura', () => {
+    const html = withAccess(['salesOrders:read'])
+    expect(html).toContain('SO-0001')
+    expect(html).not.toContain('Registrar factura externa')
+  })
+
+  it('con salesOrders:invoice (sin ser Supervisor ni Admin) ofrece registrar la factura', () => {
+    const html = withAccess(['salesOrders:read', 'salesOrders:invoice'])
+    expect(html).toContain('SO-0001')
+    expect(html).toContain('Registrar factura externa')
   })
 })
 
