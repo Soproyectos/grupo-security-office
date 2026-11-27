@@ -91,9 +91,12 @@ async function seed() {
     grantedById: u.id, reason: 'fixture t07',
   } })
   accessSourceId = source.id
-  await prisma.accessGrant.createMany({ data: ['listas:read', 'products:read'].map((actionId) => ({
-    sourceId: source.id, actionId, scopeKind: 'list', resourceId: l1.id,
-  })) })
+  // `products:read` solo admite alcance global (CATALOG_SCOPES en access-catalog.ts);
+  // `listas:read` sí admite alcance por lista.
+  await prisma.accessGrant.createMany({ data: [
+    { sourceId: source.id, actionId: 'listas:read', scopeKind: 'list', resourceId: l1.id },
+    { sourceId: source.id, actionId: 'products:read', scopeKind: 'global', resourceId: '' },
+  ] })
   admin = { userId: u.id, roles: ['Super Admin'] }
   vendedor = { userId: v.id, roles: ['Vendedor'] }
 }
@@ -359,7 +362,7 @@ describe('unidades fuera de alcance al ejecutar → OMITTED; historial por recur
     expect(summary.failed).toBe(0)
     expect(job?.state).toBe('COMPLETED')
     // Devuelve la concesión para los tests siguientes (historial).
-    await prisma.accessGrant.create({ data: { sourceId: accessSourceId, actionId: 'products:read', scopeKind: 'list', resourceId: listaOwned } })
+    await prisma.accessGrant.create({ data: { sourceId: accessSourceId, actionId: 'products:read', scopeKind: 'global', resourceId: '' } })
   })
 
   it('GET job-history de un recurso: muestra trabajos y estados SIN exponer errores a no-admin', async () => {
