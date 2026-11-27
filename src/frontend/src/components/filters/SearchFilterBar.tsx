@@ -60,6 +60,16 @@ export type SearchFilterBarProps = {
    * se muestran en la misma fila que el botón «Filtros» en lugar de una fila aparte.
    */
   toolbarEnd?: ReactNode
+  /**
+   * Contenido opcional al INICIO de la misma fila (p. ej. ruta de navegación y título de la página), para no gastar
+   * una fila aparte. Solo se usa junto con `toolbarEnd`; sin él, la barra queda igual que siempre.
+   */
+  toolbarStart?: ReactNode
+  /**
+   * Solo layout sidebar en escritorio: mientras el panel está abierto el botón «Filtros» de la barra no se muestra (el panel
+   * trae su propio «Ocultar»); al ocultarlo, vuelve a aparecer para reabrirlo.
+   */
+  compactToggle?: boolean
   touchFriendly?: boolean
 }
 
@@ -153,6 +163,8 @@ export function SearchFilterBar({
   sidebarContent,
   sidebarSections,
   toolbarEnd,
+  toolbarStart,
+  compactToggle = false,
   touchFriendly = false,
 }: SearchFilterBarProps) {
   const [isDesktop, setIsDesktop] = useState(viewportIsDesktop)
@@ -383,6 +395,7 @@ export function SearchFilterBar({
         ref={containerRef}
         className={toolbarEnd ? 'flex flex-wrap items-center gap-2' : 'flex flex-col gap-3 sm:flex-row sm:items-center'}
       >
+        {toolbarEnd && toolbarStart}
         {search && (
           <div className={toolbarEnd ? 'relative min-w-[220px] max-w-md flex-1' : 'relative min-w-0 flex-1'}>
             <span
@@ -404,7 +417,7 @@ export function SearchFilterBar({
           </div>
         )}
 
-        {!(isSidebar && !isDesktop) && (
+        {!(isSidebar && !isDesktop) && !(compactToggle && isSidebar && isOpen) && (
           <span ref={triggerRef} className={search ? 'shrink-0' : 'self-start'}>
             <Button
               type="button"
@@ -494,14 +507,27 @@ export function SearchFilterBar({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleClearFilters}
-                    disabled={clearFiltersDisabled || activeFilterCount === 0}
-                    className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
-                  >
-                    Limpiar
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleClearFilters}
+                      disabled={clearFiltersDisabled || activeFilterCount === 0}
+                      className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                    >
+                      Limpiar
+                    </button>
+                    {compactToggle && (
+                      <button
+                        type="button"
+                        onClick={() => closeOpenPanel(false)}
+                        aria-expanded={isOpen}
+                        aria-controls="filter-sidebar"
+                        className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus-ring)]"
+                      >
+                        Ocultar
+                      </button>
+                    )}
+                  </div>
                 </header>
 
                 <div role="region" aria-label="Opciones de filtros" tabIndex={0} className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4 [scrollbar-gutter:stable] focus-visible:outline focus-visible:outline-2 focus-visible:outline-security-600">

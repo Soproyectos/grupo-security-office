@@ -91,7 +91,7 @@ describe('ParameterRequirements: opciones visibles', () => {
     const empty = facet('color', [option('negro', 0)], { label: 'Color' })
     const markup = render({ facets: [empty, facet('zonas', [option('1', 4)])] })
 
-    expect(markup).not.toContain('Color')
+    expect(markup).not.toContain('>Color<')
     expect(markup.split('<fieldset').length - 1).toBe(1)
   })
 
@@ -122,5 +122,25 @@ describe('visibleFacetOptions', () => {
     const { visible } = visibleFacetOptions(eightOptions, new Set(['zonas:8']), false)
 
     expect(visible.map((item) => item.value)).toEqual(['1', '2', '3', '4', '5', '6', '8'])
+  })
+})
+
+const occurrences = (text: string, needle: string) => text.split(needle).length - 1
+
+describe('ParameterRequirements: secciones plegables', () => {
+  const two = [facet('a', [option('1', 2)], { label: 'Primera' }), facet('b', [option('2', 3)], { label: 'Segunda' }), facet('c', [option('3', 1)], { label: 'Tercera' })]
+
+  it('la primera llega abierta y las demás cerradas, cada una con su botón', () => {
+    const markup = render({ facets: two })
+
+    expect(occurrences(markup, 'aria-expanded="true"')).toBe(1)
+    expect(occurrences(markup, 'aria-expanded="false"')).toBe(2)
+    expect(markup).toContain('aria-controls="requirement-b"')
+  })
+
+  it('una sección con una opción marcada llega abierta', () => {
+    const markup = render({ facets: two, selected: ['c:3'] })
+
+    expect(occurrences(markup, 'aria-expanded="true"')).toBe(2)
   })
 })

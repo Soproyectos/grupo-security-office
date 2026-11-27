@@ -117,9 +117,10 @@ function Breadcrumb({ trail, className }: { trail: CategoryTrail; className?: st
         ))}
         <BreadcrumbSeparator />
         <BreadcrumbItem>
-          <span aria-current="page" className="font-semibold text-ink-900">
+          {/* The current page is the title (h1): the last crumb is the big one, so the name is not repeated. */}
+          <h1 aria-current="page" className="text-page-title font-bold leading-tight text-ink-900">
             {trail.category.name}
-          </span>
+          </h1>
         </BreadcrumbItem>
       </ol>
     </nav>
@@ -228,6 +229,15 @@ function CategoryNotFound({ slug, subcategory = false }: { slug: string; subcate
   )
 }
 
+/** Breadcrumb on the left and the title next to it; on small screens they stack and take the whole row. */
+function CategoryHeader({ trail }: { trail: CategoryTrail }) {
+  return (
+    <div className="min-w-0 basis-full lg:basis-0 lg:flex-1">
+      <Breadcrumb trail={trail} />
+    </div>
+  )
+}
+
 /**
  * Landing page of a category (`/catalogo/categoria/:slug`), the destination of
  * every link of the mega menu. It reads the same session tree as the header, so
@@ -235,7 +245,7 @@ function CategoryNotFound({ slug, subcategory = false }: { slug: string; subcate
  */
 export default function CategoryPage() {
   const { slug = '' } = useParams<{ slug: string }>()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const { status, categories, retry } = useCategoryMenu()
 
   const trail = useMemo(
@@ -246,7 +256,6 @@ export default function CategoryPage() {
   const families = trail
     ? trail.category.children.filter((child) => Boolean(child.subcategoryId))
     : NO_CHILDREN
-  const availableFamilies = families.filter((family) => family.productCount > 0)
   const requestedFamily = searchParams.get('tipo') ?? ''
   const subcategorySlug = (family: MenuCategory) => family.subcategorySlug ?? family.slug
   const activeFamily = families.find((family) => subcategorySlug(family) === requestedFamily)
@@ -262,71 +271,34 @@ export default function CategoryPage() {
   useDocumentTitle(pageTitle(title))
 
   return (
-    <StorefrontChrome search={isSubcategory ? false : undefined}>
-      <main className="mx-auto w-full max-w-[105rem] px-5 py-8 lg:px-12">
+    <StorefrontChrome>
+      <main className="mx-auto w-full max-w-[105rem] px-5 pb-8 pt-5 lg:px-12">
         {status === 'loading' && <CategorySkeleton />}
         {status === 'error' && <PublicProductListingError onRetry={retry} subject="la categoría" />}
         {showNotFound && <CategoryNotFound slug={missingSubcategory ? requestedFamily : slug} subcategory={missingSubcategory} />}
         {status === 'ready' && trail !== null && visibleTrail !== null && !showNotFound && (
           <>
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <Breadcrumb trail={visibleTrail} className="lg:flex-1 lg:min-w-0" />
-              <h1 className="mt-4 lg:mt-0 text-page-title font-bold text-ink-900 whitespace-nowrap lg:truncate">{visibleTrail.category.name}</h1>
-            </div>
-            {isSubcategory && (
-              <div className="mt-8">
-                <SubcategoryProducts
-                  key={visibleTrail.category.id}
-                  category={trail.category}
-                  subcategory={activeFamily}
-                  children={childrenBySortOrder(visibleTrail.category)}
-                  emptyState={<EmptyProducts />}
-                />
-              </div>
+            {/* Breadcrumb and title travel inside the listing so they share ONE row with "Filtros" and the pagination.
+                No subcategory tiles and no selector here: the tiles live only in /catalogo, and the way to another
+                subcategory is the menu "Catálogo", the breadcrumb and the "Subcategorías" section of the filters. */}
+            {isSubcategory ? (
+              <SubcategoryProducts
+                key={visibleTrail.category.id}
+                category={trail.category}
+                subcategory={activeFamily}
+                children={childrenBySortOrder(visibleTrail.category)}
+                emptyState={<EmptyProducts />}
+                header={<CategoryHeader trail={visibleTrail} />}
+              />
+            ) : (
+              <SubcategoryProducts
+                key={trail.category.id}
+                category={trail.category}
+                children={children}
+                emptyState={<EmptyProducts />}
+                header={<CategoryHeader trail={visibleTrail} />}
+              />
             )}
-            {!isSubcategory && children.length > 0 && (
-              <section aria-labelledby="categoria-subcategorias" className="mt-8">
-                <h2
-                  id="categoria-subcategorias"
-                  className="text-eyebrow uppercase text-ink-500"
-                >
-                  Subcategorías
-                </h2>
-                <ul
-                  role="list"
-                  className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6"
-                >
-                  {children.map((child) => (
-                    <CategoryTile key={child.id} node={child} parentSlug={trail.category.slug} />
-                  ))}
-                </ul>
-              </section>
-            )}
-            {!isSubcategory && availableFamilies.length > 0 && (
-              <div className="mt-8 max-w-sm">
-                <label htmlFor="camera-family-filter" className="mb-2 block text-sm font-semibold text-ink-700">Subcategoría</label>
-                <select
-                  id="camera-family-filter"
-                  value={activeFamily ? subcategorySlug(activeFamily) : ''}
-                  onChange={(event) => {
-                    const next = new URLSearchParams(searchParams)
-                    if (event.currentTarget.value) next.set('tipo', event.currentTarget.value)
-                    else next.delete('tipo')
-                    next.delete('keySpec')
-                    next.delete('requirement')
-                    next.delete('page')
-                    setSearchParams(next)
-                  }}
-                  className="min-h-11 w-full rounded-control border border-surface-300 bg-white px-3 text-sm text-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-security-500"
-                >
-                  <option value="">Todas las subcategorías</option>
-                  {availableFamilies.map((family) => <option key={family.id} value={subcategorySlug(family)}>{family.name}</option>)}
-                </select>
-              </div>
-            )}
-            <div className="mt-10">
-              {!isSubcategory && <SubcategoryProducts key={trail.category.id} category={trail.category} children={children} emptyState={<EmptyProducts />} />}
-            </div>
           </>
         )}
       </main>

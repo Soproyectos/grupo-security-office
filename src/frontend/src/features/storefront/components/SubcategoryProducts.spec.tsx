@@ -61,10 +61,9 @@ const facet: PublicKeySpecFacet = {
   values: [{ value: 'TCP', label: 'TCP', count: 4 }],
 }
 
-const URL_WITH_FILTERS = '/catalogo/categoria/alarmas?q=panel&brand=ajax&requirement=zonas:16&requirement=protocolo:TCP'
+const URL_WITH_FILTERS = '/catalogo/categoria/alarmas?brand=ajax&requirement=zonas:16&requirement=protocolo:TCP'
 
 const requirementScope = {
-  q: 'panel',
   brand: 'ajax',
   keySpec: [],
   requirement: ['zonas:16', 'protocolo:TCP'],
@@ -144,18 +143,24 @@ describe('toggleRequirementParams', () => {
 })
 
 describe('listado de subcategoría: filtros y consultas', () => {
-  it('envía al listado los mismos q, marca y requisitos de la URL', () => {
+  it('envía al listado la misma marca y los mismos requisitos de la URL', () => {
     renderListing()
     const last = pageMock.calls[pageMock.calls.length - 1]
 
     expect(last?.filters).toEqual({
       category: 'alarmas',
       subcategory: 'alarmas-zonas',
-      q: 'panel',
       brand: 'ajax',
       keySpec: [],
       requirement: ['zonas:16', 'protocolo:TCP'],
     })
+  })
+
+  it('ya no filtra por ?q=: la tienda tiene un solo buscador, el de la cabecera', () => {
+    renderListing({ url: `${URL_WITH_FILTERS}&q=panel` })
+    const last = pageMock.calls[pageMock.calls.length - 1]
+
+    expect(last?.filters).not.toHaveProperty('q', 'panel')
   })
 
   it('usa en la consulta de requisitos la misma clave y alcance de filtros', () => {

@@ -47,8 +47,11 @@ export function ProductDetailPage({
     <div className="bg-white pb-20 text-neutral-900 antialiased lg:pb-0">
       <ProductJsonLd product={product} />
 
-      <div className={ui.container}>
+      {/* Same container and top spacing as the breadcrumb of the catalog pages, so it lines up with the header. */}
+      <div className="mx-auto w-full max-w-[105rem] px-5 pt-5 lg:px-12">
         <ProductBreadcrumb items={product.breadcrumb} />
+      </div>
+      <div className={`${ui.container} pt-3`}>
         <ProductHero product={product} onDownload={onDownload} assignedPrice={assignedPrice} quoteAction={quoteAction} />
       </div>
 

@@ -6,8 +6,9 @@ import { productImageSrc } from '../lib/image-src';
 import { previewField } from '../preview/preview-fields';
 import type { DownloadHandler, ProductDetail } from '../types';
 import { cx } from '../styles';
-import { ChevronRightIcon, DownloadIcon, FeatureGlyph, HomeIcon } from './icons';
+import { ChevronRightIcon, DownloadIcon, FeatureGlyph } from './icons';
 import type { QuoteAction } from '../../storefront/components/AddToQuoteButton';
+import { PRODUCT_STAGE_BG, PRODUCT_STAGE_BLEND, PRODUCT_STAGE_BORDER } from '../../storefront/components/ProductImageStage';
 import { ProductCtas, ProductPriceBlock, ProductTrustStrip } from './ProductPurchase';
 
 interface ProductHeroProps {
@@ -22,20 +23,22 @@ interface ProductHeroProps {
 /**
  * Trail down to the product's category. The product itself is not repeated: its name is
  * already the page title, so the last crumb is the category (a link back to its listing).
+ * It looks exactly like the trail of the catalog pages (same size, colors and "Inicio" text) and
+ * `ProductDetailPage` places it in the same store-wide container, so it lines up with the logo.
  */
 export function ProductBreadcrumb({ items }: { items: ProductDetail['breadcrumb'] }) {
   return (
-    <nav aria-label="Ruta de navegación" className="py-4" {...previewField('category')}>
-      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
-        <li>
-          <Link to="/tienda" className="inline-flex items-center hover:text-red-600" aria-label="Inicio">
-            <HomeIcon className="h-4 w-4" />
+    <nav aria-label="Ruta de navegación" {...previewField('category')}>
+      <ol role="list" className="flex flex-wrap items-center gap-1.5 text-sm text-ink-500">
+        <li className="flex items-center gap-1.5">
+          <Link to="/tienda" className="transition hover:text-security-500">
+            Inicio
           </Link>
         </li>
         {items.map((item) => (
-          <li key={item.href} className="inline-flex items-center gap-1.5">
-            <ChevronRightIcon className="h-3.5 w-3.5 text-neutral-400" />
-            <Link to={item.href} className="hover:text-red-600">
+          <li key={item.href} className="flex items-center gap-1.5">
+            <ChevronRightIcon className="h-3.5 w-3.5" />
+            <Link to={item.href} className="transition hover:text-security-500">
               {item.label}
             </Link>
           </li>
@@ -59,7 +62,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
 
   return (
     <figure className="flex flex-col gap-3" {...previewField('images')}>
-      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-neutral-50 to-neutral-100 p-8">
+      <div className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl border ${PRODUCT_STAGE_BORDER} ${PRODUCT_STAGE_BG} p-8`}>
         {current ? (
           <button
             type="button"
@@ -72,7 +75,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
               key={current.src}
               src={productImageSrc(current.src)}
               alt={current.alt || name}
-              className="max-h-full w-auto object-contain"
+              className={`max-h-full w-auto object-contain ${PRODUCT_STAGE_BLEND}`}
               decoding="async"
               onError={() => markFailed(current.src)}
             />
@@ -91,7 +94,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
                 aria-label={`Ver imagen ${index + 1} de ${availableImages.length}`}
                 aria-current={index === selectedIndex}
                 className={cx(
-                  'h-16 w-16 overflow-hidden rounded-lg border bg-white transition-colors',
+                  `h-16 w-16 overflow-hidden rounded-lg border ${PRODUCT_STAGE_BG} transition-colors`,
                   index === selectedIndex ? 'border-red-600' : 'border-neutral-200 hover:border-neutral-400',
                 )}
               >
@@ -102,7 +105,7 @@ function ProductGallery({ images, name }: { images: ProductDetail['images']; nam
                   height={64}
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-contain"
+                  className={`h-full w-full object-contain ${PRODUCT_STAGE_BLEND}`}
                   onError={() => markFailed(image.src)}
                 />
               </button>

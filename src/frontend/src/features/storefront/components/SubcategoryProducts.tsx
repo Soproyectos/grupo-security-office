@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ProductPagination } from '../../../components/ProductPagination'
@@ -10,7 +10,6 @@ import type { MenuCategory } from '../types/categoryMenu'
 import { PublicProductGrid, PublicProductGridSkeleton, PublicProductListingError } from './PublicProductGrid'
 import { categoryNodeHref, productCountLabel } from './mega-menu/menu-model'
 
-const MAX_SEARCH_LENGTH = 100
 const MAX_SPEC_FILTERS = 10
 
 /** Adds or removes one requirement, keeping the others and the order; never exceeds `max`. */
@@ -79,14 +78,14 @@ interface SubcategoryProductsProps {
   subcategory?: MenuCategory
   children: MenuCategory[]
   emptyState: ReactNode
+  /** Breadcrumb and title of the page: they share the row of "Filtros" and the pagination to save vertical space. */
+  header?: ReactNode
 }
 
-export default function SubcategoryProducts({ category, subcategory, children, emptyState }: SubcategoryProductsProps) {
+export default function SubcategoryProducts({ category, subcategory, children, emptyState, header }: SubcategoryProductsProps) {
   const [params, setParams] = useSearchParams()
   const pendingCriteria = useRef<{ base: URLSearchParams; latest: URLSearchParams } | null>(null)
   const { page, pageSize } = readPublicProductPage(params)
-  const query = (params.get('q') ?? '').trim().slice(0, MAX_SEARCH_LENGTH)
-  const [searchDraft, setSearchDraft] = useState(query)
   const brand = (params.get('brand') ?? '').trim().slice(0, 100)
   const subcategoryId = subcategory?.subcategoryId
   const brands = useQuery({ queryKey: ['storefront', 'public-brands'], queryFn: fetchPublicBrands, staleTime: 300_000 })
@@ -103,7 +102,6 @@ export default function SubcategoryProducts({ category, subcategory, children, e
     return option ? [{ key: facet.specKey, value: option.value, label: `${facet.label}: ${option.label}` }] : []
   })
   const requirementScope = {
-    q: query || undefined,
     brand: brand || undefined,
     keySpec: filteredSpecs.map(({ key, value }) => `${key}:${value}`),
     requirement: rawRequirements,
@@ -127,22 +125,6 @@ export default function SubcategoryProducts({ category, subcategory, children, e
   )
   const total = products.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-
-  useEffect(() => setSearchDraft(query), [query])
-  useEffect(() => {
-    const search = searchDraft.trim()
-    if (search === query) return
-    const timer = window.setTimeout(() => {
-      setParams((current) => {
-        const next = new URLSearchParams(current)
-        if (search) next.set('q', search)
-        else next.delete('q')
-        next.delete('page')
-        return next
-      }, { replace: true })
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [query, searchDraft, setParams])
 
   useEffect(() => {
     if (!products.isSuccess || page <= totalPages) return
@@ -227,10 +209,10 @@ export default function SubcategoryProducts({ category, subcategory, children, e
       id: 'categories',
       label: 'Subcategorías',
       content: (
-        <ul className="space-y-1">
+        <ul>
           {children.map((child) => (
             <li key={child.id}>
-              <Link to={categoryNodeHref(child, category.slug)} className="inline-flex min-h-11 items-center rounded-control text-sm font-medium hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-security-500">
+              <Link to={categoryNodeHref(child, category.slug)} className="flex min-h-9 items-center rounded-control px-1.5 py-1.5 text-sm !text-ink-700 hover:bg-surface-100 hover:!text-security-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-security-500">
                 {child.name}
               </Link>
             </li>
@@ -333,10 +315,11 @@ export default function SubcategoryProducts({ category, subcategory, children, e
     )
   }
 
-  const hasCriteria = Boolean(query || brand || filteredSpecs.length || rawRequirements.length)
+  const hasCriteria = Boolean(brand || filteredSpecs.length || rawRequirements.length)
   const data = products.data
   const content = (
     <>
+      <h2 id="categoria-productos" className="sr-only">Productos</h2>
       {failedSpecs ? (
         <PublicProductListingError subject="las especificaciones seleccionadas" onRetry={() => void facetQuery.refetch()} />
       ) : products.isPending || (products.isSuccess && page > totalPages) ? (
@@ -353,9 +336,7 @@ export default function SubcategoryProducts({ category, subcategory, children, e
         <div role="status" className="rounded-card border border-surface-200 bg-white p-6 text-center">
           <h3 className="text-lg font-bold text-ink-900">No encontramos productos con estos filtros</h3>
           <button type="button" onClick={() => {
-            setSearchDraft('')
             updateCriteria((next) => {
-              next.delete('q')
               next.delete('brand')
               next.delete('keySpec')
               next.delete('requirement')
@@ -369,16 +350,17 @@ export default function SubcategoryProducts({ category, subcategory, children, e
   )
 
   return (
-    <section aria-labelledby="categoria-productos" className="mt-5">
-      <h2 id="categoria-productos" className="sr-only">Productos</h2>
+    <section aria-labelledby="categoria-productos">
+      {/* No search box here: the store has one search, the one of the header (also in categories and subcategories). */}
       <SearchFilterBar
         layout="sidebar"
         touchFriendly
-        search={{ value: searchDraft, onChange: setSearchDraft, placeholder: 'Buscar por nombre o referencia', ariaLabel: 'Buscar en esta categoría', maxLength: MAX_SEARCH_LENGTH }}
         activeFilterCount={chips.length}
         activeFilterChips={chips}
         onClearFilters={clearFilters}
         sidebarSections={sections}
+        toolbarStart={header}
+        compactToggle
         toolbarEnd={renderPagination('Paginación superior')}
         content={content}
       />
